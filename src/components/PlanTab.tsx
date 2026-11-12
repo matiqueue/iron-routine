@@ -485,10 +485,10 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   exerciseName: {
-    fontSize: 19,
-    fontWeight: '800',
-    letterSpacing: -0.3,
-    lineHeight: 25,
+    fontSize: 17,
+    fontWeight: '700',
+    letterSpacing: -0.2,
+    lineHeight: 22,
     marginBottom: 6,
   },
   metaRow: {

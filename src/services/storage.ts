@@ -6,6 +6,7 @@ import {
   PRRecord,
   SetEntry,
   UserProfile,
+  WeightEntry,
   WorkoutHistoryEntry,
 } from '../types/workout';
 
@@ -15,11 +16,14 @@ const STORAGE_KEYS = {
   PR_RECORDS_PREFIX: '@iron_routine_prs_',
   WEEK_PREFIX: '@iron_routine_week_',
   HISTORY_PREFIX: '@iron_routine_history_',
+  WEIGHT_PREFIX: '@iron_routine_weight_',
 };
 
 const DEFAULT_PROFILE: UserProfile = {
   id: 'szymon_goral',
   name: 'Szymon Góral',
+  height: 180,
+  weight: 60.1,
   isOwner: true,
   createdAt: new Date().toISOString(),
   avatarColor: '#CCFF00',
@@ -409,4 +413,98 @@ export async function getLastExerciseMetrics(
   } catch {
     return {};
   }
+}
+
+// ==================== BODY WEIGHT & HEIGHT TRACKING ====================
+
+export async function getWeightHistory(profileId?: string): Promise<WeightEntry[]> {
+  try {
+    const pid = profileId || (await getActiveProfile()).id;
+    const raw = await AsyncStorage.getItem(`${STORAGE_KEYS.WEIGHT_PREFIX}${pid}`);
+    if (!raw) {
+      // Default initial record for Szymon
+      const initialEntry: WeightEntry = {
+        id: 'initial_weight',
+        date: new Date().toISOString().slice(0, 10),
+        weight: 60.1,
+        note: 'Waga początkowa',
+      };
+      await AsyncStorage.setItem(
+        `${STORAGE_KEYS.WEIGHT_PREFIX}${pid}`,
+        JSON.stringify([initialEntry])
+      );
+      return [initialEntry];
+    }
+    const parsed: WeightEntry[] = JSON.parse(raw);
+    return parsed.sort((a, b) => b.date.localeCompare(a.date));
+  } catch {
+    return [];
+  }
+}
+
+export async function addWeightEntry(
+  weight: number,
+  date?: string,
+  note?: string,
+  profileId?: string
+): Promise<WeightEntry> {
+  const pid = profileId || (await getActiveProfile()).id;
+  const history = await getWeightHistory(pid);
+  const entryDate = date || new Date().toISOString().slice(0, 10);
+
+  // Check if today already has an entry - replace or add
+  const existingIndex = history.findIndex((h) => h.date === entryDate);
+  const newEntry: WeightEntry = {
+    id: `weight_${Date.now()}`,
+    date: entryDate,
+    weight: Math.round(weight * 10) / 10,
+    note,
+  };
+
+  if (existingIndex >= 0) {
+    history[existingIndex] = newEntry;
+  } else {
+    history.unshift(newEntry);
+  }
+
+  const sorted = history.sort((a, b) => b.date.localeCompare(a.date));
+  await AsyncStorage.setItem(`${STORAGE_KEYS.WEIGHT_PREFIX}${pid}`, JSON.stringify(sorted));
+
+  // Also update active profile's weight
+  try {
+    const profiles = await getProfiles();
+    const target = profiles.find((p) => p.id === pid);
+    if (target) {
+      target.weight = newEntry.weight;
+      await AsyncStorage.setItem(STORAGE_KEYS.PROFILES, JSON.stringify(profiles));
+    }
+  } catch {}
+
+  try {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  } catch {}
+
+  return newEntry;
+}
+
+export async function deleteWeightEntry(id: string, profileId?: string): Promise<void> {
+  const pid = profileId || (await getActiveProfile()).id;
+  const history = await getWeightHistory(pid);
+  const filtered = history.filter((h) => h.id !== id);
+  await AsyncStorage.setItem(`${STORAGE_KEYS.WEIGHT_PREFIX}${pid}`, JSON.stringify(filtered));
+}
+
+export async function updateProfileStats(
+  profileId: string,
+  height: number,
+  weight: number
+): Promise<UserProfile> {
+  const profiles = await getProfiles();
+  const profile = profiles.find((p) => p.id === profileId);
+  if (!profile) throw new Error('Profile not found');
+
+  profile.height = Math.round(height);
+  profile.weight = Math.round(weight * 10) / 10;
+  await AsyncStorage.setItem(STORAGE_KEYS.PROFILES, JSON.stringify(profiles));
+  return profile;
 }

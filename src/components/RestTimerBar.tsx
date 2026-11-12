@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useAppTheme } from '../context/ThemeContext';
@@ -78,7 +78,7 @@ export const RestTimerBar: React.FC<RestTimerBarProps> = ({
         },
       ]}
     >
-      {/* Top progress line */}
+      {/* Top progress track */}
       <View style={[styles.progressTrack, { backgroundColor: theme.bgTertiary }]}>
         <View
           style={[
@@ -91,46 +91,72 @@ export const RestTimerBar: React.FC<RestTimerBarProps> = ({
         />
       </View>
 
-      <View style={styles.content}>
-        <View style={styles.infoCol}>
-          <Text style={[styles.label, { color: theme.textMuted }]}>
-            {isFinished ? 'CZAS NA SERIĘ' : 'ODLICZANIE PRZERWY'}
-          </Text>
-          <Text numberOfLines={1} style={[styles.name, { color: theme.text }]}>
-            {exerciseName || 'Odpoczynek'}
-          </Text>
+      <View style={styles.cardInner}>
+        {/* Header row: Label & Close */}
+        <View style={styles.topRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.label, { color: isFinished ? theme.text : theme.textMuted }]}>
+              {isFinished ? 'CZAS NA KOLEJNĄ SERIĘ!' : 'ODLICZANIE PRZERWY'}
+            </Text>
+            <Text numberOfLines={1} style={[styles.name, { color: theme.text }]}>
+              {exerciseName || 'Odpoczynek'}
+            </Text>
+          </View>
+
+          <TouchableOpacity
+            onPress={onClose}
+            style={[styles.closeBtn, { backgroundColor: theme.bgSecondary }]}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="close" size={18} color={theme.text} />
+          </TouchableOpacity>
         </View>
 
+        {/* Big Large Timer Digits */}
         <View style={styles.timerDisplay}>
           <Text style={[styles.digits, { color: theme.text }]}>
             {formatTime(secondsLeft)}
           </Text>
         </View>
 
-        <View style={styles.actions}>
+        {/* Large Action Controls */}
+        <View style={styles.actionsRow}>
           <TouchableOpacity
-            onPress={() => adjustTime(30)}
-            style={[styles.btn, { borderColor: theme.border, backgroundColor: theme.bgSecondary }]}
+            onPress={() => adjustTime(-15)}
+            style={[styles.smallBtn, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}
+            activeOpacity={0.7}
           >
-            <Text style={[styles.btnText, { color: theme.text }]}>+30s</Text>
+            <Text style={[styles.btnText, { color: theme.text }]}>-15s</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={() => adjustTime(15)}
+            style={[styles.smallBtn, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}
+            activeOpacity={0.7}
+          >
+            <Text style={[styles.btnText, { color: theme.text }]}>+15s</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
             onPress={() => setIsRunning(!isRunning)}
-            style={[styles.btn, { borderColor: theme.border, backgroundColor: theme.bgSecondary }]}
+            style={[styles.iconBtn, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}
+            activeOpacity={0.7}
           >
             <Ionicons
               name={isRunning ? 'pause' : 'play'}
-              size={14}
+              size={18}
               color={theme.text}
             />
           </TouchableOpacity>
 
           <TouchableOpacity
             onPress={onClose}
-            style={[styles.closeBtn, { backgroundColor: theme.bgSecondary }]}
+            style={[styles.skipBtn, { backgroundColor: theme.primary }]}
+            activeOpacity={0.8}
           >
-            <Ionicons name="close" size={16} color={theme.text} />
+            <Text style={[styles.skipBtnText, { color: theme.primaryText }]}>
+              {isFinished ? 'ZACZNIJ SERIĘ' : 'ZAKOŃCZ PRZERWĘ'}
+            </Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -141,73 +167,99 @@ export const RestTimerBar: React.FC<RestTimerBarProps> = ({
 const styles = StyleSheet.create({
   container: {
     position: 'absolute',
-    bottom: 20,
+    bottom: Platform.OS === 'ios' ? 24 : 16,
     left: 16,
     right: 16,
-    borderRadius: 16,
-    borderWidth: 1,
+    borderRadius: 22,
+    borderWidth: 1.5,
     overflow: 'hidden',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.15,
-    shadowRadius: 10,
-    elevation: 6,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.22,
+    shadowRadius: 16,
+    elevation: 10,
   },
   progressTrack: {
-    height: 3,
+    height: 4,
     width: '100%',
   },
   progressBar: {
     height: '100%',
   },
-  content: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+  cardInner: {
+    paddingHorizontal: 18,
+    paddingTop: 14,
+    paddingBottom: 16,
   },
-  infoCol: {
-    flex: 1,
-    paddingRight: 8,
+  topRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
   label: {
-    fontSize: 9,
+    fontSize: 11,
     fontWeight: '800',
     letterSpacing: 0.8,
   },
   name: {
-    fontSize: 13,
-    fontWeight: '700',
+    fontSize: 15,
+    fontWeight: '800',
     marginTop: 2,
   },
-  timerDisplay: {
-    marginRight: 12,
-  },
-  digits: {
-    fontSize: 22,
-    fontWeight: '900',
-    fontVariant: ['tabular-nums'],
-  },
-  actions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  btn: {
-    paddingHorizontal: 9,
-    paddingVertical: 7,
-    borderRadius: 8,
-    borderWidth: 1,
-  },
-  btnText: {
-    fontSize: 11,
-    fontWeight: '800',
-  },
   closeBtn: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  timerDisplay: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+  },
+  digits: {
+    fontSize: 48,
+    fontWeight: '900',
+    fontVariant: ['tabular-nums'],
+    letterSpacing: -1,
+  },
+  actionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  smallBtn: {
+    paddingHorizontal: 12,
+    height: 42,
+    borderRadius: 10,
+    borderWidth: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  iconBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 10,
+    borderWidth: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  btnText: {
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  skipBtn: {
+    flex: 1,
+    height: 42,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+  },
+  skipBtnText: {
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: 0.5,
   },
 });

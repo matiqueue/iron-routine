@@ -126,7 +126,10 @@ export const ProfileSelectorModal: React.FC<ProfileSelectorModalProps> = ({
                       ) : null}
                     </View>
                     <Text style={[styles.profileStatus, { color: theme.textMuted }]}>
-                      {isSelected ? 'Aktywny profil' : 'Dotknij, aby przełączyć'}
+                      {profile.weight ? `${profile.weight} kg` : ''}
+                      {profile.weight && profile.height ? ' • ' : ''}
+                      {profile.height ? `${profile.height} cm` : ''}
+                      {profile.weight || profile.height ? ` • ${isSelected ? 'Aktywny' : 'Przełącz'}` : isSelected ? 'Aktywny profil' : 'Dotknij, aby przełączyć'}
                     </Text>
                   </View>
 

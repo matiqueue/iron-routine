@@ -194,31 +194,6 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
         </Text>
       </View>
 
-      {/* KPI Cards Strip */}
-      <View style={styles.kpiRow}>
-        <View style={[styles.kpiCard, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
-          <Ionicons name="trophy-outline" size={20} color={theme.text} />
-          <Text style={[styles.kpiVal, { color: theme.text }]}>{stats.totalCount}</Text>
-          <Text style={[styles.kpiLbl, { color: theme.textMuted }]}>Rekordów</Text>
-        </View>
-
-        <View style={[styles.kpiCard, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
-          <Ionicons name="barbell-outline" size={20} color={theme.text} />
-          <Text style={[styles.kpiVal, { color: theme.text }]}>
-            {stats.maxWeight > 0 ? `${stats.maxWeight} kg` : '—'}
-          </Text>
-          <Text style={[styles.kpiLbl, { color: theme.textMuted }]}>Maks. Ciężar</Text>
-        </View>
-
-        <View style={[styles.kpiCard, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
-          <Ionicons name="flash-outline" size={20} color={theme.text} />
-          <Text style={[styles.kpiVal, { color: theme.text }]}>
-            {stats.max1RM > 0 ? `${stats.max1RM} kg` : '—'}
-          </Text>
-          <Text style={[styles.kpiLbl, { color: theme.textMuted }]}>Top 1RM</Text>
-        </View>
-      </View>
-
       {/* Search Input */}
       <View style={[styles.searchWrapper, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
         <Ionicons name="search" size={18} color={theme.textMuted} />
@@ -282,6 +257,30 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
         contentContainerStyle={styles.listInner}
         showsVerticalScrollIndicator={false}
       >
+        {/* KPI Cards Strip - scrolls away so user has maximum space for exercises */}
+        <View style={styles.kpiRow}>
+          <View style={[styles.kpiCard, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
+            <Ionicons name="trophy-outline" size={20} color={theme.text} />
+            <Text style={[styles.kpiVal, { color: theme.text }]}>{stats.totalCount}</Text>
+            <Text style={[styles.kpiLbl, { color: theme.textMuted }]}>Rekordów</Text>
+          </View>
+
+          <View style={[styles.kpiCard, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
+            <Ionicons name="barbell-outline" size={20} color={theme.text} />
+            <Text style={[styles.kpiVal, { color: theme.text }]}>
+              {stats.maxWeight > 0 ? `${stats.maxWeight} kg` : '—'}
+            </Text>
+            <Text style={[styles.kpiLbl, { color: theme.textMuted }]}>Maks. Ciężar</Text>
+          </View>
+
+          <View style={[styles.kpiCard, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
+            <Ionicons name="flash-outline" size={20} color={theme.text} />
+            <Text style={[styles.kpiVal, { color: theme.text }]}>
+              {stats.max1RM > 0 ? `${stats.max1RM} kg` : '—'}
+            </Text>
+            <Text style={[styles.kpiLbl, { color: theme.textMuted }]}>Top 1RM</Text>
+          </View>
+        </View>
         {filteredExercises.length === 0 ? (
           <View style={styles.emptyView}>
             <Ionicons name="search-outline" size={28} color={theme.textMuted} style={{ marginBottom: 8 }} />
@@ -543,8 +542,7 @@ const styles = StyleSheet.create({
   kpiRow: {
     flexDirection: 'row',
     gap: 10,
-    paddingHorizontal: 20,
-    marginTop: 14,
+    marginTop: 4,
     marginBottom: 16,
   },
   kpiCard: {
@@ -627,10 +625,10 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   exTitle: {
-    fontSize: 19,
-    fontWeight: '800',
-    letterSpacing: -0.3,
-    lineHeight: 24,
+    fontSize: 17,
+    fontWeight: '700',
+    letterSpacing: -0.2,
+    lineHeight: 22,
     marginBottom: 6,
   },
   subMeta: {

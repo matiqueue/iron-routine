@@ -14,6 +14,7 @@ import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import * as Haptics from 'expo-haptics';
+import * as Notifications from 'expo-notifications';
 
 import { ThemeProvider, useAppTheme } from './src/context/ThemeContext';
 import { WORKOUT_PLAN } from './src/data/planData';
@@ -29,6 +30,12 @@ import {
   getTodayDayId,
   getWorkoutStreak,
 } from './src/services/storage';
+import {
+  setupCreatineNotificationCategories,
+  isCreatineReminderEnabled,
+  scheduleCreatineReminders,
+  handleNotificationResponse,
+} from './src/services/notifications';
 
 import { SplashScreen } from './src/components/SplashScreen';
 import { ProfileSelectorModal } from './src/components/ProfileSelectorModal';
@@ -39,6 +46,7 @@ import { ProgressTab } from './src/components/ProgressTab';
 import { RestDayView } from './src/components/RestDayView';
 import { WorkoutSummaryModal } from './src/components/WorkoutSummaryModal';
 import { ExerciseDetailModal } from './src/components/ExerciseDetailModal';
+import { BodyStatsModal } from './src/components/BodyStatsModal';
 
 type TabType = 'today' | 'plan' | 'progress';
 
@@ -64,6 +72,7 @@ function MainApp() {
   const [profiles, setProfiles] = useState<UserProfile[]>([]);
   const [activeProfile, setActiveProfile] = useState<UserProfile | null>(null);
   const [showProfileModal, setShowProfileModal] = useState(false);
+  const [showBodyStatsModal, setShowBodyStatsModal] = useState(false);
 
   // Active workout mode
   const [isActiveWorkout, setIsActiveWorkout] = useState(false);
@@ -87,8 +96,22 @@ function MainApp() {
 
   useEffect(() => {
     activateKeepAwakeAsync();
+
+    // Setup interactive notification categories and responses (09:00 & 22:00 Creatine, 08:00 Weight)
+    setupCreatineNotificationCategories();
+    isCreatineReminderEnabled().then((enabled) => {
+      if (enabled) {
+        scheduleCreatineReminders();
+      }
+    });
+
+    const responseSubscription = Notifications.addNotificationResponseReceivedListener((response) => {
+      handleNotificationResponse(response);
+    });
+
     return () => {
       deactivateKeepAwake();
+      responseSubscription.remove();
     };
   }, []);
 
@@ -355,6 +378,37 @@ function MainApp() {
                 </View>
               </View>
 
+              {/* Body Stats Quick Card */}
+              <TouchableOpacity
+                style={[styles.bodyStatsRow, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}
+                onPress={() => setShowBodyStatsModal(true)}
+                activeOpacity={0.7}
+              >
+                <View style={styles.bodyStatsLeft}>
+                  <View style={[styles.bodyStatsIconWrap, { backgroundColor: theme.card, borderColor: theme.border }]}>
+                    <Ionicons name="scale-outline" size={19} color={theme.text} />
+                  </View>
+                  <View>
+                    <View style={styles.bodyStatsTitleRow}>
+                      <Text style={[styles.bodyStatsTitle, { color: theme.text }]}>
+                        {activeProfile?.weight ? `${activeProfile.weight} kg` : '60.1 kg'}
+                      </Text>
+                      <Text style={[styles.bodyStatsDot, { color: theme.textMuted }]}>•</Text>
+                      <Text style={[styles.bodyStatsHeight, { color: theme.textSecondary }]}>
+                        {activeProfile?.height ? `${activeProfile.height} cm` : '180 cm'}
+                      </Text>
+                    </View>
+                    <Text style={[styles.bodyStatsSub, { color: theme.textMuted }]}>
+                      Codzienne ważenie i parametry ciała
+                    </Text>
+                  </View>
+                </View>
+                <View style={styles.bodyStatsActionWrap}>
+                  <Text style={[styles.bodyStatsActionText, { color: theme.text }]}>Waga</Text>
+                  <Ionicons name="chevron-forward" size={16} color={theme.textMuted} />
+                </View>
+              </TouchableOpacity>
+
               {/* Rest Day View or Workout Day */}
               {currentPlan.type === 'rest' ? (
                 <RestDayView dayPlan={currentPlan} />
@@ -583,6 +637,16 @@ function MainApp() {
           />
         )}
 
+        {/* Body Stats & Weigh-in Reminder Modal */}
+        {activeProfile && (
+          <BodyStatsModal
+            visible={showBodyStatsModal}
+            profile={activeProfile}
+            onClose={() => setShowBodyStatsModal(false)}
+            onProfileUpdated={(updated: UserProfile) => setActiveProfile(updated)}
+          />
+        )}
+
         {/* Exercise Preview Modal from Today */}
         <ExerciseDetailModal
           visible={previewExercise !== null}
@@ -682,7 +746,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     borderRadius: 16,
     borderWidth: 1,
-    marginBottom: 20,
+    marginBottom: 10,
   },
   streakLeft: {
     flexDirection: 'row',
@@ -704,6 +768,58 @@ const styles = StyleSheet.create({
   streakSub: {
     fontSize: 13,
     marginTop: 3,
+  },
+  bodyStatsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    marginBottom: 20,
+  },
+  bodyStatsLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  bodyStatsIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    borderWidth: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  bodyStatsTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  bodyStatsTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  bodyStatsDot: {
+    fontSize: 14,
+  },
+  bodyStatsHeight: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  bodyStatsSub: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  bodyStatsActionWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  bodyStatsActionText: {
+    fontSize: 12,
+    fontWeight: '800',
   },
   heroBanner: {
     width: '100%',
@@ -827,10 +943,10 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   flatExTitle: {
-    fontSize: 19,
-    fontWeight: '800',
-    letterSpacing: -0.3,
-    lineHeight: 24,
+    fontSize: 17,
+    fontWeight: '700',
+    letterSpacing: -0.2,
+    lineHeight: 22,
     marginBottom: 6,
   },
   exSubRow: {

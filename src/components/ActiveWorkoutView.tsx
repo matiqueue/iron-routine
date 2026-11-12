@@ -14,6 +14,7 @@ import { useAppTheme } from '../context/ThemeContext';
 import { DayPlan, Exercise, SetEntry } from '../types/workout';
 import { RestTimerBar } from './RestTimerBar';
 import { ExerciseDetailModal } from './ExerciseDetailModal';
+import { getLastExerciseMetrics } from '../services/storage';
 
 interface ActiveWorkoutViewProps {
   dayPlan: DayPlan;
@@ -64,6 +65,37 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
   const currentExercise = exercises[currentExerciseIndex] || exercises[0];
   const nextExercise = exercises[currentExerciseIndex + 1];
 
+  // Smart auto-fill from previous workouts
+  const [lastMetrics, setLastMetrics] = useState<{ weight?: string; reps?: string } | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    if (currentExercise) {
+      getLastExerciseMetrics(currentExercise.id).then((metrics) => {
+        if (isMounted) setLastMetrics(metrics);
+      });
+    }
+    return () => {
+      isMounted = false;
+    };
+  }, [currentExercise?.id]);
+
+  const handleFillFromLast = () => {
+    if (!lastMetrics || !currentExercise) return;
+    try {
+      Haptics.selectionAsync();
+    } catch {}
+    for (let i = 0; i < currentExercise.sets; i++) {
+      const current = dayProgress.sets[currentExercise.id]?.[i];
+      const newWeight = current?.weight ?? (lastMetrics.weight !== undefined ? lastMetrics.weight : undefined);
+      const newReps = current?.reps ?? (lastMetrics.reps !== undefined ? lastMetrics.reps : undefined);
+      onUpdateSet(currentExercise.id, i, {
+        weight: newWeight,
+        reps: newReps,
+      }, 0);
+    }
+  };
+
   const totalSets = useMemo(
     () => exercises.reduce((acc, ex) => acc + ex.sets, 0),
     [exercises]
@@ -112,6 +144,15 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
   const handleUpdateWeight = (setIdx: number, val: string) => {
     if (!currentExercise) return;
     onUpdateSet(currentExercise.id, setIdx, { weight: val }, 0);
+    // Inteligentne autouzupełnianie kolejnych pustych serii przy wpisaniu w serii 1
+    if (setIdx === 0 && val.trim().length > 0) {
+      for (let i = 1; i < currentExercise.sets; i++) {
+        const s = dayProgress.sets[currentExercise.id]?.[i];
+        if (!s?.weight || s.weight === '') {
+          onUpdateSet(currentExercise.id, i, { weight: val }, 0);
+        }
+      }
+    }
   };
 
   const handleUpdateReps = (setIdx: number, val: string) => {
@@ -197,10 +238,32 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
               activeOpacity={0.8}
             >
               <Ionicons name="timer-outline" size={14} color={theme.text} />
-              <Text style={[styles.quickBtnText, { color: theme.text }]}>Włącz stoper ({currentExercise.rest}s)</Text>
+              <Text style={[styles.quickBtnText, { color: theme.text }]}>Stoper ({currentExercise.rest}s)</Text>
             </TouchableOpacity>
           </View>
         </View>
+
+        {/* Smart auto-fill from previous session */}
+        {lastMetrics && (lastMetrics.weight !== undefined || lastMetrics.reps !== undefined) ? (
+          <TouchableOpacity
+            style={[styles.smartFillBtn, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}
+            onPress={handleFillFromLast}
+            activeOpacity={0.7}
+          >
+            <View style={styles.smartFillLeft}>
+              <Ionicons name="flash-outline" size={14} color={theme.text} />
+              <Text style={[styles.smartFillText, { color: theme.text }]}>
+                Ostatnio:{' '}
+                <Text style={{ fontWeight: '800' }}>
+                  {lastMetrics.weight !== undefined ? `${lastMetrics.weight} kg` : ''}
+                  {lastMetrics.weight !== undefined && lastMetrics.reps !== undefined ? ' × ' : ''}
+                  {lastMetrics.reps !== undefined ? `${lastMetrics.reps} powt.` : ''}
+                </Text>
+              </Text>
+            </View>
+            <Text style={[styles.smartFillAction, { color: theme.textSecondary }]}>Wstaw dane ➔</Text>
+          </TouchableOpacity>
+        ) : null}
 
         {/* Sets List */}
         <View style={[styles.tableContainer, { borderTopColor: theme.hairline, borderBottomColor: theme.hairline }]}>
@@ -247,7 +310,7 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
                         borderColor: isDone ? theme.text : theme.border,
                       },
                     ]}
-                    placeholder="kg"
+                    placeholder={lastMetrics?.weight !== undefined ? String(lastMetrics.weight) : 'kg'}
                     placeholderTextColor={theme.textMuted}
                     keyboardType="decimal-pad"
                     value={entry.weight !== undefined ? String(entry.weight) : ''}
@@ -265,7 +328,7 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
                         borderColor: isDone ? theme.text : theme.border,
                       },
                     ]}
-                    placeholder="powt."
+                    placeholder={lastMetrics?.reps !== undefined ? String(lastMetrics.reps) : 'powt.'}
                     placeholderTextColor={theme.textMuted}
                     keyboardType="number-pad"
                     value={entry.reps !== undefined ? String(entry.reps) : ''}
@@ -282,12 +345,13 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
                         borderColor: isDone ? theme.primary : theme.borderDark,
                       },
                     ]}
+                    hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
                     onPress={() => handleToggleSet(idx)}
                     activeOpacity={0.7}
                   >
                     <Ionicons
                       name="checkmark"
-                      size={16}
+                      size={20}
                       color={isDone ? theme.primaryText : 'transparent'}
                     />
                   </TouchableOpacity>
@@ -439,10 +503,10 @@ const styles = StyleSheet.create({
     letterSpacing: 0.8,
   },
   heroTitle: {
-    fontSize: 24,
-    fontWeight: '900',
-    letterSpacing: -0.4,
-    lineHeight: 30,
+    fontSize: 21,
+    fontWeight: '800',
+    letterSpacing: -0.3,
+    lineHeight: 27,
   },
   heroSubtitle: {
     fontSize: 13,
@@ -464,6 +528,30 @@ const styles = StyleSheet.create({
   },
   quickBtnText: {
     fontSize: 12,
+    fontWeight: '700',
+  },
+  smartFillBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    marginTop: 10,
+    marginBottom: 4,
+  },
+  smartFillLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  smartFillText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  smartFillAction: {
+    fontSize: 11,
     fontWeight: '700',
   },
   tableContainer: {
@@ -494,8 +582,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
   },
   thCheck: {
-    width: 44,
-    alignItems: 'flex-end',
+    width: 50,
+    alignItems: 'center',
   },
   setRow: {
     flexDirection: 'row',
@@ -520,9 +608,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   checkBtn: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
+    width: 38,
+    height: 38,
+    borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1.5,

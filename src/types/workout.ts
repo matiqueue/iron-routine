@@ -45,6 +45,15 @@ export interface UserProfile {
   isOwner?: boolean;
   createdAt: string;
   avatarColor?: string;
+  height?: number; // in cm (e.g. 180)
+  weight?: number; // in kg (e.g. 60.1)
+}
+
+export interface WeightEntry {
+  id: string;
+  date: string; // ISO date YYYY-MM-DD
+  weight: number; // in kg (e.g. 60.1)
+  note?: string;
 }
 
 export interface PRRecord {
