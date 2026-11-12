@@ -32,6 +32,8 @@ import {
   WeightStatsSummary,
   ExerciseImprovement,
 } from '../services/storage';
+import { ModernSplineChart } from './ModernSplineChart';
+import { InteractiveBottomSheet } from './InteractiveBottomSheet';
 
 interface ProgressTabProps {
   activeProfile: UserProfile;
@@ -453,44 +455,15 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
               </View>
             ) : null}
 
-            {/* Native Clean Monochromatic Bar Chart */}
+            {/* Modern Fluid Bezier Spline Chart */}
             {weightStats && weightStats.entries.length > 0 ? (
-              <View style={styles.chartWrapper}>
-                <View style={styles.chartBarsContainer}>
-                  {weightStats.entries.slice(-7).map((entry, idx) => {
-                    const min = weightStats.min;
-                    const max = weightStats.max;
-                    const span = Math.max(0.6, max - min);
-                    // Compute relative height percent between 30% and 95%
-                    const heightPercent = Math.min(
-                      95,
-                      Math.max(30, 30 + ((entry.weight - min) / span) * 65)
-                    );
-                    const isLatest = idx === weightStats.entries.slice(-7).length - 1;
-
-                    return (
-                      <View key={entry.id || idx} style={styles.chartCol}>
-                        <Text style={[styles.chartBarValue, { color: isLatest ? theme.text : theme.textMuted }]}>
-                          {entry.weight}
-                        </Text>
-                        <View style={styles.barTrack}>
-                          <View
-                            style={[
-                              styles.barFill,
-                              {
-                                height: `${heightPercent}%`,
-                                backgroundColor: isLatest ? theme.text : theme.borderDark,
-                              },
-                            ]}
-                          />
-                        </View>
-                        <Text style={[styles.chartBarDay, { color: isLatest ? theme.text : theme.textMuted }]}>
-                          {entry.date.slice(5).replace('-', '/')}
-                        </Text>
-                      </View>
-                    );
-                  })}
-                </View>
+              <View style={[styles.chartCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+                <ModernSplineChart
+                  entries={weightStats.entries}
+                  timeframe={timeframe === '90d' ? 'all' : timeframe}
+                  onTimeframeChange={(tf) => handleSwitchTimeframe(tf === 'all' ? '90d' : tf)}
+                  height={190}
+                />
               </View>
             ) : null}
 
@@ -790,38 +763,19 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
       </Animated.View>
 
       {/* Modal Dodawania / Edycji PR */}
-      <Modal visible={modalVisible} transparent animationType="slide" onRequestClose={() => setModalVisible(false)}>
+      <InteractiveBottomSheet
+        visible={modalVisible}
+        onClose={() => setModalVisible(false)}
+        title={selectedExercise?.name || 'Nowy wynik'}
+        subtitle={selectedExercise ? `${selectedExercise.category.toUpperCase()} • Zapisz wynik serii i 1RM` : undefined}
+        initialHeightPercent={0.88}
+      >
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          style={styles.modalOverlay}
+          style={{ flex: 1 }}
         >
-          <TouchableOpacity
-            style={styles.backdrop}
-            activeOpacity={1}
-            onPress={() => setModalVisible(false)}
-          />
-
-          <View style={[styles.modalSheet, { backgroundColor: theme.card, borderColor: theme.border }]}>
-            <View style={[styles.modalHeader, { borderBottomColor: theme.hairline }]}>
-              <View style={{ flex: 1, paddingRight: 10 }}>
-                <Text style={[styles.modalCategory, { color: theme.textMuted }]}>
-                  {selectedExercise?.category.toUpperCase()}
-                </Text>
-                <Text style={[styles.modalTitle, { color: theme.text }]}>
-                  {selectedExercise?.name}
-                </Text>
-              </View>
-
-              <TouchableOpacity
-                onPress={() => setModalVisible(false)}
-                style={[styles.closeBtn, { backgroundColor: theme.bgSecondary }]}
-              >
-                <Ionicons name="close" size={18} color={theme.text} />
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
-              {/* Form */}
+          <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
+            {/* Form */}
               <View style={[styles.formContainer, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
                 <Text style={[styles.formHeaderTitle, { color: theme.text }]}>
                   Nowy wynik dla ćwiczenia
@@ -962,9 +916,8 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                 )}
               </View>
             </ScrollView>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
+          </KeyboardAvoidingView>
+      </InteractiveBottomSheet>
     </View>
   );
 };
@@ -1094,6 +1047,12 @@ const styles = StyleSheet.create({
     width: 1,
     height: 24,
     backgroundColor: '#E5E7EB',
+  },
+  chartCard: {
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 12,
+    marginBottom: 8,
   },
   chartWrapper: {
     paddingVertical: 12,

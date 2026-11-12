@@ -29,6 +29,7 @@ import {
   setCreatineReminderEnabled,
   sendTestCreatineNotification,
 } from '../services/notifications';
+import { InteractiveBottomSheet } from './InteractiveBottomSheet';
 
 interface BodyStatsModalProps {
   visible: boolean;
@@ -212,32 +213,19 @@ export const BodyStatsModal: React.FC<BodyStatsModalProps> = ({
   };
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <InteractiveBottomSheet
+      visible={visible}
+      onClose={onClose}
+      title="Waga & Sylwetka"
+      subtitle="Pomiary ciała i codzienne monitorowanie"
+      initialHeightPercent={0.88}
+    >
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={styles.overlay}
+        style={{ flex: 1 }}
       >
-        <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={onClose} />
-
-        <View style={[styles.sheet, { backgroundColor: theme.card, borderColor: theme.border }]}>
-          {/* Header */}
-          <View style={[styles.header, { borderBottomColor: theme.hairline }]}>
-            <View>
-              <Text style={[styles.title, { color: theme.text }]}>Waga & Sylwetka</Text>
-              <Text style={[styles.subtitle, { color: theme.textMuted }]}>
-                Pomiary ciała i codzienne monitorowanie
-              </Text>
-            </View>
-            <TouchableOpacity
-              onPress={onClose}
-              style={[styles.closeBtn, { backgroundColor: theme.bgSecondary }]}
-            >
-              <Ionicons name="close" size={18} color={theme.text} />
-            </TouchableOpacity>
-          </View>
-
-          <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
-            {/* KPI Cards Strip */}
+        <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
+          {/* KPI Cards Strip */}
             <View style={styles.kpiRow}>
               <View style={[styles.kpiCard, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
                 <Ionicons name="scale-outline" size={20} color={theme.text} />
@@ -459,9 +447,8 @@ export const BodyStatsModal: React.FC<BodyStatsModalProps> = ({
               )}
             </View>
           </ScrollView>
-        </View>
-      </KeyboardAvoidingView>
-    </Modal>
+        </KeyboardAvoidingView>
+    </InteractiveBottomSheet>
   );
 };
 

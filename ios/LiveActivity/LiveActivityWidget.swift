@@ -156,10 +156,10 @@ struct LiveActivityWidget: Widget {
     progressViewTint: String?
   ) -> some View {
     if timerType == .digital {
-      Text(timerInterval: Date.toTimerInterval(miliseconds: endDate))
-        .font(.system(size: 15))
+      Text(Date(timeIntervalSince1970: endDate / 1000), style: .timer)
+        .font(.system(size: 13, weight: .bold))
+        .monospacedDigit()
         .minimumScaleFactor(0.8)
-        .fontWeight(.semibold)
         .frame(maxWidth: 60)
         .multilineTextAlignment(.trailing)
     } else {

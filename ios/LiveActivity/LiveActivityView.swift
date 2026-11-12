@@ -245,13 +245,19 @@ import WidgetKit
                 .tint(progressViewTint)
                 .modifier(ConditionalForegroundViewModifier(color: attributes.progressViewLabelColor))
               HStack {
-                Text("ODLICZANIE PRZERWY")
-                  .font(.system(size: 10, weight: .semibold))
-                  .foregroundColor(.white.opacity(0.6))
+                HStack(spacing: 4) {
+                  Image(systemName: "timer")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(.white.opacity(0.7))
+                  Text(Date(timeIntervalSince1970: date / 1000), style: .timer)
+                    .font(.system(size: 12, weight: .bold))
+                    .monospacedDigit()
+                    .foregroundColor(.white)
+                }
                 Spacer()
                 Text("REGENERACJA")
                   .font(.system(size: 10, weight: .bold))
-                  .foregroundColor(.white.opacity(0.35))
+                  .foregroundColor(.white.opacity(0.45))
               }
             }
           } else if let progress = contentState.progress {
