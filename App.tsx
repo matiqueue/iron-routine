@@ -378,40 +378,41 @@ function MainApp() {
                 </View>
               </View>
 
-              {/* Body Stats Quick Card */}
-              <TouchableOpacity
-                style={[styles.bodyStatsRow, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}
-                onPress={() => setShowBodyStatsModal(true)}
-                activeOpacity={0.7}
-              >
-                <View style={styles.bodyStatsLeft}>
-                  <View style={[styles.bodyStatsIconWrap, { backgroundColor: theme.card, borderColor: theme.border }]}>
-                    <Ionicons name="scale-outline" size={19} color={theme.text} />
-                  </View>
-                  <View>
-                    <View style={styles.bodyStatsTitleRow}>
-                      <Text style={[styles.bodyStatsTitle, { color: theme.text }]}>
-                        {activeProfile?.weight ? `${activeProfile.weight} kg` : '60.1 kg'}
-                      </Text>
-                      <Text style={[styles.bodyStatsDot, { color: theme.textMuted }]}>•</Text>
-                      <Text style={[styles.bodyStatsHeight, { color: theme.textSecondary }]}>
-                        {activeProfile?.height ? `${activeProfile.height} cm` : '180 cm'}
-                      </Text>
-                    </View>
-                    <Text style={[styles.bodyStatsSub, { color: theme.textMuted }]}>
-                      Codzienne ważenie i parametry ciała
-                    </Text>
-                  </View>
-                </View>
-                <View style={styles.bodyStatsActionWrap}>
-                  <Text style={[styles.bodyStatsActionText, { color: theme.text }]}>Waga</Text>
-                  <Ionicons name="chevron-forward" size={16} color={theme.textMuted} />
-                </View>
-              </TouchableOpacity>
-
               {/* Rest Day View or Workout Day */}
               {currentPlan.type === 'rest' ? (
-                <RestDayView dayPlan={currentPlan} />
+                <>
+                  <RestDayView dayPlan={currentPlan} />
+                  {/* Body Stats Quick Card */}
+                  <TouchableOpacity
+                    style={[styles.bodyStatsRow, { backgroundColor: theme.bgSecondary, borderColor: theme.border, marginTop: 14 }]}
+                    onPress={() => setShowBodyStatsModal(true)}
+                    activeOpacity={0.7}
+                  >
+                    <View style={styles.bodyStatsLeft}>
+                      <View style={[styles.bodyStatsIconWrap, { backgroundColor: theme.card, borderColor: theme.border }]}>
+                        <Ionicons name="scale-outline" size={19} color={theme.text} />
+                      </View>
+                      <View>
+                        <View style={styles.bodyStatsTitleRow}>
+                          <Text style={[styles.bodyStatsTitle, { color: theme.text }]}>
+                            {activeProfile?.weight ? `${activeProfile.weight} kg` : '60.1 kg'}
+                          </Text>
+                          <Text style={[styles.bodyStatsDot, { color: theme.textMuted }]}>•</Text>
+                          <Text style={[styles.bodyStatsHeight, { color: theme.textSecondary }]}>
+                            {activeProfile?.height ? `${activeProfile.height} cm` : '180 cm'}
+                          </Text>
+                        </View>
+                        <Text style={[styles.bodyStatsSub, { color: theme.textMuted }]}>
+                          Codzienne ważenie i parametry ciała
+                        </Text>
+                      </View>
+                    </View>
+                    <View style={styles.bodyStatsActionWrap}>
+                      <Text style={[styles.bodyStatsActionText, { color: theme.text }]}>Waga</Text>
+                      <Ionicons name="chevron-forward" size={16} color={theme.textMuted} />
+                    </View>
+                  </TouchableOpacity>
+                </>
               ) : (
                 <>
                   {/* Hero Workout Banner */}
@@ -480,6 +481,37 @@ function MainApp() {
                     title="PRZYTRZYMAJ, ABY ZACZĄĆ"
                     subtitle="Dotknij i przytrzymaj, aby uruchomić tryb treningu"
                   />
+
+                  {/* Body Stats Quick Card (placed under Hold button for clean hero visibility) */}
+                  <TouchableOpacity
+                    style={[styles.bodyStatsRow, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}
+                    onPress={() => setShowBodyStatsModal(true)}
+                    activeOpacity={0.7}
+                  >
+                    <View style={styles.bodyStatsLeft}>
+                      <View style={[styles.bodyStatsIconWrap, { backgroundColor: theme.card, borderColor: theme.border }]}>
+                        <Ionicons name="scale-outline" size={19} color={theme.text} />
+                      </View>
+                      <View>
+                        <View style={styles.bodyStatsTitleRow}>
+                          <Text style={[styles.bodyStatsTitle, { color: theme.text }]}>
+                            {activeProfile?.weight ? `${activeProfile.weight} kg` : '60.1 kg'}
+                          </Text>
+                          <Text style={[styles.bodyStatsDot, { color: theme.textMuted }]}>•</Text>
+                          <Text style={[styles.bodyStatsHeight, { color: theme.textSecondary }]}>
+                            {activeProfile?.height ? `${activeProfile.height} cm` : '180 cm'}
+                          </Text>
+                        </View>
+                        <Text style={[styles.bodyStatsSub, { color: theme.textMuted }]}>
+                          Codzienne ważenie i parametry ciała
+                        </Text>
+                      </View>
+                    </View>
+                    <View style={styles.bodyStatsActionWrap}>
+                      <Text style={[styles.bodyStatsActionText, { color: theme.text }]}>Waga</Text>
+                      <Ionicons name="chevron-forward" size={16} color={theme.textMuted} />
+                    </View>
+                  </TouchableOpacity>
 
                   {/* Clean Visual Flat List of Today's Exercises (NO THUMBNAILS - spacious and airy) */}
                   {currentPlan.exercises && (

@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   Alert,
   TextInput,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -39,12 +40,14 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
   const { theme, isDark } = useAppTheme();
   const exercises = dayPlan.exercises || [];
   const [currentExerciseIndex, setCurrentExerciseIndex] = useState(0);
+  const [currentSetIndex, setCurrentSetIndex] = useState(0);
   const [detailModalExercise, setDetailModalExercise] = useState<Exercise | null>(null);
 
   // Timer
   const [timerActive, setTimerActive] = useState(false);
   const [timerSeconds, setTimerSeconds] = useState(90);
   const [timerLabel, setTimerLabel] = useState('');
+  const [timerNextInfo, setTimerNextInfo] = useState('');
 
   // Elapsed
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
@@ -80,21 +83,20 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
     };
   }, [currentExercise?.id]);
 
-  const handleFillFromLast = () => {
-    if (!lastMetrics || !currentExercise) return;
-    try {
-      Haptics.selectionAsync();
-    } catch {}
-    for (let i = 0; i < currentExercise.sets; i++) {
-      const current = dayProgress.sets[currentExercise.id]?.[i];
-      const newWeight = current?.weight ?? (lastMetrics.weight !== undefined ? lastMetrics.weight : undefined);
-      const newReps = current?.reps ?? (lastMetrics.reps !== undefined ? lastMetrics.reps : undefined);
-      onUpdateSet(currentExercise.id, i, {
-        weight: newWeight,
-        reps: newReps,
-      }, 0);
+  // When changing exercise, jump to first uncompleted set
+  useEffect(() => {
+    if (currentExercise) {
+      const setsObj = dayProgress.sets[currentExercise.id] || {};
+      let firstIncomplete = 0;
+      for (let i = 0; i < currentExercise.sets; i++) {
+        if (!setsObj[i]?.completed) {
+          firstIncomplete = i;
+          break;
+        }
+      }
+      setCurrentSetIndex(firstIncomplete);
     }
-  };
+  }, [currentExerciseIndex, currentExercise?.id]);
 
   const totalSets = useMemo(
     () => exercises.reduce((acc, ex) => acc + ex.sets, 0),
@@ -114,11 +116,114 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
 
   const progressPercent = totalSets > 0 ? Math.round((completedSetsCount / totalSets) * 100) : 0;
 
-  const handleToggleSet = (setIdx: number) => {
-    if (!currentExercise) return;
-    const currentEntry = dayProgress.sets[currentExercise.id]?.[setIdx] || { completed: false };
-    const willBeCompleted = !currentEntry.completed;
+  if (!currentExercise) return null;
 
+  const currentExerciseSets = dayProgress.sets[currentExercise.id] || {};
+  const activeEntry: SetEntry = currentExerciseSets[currentSetIndex] || { completed: false };
+  const isCurrentSetDone = !!activeEntry.completed;
+
+  // Resolved weight and reps for the active set
+  const displayWeight =
+    activeEntry.weight !== undefined
+      ? String(activeEntry.weight)
+      : lastMetrics?.weight !== undefined
+      ? String(lastMetrics.weight)
+      : '';
+
+  const displayReps =
+    activeEntry.reps !== undefined
+      ? String(activeEntry.reps)
+      : lastMetrics?.reps !== undefined
+      ? String(lastMetrics.reps)
+      : '';
+
+  const handleUpdateActiveWeight = (val: string) => {
+    onUpdateSet(currentExercise.id, currentSetIndex, { weight: val }, 0);
+  };
+
+  const handleUpdateActiveReps = (val: string) => {
+    onUpdateSet(currentExercise.id, currentSetIndex, { reps: val }, 0);
+  };
+
+  const handleAdjustWeight = (delta: number) => {
+    const curVal = parseFloat((displayWeight || '60').replace(',', '.')) || 0;
+    const nextVal = Math.max(0, Math.round((curVal + delta) * 10) / 10);
+    handleUpdateActiveWeight(String(nextVal));
+    try {
+      Haptics.selectionAsync();
+    } catch {}
+  };
+
+  const handleAdjustReps = (delta: number) => {
+    const curVal = parseInt(displayReps || '10', 10) || 0;
+    const nextVal = Math.max(1, curVal + delta);
+    handleUpdateActiveReps(String(nextVal));
+    try {
+      Haptics.selectionAsync();
+    } catch {}
+  };
+
+  const handleFillFromLast = () => {
+    if (!lastMetrics) return;
+    try {
+      Haptics.selectionAsync();
+    } catch {}
+    if (lastMetrics.weight) handleUpdateActiveWeight(lastMetrics.weight);
+    if (lastMetrics.reps) handleUpdateActiveReps(lastMetrics.reps);
+  };
+
+  // Complete current set and auto-advance to currentSetIndex + 1
+  const handleCompleteActiveSet = () => {
+    try {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch {}
+
+    const weightToSave = displayWeight || '60';
+    const repsToSave = displayReps || String(currentExercise.reps);
+
+    // Save set as completed
+    onUpdateSet(
+      currentExercise.id,
+      currentSetIndex,
+      {
+        completed: true,
+        weight: weightToSave,
+        reps: repsToSave,
+      },
+      currentExercise.rest
+    );
+
+    // Propagate forward to next empty sets so user has easy defaults
+    for (let i = currentSetIndex + 1; i < currentExercise.sets; i++) {
+      const nextS = currentExerciseSets[i];
+      if (!nextS?.weight) {
+        onUpdateSet(currentExercise.id, i, { weight: weightToSave, reps: repsToSave }, 0);
+      }
+    }
+
+    const nextSetIdx = currentSetIndex + 1;
+    const isExerciseFinished = nextSetIdx >= currentExercise.sets;
+
+    // Trigger animated rest countdown
+    setTimerSeconds(currentExercise.rest);
+    setTimerLabel(currentExercise.name);
+    setTimerNextInfo(
+      !isExerciseFinished
+        ? `Przed serią ${nextSetIdx + 1} z ${currentExercise.sets}`
+        : nextExercise
+        ? `Kolejne ćwiczenie: ${nextExercise.name}`
+        : 'Wszystkie ćwiczenia ukończone!'
+    );
+    setTimerActive(true);
+
+    // Auto-advance to next set
+    if (!isExerciseFinished) {
+      setCurrentSetIndex(nextSetIdx);
+    }
+  };
+
+  const handleToggleCompleteManually = () => {
+    const willBeCompleted = !isCurrentSetDone;
     try {
       if (willBeCompleted) {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -129,35 +234,10 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
 
     onUpdateSet(
       currentExercise.id,
-      setIdx,
+      currentSetIndex,
       { completed: willBeCompleted },
       currentExercise.rest
     );
-
-    if (willBeCompleted) {
-      setTimerSeconds(currentExercise.rest);
-      setTimerLabel(`Przerwa po serii ${setIdx + 1}`);
-      setTimerActive(true);
-    }
-  };
-
-  const handleUpdateWeight = (setIdx: number, val: string) => {
-    if (!currentExercise) return;
-    onUpdateSet(currentExercise.id, setIdx, { weight: val }, 0);
-    // Inteligentne autouzupełnianie kolejnych pustych serii przy wpisaniu w serii 1
-    if (setIdx === 0 && val.trim().length > 0) {
-      for (let i = 1; i < currentExercise.sets; i++) {
-        const s = dayProgress.sets[currentExercise.id]?.[i];
-        if (!s?.weight || s.weight === '') {
-          onUpdateSet(currentExercise.id, i, { weight: val }, 0);
-        }
-      }
-    }
-  };
-
-  const handleUpdateReps = (setIdx: number, val: string) => {
-    if (!currentExercise) return;
-    onUpdateSet(currentExercise.id, setIdx, { reps: val }, 0);
   };
 
   const handlePromptExit = () => {
@@ -171,9 +251,12 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
     );
   };
 
-  if (!currentExercise) return null;
-
-  const currentExerciseSets = dayProgress.sets[currentExercise.id] || {};
+  const allSetsOfExerciseDone = useMemo(() => {
+    for (let i = 0; i < currentExercise.sets; i++) {
+      if (!currentExerciseSets[i]?.completed) return false;
+    }
+    return true;
+  }, [currentExerciseSets, currentExercise.sets]);
 
   return (
     <View style={[styles.container, { backgroundColor: theme.bg }]}>
@@ -198,7 +281,7 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
         </TouchableOpacity>
       </View>
 
-      {/* Thin Progress line */}
+      {/* Progress track */}
       <View style={[styles.progressTrack, { backgroundColor: theme.bgTertiary }]}>
         <View style={[styles.progressBar, { width: `${progressPercent}%`, backgroundColor: theme.text }]} />
       </View>
@@ -206,15 +289,12 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
       <ScrollView style={styles.scrollArea} showsVerticalScrollIndicator={false}>
         {/* Exercise Header */}
         <View style={styles.exerciseHeader}>
-          <View style={styles.metaRow}>
-            <Text style={[styles.catBadgeText, { color: theme.textMuted }]}>
-              {currentExercise.category.toUpperCase()} • ĆWICZENIE {currentExerciseIndex + 1} Z {exercises.length}
-            </Text>
-          </View>
-
+          <Text style={[styles.catBadgeText, { color: theme.textMuted }]}>
+            {currentExercise.category.toUpperCase()} • ĆWICZENIE {currentExerciseIndex + 1} Z {exercises.length}
+          </Text>
           <Text style={[styles.heroTitle, { color: theme.text }]}>{currentExercise.name}</Text>
           <Text style={[styles.heroSubtitle, { color: theme.textSecondary }]}>
-            Cel: {currentExercise.sets} serie × {currentExercise.reps} • {currentExercise.rest}s przerwy
+            Plan: {currentExercise.sets} serie × {currentExercise.reps} • {currentExercise.rest}s przerwy
           </Text>
 
           {/* Quick buttons */}
@@ -233,6 +313,7 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
               onPress={() => {
                 setTimerSeconds(currentExercise.rest);
                 setTimerLabel(currentExercise.name);
+                setTimerNextInfo(`Seria ${currentSetIndex + 1} z ${currentExercise.sets}`);
                 setTimerActive(true);
               }}
               activeOpacity={0.8}
@@ -243,144 +324,354 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
           </View>
         </View>
 
-        {/* Smart auto-fill from previous session */}
-        {lastMetrics && (lastMetrics.weight !== undefined || lastMetrics.reps !== undefined) ? (
-          <TouchableOpacity
-            style={[styles.smartFillBtn, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}
-            onPress={handleFillFromLast}
-            activeOpacity={0.7}
-          >
-            <View style={styles.smartFillLeft}>
-              <Ionicons name="flash-outline" size={14} color={theme.text} />
-              <Text style={[styles.smartFillText, { color: theme.text }]}>
-                Ostatnio:{' '}
-                <Text style={{ fontWeight: '800' }}>
-                  {lastMetrics.weight !== undefined ? `${lastMetrics.weight} kg` : ''}
-                  {lastMetrics.weight !== undefined && lastMetrics.reps !== undefined ? ' × ' : ''}
-                  {lastMetrics.reps !== undefined ? `${lastMetrics.reps} powt.` : ''}
-                </Text>
-              </Text>
-            </View>
-            <Text style={[styles.smartFillAction, { color: theme.textSecondary }]}>Wstaw dane ➔</Text>
-          </TouchableOpacity>
-        ) : null}
+        {/* Series Stepper / Selector Row */}
+        <View style={styles.seriesSelectorWrap}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.seriesScroll}>
+            {Array.from({ length: currentExercise.sets }).map((_, idx) => {
+              const isSelected = idx === currentSetIndex;
+              const sEntry = currentExerciseSets[idx];
+              const isDone = !!sEntry?.completed;
 
-        {/* Sets List */}
-        <View style={[styles.tableContainer, { borderTopColor: theme.hairline, borderBottomColor: theme.hairline }]}>
-          <View style={styles.tableHeader}>
-            <Text style={[styles.thText, styles.thSet, { color: theme.textMuted }]}>SERIA</Text>
-            <Text style={[styles.thText, styles.thTarget, { color: theme.textMuted }]}>CEL</Text>
-            <Text style={[styles.thText, styles.thInput, { color: theme.textMuted }]}>KG</Text>
-            <Text style={[styles.thText, styles.thInput, { color: theme.textMuted }]}>POWT.</Text>
-            <Text style={[styles.thText, styles.thCheck, { color: theme.textMuted }]}>ZALICZ</Text>
-          </View>
-
-          {Array.from({ length: currentExercise.sets }).map((_, idx) => {
-            const entry = currentExerciseSets[idx] || { completed: false };
-            const isDone = !!entry.completed;
-
-            return (
-              <View
-                key={idx}
-                style={[
-                  styles.setRow,
-                  { borderTopColor: theme.hairline },
-                  isDone && { backgroundColor: theme.bgSecondary },
-                ]}
-              >
-                <View style={styles.thSet}>
-                  <Text style={[styles.setNumberText, { color: isDone ? theme.text : theme.textMuted }]}>
-                    {idx + 1}
-                  </Text>
-                </View>
-
-                <View style={styles.thTarget}>
-                  <Text style={[styles.targetRepsVal, { color: theme.textSecondary }]}>
-                    {currentExercise.reps}
-                  </Text>
-                </View>
-
-                <View style={styles.thInput}>
-                  <TextInput
-                    style={[
-                      styles.inputBox,
-                      {
-                        backgroundColor: theme.bgTertiary,
-                        color: theme.text,
-                        borderColor: isDone ? theme.text : theme.border,
-                      },
-                    ]}
-                    placeholder={lastMetrics?.weight !== undefined ? String(lastMetrics.weight) : 'kg'}
-                    placeholderTextColor={theme.textMuted}
-                    keyboardType="decimal-pad"
-                    value={entry.weight !== undefined ? String(entry.weight) : ''}
-                    onChangeText={(val) => handleUpdateWeight(idx, val)}
-                  />
-                </View>
-
-                <View style={styles.thInput}>
-                  <TextInput
-                    style={[
-                      styles.inputBox,
-                      {
-                        backgroundColor: theme.bgTertiary,
-                        color: theme.text,
-                        borderColor: isDone ? theme.text : theme.border,
-                      },
-                    ]}
-                    placeholder={lastMetrics?.reps !== undefined ? String(lastMetrics.reps) : 'powt.'}
-                    placeholderTextColor={theme.textMuted}
-                    keyboardType="number-pad"
-                    value={entry.reps !== undefined ? String(entry.reps) : ''}
-                    onChangeText={(val) => handleUpdateReps(idx, val)}
-                  />
-                </View>
-
-                <View style={styles.thCheck}>
-                  <TouchableOpacity
-                    style={[
-                      styles.checkBtn,
-                      {
-                        backgroundColor: isDone ? theme.primary : 'transparent',
-                        borderColor: isDone ? theme.primary : theme.borderDark,
-                      },
-                    ]}
-                    hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-                    onPress={() => handleToggleSet(idx)}
-                    activeOpacity={0.7}
-                  >
+              return (
+                <TouchableOpacity
+                  key={idx}
+                  style={[
+                    styles.seriesPill,
+                    {
+                      backgroundColor: isSelected
+                        ? theme.primary
+                        : isDone
+                        ? theme.bgSecondary
+                        : theme.bgTertiary,
+                      borderColor: isSelected
+                        ? theme.primary
+                        : isDone
+                        ? theme.borderDark
+                        : theme.border,
+                    },
+                  ]}
+                  onPress={() => {
+                    Haptics.selectionAsync();
+                    setCurrentSetIndex(idx);
+                  }}
+                  activeOpacity={0.7}
+                >
+                  {isDone ? (
                     <Ionicons
                       name="checkmark"
-                      size={20}
-                      color={isDone ? theme.primaryText : 'transparent'}
+                      size={14}
+                      color={isSelected ? theme.primaryText : theme.text}
+                      style={{ marginRight: 4 }}
                     />
-                  </TouchableOpacity>
-                </View>
-              </View>
-            );
-          })}
+                  ) : null}
+                  <Text
+                    style={[
+                      styles.seriesPillText,
+                      {
+                        color: isSelected
+                          ? theme.primaryText
+                          : isDone
+                          ? theme.text
+                          : theme.textMuted,
+                      },
+                    ]}
+                  >
+                    Seria {idx + 1}
+                  </Text>
+                  {sEntry?.weight ? (
+                    <Text
+                      style={[
+                        styles.seriesPillWeight,
+                        {
+                          color: isSelected
+                            ? theme.primaryText
+                            : isDone
+                            ? theme.textSecondary
+                            : theme.textMuted,
+                        },
+                      ]}
+                    >
+                      • {sEntry.weight}kg
+                    </Text>
+                  ) : null}
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
         </View>
 
-        {/* Next exercise preview */}
+        {/* ACTIVE SERIES FOCUS CARD */}
+        <View style={[styles.focusCard, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
+          {/* Card Header: SERIA X Z Y */}
+          <View style={styles.focusHeader}>
+            <View>
+              <Text style={[styles.focusTitle, { color: theme.text }]}>
+                SERIA {currentSetIndex + 1} Z {currentExercise.sets}
+              </Text>
+              <Text style={[styles.focusSubtitle, { color: theme.textMuted }]}>
+                Cel: {currentExercise.reps} powtórzeń ({currentExercise.rest}s odpoczynku)
+              </Text>
+            </View>
+
+            <TouchableOpacity
+              style={[
+                styles.statusBadge,
+                {
+                  backgroundColor: isCurrentSetDone ? theme.primary : theme.card,
+                  borderColor: isCurrentSetDone ? theme.primary : theme.border,
+                },
+              ]}
+              onPress={handleToggleCompleteManually}
+              activeOpacity={0.7}
+            >
+              <Ionicons
+                name={isCurrentSetDone ? 'checkmark-circle' : 'ellipse-outline'}
+                size={16}
+                color={isCurrentSetDone ? theme.primaryText : theme.textMuted}
+              />
+              <Text
+                style={[
+                  styles.statusBadgeText,
+                  { color: isCurrentSetDone ? theme.primaryText : theme.textMuted },
+                ]}
+              >
+                {isCurrentSetDone ? 'ZALICZONA' : 'W TRAKCIE'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Smart autofill hint */}
+          {lastMetrics && (lastMetrics.weight || lastMetrics.reps) && !isCurrentSetDone ? (
+            <TouchableOpacity
+              style={[styles.smartFillRow, { backgroundColor: theme.card, borderColor: theme.border }]}
+              onPress={handleFillFromLast}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="flash-outline" size={14} color={theme.text} />
+              <Text style={[styles.smartFillText, { color: theme.text }]}>
+                Ostatnio: {lastMetrics.weight ? `${lastMetrics.weight} kg` : ''}
+                {lastMetrics.weight && lastMetrics.reps ? ' × ' : ''}
+                {lastMetrics.reps ? `${lastMetrics.reps} powt.` : ''}
+              </Text>
+              <Text style={[styles.smartFillLink, { color: theme.textSecondary }]}>Wstaw dane ➔</Text>
+            </TouchableOpacity>
+          ) : null}
+
+          {/* Steppers: KG and REPS */}
+          <View style={styles.inputsGrid}>
+            {/* Weight Input Box with Stepper */}
+            <View style={styles.inputCol}>
+              <Text style={[styles.inputLabel, { color: theme.textMuted }]}>CIĘŻAR (KG)</Text>
+              <View style={[styles.stepperBox, { backgroundColor: theme.card, borderColor: theme.border }]}>
+                <TouchableOpacity
+                  style={[styles.stepBtn, { borderRightColor: theme.hairline }]}
+                  onPress={() => handleAdjustWeight(-2.5)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.stepBtnText, { color: theme.text }]}>-2.5</Text>
+                </TouchableOpacity>
+
+                <TextInput
+                  style={[styles.stepperInput, { color: theme.text }]}
+                  keyboardType="decimal-pad"
+                  value={displayWeight}
+                  onChangeText={handleUpdateActiveWeight}
+                  placeholder={lastMetrics?.weight || 'kg'}
+                  placeholderTextColor={theme.textMuted}
+                />
+
+                <TouchableOpacity
+                  style={[styles.stepBtn, { borderLeftColor: theme.hairline }]}
+                  onPress={() => handleAdjustWeight(2.5)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.stepBtnText, { color: theme.text }]}>+2.5</Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Quick +/- 5 pills */}
+              <View style={styles.quickAdjustRow}>
+                <TouchableOpacity
+                  style={[styles.quickPill, { backgroundColor: theme.card, borderColor: theme.border }]}
+                  onPress={() => handleAdjustWeight(-5)}
+                >
+                  <Text style={[styles.quickPillText, { color: theme.textSecondary }]}>-5 kg</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.quickPill, { backgroundColor: theme.card, borderColor: theme.border }]}
+                  onPress={() => handleAdjustWeight(5)}
+                >
+                  <Text style={[styles.quickPillText, { color: theme.textSecondary }]}>+5 kg</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* Reps Input Box with Stepper */}
+            <View style={styles.inputCol}>
+              <Text style={[styles.inputLabel, { color: theme.textMuted }]}>POWTÓRZENIA</Text>
+              <View style={[styles.stepperBox, { backgroundColor: theme.card, borderColor: theme.border }]}>
+                <TouchableOpacity
+                  style={[styles.stepBtn, { borderRightColor: theme.hairline }]}
+                  onPress={() => handleAdjustReps(-1)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.stepBtnText, { color: theme.text }]}>-1</Text>
+                </TouchableOpacity>
+
+                <TextInput
+                  style={[styles.stepperInput, { color: theme.text }]}
+                  keyboardType="number-pad"
+                  value={displayReps}
+                  onChangeText={handleUpdateActiveReps}
+                  placeholder={lastMetrics?.reps || '10'}
+                  placeholderTextColor={theme.textMuted}
+                />
+
+                <TouchableOpacity
+                  style={[styles.stepBtn, { borderLeftColor: theme.hairline }]}
+                  onPress={() => handleAdjustReps(1)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.stepBtnText, { color: theme.text }]}>+1</Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Quick +/- 2 pills */}
+              <View style={styles.quickAdjustRow}>
+                <TouchableOpacity
+                  style={[styles.quickPill, { backgroundColor: theme.card, borderColor: theme.border }]}
+                  onPress={() => handleAdjustReps(-2)}
+                >
+                  <Text style={[styles.quickPillText, { color: theme.textSecondary }]}>-2</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.quickPill, { backgroundColor: theme.card, borderColor: theme.border }]}
+                  onPress={() => handleAdjustReps(2)}
+                >
+                  <Text style={[styles.quickPillText, { color: theme.textSecondary }]}>+2</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+
+          {/* MAIN SET ACTION BUTTON */}
+          {!isCurrentSetDone ? (
+            <TouchableOpacity
+              style={[styles.completeSetBtn, { backgroundColor: theme.primary }]}
+              onPress={handleCompleteActiveSet}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="checkmark-circle" size={20} color={theme.primaryText} />
+              <Text style={[styles.completeSetBtnText, { color: theme.primaryText }]}>
+                ZALICZ SERIĘ {currentSetIndex + 1} Z {currentExercise.sets}
+              </Text>
+            </TouchableOpacity>
+          ) : (
+            <View style={styles.completedActionsRow}>
+              <TouchableOpacity
+                style={[styles.undoBtn, { borderColor: theme.border, backgroundColor: theme.card }]}
+                onPress={handleToggleCompleteManually}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="arrow-undo-outline" size={16} color={theme.text} />
+                <Text style={[styles.undoBtnText, { color: theme.text }]}>Cofnij zaliczenie</Text>
+              </TouchableOpacity>
+
+              {currentSetIndex < currentExercise.sets - 1 ? (
+                <TouchableOpacity
+                  style={[styles.nextSetBtn, { backgroundColor: theme.primary }]}
+                  onPress={() => setCurrentSetIndex((prev) => prev + 1)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[styles.nextSetBtnText, { color: theme.primaryText }]}>
+                    Seria {currentSetIndex + 2} ➔
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
+          )}
+        </View>
+
+        {/* All Sets Summary in this Exercise */}
+        <View style={styles.summarySection}>
+          <Text style={[styles.summaryHeader, { color: theme.textMuted }]}>
+            POSTĘP W TYM ĆWICZENIU ({currentExercise.sets} SERIE)
+          </Text>
+          <View style={[styles.summaryCard, { backgroundColor: theme.bgSecondary, borderColor: theme.hairline }]}>
+            {Array.from({ length: currentExercise.sets }).map((_, idx) => {
+              const sEntry = currentExerciseSets[idx];
+              const isDone = !!sEntry?.completed;
+              const isSelected = idx === currentSetIndex;
+
+              return (
+                <TouchableOpacity
+                  key={idx}
+                  style={[
+                    styles.summaryRow,
+                    { borderTopColor: idx === 0 ? 'transparent' : theme.hairline },
+                    isSelected && { backgroundColor: theme.card },
+                  ]}
+                  onPress={() => {
+                    Haptics.selectionAsync();
+                    setCurrentSetIndex(idx);
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.summaryLeft}>
+                    <View
+                      style={[
+                        styles.summaryDot,
+                        {
+                          backgroundColor: isDone ? theme.text : isSelected ? theme.primary : theme.border,
+                        },
+                      ]}
+                    />
+                    <Text style={[styles.summarySetText, { color: theme.text }]}>Seria {idx + 1}</Text>
+                    {isDone ? (
+                      <Text style={[styles.summaryMetrics, { color: theme.textSecondary }]}>
+                        {sEntry?.weight || '—'} kg × {sEntry?.reps || '—'} powt.
+                      </Text>
+                    ) : (
+                      <Text style={[styles.summaryPending, { color: theme.textMuted }]}>
+                        {isSelected ? 'W trakcie edycji' : 'Oczekuje'}
+                      </Text>
+                    )}
+                  </View>
+
+                  <View style={styles.summaryRight}>
+                    {isDone ? (
+                      <View style={[styles.doneTag, { backgroundColor: theme.bgTertiary }]}>
+                        <Ionicons name="checkmark" size={13} color={theme.text} />
+                        <Text style={[styles.doneTagText, { color: theme.text }]}>Zrobione</Text>
+                      </View>
+                    ) : isSelected ? (
+                      <Text style={[styles.editHint, { color: theme.textSecondary }]}>Edytuj ➔</Text>
+                    ) : null}
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+
+        {/* Next exercise preview / switch */}
         {nextExercise ? (
           <TouchableOpacity
             style={[styles.nextPreview, { borderColor: theme.hairline }]}
-            onPress={() => setCurrentExerciseIndex((prev) => prev + 1)}
+            onPress={() => {
+              setCurrentExerciseIndex((prev) => prev + 1);
+            }}
             activeOpacity={0.7}
           >
             <View style={{ flex: 1 }}>
-              <Text style={[styles.nextPreviewLabel, { color: theme.textMuted }]}>
-                NASTĘPNE ĆWICZENIE
-              </Text>
-              <Text style={[styles.nextPreviewName, { color: theme.text }]}>
-                {nextExercise.name}
-              </Text>
+              <Text style={[styles.nextPreviewLabel, { color: theme.textMuted }]}>NASTĘPNE ĆWICZENIE</Text>
+              <Text style={[styles.nextPreviewName, { color: theme.text }]}>{nextExercise.name}</Text>
             </View>
             <Ionicons name="arrow-forward" size={18} color={theme.textMuted} />
           </TouchableOpacity>
         ) : null}
 
-        {/* Navigation bottom */}
+        {/* Bottom Navigation */}
         <View style={styles.navRow}>
           <TouchableOpacity
             style={[
@@ -402,7 +693,7 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
               onPress={() => setCurrentExerciseIndex((prev) => Math.min(exercises.length - 1, prev + 1))}
               activeOpacity={0.8}
             >
-              <Text style={[styles.navBtnNextText, { color: theme.primaryText }]}>Następne</Text>
+              <Text style={[styles.navBtnNextText, { color: theme.primaryText }]}>Następne ćwiczenie</Text>
               <Ionicons name="chevron-forward" size={16} color={theme.primaryText} />
             </TouchableOpacity>
           ) : (
@@ -411,19 +702,18 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
               onPress={onFinishWorkout}
               activeOpacity={0.8}
             >
-              <Text style={[styles.finishBtnText, { color: theme.primaryText }]}>
-                ZAKOŃCZ TRENING
-              </Text>
+              <Text style={[styles.finishBtnText, { color: theme.primaryText }]}>ZAKOŃCZ TRENING</Text>
             </TouchableOpacity>
           )}
         </View>
       </ScrollView>
 
-      {/* Floating rest timer */}
+      {/* Modern Animated Rest Countdown Modal */}
       {timerActive && (
         <RestTimerBar
           initialSeconds={timerSeconds}
           exerciseName={timerLabel}
+          nextSetInfo={timerNextInfo}
           onClose={() => setTimerActive(false)}
         />
       )}
@@ -492,15 +782,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   exerciseHeader: {
-    paddingVertical: 18,
-  },
-  metaRow: {
-    marginBottom: 6,
+    paddingVertical: 16,
   },
   catBadgeText: {
     fontSize: 10,
     fontWeight: '800',
     letterSpacing: 0.8,
+    marginBottom: 4,
   },
   heroTitle: {
     fontSize: 21,
@@ -515,7 +803,7 @@ const styles = StyleSheet.create({
   quickBar: {
     flexDirection: 'row',
     gap: 8,
-    marginTop: 14,
+    marginTop: 12,
   },
   quickBtn: {
     flexDirection: 'row',
@@ -530,90 +818,241 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
   },
-  smartFillBtn: {
+  seriesSelectorWrap: {
+    marginBottom: 14,
+  },
+  seriesScroll: {
+    gap: 8,
+  },
+  seriesPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  seriesPillText: {
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  seriesPillWeight: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginLeft: 4,
+  },
+  focusCard: {
+    padding: 20,
+    borderRadius: 20,
+    borderWidth: 1,
+    marginBottom: 20,
+  },
+  focusHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 16,
+  },
+  focusTitle: {
+    fontSize: 22,
+    fontWeight: '900',
+    letterSpacing: -0.4,
+  },
+  focusSubtitle: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  statusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  statusBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  smartFillRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
     borderWidth: 1,
-    marginTop: 10,
-    marginBottom: 4,
-  },
-  smartFillLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
+    marginBottom: 14,
   },
   smartFillText: {
     fontSize: 12,
     fontWeight: '600',
   },
-  smartFillAction: {
+  smartFillLink: {
     fontSize: 11,
     fontWeight: '700',
   },
-  tableContainer: {
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    marginVertical: 12,
-  },
-  tableHeader: {
+  inputsGrid: {
     flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 8,
+    gap: 12,
+    marginBottom: 18,
   },
-  thText: {
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 0.5,
-  },
-  thSet: {
-    width: 32,
-    alignItems: 'center',
-  },
-  thTarget: {
-    width: 60,
-    alignItems: 'center',
-  },
-  thInput: {
+  inputCol: {
     flex: 1,
-    paddingHorizontal: 4,
   },
-  thCheck: {
-    width: 50,
-    alignItems: 'center',
+  inputLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.6,
+    marginBottom: 6,
   },
-  setRow: {
+  stepperBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 8,
-    borderTopWidth: StyleSheet.hairlineWidth,
+    borderRadius: 12,
+    borderWidth: 1,
+    overflow: 'hidden',
+    height: 52,
   },
-  setNumberText: {
+  stepBtn: {
+    width: 44,
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  stepBtnText: {
     fontSize: 13,
     fontWeight: '800',
   },
-  targetRepsVal: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  inputBox: {
-    fontSize: 14,
-    fontWeight: '800',
+  stepperInput: {
+    flex: 1,
+    fontSize: 22,
+    fontWeight: '900',
     textAlign: 'center',
-    paddingVertical: 8,
+  },
+  quickAdjustRow: {
+    flexDirection: 'row',
+    gap: 6,
+    marginTop: 6,
+  },
+  quickPill: {
+    flex: 1,
+    paddingVertical: 5,
     borderRadius: 6,
     borderWidth: 1,
-  },
-  checkBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
-    justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 1.5,
+  },
+  quickPillText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  completeSetBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    height: 54,
+    borderRadius: 14,
+  },
+  completeSetBtnText: {
+    fontSize: 14,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  completedActionsRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  undoBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    height: 50,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  undoBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  nextSetBtn: {
+    flex: 1.3,
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 50,
+    borderRadius: 12,
+  },
+  nextSetBtnText: {
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  summarySection: {
+    marginBottom: 20,
+  },
+  summaryHeader: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+    marginBottom: 8,
+  },
+  summaryCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  summaryLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  summaryDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  summarySetText: {
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  summaryMetrics: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  summaryPending: {
+    fontSize: 12,
+  },
+  summaryRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  doneTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  doneTagText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  editHint: {
+    fontSize: 12,
+    fontWeight: '700',
   },
   nextPreview: {
     flexDirection: 'row',

@@ -10,7 +10,6 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
-  Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -23,12 +22,22 @@ import {
   addPRRecord,
   deletePRRecord,
   calculate1RM,
+  getCreatineLog,
+  toggleCreatineDay,
+  getWeightStatsSummary,
+  getExerciseImprovements,
+  CreatineDayEntry,
+  WeightStatsSummary,
+  ExerciseImprovement,
 } from '../services/storage';
 
 interface ProgressTabProps {
   activeProfile: UserProfile;
   onOpenProfileModal: () => void;
 }
+
+type ViewMode = 'stats' | 'exercises';
+type Timeframe = '7d' | '30d' | '90d';
 
 const CATEGORIES: { id: MuscleCategory | 'wszystkie'; label: string }[] = [
   { id: 'wszystkie', label: 'Wszystkie' },
@@ -45,6 +54,17 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
   onOpenProfileModal,
 }) => {
   const { theme, isDark } = useAppTheme();
+
+  // Mode: Stats & Trends vs Exercise PR list
+  const [viewMode, setViewMode] = useState<ViewMode>('stats');
+  const [timeframe, setTimeframe] = useState<Timeframe>('7d');
+
+  // Stats data
+  const [creatineLog, setCreatineLog] = useState<CreatineDayEntry[]>([]);
+  const [weightStats, setWeightStats] = useState<WeightStatsSummary | null>(null);
+  const [improvements, setImprovements] = useState<ExerciseImprovement[]>([]);
+
+  // PR Records State
   const [bestPRs, setBestPRs] = useState<{ [exerciseId: string]: PRRecord }>({});
   const [selectedCategory, setSelectedCategory] = useState<MuscleCategory | 'wszystkie'>('wszystkie');
   const [searchQuery, setSearchQuery] = useState('');
@@ -61,18 +81,43 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
 
   const allExercises = useMemo(() => getAllExercises(), []);
 
-  const loadPRs = useCallback(async () => {
+  const loadData = useCallback(async () => {
     try {
       const records = await getAllBestPRs(activeProfile.id);
       setBestPRs(records);
+
+      const daysCount = timeframe === '7d' ? 7 : timeframe === '30d' ? 30 : 90;
+
+      const [cLog, wStats, imp] = await Promise.all([
+        getCreatineLog(timeframe === '7d' ? 7 : 14),
+        getWeightStatsSummary(daysCount, activeProfile.id),
+        getExerciseImprovements(activeProfile.id),
+      ]);
+
+      setCreatineLog(cLog);
+      setWeightStats(wStats);
+      setImprovements(imp);
     } catch (e) {
-      console.warn('Error loading best PRs', e);
+      console.warn('Error loading progress stats:', e);
     }
-  }, [activeProfile.id]);
+  }, [activeProfile.id, timeframe]);
 
   useEffect(() => {
-    loadPRs();
-  }, [loadPRs]);
+    loadData();
+  }, [loadData]);
+
+  const handleToggleCreatine = async (entry: CreatineDayEntry) => {
+    try {
+      Haptics.selectionAsync();
+      const nextState = !entry.taken;
+      await toggleCreatineDay(entry.date, nextState);
+      setCreatineLog((prev) =>
+        prev.map((item) => (item.date === entry.date ? { ...item, taken: nextState } : item))
+      );
+    } catch (e) {
+      console.warn('Error toggling creatine day', e);
+    }
+  };
 
   const handleOpenExercise = async (exercise: Exercise) => {
     setSelectedExercise(exercise);
@@ -113,7 +158,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
 
       const updatedHist = await getExerciseHistory(selectedExercise.id, activeProfile.id);
       setHistory(updatedHist);
-      await loadPRs();
+      await loadData();
       setInputNote('');
     } catch (e) {
       console.error('Error saving PR:', e);
@@ -134,7 +179,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
             await deletePRRecord(record.id, selectedExercise.id, activeProfile.id);
             const updatedHist = await getExerciseHistory(selectedExercise.id, activeProfile.id);
             setHistory(updatedHist);
-            await loadPRs();
+            await loadData();
           },
         },
       ]
@@ -159,7 +204,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
     return calculate1RM(w, r);
   }, [inputWeight, inputReps]);
 
-  const stats = useMemo(() => {
+  const statsSummary = useMemo(() => {
     const values = Object.values(bestPRs);
     const totalCount = values.length;
     let maxWeight = 0;
@@ -184,167 +229,510 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
     });
   }, [allExercises, selectedCategory, searchQuery]);
 
+  const creatineStats = useMemo(() => {
+    const count = creatineLog.filter((c) => c.taken).length;
+    const total = creatineLog.length;
+    const percent = total > 0 ? Math.round((count / total) * 100) : 0;
+    const todayTaken = creatineLog.find((c) => c.isToday)?.taken ?? false;
+    return { count, total, percent, todayTaken };
+  }, [creatineLog]);
+
   return (
     <View style={[styles.container, { backgroundColor: theme.bg }]}>
       {/* Title */}
       <View style={styles.header}>
-        <Text style={[styles.title, { color: theme.text }]}>Osiągi & Rekordy</Text>
+        <Text style={[styles.title, { color: theme.text }]}>Osiągi & Statystyki</Text>
         <Text style={[styles.subtitle, { color: theme.textMuted }]}>
-          Śledź swoje maksy siłowe i szacowany 1RM
+          Monitoruj progres siły, wagę i regularność kreatyny
         </Text>
       </View>
 
-      {/* Search Input */}
-      <View style={[styles.searchWrapper, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
-        <Ionicons name="search" size={18} color={theme.textMuted} />
-        <TextInput
-          style={[styles.searchInput, { color: theme.text }]}
-          placeholder="Szukaj ćwiczenia..."
-          placeholderTextColor={theme.textMuted}
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-          clearButtonMode="while-editing"
-        />
-        {searchQuery.length > 0 && (
-          <TouchableOpacity onPress={() => setSearchQuery('')}>
-            <Ionicons name="close-circle" size={18} color={theme.textMuted} />
+      {/* Main Segmented Mode Switcher */}
+      <View style={styles.modeSwitchWrapper}>
+        <View style={[styles.modeSwitchBox, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
+          <TouchableOpacity
+            style={[
+              styles.modeBtn,
+              viewMode === 'stats' && {
+                backgroundColor: theme.card,
+                shadowColor: '#000',
+                shadowOpacity: 0.1,
+                shadowRadius: 4,
+                elevation: 2,
+              },
+            ]}
+            onPress={() => {
+              Haptics.selectionAsync();
+              setViewMode('stats');
+            }}
+            activeOpacity={0.7}
+          >
+            <Ionicons
+              name="analytics-outline"
+              size={16}
+              color={viewMode === 'stats' ? theme.text : theme.textMuted}
+            />
+            <Text
+              style={[
+                styles.modeBtnText,
+                { color: viewMode === 'stats' ? theme.text : theme.textMuted },
+                viewMode === 'stats' && { fontWeight: '900' },
+              ]}
+            >
+              Statystyki & Trendy
+            </Text>
           </TouchableOpacity>
-        )}
+
+          <TouchableOpacity
+            style={[
+              styles.modeBtn,
+              viewMode === 'exercises' && {
+                backgroundColor: theme.card,
+                shadowColor: '#000',
+                shadowOpacity: 0.1,
+                shadowRadius: 4,
+                elevation: 2,
+              },
+            ]}
+            onPress={() => {
+              Haptics.selectionAsync();
+              setViewMode('exercises');
+            }}
+            activeOpacity={0.7}
+          >
+            <Ionicons
+              name="trophy-outline"
+              size={16}
+              color={viewMode === 'exercises' ? theme.text : theme.textMuted}
+            />
+            <Text
+              style={[
+                styles.modeBtnText,
+                { color: viewMode === 'exercises' ? theme.text : theme.textMuted },
+                viewMode === 'exercises' && { fontWeight: '900' },
+              ]}
+            >
+              Rekordy PR ({statsSummary.totalCount})
+            </Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
-      {/* Category Pills */}
-      <View style={styles.categoryWrap}>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.categoryScroll}
-        >
-          {CATEGORIES.map((cat) => {
-            const isActive = selectedCategory === cat.id;
-            return (
-              <TouchableOpacity
-                key={cat.id}
+      {/* ==================== VIEW 1: STATS & TRENDS ==================== */}
+      {viewMode === 'stats' ? (
+        <ScrollView style={styles.scrollArea} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+          {/* Timeframe Filter */}
+          <View style={styles.timeframeRow}>
+            {(['7d', '30d', '90d'] as Timeframe[]).map((tf) => {
+              const isSelected = timeframe === tf;
+              const label = tf === '7d' ? 'Ostatnie 7 dni' : tf === '30d' ? '30 dni' : '90 dni';
+              return (
+                <TouchableOpacity
+                  key={tf}
+                  style={[
+                    styles.tfPill,
+                    {
+                      backgroundColor: isSelected ? theme.primary : theme.bgSecondary,
+                      borderColor: isSelected ? theme.primary : theme.border,
+                    },
+                  ]}
+                  onPress={() => {
+                    Haptics.selectionAsync();
+                    setTimeframe(tf);
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Text
+                    style={[
+                      styles.tfPillText,
+                      { color: isSelected ? theme.primaryText : theme.text },
+                    ]}
+                  >
+                    {label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          {/* SECTION 1: BODY WEIGHT CHART & BALANCE */}
+          <View style={[styles.card, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
+            <View style={styles.cardHeaderRow}>
+              <View>
+                <Text style={[styles.cardKicker, { color: theme.textMuted }]}>MASA CIAŁA</Text>
+                <Text style={[styles.cardTitle, { color: theme.text }]}>Waga i bilans ({timeframe})</Text>
+              </View>
+
+              {weightStats ? (
+                <View style={styles.weightDeltaBadge}>
+                  <Ionicons
+                    name={weightStats.diff >= 0 ? 'trending-up' : 'trending-down'}
+                    size={16}
+                    color={theme.text}
+                  />
+                  <Text style={[styles.weightDeltaText, { color: theme.text }]}>
+                    {weightStats.diff > 0 ? `+${weightStats.diff}` : `${weightStats.diff}`} kg ({weightStats.diffPercent > 0 ? `+${weightStats.diffPercent}` : `${weightStats.diffPercent}`}%)
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+
+            {/* Quick Metrics Line */}
+            {weightStats ? (
+              <View style={styles.metricsSummaryRow}>
+                <View style={styles.metricItem}>
+                  <Text style={[styles.metricLabel, { color: theme.textMuted }]}>Aktualna</Text>
+                  <Text style={[styles.metricVal, { color: theme.text }]}>{weightStats.current} kg</Text>
+                </View>
+                <View style={styles.metricDivider} />
+                <View style={styles.metricItem}>
+                  <Text style={[styles.metricLabel, { color: theme.textMuted }]}>Początkowa</Text>
+                  <Text style={[styles.metricVal, { color: theme.text }]}>{weightStats.start} kg</Text>
+                </View>
+                <View style={styles.metricDivider} />
+                <View style={styles.metricItem}>
+                  <Text style={[styles.metricLabel, { color: theme.textMuted }]}>Wzrost</Text>
+                  <Text style={[styles.metricVal, { color: theme.text }]}>{activeProfile.height || 180} cm</Text>
+                </View>
+              </View>
+            ) : null}
+
+            {/* Native Clean Monochromatic Bar Chart */}
+            {weightStats && weightStats.entries.length > 0 ? (
+              <View style={styles.chartWrapper}>
+                <View style={styles.chartBarsContainer}>
+                  {weightStats.entries.slice(-7).map((entry, idx) => {
+                    const min = weightStats.min;
+                    const max = weightStats.max;
+                    const span = Math.max(0.6, max - min);
+                    // Compute relative height percent between 30% and 95%
+                    const heightPercent = Math.min(
+                      95,
+                      Math.max(30, 30 + ((entry.weight - min) / span) * 65)
+                    );
+                    const isLatest = idx === weightStats.entries.slice(-7).length - 1;
+
+                    return (
+                      <View key={entry.id || idx} style={styles.chartCol}>
+                        <Text style={[styles.chartBarValue, { color: isLatest ? theme.text : theme.textMuted }]}>
+                          {entry.weight}
+                        </Text>
+                        <View style={styles.barTrack}>
+                          <View
+                            style={[
+                              styles.barFill,
+                              {
+                                height: `${heightPercent}%`,
+                                backgroundColor: isLatest ? theme.text : theme.borderDark,
+                              },
+                            ]}
+                          />
+                        </View>
+                        <Text style={[styles.chartBarDay, { color: isLatest ? theme.text : theme.textMuted }]}>
+                          {entry.date.slice(5).replace('-', '/')}
+                        </Text>
+                      </View>
+                    );
+                  })}
+                </View>
+              </View>
+            ) : null}
+
+            <View style={[styles.insightPill, { backgroundColor: theme.card, borderColor: theme.hairline }]}>
+              <Ionicons name="sparkles-outline" size={15} color={theme.text} />
+              <Text style={[styles.insightText, { color: theme.textSecondary }]}>
+                Wzrost z 60.1 kg pod plan FBW 4-dniowy. Rekomendowane tempo masy: +0.2-0.3 kg / tydzień.
+              </Text>
+            </View>
+          </View>
+
+          {/* SECTION 2: CREATINE 5G TRACKER & HEATMAP */}
+          <View style={[styles.card, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
+            <View style={styles.cardHeaderRow}>
+              <View>
+                <Text style={[styles.cardKicker, { color: theme.textMuted }]}>SUPLEMENTACJA</Text>
+                <Text style={[styles.cardTitle, { color: theme.text }]}>Kreatyna 5g (Regularność)</Text>
+              </View>
+
+              <View
                 style={[
-                  styles.catPill,
+                  styles.creatineBadge,
                   {
-                    backgroundColor: isActive ? theme.primary : theme.bgSecondary,
-                    borderColor: isActive ? theme.primary : theme.border,
+                    backgroundColor: creatineStats.todayTaken ? theme.primary : theme.bgTertiary,
+                    borderColor: creatineStats.todayTaken ? theme.primary : theme.border,
                   },
                 ]}
-                onPress={() => {
-                  Haptics.selectionAsync();
-                  setSelectedCategory(cat.id);
-                }}
-                activeOpacity={0.7}
               >
                 <Text
                   style={[
-                    styles.catPillText,
-                    { color: isActive ? theme.primaryText : theme.text },
+                    styles.creatineBadgeText,
+                    { color: creatineStats.todayTaken ? theme.primaryText : theme.text },
                   ]}
                 >
-                  {cat.label}
+                  {creatineStats.todayTaken ? 'DZISIAJ: WZIĘTA ✅' : 'DZISIAJ: DO WZIĘCIA ⏳'}
                 </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
-      </View>
+              </View>
+            </View>
 
-      {/* List of Exercises (NO THUMBNAILS - airy and typographic) */}
-      <ScrollView
-        style={styles.list}
-        contentContainerStyle={styles.listInner}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* KPI Cards Strip - scrolls away so user has maximum space for exercises */}
-        <View style={styles.kpiRow}>
-          <View style={[styles.kpiCard, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
-            <Ionicons name="trophy-outline" size={20} color={theme.text} />
-            <Text style={[styles.kpiVal, { color: theme.text }]}>{stats.totalCount}</Text>
-            <Text style={[styles.kpiLbl, { color: theme.textMuted }]}>Rekordów</Text>
-          </View>
-
-          <View style={[styles.kpiCard, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
-            <Ionicons name="barbell-outline" size={20} color={theme.text} />
-            <Text style={[styles.kpiVal, { color: theme.text }]}>
-              {stats.maxWeight > 0 ? `${stats.maxWeight} kg` : '—'}
+            <Text style={[styles.creatineSubtitle, { color: theme.textSecondary }]}>
+              Regularność w wybranym okresie: <Text style={{ fontWeight: '800', color: theme.text }}>{creatineStats.count}/{creatineStats.total} dni ({creatineStats.percent}%)</Text>
             </Text>
-            <Text style={[styles.kpiLbl, { color: theme.textMuted }]}>Maks. Ciężar</Text>
+
+            {/* Interactive Creatine Week Ribbon */}
+            <View style={styles.creatineRibbon}>
+              {creatineLog.slice(-7).map((item) => {
+                return (
+                  <TouchableOpacity
+                    key={item.date}
+                    style={[
+                      styles.dayCircleCol,
+                      item.isToday && { backgroundColor: theme.card, borderRadius: 14, paddingVertical: 4 },
+                    ]}
+                    onPress={() => handleToggleCreatine(item)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[styles.dayLabelText, { color: item.isToday ? theme.text : theme.textMuted }]}>
+                      {item.dayLabel}
+                    </Text>
+                    <View
+                      style={[
+                        styles.dayCircle,
+                        {
+                          backgroundColor: item.taken ? theme.text : 'transparent',
+                          borderColor: item.taken ? theme.text : theme.borderDark,
+                        },
+                      ]}
+                    >
+                      {item.taken ? (
+                        <Ionicons name="checkmark" size={14} color={theme.bg} />
+                      ) : (
+                        <Text style={[styles.emptyX, { color: theme.textMuted }]}>—</Text>
+                      )}
+                    </View>
+                    <Text style={[styles.dayNumText, { color: theme.textMuted }]}>
+                      {item.dayNum}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            <Text style={[styles.creatineTip, { color: theme.textMuted }]}>
+              Dotknij dnia, aby szybko zmienić status. Przypomnienia iOS aktywne (09:00 rano & 22:00 przed snem).
+            </Text>
           </View>
 
-          <View style={[styles.kpiCard, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
-            <Ionicons name="flash-outline" size={20} color={theme.text} />
-            <Text style={[styles.kpiVal, { color: theme.text }]}>
-              {stats.max1RM > 0 ? `${stats.max1RM} kg` : '—'}
-            </Text>
-            <Text style={[styles.kpiLbl, { color: theme.textMuted }]}>Top 1RM</Text>
-          </View>
-        </View>
-        {filteredExercises.length === 0 ? (
-          <View style={styles.emptyView}>
-            <Ionicons name="search-outline" size={28} color={theme.textMuted} style={{ marginBottom: 8 }} />
-            <Text style={[styles.emptyText, { color: theme.textMuted }]}>
-              Nie znaleziono pasujących ćwiczeń
-            </Text>
-          </View>
-        ) : (
-          filteredExercises.map((exercise) => {
-            const pr = bestPRs[exercise.id];
+          {/* SECTION 3: STRENGTH IMPROVEMENT & DELTAS */}
+          <View style={[styles.card, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
+            <View style={styles.cardHeaderRow}>
+              <View>
+                <Text style={[styles.cardKicker, { color: theme.textMuted }]}>POSTĘPY SIŁOWE</Text>
+                <Text style={[styles.cardTitle, { color: theme.text }]}>Wzrosty ciężarów & 1RM</Text>
+              </View>
+            </View>
 
-            return (
-              <TouchableOpacity
-                key={exercise.id}
-                style={[
-                  styles.exerciseRow,
-                  { borderBottomColor: theme.hairline },
-                ]}
-                onPress={() => handleOpenExercise(exercise)}
-                activeOpacity={0.75}
-              >
-                <View style={styles.rowLeft}>
-                  <Text style={[styles.exTitle, { color: theme.text }]}>
-                    {exercise.name}
-                  </Text>
-                  <View style={styles.subMeta}>
-                    <View style={[styles.catTag, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
-                      <Text style={[styles.catTagText, { color: theme.textSecondary }]}>
-                        {exercise.category.toUpperCase()}
+            <Text style={[styles.creatineSubtitle, { color: theme.textSecondary }]}>
+              Porównanie z poprzednimi sesjami treningowymi (FBW):
+            </Text>
+
+            <View style={styles.improvementsList}>
+              {improvements.map((item) => (
+                <View
+                  key={item.id}
+                  style={[styles.improvementRow, { borderBottomColor: theme.hairline }]}
+                >
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.impName, { color: theme.text }]}>{item.name}</Text>
+                    <View style={styles.impSubRow}>
+                      <View style={[styles.catTag, { backgroundColor: theme.card, borderColor: theme.border }]}>
+                        <Text style={[styles.catTagText, { color: theme.textSecondary }]}>
+                          {item.category.toUpperCase()}
+                        </Text>
+                      </View>
+                      <Text style={[styles.impPrevText, { color: theme.textMuted }]}>
+                        Poprzednio: {item.previousWeight} kg
                       </Text>
                     </View>
-                    <Text style={[styles.planHint, { color: theme.textMuted }]}>
-                      Plan: {exercise.sets} × {exercise.reps}
+                  </View>
+
+                  <View style={styles.impRight}>
+                    <View style={styles.impWeightRow}>
+                      <Text style={[styles.impWeightCur, { color: theme.text }]}>
+                        {item.currentWeight} kg
+                      </Text>
+                      <View style={[styles.deltaChip, { backgroundColor: theme.card, borderColor: theme.border }]}>
+                        <Ionicons name="arrow-up" size={11} color={theme.text} />
+                        <Text style={[styles.deltaChipText, { color: theme.text }]}>
+                          +{item.diffWeight} kg (+{item.percentImprovement}%)
+                        </Text>
+                      </View>
+                    </View>
+                    <Text style={[styles.imp1RM, { color: theme.textMuted }]}>
+                      1RM: ~{item.current1RM} kg (+{item.diff1RM} kg)
                     </Text>
                   </View>
                 </View>
-
-                <View style={styles.rowRight}>
-                  {pr ? (
-                    <View style={styles.prResultCol}>
-                      <Text style={[styles.prWeightText, { color: theme.text }]}>
-                        {pr.weight} kg
-                      </Text>
-                      <Text style={[styles.prRepsText, { color: theme.textSecondary }]}>
-                        × {pr.reps} powt.
-                      </Text>
-                      <Text style={[styles.pr1RMText, { color: theme.textMuted }]}>
-                        1RM: ~{pr.estimated1RM} kg
-                      </Text>
-                    </View>
-                  ) : (
-                    <View style={[styles.addBadge, { borderColor: theme.borderDark, backgroundColor: theme.bgSecondary }]}>
-                      <Ionicons name="add" size={15} color={theme.text} />
-                      <Text style={[styles.addBadgeText, { color: theme.text }]}>Dodaj</Text>
-                    </View>
-                  )}
-                </View>
+              ))}
+            </View>
+          </View>
+        </ScrollView>
+      ) : (
+        /* ==================== VIEW 2: EXERCISE PR LIST ==================== */
+        <>
+          {/* Search Input */}
+          <View style={[styles.searchWrapper, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
+            <Ionicons name="search" size={18} color={theme.textMuted} />
+            <TextInput
+              style={[styles.searchInput, { color: theme.text }]}
+              placeholder="Szukaj ćwiczenia..."
+              placeholderTextColor={theme.textMuted}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              clearButtonMode="while-editing"
+            />
+            {searchQuery.length > 0 && (
+              <TouchableOpacity onPress={() => setSearchQuery('')}>
+                <Ionicons name="close-circle" size={18} color={theme.textMuted} />
               </TouchableOpacity>
-            );
-          })
-        )}
-      </ScrollView>
+            )}
+          </View>
 
-      {/* Modal */}
+          {/* Category Pills */}
+          <View style={styles.categoryWrap}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.categoryScroll}
+            >
+              {CATEGORIES.map((cat) => {
+                const isActive = selectedCategory === cat.id;
+                return (
+                  <TouchableOpacity
+                    key={cat.id}
+                    style={[
+                      styles.catPill,
+                      {
+                        backgroundColor: isActive ? theme.primary : theme.bgSecondary,
+                        borderColor: isActive ? theme.primary : theme.border,
+                      },
+                    ]}
+                    onPress={() => {
+                      Haptics.selectionAsync();
+                      setSelectedCategory(cat.id);
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    <Text
+                      style={[
+                        styles.catPillText,
+                        { color: isActive ? theme.primaryText : theme.text },
+                      ]}
+                    >
+                      {cat.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+
+          {/* List of Exercises */}
+          <ScrollView
+            style={styles.list}
+            contentContainerStyle={styles.listInner}
+            showsVerticalScrollIndicator={false}
+          >
+            {/* KPI Cards Strip - scrolls away so user has maximum space for exercises */}
+            <View style={styles.kpiRow}>
+              <View style={[styles.kpiCard, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
+                <Ionicons name="trophy-outline" size={20} color={theme.text} />
+                <Text style={[styles.kpiVal, { color: theme.text }]}>{statsSummary.totalCount}</Text>
+                <Text style={[styles.kpiLbl, { color: theme.textMuted }]}>Rekordów</Text>
+              </View>
+
+              <View style={[styles.kpiCard, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
+                <Ionicons name="barbell-outline" size={20} color={theme.text} />
+                <Text style={[styles.kpiVal, { color: theme.text }]}>
+                  {statsSummary.maxWeight > 0 ? `${statsSummary.maxWeight} kg` : '—'}
+                </Text>
+                <Text style={[styles.kpiLbl, { color: theme.textMuted }]}>Maks. Ciężar</Text>
+              </View>
+
+              <View style={[styles.kpiCard, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
+                <Ionicons name="flash-outline" size={20} color={theme.text} />
+                <Text style={[styles.kpiVal, { color: theme.text }]}>
+                  {statsSummary.max1RM > 0 ? `${statsSummary.max1RM} kg` : '—'}
+                </Text>
+                <Text style={[styles.kpiLbl, { color: theme.textMuted }]}>Top 1RM</Text>
+              </View>
+            </View>
+
+            {filteredExercises.length === 0 ? (
+              <View style={styles.emptyView}>
+                <Ionicons name="search-outline" size={28} color={theme.textMuted} style={{ marginBottom: 8 }} />
+                <Text style={[styles.emptyText, { color: theme.textMuted }]}>
+                  Nie znaleziono pasujących ćwiczeń
+                </Text>
+              </View>
+            ) : (
+              filteredExercises.map((exercise) => {
+                const pr = bestPRs[exercise.id];
+
+                return (
+                  <TouchableOpacity
+                    key={exercise.id}
+                    style={[
+                      styles.exerciseRow,
+                      { borderBottomColor: theme.hairline },
+                    ]}
+                    onPress={() => handleOpenExercise(exercise)}
+                    activeOpacity={0.75}
+                  >
+                    <View style={styles.rowLeft}>
+                      <Text style={[styles.exTitle, { color: theme.text }]}>
+                        {exercise.name}
+                      </Text>
+                      <View style={styles.subMeta}>
+                        <View style={[styles.catTag, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
+                          <Text style={[styles.catTagText, { color: theme.textSecondary }]}>
+                            {exercise.category.toUpperCase()}
+                          </Text>
+                        </View>
+                        <Text style={[styles.planHint, { color: theme.textMuted }]}>
+                          Plan: {exercise.sets} × {exercise.reps}
+                        </Text>
+                      </View>
+                    </View>
+
+                    <View style={styles.rowRight}>
+                      {pr ? (
+                        <View style={styles.prResultCol}>
+                          <Text style={[styles.prWeightText, { color: theme.text }]}>
+                            {pr.weight} kg
+                          </Text>
+                          <Text style={[styles.prRepsText, { color: theme.textSecondary }]}>
+                            × {pr.reps} powt.
+                          </Text>
+                          <Text style={[styles.pr1RMText, { color: theme.textMuted }]}>
+                            1RM: ~{pr.estimated1RM} kg
+                          </Text>
+                        </View>
+                      ) : (
+                        <View style={[styles.addBadge, { borderColor: theme.borderDark, backgroundColor: theme.bgSecondary }]}>
+                          <Ionicons name="add" size={15} color={theme.text} />
+                          <Text style={[styles.addBadgeText, { color: theme.text }]}>Dodaj</Text>
+                        </View>
+                      )}
+                    </View>
+                  </TouchableOpacity>
+                );
+              })
+            )}
+          </ScrollView>
+        </>
+      )}
+
+      {/* Modal Dodawania / Edycji PR */}
       <Modal visible={modalVisible} transparent animationType="slide" onRequestClose={() => setModalVisible(false)}>
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -438,17 +826,17 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                     Szacowany 1RM z tej serii:
                   </Text>
                   <Text style={[styles.projectionValue, { color: theme.text }]}>
-                    {currentEst1RM} kg
+                    ~{currentEst1RM} kg
                   </Text>
                 </View>
 
-                {/* Optional note */}
+                {/* Note input */}
                 <TextInput
                   style={[
                     styles.noteField,
                     { backgroundColor: theme.card, borderColor: theme.border, color: theme.text },
                   ]}
-                  placeholder="Notatka (opcjonalnie, np. czysty bój)..."
+                  placeholder="Notatka (opcjonalnie, np. RPE 9, łatwa seria)..."
                   placeholderTextColor={theme.textMuted}
                   value={inputNote}
                   onChangeText={setInputNote}
@@ -466,48 +854,51 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                 </TouchableOpacity>
               </View>
 
-              {/* History Timeline */}
+              {/* History of this exercise */}
               <View style={styles.historySection}>
                 <Text style={[styles.historyTitle, { color: theme.text }]}>
-                  Historia wyników ({history.length})
+                  Historia serii ({history.length})
                 </Text>
-
                 {history.length === 0 ? (
                   <Text style={[styles.historyEmpty, { color: theme.textMuted }]}>
-                    Brak wcześniejszych wpisów. Zapisz swój pierwszy wynik powyżej!
+                    Brak zapisanych serii dla tego ćwiczenia. Wpisz swój pierwszy wynik powyżej!
                   </Text>
                 ) : (
-                  history.map((record) => (
+                  history.map((rec) => (
                     <View
-                      key={record.id}
+                      key={rec.id}
                       style={[styles.historyRow, { borderBottomColor: theme.hairline }]}
                     >
-                      <View style={styles.histNumbers}>
-                        <Text style={[styles.histWeight, { color: theme.text }]}>
-                          {record.weight} kg
-                        </Text>
-                        <Text style={[styles.histReps, { color: theme.textSecondary }]}>
-                          × {record.reps} powt.
-                        </Text>
+                      <View>
+                        <View style={styles.histNumbers}>
+                          <Text style={[styles.histWeight, { color: theme.text }]}>
+                            {rec.weight} kg
+                          </Text>
+                          <Text style={[styles.histReps, { color: theme.textSecondary }]}>
+                            × {rec.reps} powt.
+                          </Text>
+                        </View>
+                        {rec.note ? (
+                          <Text style={[styles.histDate, { color: theme.textMuted }]}>
+                            {rec.note}
+                          </Text>
+                        ) : null}
                       </View>
 
                       <View style={styles.histMeta}>
-                        <Text style={[styles.hist1RM, { color: theme.textMuted }]}>
-                          1RM: ~{record.estimated1RM} kg
+                        <Text style={[styles.hist1RM, { color: theme.textSecondary }]}>
+                          1RM: ~{rec.estimated1RM} kg
                         </Text>
                         <Text style={[styles.histDate, { color: theme.textMuted }]}>
-                          {new Date(record.date).toLocaleDateString('pl-PL', {
-                            day: 'numeric',
-                            month: 'short',
-                          })}
+                          {rec.date.slice(0, 10)}
                         </Text>
                       </View>
 
                       <TouchableOpacity
-                        onPress={() => handleDeleteRecord(record)}
+                        onPress={() => handleDeleteRecord(rec)}
                         style={styles.trashBtn}
                       >
-                        <Ionicons name="trash-outline" size={15} color={theme.danger} />
+                        <Ionicons name="trash-outline" size={16} color={theme.textMuted} />
                       </TouchableOpacity>
                     </View>
                   ))
@@ -527,42 +918,293 @@ const styles = StyleSheet.create({
   },
   header: {
     paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 10,
+    paddingTop: 14,
+    paddingBottom: 8,
   },
   title: {
-    fontSize: 34,
+    fontSize: 28,
     fontWeight: '900',
     letterSpacing: -0.6,
   },
   subtitle: {
-    fontSize: 15,
+    fontSize: 14,
     marginTop: 4,
   },
-  kpiRow: {
+  modeSwitchWrapper: {
+    paddingHorizontal: 20,
+    marginBottom: 14,
+    marginTop: 4,
+  },
+  modeSwitchBox: {
     flexDirection: 'row',
-    gap: 10,
-    marginTop: 4,
-    marginBottom: 16,
-  },
-  kpiCard: {
-    flex: 1,
-    paddingVertical: 18,
-    paddingHorizontal: 12,
-    borderRadius: 16,
+    borderRadius: 14,
     borderWidth: 1,
+    padding: 3,
+  },
+  modeBtn: {
+    flex: 1,
+    flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: 11,
   },
-  kpiVal: {
-    fontSize: 22,
-    fontWeight: '900',
-    fontVariant: ['tabular-nums'],
-    marginTop: 2,
-  },
-  kpiLbl: {
+  modeBtnText: {
     fontSize: 12,
     fontWeight: '700',
+  },
+  scrollArea: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingHorizontal: 20,
+    paddingBottom: 90,
+  },
+  timeframeRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 16,
+  },
+  tfPill: {
+    flex: 1,
+    paddingVertical: 9,
+    borderRadius: 10,
+    borderWidth: 1,
+    alignItems: 'center',
+  },
+  tfPillText: {
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  card: {
+    padding: 18,
+    borderRadius: 18,
+    borderWidth: 1,
+    marginBottom: 18,
+  },
+  cardHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 12,
+  },
+  cardKicker: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+  },
+  cardTitle: {
+    fontSize: 17,
+    fontWeight: '900',
+    marginTop: 2,
+    letterSpacing: -0.2,
+  },
+  weightDeltaBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#CED4DA',
+  },
+  weightDeltaText: {
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  metricsSummaryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+    paddingVertical: 10,
+    marginBottom: 14,
+  },
+  metricItem: {
+    alignItems: 'center',
+  },
+  metricLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  metricVal: {
+    fontSize: 17,
+    fontWeight: '900',
+    marginTop: 2,
+  },
+  metricDivider: {
+    width: 1,
+    height: 24,
+    backgroundColor: '#E5E7EB',
+  },
+  chartWrapper: {
+    paddingVertical: 12,
+    marginBottom: 10,
+  },
+  chartBarsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+    height: 140,
+    paddingHorizontal: 4,
+  },
+  chartCol: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  chartBarValue: {
+    fontSize: 10,
+    fontWeight: '800',
+    marginBottom: 4,
+  },
+  barTrack: {
+    width: 18,
+    height: 100,
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    borderRadius: 9,
+    overflow: 'hidden',
+  },
+  barFill: {
+    width: '100%',
+    borderRadius: 9,
+  },
+  chartBarDay: {
+    fontSize: 10,
+    fontWeight: '700',
+    marginTop: 6,
+  },
+  insightPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginTop: 8,
+  },
+  insightText: {
+    fontSize: 12,
+    lineHeight: 16,
+    flex: 1,
+    fontWeight: '600',
+  },
+  creatineBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  creatineBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  creatineSubtitle: {
+    fontSize: 13,
+    marginBottom: 14,
+  },
+  creatineRibbon: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 6,
+    marginBottom: 10,
+  },
+  dayCircleCol: {
+    alignItems: 'center',
+    flex: 1,
+    paddingVertical: 2,
+  },
+  dayLabelText: {
+    fontSize: 11,
+    fontWeight: '800',
+    marginBottom: 6,
+  },
+  dayCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  emptyX: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  dayNumText: {
+    fontSize: 10,
+    fontWeight: '700',
+    marginTop: 6,
+  },
+  creatineTip: {
+    fontSize: 11,
+    marginTop: 4,
+  },
+  improvementsList: {
+    marginTop: 4,
+  },
+  improvementRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    gap: 12,
+  },
+  impName: {
+    fontSize: 14,
+    fontWeight: '800',
+    marginBottom: 4,
+  },
+  impSubRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  catTag: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  catTagText: {
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.3,
+  },
+  impPrevText: {
+    fontSize: 12,
+  },
+  impRight: {
+    alignItems: 'flex-end',
+  },
+  impWeightRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  impWeightCur: {
+    fontSize: 16,
+    fontWeight: '900',
+  },
+  deltaChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  deltaChipText: {
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  imp1RM: {
+    fontSize: 11,
+    fontWeight: '600',
+    marginTop: 2,
   },
   searchWrapper: {
     flexDirection: 'row',
@@ -606,6 +1248,31 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 85,
   },
+  kpiRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 4,
+    marginBottom: 16,
+  },
+  kpiCard: {
+    flex: 1,
+    paddingVertical: 18,
+    paddingHorizontal: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+    alignItems: 'center',
+    gap: 4,
+  },
+  kpiVal: {
+    fontSize: 22,
+    fontWeight: '900',
+    fontVariant: ['tabular-nums'],
+    marginTop: 2,
+  },
+  kpiLbl: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
   emptyView: {
     paddingVertical: 48,
     alignItems: 'center',
@@ -635,17 +1302,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-  },
-  catTag: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 5,
-    borderWidth: StyleSheet.hairlineWidth,
-  },
-  catTagText: {
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 0.4,
   },
   planHint: {
     fontSize: 14,
