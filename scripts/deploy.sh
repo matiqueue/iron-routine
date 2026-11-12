@@ -5,7 +5,7 @@ export LC_ALL=en_US.UTF-8
 export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
 export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
 
-UDID=$(xcrun devicectl list devices 2>/dev/null | grep -E "connected" | grep -oE "[0-9A-Fa-f]{8}-[0-9A-Fa-f]{16}" | head -n 1)
+UDID=$(xcrun devicectl list devices 2>/dev/null | grep -E "connected|physical" | grep -oE "[0-9A-Fa-f]{8}-[0-9A-Fa-f]{16}" | head -n 1)
 if [ -z "$UDID" ]; then
     echo "❌ Nie znaleziono podłączonego iPhone'a!"
     exit 1
