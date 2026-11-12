@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,8 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  Animated,
+  LayoutAnimation,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -58,6 +60,60 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
   // Mode: Stats & Trends vs Exercise PR list
   const [viewMode, setViewMode] = useState<ViewMode>('stats');
   const [timeframe, setTimeframe] = useState<Timeframe>('7d');
+
+  // Animation values for mode and timeframe transitions
+  const modeFadeAnim = useRef(new Animated.Value(1)).current;
+  const modeSlideAnim = useRef(new Animated.Value(0)).current;
+
+  const handleSwitchMode = (mode: ViewMode) => {
+    if (mode === viewMode) return;
+    try {
+      Haptics.selectionAsync();
+    } catch {}
+
+    modeFadeAnim.setValue(0);
+    modeSlideAnim.setValue(8);
+    setViewMode(mode);
+
+    Animated.parallel([
+      Animated.timing(modeFadeAnim, {
+        toValue: 1,
+        duration: 180,
+        useNativeDriver: true,
+      }),
+      Animated.spring(modeSlideAnim, {
+        toValue: 0,
+        friction: 8,
+        tension: 65,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  };
+
+  const handleSwitchTimeframe = (tf: Timeframe) => {
+    if (tf === timeframe) return;
+    try {
+      Haptics.selectionAsync();
+    } catch {}
+
+    modeFadeAnim.setValue(0.3);
+    modeSlideAnim.setValue(6);
+    setTimeframe(tf);
+
+    Animated.parallel([
+      Animated.timing(modeFadeAnim, {
+        toValue: 1,
+        duration: 160,
+        useNativeDriver: true,
+      }),
+      Animated.spring(modeSlideAnim, {
+        toValue: 0,
+        friction: 8,
+        tension: 65,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  };
 
   // Stats data
   const [creatineLog, setCreatineLog] = useState<CreatineDayEntry[]>([]);
@@ -108,7 +164,8 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
 
   const handleToggleCreatine = async (entry: CreatineDayEntry) => {
     try {
-      Haptics.selectionAsync();
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.spring);
       const nextState = !entry.taken;
       await toggleCreatineDay(entry.date, nextState);
       setCreatineLog((prev) =>
@@ -261,10 +318,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                 elevation: 2,
               },
             ]}
-            onPress={() => {
-              Haptics.selectionAsync();
-              setViewMode('stats');
-            }}
+            onPress={() => handleSwitchMode('stats')}
             activeOpacity={0.7}
           >
             <Ionicons
@@ -294,10 +348,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                 elevation: 2,
               },
             ]}
-            onPress={() => {
-              Haptics.selectionAsync();
-              setViewMode('exercises');
-            }}
+            onPress={() => handleSwitchMode('exercises')}
             activeOpacity={0.7}
           >
             <Ionicons
@@ -318,30 +369,35 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
         </View>
       </View>
 
-      {/* ==================== VIEW 1: STATS & TRENDS ==================== */}
-      {viewMode === 'stats' ? (
-        <ScrollView style={styles.scrollArea} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-          {/* Timeframe Filter */}
-          <View style={styles.timeframeRow}>
-            {(['7d', '30d', '90d'] as Timeframe[]).map((tf) => {
-              const isSelected = timeframe === tf;
-              const label = tf === '7d' ? 'Ostatnie 7 dni' : tf === '30d' ? '30 dni' : '90 dni';
-              return (
-                <TouchableOpacity
-                  key={tf}
-                  style={[
-                    styles.tfPill,
-                    {
-                      backgroundColor: isSelected ? theme.primary : theme.bgSecondary,
-                      borderColor: isSelected ? theme.primary : theme.border,
-                    },
-                  ]}
-                  onPress={() => {
-                    Haptics.selectionAsync();
-                    setTimeframe(tf);
-                  }}
-                  activeOpacity={0.7}
-                >
+      {/* Animated Mode / Timeframe Content Container */}
+      <Animated.View
+        style={{
+          flex: 1,
+          opacity: modeFadeAnim,
+          transform: [{ translateY: modeSlideAnim }],
+        }}
+      >
+        {/* ==================== VIEW 1: STATS & TRENDS ==================== */}
+        {viewMode === 'stats' ? (
+          <ScrollView style={styles.scrollArea} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+            {/* Timeframe Filter */}
+            <View style={styles.timeframeRow}>
+              {(['7d', '30d', '90d'] as Timeframe[]).map((tf) => {
+                const isSelected = timeframe === tf;
+                const label = tf === '7d' ? 'Ostatnie 7 dni' : tf === '30d' ? '30 dni' : '90 dni';
+                return (
+                  <TouchableOpacity
+                    key={tf}
+                    style={[
+                      styles.tfPill,
+                      {
+                        backgroundColor: isSelected ? theme.primary : theme.bgSecondary,
+                        borderColor: isSelected ? theme.primary : theme.border,
+                      },
+                    ]}
+                    onPress={() => handleSwitchTimeframe(tf)}
+                    activeOpacity={0.7}
+                  >
                   <Text
                     style={[
                       styles.tfPillText,
@@ -731,6 +787,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
           </ScrollView>
         </>
       )}
+      </Animated.View>
 
       {/* Modal Dodawania / Edycji PR */}
       <Modal visible={modalVisible} transparent animationType="slide" onRequestClose={() => setModalVisible(false)}>

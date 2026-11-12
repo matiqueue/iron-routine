@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -8,6 +8,8 @@ import {
   Alert,
   TextInput,
   Platform,
+  Animated,
+  PanResponder,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -51,6 +53,114 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
 
   // Elapsed
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
+
+  // Animations: directional slide & crossfade for exercise changes
+  const exerciseSlideAnim = useRef(new Animated.Value(0)).current;
+  const exerciseFadeAnim = useRef(new Animated.Value(1)).current;
+  // Animations: spring scale & fade for switching sets within active exercise
+  const cardScaleAnim = useRef(new Animated.Value(1)).current;
+  const cardFadeAnim = useRef(new Animated.Value(1)).current;
+  // Animations: tactile bounce for complete set button
+  const completeBtnScale = useRef(new Animated.Value(1)).current;
+  const isTransitioningRef = useRef(false);
+
+  // Directional exercise change with smooth physics
+  const handleTransitionExercise = (targetIndex: number) => {
+    if (
+      targetIndex < 0 ||
+      targetIndex >= exercises.length ||
+      targetIndex === currentExerciseIndex ||
+      isTransitioningRef.current
+    ) {
+      return;
+    }
+
+    try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } catch {}
+
+    const direction = targetIndex > currentExerciseIndex ? 1 : -1;
+    isTransitioningRef.current = true;
+
+    // Slide out in navigation direction
+    Animated.parallel([
+      Animated.timing(exerciseSlideAnim, {
+        toValue: -32 * direction,
+        duration: 110,
+        useNativeDriver: true,
+      }),
+      Animated.timing(exerciseFadeAnim, {
+        toValue: 0.1,
+        duration: 110,
+        useNativeDriver: true,
+      }),
+    ]).start(() => {
+      setCurrentExerciseIndex(targetIndex);
+
+      // Start position for incoming exercise
+      exerciseSlideAnim.setValue(32 * direction);
+      exerciseFadeAnim.setValue(0.1);
+
+      // Slide in from opposite side with snappy spring
+      Animated.parallel([
+        Animated.spring(exerciseSlideAnim, {
+          toValue: 0,
+          friction: 8,
+          tension: 70,
+          useNativeDriver: true,
+        }),
+        Animated.timing(exerciseFadeAnim, {
+          toValue: 1,
+          duration: 160,
+          useNativeDriver: true,
+        }),
+      ]).start(() => {
+        isTransitioningRef.current = false;
+      });
+    });
+  };
+
+  // Series change animation
+  const handleChangeSetIndex = (newSetIdx: number) => {
+    if (newSetIdx === currentSetIndex) return;
+    try {
+      Haptics.selectionAsync();
+    } catch {}
+
+    cardScaleAnim.setValue(0.96);
+    cardFadeAnim.setValue(0.55);
+    setCurrentSetIndex(newSetIdx);
+
+    Animated.parallel([
+      Animated.spring(cardScaleAnim, {
+        toValue: 1,
+        friction: 7,
+        tension: 65,
+        useNativeDriver: true,
+      }),
+      Animated.timing(cardFadeAnim, {
+        toValue: 1,
+        duration: 150,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  };
+
+  // Header swipe responder: horizontal flick to navigate exercises
+  const headerPanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_, gesture) =>
+        Math.abs(gesture.dx) > 18 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.5,
+      onPanResponderRelease: (_, gesture) => {
+        if (gesture.dx < -40) {
+          handleTransitionExercise(currentExerciseIndex + 1);
+        } else if (gesture.dx > 40) {
+          handleTransitionExercise(currentExerciseIndex - 1);
+        }
+      },
+    })
+  ).current;
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -178,6 +288,21 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch {}
 
+    // Tactile button punch animation
+    Animated.sequence([
+      Animated.timing(completeBtnScale, {
+        toValue: 0.94,
+        duration: 70,
+        useNativeDriver: true,
+      }),
+      Animated.spring(completeBtnScale, {
+        toValue: 1,
+        friction: 4,
+        tension: 85,
+        useNativeDriver: true,
+      }),
+    ]).start();
+
     const weightToSave = displayWeight || '60';
     const repsToSave = displayReps || String(currentExercise.reps);
 
@@ -216,9 +341,9 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
     );
     setTimerActive(true);
 
-    // Auto-advance to next set
+    // Auto-advance to next set with spring animation
     if (!isExerciseFinished) {
-      setCurrentSetIndex(nextSetIdx);
+      handleChangeSetIndex(nextSetIdx);
     }
   };
 
@@ -287,95 +412,109 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
       </View>
 
       <ScrollView style={styles.scrollArea} showsVerticalScrollIndicator={false}>
-        {/* Exercise Header - Clean & Focused */}
-        <View style={styles.exerciseHeader}>
-          <Text style={[styles.catBadgeText, { color: theme.textMuted }]}>
-            {currentExercise.category.toUpperCase()} • ĆWICZENIE {currentExerciseIndex + 1} Z {exercises.length}
-          </Text>
-          <Text style={[styles.heroTitle, { color: theme.text }]}>{currentExercise.name}</Text>
-          <Text style={[styles.heroSubtitle, { color: theme.textSecondary }]}>
-            Plan: {currentExercise.sets} serie × {currentExercise.reps} • {currentExercise.rest}s odpoczynku
-          </Text>
-        </View>
+        {/* Animated Exercise Content Container */}
+        <Animated.View
+          style={{
+            opacity: exerciseFadeAnim,
+            transform: [{ translateX: exerciseSlideAnim }],
+          }}
+        >
+          {/* Exercise Header - Clean, Focused & Swipeable */}
+          <View style={styles.exerciseHeader} {...headerPanResponder.panHandlers}>
+            <Text style={[styles.catBadgeText, { color: theme.textMuted }]}>
+              {currentExercise.category.toUpperCase()} • ĆWICZENIE {currentExerciseIndex + 1} Z {exercises.length}
+            </Text>
+            <Text style={[styles.heroTitle, { color: theme.text }]}>{currentExercise.name}</Text>
+            <Text style={[styles.heroSubtitle, { color: theme.textSecondary }]}>
+              Plan: {currentExercise.sets} serie × {currentExercise.reps} • {currentExercise.rest}s odpoczynku
+            </Text>
+          </View>
 
-        {/* Series Stepper / Selector Row */}
-        <View style={styles.seriesSelectorWrap}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.seriesScroll}>
-            {Array.from({ length: currentExercise.sets }).map((_, idx) => {
-              const isSelected = idx === currentSetIndex;
-              const sEntry = currentExerciseSets[idx];
-              const isDone = !!sEntry?.completed;
+          {/* Series Stepper / Selector Row */}
+          <View style={styles.seriesSelectorWrap}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.seriesScroll}>
+              {Array.from({ length: currentExercise.sets }).map((_, idx) => {
+                const isSelected = idx === currentSetIndex;
+                const sEntry = currentExerciseSets[idx];
+                const isDone = !!sEntry?.completed;
 
-              return (
-                <TouchableOpacity
-                  key={idx}
-                  style={[
-                    styles.seriesPill,
-                    {
-                      backgroundColor: isSelected
-                        ? theme.primary
-                        : isDone
-                        ? theme.bgSecondary
-                        : theme.bgTertiary,
-                      borderColor: isSelected
-                        ? theme.primary
-                        : isDone
-                        ? theme.borderDark
-                        : theme.border,
-                    },
-                  ]}
-                  onPress={() => {
-                    Haptics.selectionAsync();
-                    setCurrentSetIndex(idx);
-                  }}
-                  activeOpacity={0.7}
-                >
-                  {isDone ? (
-                    <Ionicons
-                      name="checkmark"
-                      size={14}
-                      color={isSelected ? theme.primaryText : theme.text}
-                      style={{ marginRight: 4 }}
-                    />
-                  ) : null}
-                  <Text
+                return (
+                  <TouchableOpacity
+                    key={idx}
                     style={[
-                      styles.seriesPillText,
+                      styles.seriesPill,
                       {
-                        color: isSelected
-                          ? theme.primaryText
+                        backgroundColor: isSelected
+                          ? theme.primary
                           : isDone
-                          ? theme.text
-                          : theme.textMuted,
+                          ? theme.bgSecondary
+                          : theme.bgTertiary,
+                        borderColor: isSelected
+                          ? theme.primary
+                          : isDone
+                          ? theme.borderDark
+                          : theme.border,
                       },
                     ]}
+                    onPress={() => handleChangeSetIndex(idx)}
+                    activeOpacity={0.7}
                   >
-                    Seria {idx + 1}
-                  </Text>
-                  {sEntry?.weight ? (
+                    {isDone ? (
+                      <Ionicons
+                        name="checkmark"
+                        size={14}
+                        color={isSelected ? theme.primaryText : theme.text}
+                        style={{ marginRight: 4 }}
+                      />
+                    ) : null}
                     <Text
                       style={[
-                        styles.seriesPillWeight,
+                        styles.seriesPillText,
                         {
                           color: isSelected
                             ? theme.primaryText
                             : isDone
-                            ? theme.textSecondary
+                            ? theme.text
                             : theme.textMuted,
                         },
                       ]}
                     >
-                      • {sEntry.weight}kg
+                      Seria {idx + 1}
                     </Text>
-                  ) : null}
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-        </View>
+                    {sEntry?.weight ? (
+                      <Text
+                        style={[
+                          styles.seriesPillWeight,
+                          {
+                            color: isSelected
+                              ? theme.primaryText
+                              : isDone
+                              ? theme.textSecondary
+                              : theme.textMuted,
+                          },
+                        ]}
+                      >
+                        • {sEntry.weight}kg
+                      </Text>
+                    ) : null}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
 
-        {/* ACTIVE SERIES FOCUS CARD */}
-        <View style={[styles.focusCard, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
+          {/* ACTIVE SERIES FOCUS CARD with Spring Bounce on Set Switch */}
+          <Animated.View
+            style={[
+              styles.focusCard,
+              {
+                backgroundColor: theme.bgSecondary,
+                borderColor: theme.border,
+                opacity: cardFadeAnim,
+                transform: [{ scale: cardScaleAnim }],
+              },
+            ]}
+          >
           {/* Card Header: SERIA X Z Y */}
           <View style={styles.focusHeader}>
             <View>
@@ -497,16 +636,18 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
 
           {/* MAIN SET ACTION BUTTON */}
           {!isCurrentSetDone ? (
-            <TouchableOpacity
-              style={[styles.completeSetBtn, { backgroundColor: theme.primary }]}
-              onPress={handleCompleteActiveSet}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="checkmark-circle" size={20} color={theme.primaryText} />
-              <Text style={[styles.completeSetBtnText, { color: theme.primaryText }]}>
-                ZALICZ SERIĘ {currentSetIndex + 1} Z {currentExercise.sets}
-              </Text>
-            </TouchableOpacity>
+            <Animated.View style={{ transform: [{ scale: completeBtnScale }] }}>
+              <TouchableOpacity
+                style={[styles.completeSetBtn, { backgroundColor: theme.primary }]}
+                onPress={handleCompleteActiveSet}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="checkmark-circle" size={20} color={theme.primaryText} />
+                <Text style={[styles.completeSetBtnText, { color: theme.primaryText }]}>
+                  ZALICZ SERIĘ {currentSetIndex + 1} Z {currentExercise.sets}
+                </Text>
+              </TouchableOpacity>
+            </Animated.View>
           ) : (
             <View style={styles.completedActionsRow}>
               <TouchableOpacity
@@ -521,7 +662,7 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
               {currentSetIndex < currentExercise.sets - 1 ? (
                 <TouchableOpacity
                   style={[styles.nextSetBtn, { backgroundColor: theme.primary }]}
-                  onPress={() => setCurrentSetIndex((prev) => prev + 1)}
+                  onPress={() => handleChangeSetIndex(currentSetIndex + 1)}
                   activeOpacity={0.8}
                 >
                   <Text style={[styles.nextSetBtnText, { color: theme.primaryText }]}>
@@ -531,7 +672,8 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
               ) : null}
             </View>
           )}
-        </View>
+        </Animated.View>
+      </Animated.View>
 
         {/* Bottom Navigation */}
         <View style={styles.navRow}>
@@ -542,7 +684,7 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
               currentExerciseIndex === 0 && { opacity: 0.3 },
             ]}
             disabled={currentExerciseIndex === 0}
-            onPress={() => setCurrentExerciseIndex((prev) => Math.max(0, prev - 1))}
+            onPress={() => handleTransitionExercise(currentExerciseIndex - 1)}
             activeOpacity={0.7}
           >
             <Ionicons name="chevron-back" size={16} color={theme.text} />
@@ -552,7 +694,7 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
           {currentExerciseIndex < exercises.length - 1 ? (
             <TouchableOpacity
               style={[styles.navBtnNext, { backgroundColor: theme.primary }]}
-              onPress={() => setCurrentExerciseIndex((prev) => Math.min(exercises.length - 1, prev + 1))}
+              onPress={() => handleTransitionExercise(currentExerciseIndex + 1)}
               activeOpacity={0.8}
             >
               <Text style={[styles.navBtnNextText, { color: theme.primaryText }]}>

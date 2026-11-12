@@ -38,8 +38,9 @@ export const RestTimerBar: React.FC<RestTimerBarProps> = ({
   // Real gesture-driven PanResponder for interactive swipe-down to dismiss
   const panResponder = useRef(
     PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: (_, gestureState) => gestureState.dy > 4,
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_, gestureState) =>
+        gestureState.dy > 8 && Math.abs(gestureState.dy) > Math.abs(gestureState.dx),
       onPanResponderMove: (_, gestureState) => {
         if (gestureState.dy > 0) {
           slideAnim.setValue(gestureState.dy);
@@ -187,9 +188,10 @@ export const RestTimerBar: React.FC<RestTimerBarProps> = ({
               transform: [{ translateY: slideAnim }],
             },
           ]}
+          {...panResponder.panHandlers}
         >
-          {/* Grab handle with active drag area (PanResponder attached) */}
-          <View style={styles.handleWrap} {...panResponder.panHandlers}>
+          {/* Grab handle */}
+          <View style={styles.handleWrap}>
             <View style={[styles.handleBar, { backgroundColor: isDark ? '#444444' : '#D1D5DB' }]} />
             <Text style={[styles.dragHint, { color: theme.textMuted }]}>Przesuń w dół, aby zamknąć</Text>
           </View>
@@ -237,7 +239,7 @@ export const RestTimerBar: React.FC<RestTimerBarProps> = ({
               </Text>
             </View>
 
-            {/* Time Adjusters Row */}
+            {/* Time Adjusters Row: -15s | Pauza | +15s */}
             <View style={styles.adjustRow}>
               <TouchableOpacity
                 onPress={() => adjustTime(-15)}
@@ -248,46 +250,45 @@ export const RestTimerBar: React.FC<RestTimerBarProps> = ({
               </TouchableOpacity>
 
               <TouchableOpacity
-                onPress={() => adjustTime(15)}
-                style={[styles.adjustBtn, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}
-                activeOpacity={0.7}
-              >
-                <Text style={[styles.adjustBtnText, { color: theme.text }]}>+15s</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                onPress={() => adjustTime(30)}
-                style={[styles.adjustBtn, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}
-                activeOpacity={0.7}
-              >
-                <Text style={[styles.adjustBtnText, { color: theme.text }]}>+30s</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
                 onPress={() => setIsRunning(!isRunning)}
                 style={[styles.playBtn, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}
                 activeOpacity={0.7}
               >
                 <Ionicons
                   name={isRunning ? 'pause' : 'play'}
-                  size={19}
+                  size={20}
                   color={theme.text}
                 />
               </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={() => adjustTime(15)}
+                style={[styles.adjustBtn, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.adjustBtnText, { color: theme.text }]}>+15s</Text>
+              </TouchableOpacity>
             </View>
 
-            {/* Main Action Button */}
+            {/* Main Action Button - Sleek neutral gray instead of black */}
             <TouchableOpacity
               onPress={handleDismiss}
-              style={[styles.primaryActionBtn, { backgroundColor: theme.primary }]}
+              style={[
+                styles.primaryActionBtn,
+                {
+                  backgroundColor: isDark ? '#27272A' : '#E5E5EA',
+                  borderColor: isDark ? '#3F3F46' : '#D1D1D6',
+                  borderWidth: 1,
+                },
+              ]}
               activeOpacity={0.8}
             >
               <Ionicons
                 name={isFinished ? 'play' : 'checkmark-done'}
                 size={18}
-                color={theme.primaryText}
+                color={theme.text}
               />
-              <Text style={[styles.primaryActionBtnText, { color: theme.primaryText }]}>
+              <Text style={[styles.primaryActionBtnText, { color: theme.text }]}>
                 {isFinished ? 'ROZPOCZNIJ SERIĘ' : 'ZAKOŃCZ PRZERWĘ (ZACZNIJ SERIĘ)'}
               </Text>
             </TouchableOpacity>
@@ -386,12 +387,12 @@ const styles = StyleSheet.create({
   adjustRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 10,
     marginBottom: 16,
   },
   adjustBtn: {
     flex: 1,
-    height: 44,
+    height: 46,
     borderRadius: 12,
     borderWidth: 1,
     justifyContent: 'center',
@@ -402,8 +403,8 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   playBtn: {
-    width: 44,
-    height: 44,
+    flex: 1,
+    height: 46,
     borderRadius: 12,
     borderWidth: 1,
     justifyContent: 'center',

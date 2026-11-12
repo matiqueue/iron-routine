@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -9,6 +9,7 @@ import {
   LayoutAnimation,
   Platform,
   UIManager,
+  Animated,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -34,6 +35,36 @@ export const PlanTab: React.FC<PlanTabProps> = ({
   const [selectedDayId, setSelectedDayId] = useState<string>('mon');
   const [expandedExerciseId, setExpandedExerciseId] = useState<string | null>(null);
   const [modalExercise, setModalExercise] = useState<Exercise | null>(null);
+
+  // Smooth animated transition when switching days
+  const contentFadeAnim = useRef(new Animated.Value(1)).current;
+  const contentSlideAnim = useRef(new Animated.Value(0)).current;
+
+  const handleSelectDay = (dayId: string) => {
+    if (dayId === selectedDayId) return;
+    try {
+      Haptics.selectionAsync();
+    } catch {}
+
+    contentFadeAnim.setValue(0);
+    contentSlideAnim.setValue(10);
+    setSelectedDayId(dayId);
+    setExpandedExerciseId(null);
+
+    Animated.parallel([
+      Animated.timing(contentFadeAnim, {
+        toValue: 1,
+        duration: 180,
+        useNativeDriver: true,
+      }),
+      Animated.spring(contentSlideAnim, {
+        toValue: 0,
+        friction: 8,
+        tension: 65,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  };
 
   const currentPlan: DayPlan =
     WORKOUT_PLAN.find((d) => d.id === selectedDayId) || WORKOUT_PLAN[0];
@@ -76,11 +107,7 @@ export const PlanTab: React.FC<PlanTabProps> = ({
                     borderColor: isSelected ? theme.primary : theme.border,
                   },
                 ]}
-                onPress={() => {
-                  Haptics.selectionAsync();
-                  setSelectedDayId(day.id);
-                  setExpandedExerciseId(null);
-                }}
+                onPress={() => handleSelectDay(day.id)}
                 activeOpacity={0.7}
               >
                 <Text
@@ -111,6 +138,12 @@ export const PlanTab: React.FC<PlanTabProps> = ({
         contentContainerStyle={styles.contentInner}
         showsVerticalScrollIndicator={false}
       >
+        <Animated.View
+          style={{
+            opacity: contentFadeAnim,
+            transform: [{ translateY: contentSlideAnim }],
+          }}
+        >
         {/* Banner with image */}
         {currentPlan.bannerUrl ? (
           <View style={styles.bannerWrapper}>
@@ -291,6 +324,7 @@ export const PlanTab: React.FC<PlanTabProps> = ({
             })}
           </View>
         )}
+        </Animated.View>
       </ScrollView>
 
       <ExerciseDetailModal
