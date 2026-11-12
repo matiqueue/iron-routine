@@ -7,6 +7,7 @@ import {
   Platform,
   Modal,
   Animated,
+  PanResponder,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -31,8 +32,51 @@ export const RestTimerBar: React.FC<RestTimerBarProps> = ({
   const [isFinished, setIsFinished] = useState(false);
 
   // Animations for slide & fade
-  const slideAnim = useRef(new Animated.Value(320)).current;
+  const slideAnim = useRef(new Animated.Value(350)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
+
+  // Real gesture-driven PanResponder for interactive swipe-down to dismiss
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (_, gestureState) => gestureState.dy > 4,
+      onPanResponderMove: (_, gestureState) => {
+        if (gestureState.dy > 0) {
+          slideAnim.setValue(gestureState.dy);
+        }
+      },
+      onPanResponderRelease: (_, gestureState) => {
+        // If swiped down enough or with high downward velocity, dismiss
+        if (gestureState.dy > 80 || gestureState.vy > 0.5) {
+          try {
+            Haptics.selectionAsync();
+          } catch {}
+          Animated.parallel([
+            Animated.timing(slideAnim, {
+              toValue: 400,
+              duration: 180,
+              useNativeDriver: true,
+            }),
+            Animated.timing(fadeAnim, {
+              toValue: 0,
+              duration: 160,
+              useNativeDriver: true,
+            }),
+          ]).start(() => {
+            onClose();
+          });
+        } else {
+          // Snap back up smoothly
+          Animated.spring(slideAnim, {
+            toValue: 0,
+            friction: 7,
+            tension: 50,
+            useNativeDriver: true,
+          }).start();
+        }
+      },
+    })
+  ).current;
 
   useEffect(() => {
     Animated.parallel([
@@ -44,7 +88,7 @@ export const RestTimerBar: React.FC<RestTimerBarProps> = ({
       }),
       Animated.timing(fadeAnim, {
         toValue: 1,
-        duration: 220,
+        duration: 200,
         useNativeDriver: true,
       }),
     ]).start();
@@ -53,13 +97,13 @@ export const RestTimerBar: React.FC<RestTimerBarProps> = ({
   const handleDismiss = () => {
     Animated.parallel([
       Animated.timing(slideAnim, {
-        toValue: 350,
-        duration: 200,
+        toValue: 400,
+        duration: 180,
         useNativeDriver: true,
       }),
       Animated.timing(fadeAnim, {
         toValue: 0,
-        duration: 180,
+        duration: 160,
         useNativeDriver: true,
       }),
     ]).start(() => {
@@ -113,8 +157,6 @@ export const RestTimerBar: React.FC<RestTimerBarProps> = ({
     return `${mins < 10 ? '0' : ''}${mins}:${secs < 10 ? '0' : ''}${secs}`;
   };
 
-  const progressPercent = initialSeconds > 0 ? (secondsLeft / initialSeconds) * 100 : 0;
-
   return (
     <Modal visible transparent animationType="none" onRequestClose={handleDismiss}>
       <View style={styles.overlay}>
@@ -123,7 +165,7 @@ export const RestTimerBar: React.FC<RestTimerBarProps> = ({
           style={[
             styles.backdrop,
             {
-              backgroundColor: isDark ? 'rgba(0, 0, 0, 0.72)' : 'rgba(0, 0, 0, 0.45)',
+              backgroundColor: isDark ? 'rgba(0, 0, 0, 0.75)' : 'rgba(0, 0, 0, 0.45)',
               opacity: fadeAnim,
             },
           ]}
@@ -135,7 +177,7 @@ export const RestTimerBar: React.FC<RestTimerBarProps> = ({
           />
         </Animated.View>
 
-        {/* Animated Bottom Sheet */}
+        {/* Animated Bottom Sheet with PanResponder swipe-down gesture */}
         <Animated.View
           style={[
             styles.sheet,
@@ -146,26 +188,14 @@ export const RestTimerBar: React.FC<RestTimerBarProps> = ({
             },
           ]}
         >
-          {/* Grab handle indicator */}
-          <View style={styles.handleWrap}>
-            <View style={[styles.handleBar, { backgroundColor: theme.borderDark }]} />
-          </View>
-
-          {/* Progress track */}
-          <View style={[styles.progressTrack, { backgroundColor: theme.bgTertiary }]}>
-            <View
-              style={[
-                styles.progressBar,
-                {
-                  width: `${Math.min(100, Math.max(0, progressPercent))}%`,
-                  backgroundColor: isFinished ? theme.textSecondary : theme.text,
-                },
-              ]}
-            />
+          {/* Grab handle with active drag area (PanResponder attached) */}
+          <View style={styles.handleWrap} {...panResponder.panHandlers}>
+            <View style={[styles.handleBar, { backgroundColor: isDark ? '#444444' : '#D1D5DB' }]} />
+            <Text style={[styles.dragHint, { color: theme.textMuted }]}>Przesuń w dół, aby zamknąć</Text>
           </View>
 
           <View style={styles.content}>
-            {/* Header info */}
+            {/* Header row */}
             <View style={styles.headerRow}>
               <View style={{ flex: 1 }}>
                 <Text style={[styles.kicker, { color: isFinished ? theme.text : theme.textMuted }]}>
@@ -280,8 +310,6 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     borderTopWidth: 1,
-    borderLeftWidth: 1,
-    borderRightWidth: 1,
     overflow: 'hidden',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -8 },
@@ -292,23 +320,23 @@ const styles = StyleSheet.create({
   },
   handleWrap: {
     alignItems: 'center',
-    paddingVertical: 10,
+    paddingTop: 12,
+    paddingBottom: 6,
   },
   handleBar: {
-    width: 38,
-    height: 4.5,
-    borderRadius: 3,
+    width: 44,
+    height: 5,
+    borderRadius: 2.5,
   },
-  progressTrack: {
-    height: 3,
-    width: '100%',
-  },
-  progressBar: {
-    height: '100%',
+  dragHint: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.4,
+    marginTop: 6,
   },
   content: {
     paddingHorizontal: 22,
-    paddingTop: 12,
+    paddingTop: 8,
   },
   headerRow: {
     flexDirection: 'row',
@@ -342,10 +370,10 @@ const styles = StyleSheet.create({
   digitsWrapper: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 20,
+    paddingVertical: 18,
   },
   digits: {
-    fontSize: 62,
+    fontSize: 64,
     fontWeight: '900',
     fontVariant: ['tabular-nums'],
     letterSpacing: -1.5,

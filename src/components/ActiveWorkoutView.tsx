@@ -287,41 +287,15 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
       </View>
 
       <ScrollView style={styles.scrollArea} showsVerticalScrollIndicator={false}>
-        {/* Exercise Header */}
+        {/* Exercise Header - Clean & Focused */}
         <View style={styles.exerciseHeader}>
           <Text style={[styles.catBadgeText, { color: theme.textMuted }]}>
             {currentExercise.category.toUpperCase()} • ĆWICZENIE {currentExerciseIndex + 1} Z {exercises.length}
           </Text>
           <Text style={[styles.heroTitle, { color: theme.text }]}>{currentExercise.name}</Text>
           <Text style={[styles.heroSubtitle, { color: theme.textSecondary }]}>
-            Plan: {currentExercise.sets} serie × {currentExercise.reps} • {currentExercise.rest}s przerwy
+            Plan: {currentExercise.sets} serie × {currentExercise.reps} • {currentExercise.rest}s odpoczynku
           </Text>
-
-          {/* Quick buttons */}
-          <View style={styles.quickBar}>
-            <TouchableOpacity
-              style={[styles.quickBtn, { borderColor: theme.border, backgroundColor: theme.bgSecondary }]}
-              onPress={() => setDetailModalExercise(currentExercise)}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="image-outline" size={14} color={theme.text} />
-              <Text style={[styles.quickBtnText, { color: theme.text }]}>Technika & foto</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.quickBtn, { borderColor: theme.border, backgroundColor: theme.bgSecondary }]}
-              onPress={() => {
-                setTimerSeconds(currentExercise.rest);
-                setTimerLabel(currentExercise.name);
-                setTimerNextInfo(`Seria ${currentSetIndex + 1} z ${currentExercise.sets}`);
-                setTimerActive(true);
-              }}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="timer-outline" size={14} color={theme.text} />
-              <Text style={[styles.quickBtnText, { color: theme.text }]}>Stoper ({currentExercise.rest}s)</Text>
-            </TouchableOpacity>
-          </View>
         </View>
 
         {/* Series Stepper / Selector Row */}
@@ -409,7 +383,7 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
                 SERIA {currentSetIndex + 1} Z {currentExercise.sets}
               </Text>
               <Text style={[styles.focusSubtitle, { color: theme.textMuted }]}>
-                Cel: {currentExercise.reps} powtórzeń ({currentExercise.rest}s odpoczynku)
+                Cel: {currentExercise.reps} powt. • {currentExercise.rest}s przerwy
               </Text>
             </View>
 
@@ -440,23 +414,6 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
             </TouchableOpacity>
           </View>
 
-          {/* Smart autofill hint */}
-          {lastMetrics && (lastMetrics.weight || lastMetrics.reps) && !isCurrentSetDone ? (
-            <TouchableOpacity
-              style={[styles.smartFillRow, { backgroundColor: theme.card, borderColor: theme.border }]}
-              onPress={handleFillFromLast}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="flash-outline" size={14} color={theme.text} />
-              <Text style={[styles.smartFillText, { color: theme.text }]}>
-                Ostatnio: {lastMetrics.weight ? `${lastMetrics.weight} kg` : ''}
-                {lastMetrics.weight && lastMetrics.reps ? ' × ' : ''}
-                {lastMetrics.reps ? `${lastMetrics.reps} powt.` : ''}
-              </Text>
-              <Text style={[styles.smartFillLink, { color: theme.textSecondary }]}>Wstaw dane ➔</Text>
-            </TouchableOpacity>
-          ) : null}
-
           {/* Steppers: KG and REPS */}
           <View style={styles.inputsGrid}>
             {/* Weight Input Box with Stepper */}
@@ -486,22 +443,6 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
                   activeOpacity={0.7}
                 >
                   <Text style={[styles.stepBtnText, { color: theme.text }]}>+2.5</Text>
-                </TouchableOpacity>
-              </View>
-
-              {/* Quick +/- 5 pills */}
-              <View style={styles.quickAdjustRow}>
-                <TouchableOpacity
-                  style={[styles.quickPill, { backgroundColor: theme.card, borderColor: theme.border }]}
-                  onPress={() => handleAdjustWeight(-5)}
-                >
-                  <Text style={[styles.quickPillText, { color: theme.textSecondary }]}>-5 kg</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.quickPill, { backgroundColor: theme.card, borderColor: theme.border }]}
-                  onPress={() => handleAdjustWeight(5)}
-                >
-                  <Text style={[styles.quickPillText, { color: theme.textSecondary }]}>+5 kg</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -535,24 +476,24 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
                   <Text style={[styles.stepBtnText, { color: theme.text }]}>+1</Text>
                 </TouchableOpacity>
               </View>
-
-              {/* Quick +/- 2 pills */}
-              <View style={styles.quickAdjustRow}>
-                <TouchableOpacity
-                  style={[styles.quickPill, { backgroundColor: theme.card, borderColor: theme.border }]}
-                  onPress={() => handleAdjustReps(-2)}
-                >
-                  <Text style={[styles.quickPillText, { color: theme.textSecondary }]}>-2</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.quickPill, { backgroundColor: theme.card, borderColor: theme.border }]}
-                  onPress={() => handleAdjustReps(2)}
-                >
-                  <Text style={[styles.quickPillText, { color: theme.textSecondary }]}>+2</Text>
-                </TouchableOpacity>
-              </View>
             </View>
           </View>
+
+          {/* Last session subtle hint */}
+          {lastMetrics && (lastMetrics.weight || lastMetrics.reps) && !isCurrentSetDone ? (
+            <TouchableOpacity
+              style={styles.cleanHintRow}
+              onPress={handleFillFromLast}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="flash-outline" size={13} color={theme.textMuted} />
+              <Text style={[styles.cleanHintText, { color: theme.textMuted }]}>
+                Ostatnio: {lastMetrics.weight ? `${lastMetrics.weight} kg` : ''}
+                {lastMetrics.weight && lastMetrics.reps ? ' × ' : ''}
+                {lastMetrics.reps ? `${lastMetrics.reps} powt.` : ''} • <Text style={{ color: theme.text, fontWeight: '700' }}>Wstaw dane ➔</Text>
+              </Text>
+            </TouchableOpacity>
+          ) : null}
 
           {/* MAIN SET ACTION BUTTON */}
           {!isCurrentSetDone ? (
@@ -592,85 +533,6 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
           )}
         </View>
 
-        {/* All Sets Summary in this Exercise */}
-        <View style={styles.summarySection}>
-          <Text style={[styles.summaryHeader, { color: theme.textMuted }]}>
-            POSTĘP W TYM ĆWICZENIU ({currentExercise.sets} SERIE)
-          </Text>
-          <View style={[styles.summaryCard, { backgroundColor: theme.bgSecondary, borderColor: theme.hairline }]}>
-            {Array.from({ length: currentExercise.sets }).map((_, idx) => {
-              const sEntry = currentExerciseSets[idx];
-              const isDone = !!sEntry?.completed;
-              const isSelected = idx === currentSetIndex;
-
-              return (
-                <TouchableOpacity
-                  key={idx}
-                  style={[
-                    styles.summaryRow,
-                    { borderTopColor: idx === 0 ? 'transparent' : theme.hairline },
-                    isSelected && { backgroundColor: theme.card },
-                  ]}
-                  onPress={() => {
-                    Haptics.selectionAsync();
-                    setCurrentSetIndex(idx);
-                  }}
-                  activeOpacity={0.7}
-                >
-                  <View style={styles.summaryLeft}>
-                    <View
-                      style={[
-                        styles.summaryDot,
-                        {
-                          backgroundColor: isDone ? theme.text : isSelected ? theme.primary : theme.border,
-                        },
-                      ]}
-                    />
-                    <Text style={[styles.summarySetText, { color: theme.text }]}>Seria {idx + 1}</Text>
-                    {isDone ? (
-                      <Text style={[styles.summaryMetrics, { color: theme.textSecondary }]}>
-                        {sEntry?.weight || '—'} kg × {sEntry?.reps || '—'} powt.
-                      </Text>
-                    ) : (
-                      <Text style={[styles.summaryPending, { color: theme.textMuted }]}>
-                        {isSelected ? 'W trakcie edycji' : 'Oczekuje'}
-                      </Text>
-                    )}
-                  </View>
-
-                  <View style={styles.summaryRight}>
-                    {isDone ? (
-                      <View style={[styles.doneTag, { backgroundColor: theme.bgTertiary }]}>
-                        <Ionicons name="checkmark" size={13} color={theme.text} />
-                        <Text style={[styles.doneTagText, { color: theme.text }]}>Zrobione</Text>
-                      </View>
-                    ) : isSelected ? (
-                      <Text style={[styles.editHint, { color: theme.textSecondary }]}>Edytuj ➔</Text>
-                    ) : null}
-                  </View>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        </View>
-
-        {/* Next exercise preview / switch */}
-        {nextExercise ? (
-          <TouchableOpacity
-            style={[styles.nextPreview, { borderColor: theme.hairline }]}
-            onPress={() => {
-              setCurrentExerciseIndex((prev) => prev + 1);
-            }}
-            activeOpacity={0.7}
-          >
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.nextPreviewLabel, { color: theme.textMuted }]}>NASTĘPNE ĆWICZENIE</Text>
-              <Text style={[styles.nextPreviewName, { color: theme.text }]}>{nextExercise.name}</Text>
-            </View>
-            <Ionicons name="arrow-forward" size={18} color={theme.textMuted} />
-          </TouchableOpacity>
-        ) : null}
-
         {/* Bottom Navigation */}
         <View style={styles.navRow}>
           <TouchableOpacity
@@ -693,7 +555,9 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
               onPress={() => setCurrentExerciseIndex((prev) => Math.min(exercises.length - 1, prev + 1))}
               activeOpacity={0.8}
             >
-              <Text style={[styles.navBtnNextText, { color: theme.primaryText }]}>Następne ćwiczenie</Text>
+              <Text style={[styles.navBtnNextText, { color: theme.primaryText }]}>
+                {nextExercise ? `Następne: ${nextExercise.name.split(' ')[0]}` : 'Następne'}
+              </Text>
               <Ionicons name="chevron-forward" size={16} color={theme.primaryText} />
             </TouchableOpacity>
           ) : (
@@ -877,28 +741,21 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: 0.5,
   },
-  smartFillRow: {
+  cleanHintRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-    borderWidth: 1,
-    marginBottom: 14,
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 6,
+    marginBottom: 8,
   },
-  smartFillText: {
+  cleanHintText: {
     fontSize: 12,
-    fontWeight: '600',
-  },
-  smartFillLink: {
-    fontSize: 11,
-    fontWeight: '700',
   },
   inputsGrid: {
     flexDirection: 'row',
     gap: 12,
-    marginBottom: 18,
+    marginBottom: 14,
   },
   inputCol: {
     flex: 1,
