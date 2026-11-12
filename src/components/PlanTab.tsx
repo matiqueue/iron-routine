@@ -309,22 +309,22 @@ const styles = StyleSheet.create({
   },
   header: {
     paddingHorizontal: 20,
-    paddingTop: 12,
-    paddingBottom: 8,
+    paddingTop: 16,
+    paddingBottom: 10,
   },
   title: {
-    fontSize: 32,
+    fontSize: 34,
     fontWeight: '900',
     letterSpacing: -0.6,
   },
   subtitle: {
-    fontSize: 14,
-    marginTop: 3,
+    fontSize: 15,
+    marginTop: 4,
   },
   daySelectorWrapper: {
     borderBottomWidth: StyleSheet.hairlineWidth,
-    paddingBottom: 14,
-    marginTop: 8,
+    paddingBottom: 16,
+    marginTop: 10,
   },
   daySelectorScroll: {
     paddingHorizontal: 20,
@@ -332,19 +332,19 @@ const styles = StyleSheet.create({
   },
   dayPill: {
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 14,
     borderRadius: 16,
     borderWidth: 1,
     alignItems: 'center',
-    minWidth: 64,
+    minWidth: 68,
     gap: 4,
   },
   dayShort: {
-    fontSize: 15,
-    fontWeight: '800',
+    fontSize: 17,
+    fontWeight: '900',
   },
   daySub: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
   },
   contentScroll: {
@@ -353,11 +353,11 @@ const styles = StyleSheet.create({
   contentInner: {
     paddingHorizontal: 20,
     paddingTop: 18,
-    paddingBottom: 80,
+    paddingBottom: 85,
   },
   bannerWrapper: {
     width: '100%',
-    height: 195,
+    height: 200,
     borderRadius: 20,
     overflow: 'hidden',
     position: 'relative',
@@ -381,21 +381,22 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   bannerBadgeText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '800',
     color: '#FFFFFF',
     letterSpacing: 0.6,
   },
   bannerTitle: {
-    fontSize: 28,
+    fontSize: 30,
     fontWeight: '900',
     color: '#FFFFFF',
-    letterSpacing: -0.4,
+    letterSpacing: -0.5,
+    lineHeight: 36,
   },
   bannerSubtitle: {
-    fontSize: 14,
+    fontSize: 15,
     color: 'rgba(255, 255, 255, 0.85)',
-    marginTop: 3,
+    marginTop: 4,
   },
   bannerMetaRow: {
     flexDirection: 'row',
@@ -409,7 +410,7 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   bannerMetaText: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '600',
     color: '#FFFFFF',
   },
@@ -421,19 +422,19 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 12,
-    padding: 16,
+    padding: 18,
     borderRadius: 16,
     borderWidth: 1,
     marginBottom: 20,
   },
   warmupTitle: {
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '800',
     marginBottom: 4,
   },
   warmupDesc: {
-    fontSize: 13,
-    lineHeight: 19,
+    fontSize: 14,
+    lineHeight: 21,
   },
   startWorkoutBtn: {
     flexDirection: 'row',
@@ -445,7 +446,7 @@ const styles = StyleSheet.create({
     marginBottom: 22,
   },
   startWorkoutBtnText: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '900',
     letterSpacing: 0.5,
   },
@@ -461,16 +462,16 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
   },
   sectionTitle: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '800',
-    letterSpacing: 0.9,
+    letterSpacing: 1,
   },
   sectionHint: {
-    fontSize: 12,
+    fontSize: 13,
   },
   exerciseItem: {
     borderBottomWidth: StyleSheet.hairlineWidth,
-    paddingVertical: 16,
+    paddingVertical: 18,
     paddingHorizontal: 8,
   },
   exerciseHeaderRow: {
@@ -478,17 +479,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 12,
-    minHeight: 52,
+    minHeight: 56,
   },
   exerciseInfo: {
     flex: 1,
   },
   exerciseName: {
-    fontSize: 18,
+    fontSize: 19,
     fontWeight: '800',
     letterSpacing: -0.3,
-    lineHeight: 23,
-    marginBottom: 5,
+    lineHeight: 25,
+    marginBottom: 6,
   },
   metaRow: {
     flexDirection: 'row',
@@ -497,18 +498,18 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
   },
   categoryTag: {
-    paddingHorizontal: 7,
+    paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 5,
     borderWidth: StyleSheet.hairlineWidth,
   },
   categoryTagText: {
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: '800',
     letterSpacing: 0.4,
   },
   repsInfo: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '600',
   },
   restTagWrap: {
@@ -517,7 +518,7 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   restPill: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '600',
   },
   expandedContent: {
@@ -549,13 +550,13 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   fullImgBtnText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
   },
   expandedDesc: {
-    fontSize: 14,
-    lineHeight: 22,
-    marginBottom: 12,
+    fontSize: 15,
+    lineHeight: 23,
+    marginBottom: 14,
   },
   expandedTip: {
     borderLeftWidth: 2,
@@ -563,20 +564,20 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   expandedTipText: {
-    fontSize: 13,
+    fontSize: 14,
     fontStyle: 'italic',
-    lineHeight: 19,
+    lineHeight: 21,
   },
   prActionBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    paddingVertical: 15,
-    borderRadius: 12,
+    paddingVertical: 16,
+    borderRadius: 14,
   },
   prActionBtnText: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '800',
   },
 });

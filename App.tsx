@@ -278,49 +278,6 @@ function MainApp() {
       <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.bg }]} edges={['top', 'left', 'right']}>
         <StatusBar style={isDark ? 'light' : 'dark'} />
 
-        {/* Top Header Bar */}
-        <View style={styles.topHeader}>
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.dateLabel, { color: theme.textMuted }]}>
-              {new Date().toLocaleDateString('pl-PL', {
-                weekday: 'long',
-                day: 'numeric',
-                month: 'long',
-              }).toUpperCase()}
-            </Text>
-            <Text style={[styles.greeting, { color: theme.text }]}>
-              Cześć, {activeProfile?.name?.split(' ')[0] || 'Szymon'}
-            </Text>
-          </View>
-
-          {/* Header Action Buttons */}
-          <View style={styles.headerActions}>
-            <TouchableOpacity
-              style={[styles.actionIconBtn, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}
-              onPress={toggleTheme}
-              activeOpacity={0.7}
-              accessibilityLabel="Przełącz motyw"
-            >
-              <Ionicons
-                name={isDark ? 'sunny-outline' : 'moon-outline'}
-                size={18}
-                color={theme.text}
-              />
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.profilePill, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}
-              onPress={() => setShowProfileModal(true)}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="person-circle-outline" size={17} color={theme.text} />
-              <Text style={[styles.profilePillText, { color: theme.text }]} numberOfLines={1}>
-                {activeProfile?.name?.split(' ')[0] || 'Profil'}
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
         {/* Animated Tab View Container */}
         <Animated.View
           style={[
@@ -338,6 +295,49 @@ function MainApp() {
               contentContainerStyle={styles.tabContent}
               showsVerticalScrollIndicator={false}
             >
+              {/* Top Header Bar - EXCLUSIVELY in Trening Tab */}
+              <View style={styles.topHeader}>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.dateLabel, { color: theme.textMuted }]}>
+                    {new Date().toLocaleDateString('pl-PL', {
+                      weekday: 'long',
+                      day: 'numeric',
+                      month: 'long',
+                    }).toUpperCase()}
+                  </Text>
+                  <Text style={[styles.greeting, { color: theme.text }]}>
+                    Cześć, {activeProfile?.name?.split(' ')[0] || 'Szymon'}
+                  </Text>
+                </View>
+
+                {/* Header Action Buttons: Dark Mode & Profile Selector */}
+                <View style={styles.headerActions}>
+                  <TouchableOpacity
+                    style={[styles.actionIconBtn, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}
+                    onPress={toggleTheme}
+                    activeOpacity={0.7}
+                    accessibilityLabel="Przełącz motyw"
+                  >
+                    <Ionicons
+                      name={isDark ? 'sunny-outline' : 'moon-outline'}
+                      size={18}
+                      color={theme.text}
+                    />
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.profilePill, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}
+                    onPress={() => setShowProfileModal(true)}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name="person-circle-outline" size={17} color={theme.text} />
+                    <Text style={[styles.profilePillText, { color: theme.text }]} numberOfLines={1}>
+                      {activeProfile?.name?.split(' ')[0] || 'Profil'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
               {/* Streak Ribbon */}
               <View style={[styles.streakRibbon, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
                 <View style={styles.streakLeft}>
@@ -493,7 +493,7 @@ function MainApp() {
           {/* TAB 3: OSIĄGI (MERITUM) */}
           {activeTab === 'progress' && (
             <ProgressTab
-              activeProfile={activeProfile || { id: 'szymon_goral', name: 'Szymon Góral (ja)', createdAt: '' }}
+              activeProfile={activeProfile || { id: 'szymon_goral', name: 'Szymon Góral', createdAt: '' }}
               onOpenProfileModal={() => setShowProfileModal(true)}
             />
           )}
@@ -627,26 +627,25 @@ const styles = StyleSheet.create({
   },
   tabContent: {
     paddingHorizontal: 20,
-    paddingTop: 14,
+    paddingTop: 16,
     paddingBottom: 95,
   },
   topHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingTop: 12,
-    paddingBottom: 10,
+    paddingBottom: 18,
+    marginBottom: 6,
   },
   dateLabel: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '800',
-    letterSpacing: 1.1,
+    letterSpacing: 1.2,
   },
   greeting: {
-    fontSize: 28,
+    fontSize: 32,
     fontWeight: '900',
-    letterSpacing: -0.5,
+    letterSpacing: -0.6,
     marginTop: 2,
   },
   headerActions: {
@@ -655,9 +654,9 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   actionIconBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
     borderWidth: 1,
     justifyContent: 'center',
     alignItems: 'center',
@@ -665,15 +664,15 @@ const styles = StyleSheet.create({
   profilePill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-    borderRadius: 20,
+    gap: 7,
+    paddingHorizontal: 15,
+    paddingVertical: 10,
+    borderRadius: 21,
     borderWidth: 1,
-    maxWidth: 140,
+    maxWidth: 150,
   },
   profilePillText: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '700',
   },
   streakRibbon: {
@@ -691,24 +690,24 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   streakIconWrap: {
-    width: 40,
-    height: 40,
+    width: 42,
+    height: 42,
     borderRadius: 12,
     borderWidth: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
   streakTitle: {
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: '800',
   },
   streakSub: {
-    fontSize: 12,
-    marginTop: 2,
+    fontSize: 13,
+    marginTop: 3,
   },
   heroBanner: {
     width: '100%',
-    height: 195,
+    height: 200,
     borderRadius: 20,
     overflow: 'hidden',
     position: 'relative',
@@ -736,7 +735,7 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   heroTagText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '800',
     color: '#FFFFFF',
     letterSpacing: 0.6,
@@ -747,20 +746,21 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   heroTimeText: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '700',
     color: '#FFFFFF',
   },
   heroTitle: {
-    fontSize: 28,
+    fontSize: 32,
     fontWeight: '900',
     color: '#FFFFFF',
-    letterSpacing: -0.4,
+    letterSpacing: -0.5,
+    lineHeight: 38,
   },
   heroSubtitle: {
-    fontSize: 14,
+    fontSize: 15,
     color: 'rgba(255, 255, 255, 0.85)',
-    marginTop: 3,
+    marginTop: 4,
   },
   heroMetaLine: {
     flexDirection: 'row',
@@ -769,7 +769,7 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   heroMetaItem: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '600',
     color: '#FFFFFF',
   },
@@ -787,13 +787,13 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   warmupHeader: {
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '800',
     marginBottom: 4,
   },
   warmupBody: {
-    fontSize: 13,
-    lineHeight: 19,
+    fontSize: 14,
+    lineHeight: 21,
   },
   todayExercises: {
     marginTop: 22,
@@ -807,31 +807,31 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
   },
   sectionTitle: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '800',
-    letterSpacing: 0.9,
+    letterSpacing: 1,
   },
   sectionAction: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '700',
   },
   flatExRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 18,
+    paddingVertical: 20,
     borderBottomWidth: StyleSheet.hairlineWidth,
     gap: 14,
-    minHeight: 74,
+    minHeight: 80,
   },
   flatExMain: {
     flex: 1,
   },
   flatExTitle: {
-    fontSize: 17,
+    fontSize: 19,
     fontWeight: '800',
     letterSpacing: -0.3,
-    lineHeight: 22,
-    marginBottom: 5,
+    lineHeight: 24,
+    marginBottom: 6,
   },
   exSubRow: {
     flexDirection: 'row',
@@ -839,18 +839,18 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   catBadge: {
-    paddingHorizontal: 7,
+    paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 5,
     borderWidth: StyleSheet.hairlineWidth,
   },
   catBadgeText: {
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: '800',
     letterSpacing: 0.4,
   },
   flatExSub: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '600',
   },
   exRowRight: {
@@ -864,7 +864,7 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   restTag: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '600',
   },
   bottomBar: {

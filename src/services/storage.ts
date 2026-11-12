@@ -19,7 +19,7 @@ const STORAGE_KEYS = {
 
 const DEFAULT_PROFILE: UserProfile = {
   id: 'szymon_goral',
-  name: 'Szymon Góral (ja)',
+  name: 'Szymon Góral',
   isOwner: true,
   createdAt: new Date().toISOString(),
   avatarColor: '#CCFF00',
@@ -41,7 +41,19 @@ export async function getProfiles(): Promise<UserProfile[]> {
       await AsyncStorage.setItem(STORAGE_KEYS.PROFILES, JSON.stringify([DEFAULT_PROFILE]));
       return [DEFAULT_PROFILE];
     }
-    return profiles;
+    // Automatically sanitize and remove "(ja)" suffix if saved in storage
+    let modified = false;
+    const cleaned = profiles.map((p) => {
+      if (p.name.includes('(ja)')) {
+        modified = true;
+        return { ...p, name: p.name.replace(/\s*\(ja\)/gi, '').trim() };
+      }
+      return p;
+    });
+    if (modified) {
+      await AsyncStorage.setItem(STORAGE_KEYS.PROFILES, JSON.stringify(cleaned));
+    }
+    return cleaned;
   } catch {
     return [DEFAULT_PROFILE];
   }
