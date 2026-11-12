@@ -240,17 +240,23 @@ import WidgetKit
 
         if !effectiveStretch {
           if let date = contentState.timerEndDateInMilliseconds {
-            VStack(spacing: 4) {
-              ProgressView(timerInterval: Date.toTimerInterval(miliseconds: date))
-                .tint(progressViewTint)
-                .modifier(ConditionalForegroundViewModifier(color: attributes.progressViewLabelColor))
+            VStack(spacing: 5) {
+              ProgressView(
+                timerInterval: Date.toTimerInterval(miliseconds: date),
+                countsDown: false,
+                label: { EmptyView() },
+                currentValueLabel: { EmptyView() }
+              )
+              .tint(progressViewTint)
+              .modifier(ConditionalForegroundViewModifier(color: attributes.progressViewLabelColor))
+
               HStack {
-                HStack(spacing: 4) {
+                HStack(spacing: 5) {
                   Image(systemName: "timer")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(.white.opacity(0.7))
-                  Text(Date(timeIntervalSince1970: date / 1000), style: .timer)
                     .font(.system(size: 12, weight: .bold))
+                    .foregroundColor(.white.opacity(0.85))
+                  Text(Date(timeIntervalSince1970: date / 1000), style: .timer)
+                    .font(.system(size: 13, weight: .heavy))
                     .monospacedDigit()
                     .foregroundColor(.white)
                 }

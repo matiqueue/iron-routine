@@ -47,11 +47,44 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
   const [currentSetIndex, setCurrentSetIndex] = useState(0);
   const [detailModalExercise, setDetailModalExercise] = useState<Exercise | null>(null);
 
-  // Timer
-  const [timerActive, setTimerActive] = useState(false);
-  const [timerSeconds, setTimerSeconds] = useState(90);
+  // Rest Timer State
+  const [isResting, setIsResting] = useState(false);
+  const [isRestModalVisible, setIsRestModalVisible] = useState(false);
+  const [restSecondsLeft, setRestSecondsLeft] = useState(90);
   const [timerLabel, setTimerLabel] = useState('');
   const [timerNextInfo, setTimerNextInfo] = useState('');
+  const restEndTimeRef = useRef<number>(0);
+
+  // Background-persistent tick for rest timer
+  useEffect(() => {
+    if (!isResting) return;
+
+    const tick = () => {
+      const diff = Math.max(0, Math.ceil((restEndTimeRef.current - Date.now()) / 1000));
+      setRestSecondsLeft(diff);
+      if (diff <= 0) {
+        setIsResting(false);
+        setIsRestModalVisible(false);
+        try {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        } catch {}
+      }
+    };
+
+    tick();
+    const interval = setInterval(tick, 500);
+
+    const sub = AppState.addEventListener('change', (next) => {
+      if (next === 'active') {
+        tick();
+      }
+    });
+
+    return () => {
+      clearInterval(interval);
+      sub.remove();
+    };
+  }, [isResting]);
 
   // Elapsed
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
@@ -248,7 +281,7 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
   useEffect(() => {
     if (!currentExercise) return;
 
-    if (timerActive && timerSeconds > 0) {
+    if (isResting && restSecondsLeft > 0) {
       updateWorkoutLiveActivity({
         workoutName: dayPlan.name,
         exerciseName: currentExercise.name,
@@ -257,7 +290,7 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
         completedSets: completedSetsCount,
         totalWorkoutSets: totalSets,
         isRest: true,
-        restSeconds: timerSeconds,
+        restSeconds: restSecondsLeft,
         nextExerciseName: timerNextInfo,
       });
     } else {
@@ -278,8 +311,8 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
     currentSetIndex,
     completedSetsCount,
     totalSets,
-    timerActive,
-    timerSeconds,
+    isResting,
+    restSecondsLeft,
     dayPlan.name,
     timerNextInfo,
   ]);
@@ -388,21 +421,36 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
     const isExerciseFinished = nextSetIdx >= currentExercise.sets;
 
     // Trigger animated rest countdown
-    setTimerSeconds(currentExercise.rest);
+    const restDur = currentExercise.rest;
+    restEndTimeRef.current = Date.now() + restDur * 1000;
+    setRestSecondsLeft(restDur);
     setTimerLabel(currentExercise.name);
-    setTimerNextInfo(
-      !isExerciseFinished
-        ? `Przed serią ${nextSetIdx + 1} z ${currentExercise.sets}`
-        : nextExercise
-        ? `Kolejne ćwiczenie: ${nextExercise.name}`
-        : 'Wszystkie ćwiczenia ukończone!'
-    );
-    setTimerActive(true);
+    const nextInfoStr = !isExerciseFinished
+      ? `Przed serią ${nextSetIdx + 1} z ${currentExercise.sets}`
+      : nextExercise
+      ? `Kolejne ćwiczenie: ${nextExercise.name}`
+      : 'Wszystkie ćwiczenia ukończone!';
+    setTimerNextInfo(nextInfoStr);
+    setIsResting(true);
+    setIsRestModalVisible(true);
 
     // Auto-advance to next set with spring animation
     if (!isExerciseFinished) {
       handleChangeSetIndex(nextSetIdx);
     }
+  };
+
+  const handleFinishRestExplicitly = () => {
+    try {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch {}
+    setIsResting(false);
+    setIsRestModalVisible(false);
+  };
+
+  const handleHideRestModal = () => {
+    // Only minimizes the modal sheet - break continues running in background & on Dynamic Island!
+    setIsRestModalVisible(false);
   };
 
   const handleToggleCompleteManually = () => {
@@ -772,13 +820,60 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
         </View>
       </ScrollView>
 
+      {/* Floating Minimized Rest Banner (visible when break is ticking in background) */}
+      {isResting && !isRestModalVisible && (
+        <View style={styles.floatingRestContainer}>
+          <TouchableOpacity
+            style={[
+              styles.floatingRestBar,
+              { backgroundColor: theme.card, borderColor: theme.border },
+            ]}
+            onPress={() => setIsRestModalVisible(true)}
+            activeOpacity={0.85}
+          >
+            <View style={styles.floatingRestLeft}>
+              <View style={[styles.floatingTimerBadge, { backgroundColor: theme.primary }]}>
+                <Ionicons name="timer" size={16} color={theme.primaryText} />
+              </View>
+              <View style={{ flex: 1, paddingRight: 8 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Text style={[styles.floatingTimerTime, { color: theme.text }]}>
+                    {formatTime(restSecondsLeft)}
+                  </Text>
+                  <Text style={[styles.floatingTapHint, { color: theme.textMuted }]}>
+                    • Dotknij, aby powiększyć
+                  </Text>
+                </View>
+                <Text style={[styles.floatingTimerNext, { color: theme.textSecondary }]} numberOfLines={1}>
+                  {timerNextInfo || 'Odpoczynek przed kolejną serią'}
+                </Text>
+              </View>
+            </View>
+
+            <TouchableOpacity
+              style={[
+                styles.floatingFinishBtn,
+                { backgroundColor: isDark ? '#27272A' : '#E5E5EA', borderColor: theme.border },
+              ]}
+              onPress={handleFinishRestExplicitly}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="checkmark-done" size={14} color={theme.text} />
+              <Text style={[styles.floatingFinishBtnText, { color: theme.text }]}>Zakończ</Text>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </View>
+      )}
+
       {/* Modern Animated Rest Countdown Modal */}
-      {timerActive && (
+      {isRestModalVisible && (
         <RestTimerBar
-          initialSeconds={timerSeconds}
+          initialSeconds={restSecondsLeft}
           exerciseName={timerLabel}
           nextSetInfo={timerNextInfo}
           onSecondsChanged={(newSecs) => {
+            restEndTimeRef.current = Date.now() + newSecs * 1000;
+            setRestSecondsLeft(newSecs);
             updateWorkoutLiveActivity({
               workoutName: dayPlan.name,
               exerciseName: currentExercise.name,
@@ -791,7 +886,8 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
               nextExerciseName: timerNextInfo,
             });
           }}
-          onClose={() => setTimerActive(false)}
+          onFinishRest={handleFinishRestExplicitly}
+          onClose={handleHideRestModal}
         />
       )}
 
@@ -1184,5 +1280,66 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '900',
     letterSpacing: 0.5,
+  },
+  floatingRestContainer: {
+    position: 'absolute',
+    bottom: Platform.OS === 'ios' ? 24 : 16,
+    left: 16,
+    right: 16,
+    zIndex: 999,
+  },
+  floatingRestBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 18,
+    borderWidth: 1.5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+    elevation: 8,
+  },
+  floatingRestLeft: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  floatingTimerBadge: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  floatingTimerTime: {
+    fontSize: 16,
+    fontWeight: '900',
+    fontVariant: ['tabular-nums'],
+  },
+  floatingTapHint: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  floatingTimerNext: {
+    fontSize: 11,
+    fontWeight: '500',
+    marginTop: 1,
+  },
+  floatingFinishBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  floatingFinishBtnText: {
+    fontSize: 12,
+    fontWeight: '800',
   },
 });

@@ -19,6 +19,7 @@ interface RestTimerBarProps {
   exerciseName?: string;
   nextSetInfo?: string;
   onSecondsChanged?: (seconds: number) => void;
+  onFinishRest: () => void;
   onClose: () => void;
 }
 
@@ -27,6 +28,7 @@ export const RestTimerBar: React.FC<RestTimerBarProps> = ({
   exerciseName,
   nextSetInfo,
   onSecondsChanged,
+  onFinishRest,
   onClose,
 }) => {
   const { theme, isDark } = useAppTheme();
@@ -42,8 +44,11 @@ export const RestTimerBar: React.FC<RestTimerBarProps> = ({
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => false,
+      onStartShouldSetPanResponderCapture: () => false,
       onMoveShouldSetPanResponder: (_, gestureState) =>
-        gestureState.dy > 8 && Math.abs(gestureState.dy) > Math.abs(gestureState.dx),
+        gestureState.dy > 6 && Math.abs(gestureState.dy) > Math.abs(gestureState.dx) * 1.2,
+      onMoveShouldSetPanResponderCapture: (_, gestureState) =>
+        gestureState.dy > 6 && Math.abs(gestureState.dy) > Math.abs(gestureState.dx) * 1.2,
       onPanResponderMove: (_, gestureState) => {
         if (gestureState.dy > 0) {
           slideAnim.setValue(gestureState.dy);
@@ -51,7 +56,7 @@ export const RestTimerBar: React.FC<RestTimerBarProps> = ({
       },
       onPanResponderRelease: (_, gestureState) => {
         // If swiped down enough or with high downward velocity, dismiss
-        if (gestureState.dy > 80 || gestureState.vy > 0.5) {
+        if (gestureState.dy > 60 || gestureState.vy > 0.4) {
           try {
             Haptics.selectionAsync();
           } catch {}
@@ -112,6 +117,26 @@ export const RestTimerBar: React.FC<RestTimerBarProps> = ({
       }),
     ]).start(() => {
       onClose();
+    });
+  };
+
+  const handleExplicitFinish = () => {
+    try {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch {}
+    Animated.parallel([
+      Animated.timing(slideAnim, {
+        toValue: 400,
+        duration: 160,
+        useNativeDriver: true,
+      }),
+      Animated.timing(fadeAnim, {
+        toValue: 0,
+        duration: 140,
+        useNativeDriver: true,
+      }),
+    ]).start(() => {
+      onFinishRest();
     });
   };
 
@@ -263,7 +288,7 @@ export const RestTimerBar: React.FC<RestTimerBarProps> = ({
           {/* Grab handle */}
           <View style={styles.handleWrap}>
             <View style={[styles.handleBar, { backgroundColor: isDark ? '#444444' : '#D1D5DB' }]} />
-            <Text style={[styles.dragHint, { color: theme.textMuted }]}>Przesuń w dół, aby zamknąć</Text>
+            <Text style={[styles.dragHint, { color: theme.textMuted }]}>Przesuń w dół, aby schować (przerwa trwa w tle)</Text>
           </View>
 
           <View style={styles.content}>
@@ -342,7 +367,7 @@ export const RestTimerBar: React.FC<RestTimerBarProps> = ({
 
             {/* Main Action Button - Sleek neutral gray instead of black */}
             <TouchableOpacity
-              onPress={handleDismiss}
+              onPress={handleExplicitFinish}
               style={[
                 styles.primaryActionBtn,
                 {

@@ -84,7 +84,7 @@ export async function updateWorkoutLiveActivity(params: WorkoutLiveActivityParam
         : `Następnie: Seria ${params.currentSet} z ${params.totalSets}`;
 
       LiveActivity.updateActivity(currentActivityId, {
-        title: `Przerwa: ${params.restSeconds}s`,
+        title: 'Odpoczynek',
         subtitle,
         progressBar: { date: targetDate },
       });

@@ -194,10 +194,15 @@ struct LiveActivityWidget: Widget {
   }
 
   private func dynamicIslandExpandedBottom(endDate: Double, progressViewTint: String?) -> some View {
-    ProgressView(timerInterval: Date.toTimerInterval(miliseconds: endDate))
-      .foregroundStyle(.white)
-      .tint(progressViewTint.map { Color(hex: $0) })
-      .padding(.top, 5)
+    ProgressView(
+      timerInterval: Date.toTimerInterval(miliseconds: endDate),
+      countsDown: false,
+      label: { EmptyView() },
+      currentValueLabel: { EmptyView() }
+    )
+    .foregroundStyle(.white)
+    .tint(progressViewTint.map { Color(hex: $0) })
+    .padding(.top, 5)
   }
 
   private func circularTimer(endDate: Double) -> some View {

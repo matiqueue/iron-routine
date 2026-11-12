@@ -114,9 +114,13 @@ export const InteractiveBottomSheet: React.FC<InteractiveBottomSheetProps> = ({
   // Pan responder attached to top handle and header
   const panResponder = useRef(
     PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
+      onStartShouldSetPanResponder: () => false,
+      onStartShouldSetPanResponderCapture: () => false,
       onMoveShouldSetPanResponder: (_, gestureState) => {
-        return Math.abs(gestureState.dy) > 4;
+        return Math.abs(gestureState.dy) > 6 && Math.abs(gestureState.dy) > Math.abs(gestureState.dx) * 1.2;
+      },
+      onMoveShouldSetPanResponderCapture: (_, gestureState) => {
+        return Math.abs(gestureState.dy) > 6 && Math.abs(gestureState.dy) > Math.abs(gestureState.dx) * 1.2;
       },
       onPanResponderMove: (_, gestureState) => {
         // Dragging down: move sheet down
@@ -132,9 +136,9 @@ export const InteractiveBottomSheet: React.FC<InteractiveBottomSheetProps> = ({
       },
       onPanResponderRelease: (_, gestureState) => {
         // If swiped down with enough distance or velocity -> DISMISS
-        if (gestureState.dy > 100 || gestureState.vy > 0.6) {
+        if (gestureState.dy > 60 || gestureState.vy > 0.4) {
           handleDismiss();
-        } else if (gestureState.dy < -50 || gestureState.vy < -0.5) {
+        } else if (gestureState.dy < -40 || gestureState.vy < -0.4) {
           // Swiped up -> EXPAND FULL
           toggleExpand(true);
           Animated.spring(translateY, {
