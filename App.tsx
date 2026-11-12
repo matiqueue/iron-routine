@@ -289,7 +289,7 @@ function MainApp() {
               }).toUpperCase()}
             </Text>
             <Text style={[styles.greeting, { color: theme.text }]}>
-              Cześć, {activeProfile?.name?.split(' ')[0] || 'Szymon'} 👋
+              Cześć, {activeProfile?.name?.split(' ')[0] || 'Szymon'}
             </Text>
           </View>
 
@@ -313,7 +313,7 @@ function MainApp() {
               onPress={() => setShowProfileModal(true)}
               activeOpacity={0.7}
             >
-              <Ionicons name="person-circle-outline" size={16} color={theme.text} />
+              <Ionicons name="person-circle-outline" size={17} color={theme.text} />
               <Text style={[styles.profilePillText, { color: theme.text }]} numberOfLines={1}>
                 {activeProfile?.name?.split(' ')[0] || 'Profil'}
               </Text>
@@ -341,13 +341,15 @@ function MainApp() {
               {/* Streak Ribbon */}
               <View style={[styles.streakRibbon, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
                 <View style={styles.streakLeft}>
-                  <Text style={styles.streakFire}>🔥</Text>
+                  <View style={[styles.streakIconWrap, { backgroundColor: theme.card, borderColor: theme.border }]}>
+                    <Ionicons name="flame" size={20} color={theme.text} />
+                  </View>
                   <View>
                     <Text style={[styles.streakTitle, { color: theme.text }]}>
-                      {streak} dni treningowej serii
+                      {streak} dni serii treningowej
                     </Text>
                     <Text style={[styles.streakSub, { color: theme.textMuted }]}>
-                      Świetna dyscyplina, utrzymaj tempo!
+                      Czysta dyscyplina, utrzymaj rytm
                     </Text>
                   </View>
                 </View>
@@ -358,7 +360,7 @@ function MainApp() {
                 <RestDayView dayPlan={currentPlan} />
               ) : (
                 <>
-                  {/* Hero Workout Banner with atmospheric Unsplash photo */}
+                  {/* Hero Workout Banner */}
                   <View style={styles.heroBanner}>
                     {currentPlan.bannerUrl ? (
                       <Image
@@ -371,16 +373,17 @@ function MainApp() {
                     <View
                       style={[
                         styles.heroBannerOverlay,
-                        { backgroundColor: isDark ? 'rgba(0,0,0,0.7)' : 'rgba(0,0,0,0.5)' },
+                        { backgroundColor: isDark ? 'rgba(0,0,0,0.72)' : 'rgba(0,0,0,0.52)' },
                       ]}
                     >
                       <View style={styles.heroTagRow}>
                         <View style={styles.heroTag}>
-                          <Text style={styles.heroTagText}>
-                            {currentPlan.badgeEmoji} DZISIEJSZY TRENING
-                          </Text>
+                          <Text style={styles.heroTagText}>DZISIEJSZY TRENING</Text>
                         </View>
-                        <Text style={styles.heroTimeText}>⏱️ {currentPlan.time}</Text>
+                        <View style={styles.heroTimeWrap}>
+                          <Ionicons name="time-outline" size={13} color="#FFFFFF" />
+                          <Text style={styles.heroTimeText}>{currentPlan.time}</Text>
+                        </View>
                       </View>
 
                       <Text style={styles.heroTitle}>{currentPlan.name}</Text>
@@ -389,14 +392,14 @@ function MainApp() {
                       {currentPlan.exercises && (
                         <View style={styles.heroMetaLine}>
                           <Text style={styles.heroMetaItem}>
-                            🎯 {currentPlan.exercises.length} ćwiczeń
+                            {currentPlan.exercises.length} ćwiczeń
                           </Text>
                           <Text style={styles.heroMetaDot}>•</Text>
                           <Text style={styles.heroMetaItem}>
-                            ⚡ {currentPlan.exercises.reduce((acc, e) => acc + e.sets, 0)} serii
+                            {currentPlan.exercises.reduce((acc, e) => acc + e.sets, 0)} serii
                           </Text>
                           <Text style={styles.heroMetaDot}>•</Text>
-                          <Text style={styles.heroMetaItem}>💡 ~75 min</Text>
+                          <Text style={styles.heroMetaItem}>~75 min</Text>
                         </View>
                       )}
                     </View>
@@ -405,7 +408,7 @@ function MainApp() {
                   {/* Warmup tip if available */}
                   {currentPlan.warmup ? (
                     <View style={[styles.warmupCard, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
-                      <Text style={styles.warmupEmoji}>💡</Text>
+                      <Ionicons name="information-circle-outline" size={20} color={theme.text} style={{ marginTop: 1 }} />
                       <View style={{ flex: 1 }}>
                         <Text style={[styles.warmupHeader, { color: theme.text }]}>
                           Rozgrzewka i mobilizacja
@@ -424,7 +427,7 @@ function MainApp() {
                     subtitle="Dotknij i przytrzymaj, aby uruchomić tryb treningu"
                   />
 
-                  {/* Visual Flat List of Today's Exercises */}
+                  {/* Clean Visual Flat List of Today's Exercises (NO THUMBNAILS - spacious and airy) */}
                   {currentPlan.exercises && (
                     <View style={styles.todayExercises}>
                       <View style={[styles.sectionDivider, { borderTopColor: theme.hairline }]}>
@@ -433,37 +436,24 @@ function MainApp() {
                         </Text>
                         <TouchableOpacity onPress={() => handleSwitchTab('plan')}>
                           <Text style={[styles.sectionAction, { color: theme.text }]}>
-                            Tydzień ➔
+                            Tydzień →
                           </Text>
                         </TouchableOpacity>
                       </View>
 
-                      {currentPlan.exercises.map((ex, idx) => (
+                      {currentPlan.exercises.map((ex) => (
                         <TouchableOpacity
                           key={ex.id}
                           style={[styles.flatExRow, { borderBottomColor: theme.hairline }]}
                           onPress={() => setPreviewExercise(ex)}
                           activeOpacity={0.7}
                         >
-                          {/* Mini Thumbnail */}
-                          {ex.imageUrl ? (
-                            <Image
-                              source={{ uri: ex.imageUrl }}
-                              style={styles.exThumb}
-                              resizeMode="cover"
-                            />
-                          ) : (
-                            <View style={[styles.exThumbPlaceholder, { backgroundColor: theme.bgTertiary }]}>
-                              <Ionicons name="barbell-outline" size={18} color={theme.textMuted} />
-                            </View>
-                          )}
-
                           <View style={styles.flatExMain}>
                             <Text style={[styles.flatExTitle, { color: theme.text }]}>
                               {ex.name}
                             </Text>
                             <View style={styles.exSubRow}>
-                              <View style={[styles.catBadge, { backgroundColor: theme.bgTertiary }]}>
+                              <View style={[styles.catBadge, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
                                 <Text style={[styles.catBadgeText, { color: theme.textSecondary }]}>
                                   {ex.category.toUpperCase()}
                                 </Text>
@@ -475,10 +465,13 @@ function MainApp() {
                           </View>
 
                           <View style={styles.exRowRight}>
-                            <Text style={[styles.restTag, { color: theme.textMuted }]}>
-                              ⏱️ {ex.rest}s
-                            </Text>
-                            <Ionicons name="chevron-forward" size={16} color={theme.textMuted} />
+                            <View style={styles.restTagWrap}>
+                              <Ionicons name="time-outline" size={13} color={theme.textMuted} />
+                              <Text style={[styles.restTag, { color: theme.textMuted }]}>
+                                {ex.rest}s
+                              </Text>
+                            </View>
+                            <Ionicons name="chevron-forward" size={17} color={theme.textMuted} />
                           </View>
                         </TouchableOpacity>
                       ))}
@@ -634,37 +627,37 @@ const styles = StyleSheet.create({
   },
   tabContent: {
     paddingHorizontal: 20,
-    paddingTop: 12,
-    paddingBottom: 85,
+    paddingTop: 14,
+    paddingBottom: 95,
   },
   topHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 20,
-    paddingTop: 8,
-    paddingBottom: 6,
+    paddingTop: 12,
+    paddingBottom: 10,
   },
   dateLabel: {
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: '800',
-    letterSpacing: 0.8,
+    letterSpacing: 1.1,
   },
   greeting: {
-    fontSize: 25,
+    fontSize: 28,
     fontWeight: '900',
-    letterSpacing: -0.4,
+    letterSpacing: -0.5,
     marginTop: 2,
   },
   headerActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 10,
   },
   actionIconBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     borderWidth: 1,
     justifyContent: 'center',
     alignItems: 'center',
@@ -673,47 +666,53 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 18,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: 20,
     borderWidth: 1,
-    maxWidth: 130,
+    maxWidth: 140,
   },
   profilePillText: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '700',
   },
   streakRibbon: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 12,
-    borderRadius: 14,
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+    borderRadius: 16,
     borderWidth: 1,
-    marginBottom: 16,
+    marginBottom: 20,
   },
   streakLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 12,
   },
-  streakFire: {
-    fontSize: 22,
+  streakIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    borderWidth: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   streakTitle: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '800',
   },
   streakSub: {
-    fontSize: 11,
-    marginTop: 1,
+    fontSize: 12,
+    marginTop: 2,
   },
   heroBanner: {
     width: '100%',
-    height: 190,
+    height: 195,
     borderRadius: 20,
     overflow: 'hidden',
     position: 'relative',
-    marginBottom: 16,
+    marginBottom: 20,
   },
   heroBannerImage: {
     width: '100%',
@@ -721,26 +720,31 @@ const styles = StyleSheet.create({
   },
   heroBannerOverlay: {
     ...StyleSheet.absoluteFill,
-    padding: 18,
+    padding: 20,
     justifyContent: 'flex-end',
   },
   heroTagRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 6,
+    marginBottom: 8,
   },
   heroTag: {
     backgroundColor: 'rgba(255, 255, 255, 0.22)',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
     borderRadius: 6,
   },
   heroTagText: {
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: '800',
     color: '#FFFFFF',
-    letterSpacing: 0.5,
+    letterSpacing: 0.6,
+  },
+  heroTimeWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
   },
   heroTimeText: {
     fontSize: 12,
@@ -754,119 +758,113 @@ const styles = StyleSheet.create({
     letterSpacing: -0.4,
   },
   heroSubtitle: {
-    fontSize: 13,
+    fontSize: 14,
     color: 'rgba(255, 255, 255, 0.85)',
-    marginTop: 2,
+    marginTop: 3,
   },
   heroMetaLine: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    marginTop: 8,
+    gap: 8,
+    marginTop: 10,
   },
   heroMetaItem: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '600',
     color: '#FFFFFF',
   },
   heroMetaDot: {
-    fontSize: 10,
+    fontSize: 11,
     color: 'rgba(255, 255, 255, 0.6)',
   },
   warmupCard: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: 10,
-    padding: 14,
-    borderRadius: 14,
+    gap: 12,
+    padding: 16,
+    borderRadius: 16,
     borderWidth: 1,
-    marginBottom: 14,
-  },
-  warmupEmoji: {
-    fontSize: 18,
+    marginBottom: 20,
   },
   warmupHeader: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '800',
-    marginBottom: 2,
+    marginBottom: 4,
   },
   warmupBody: {
-    fontSize: 12,
-    lineHeight: 18,
+    fontSize: 13,
+    lineHeight: 19,
   },
   todayExercises: {
-    marginTop: 18,
+    marginTop: 22,
   },
   sectionDivider: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     borderTopWidth: StyleSheet.hairlineWidth,
-    paddingTop: 16,
-    paddingBottom: 10,
+    paddingTop: 18,
+    paddingBottom: 12,
   },
   sectionTitle: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '800',
-    letterSpacing: 0.8,
+    letterSpacing: 0.9,
   },
   sectionAction: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '700',
   },
   flatExRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
+    paddingVertical: 18,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    gap: 12,
-  },
-  exThumb: {
-    width: 52,
-    height: 52,
-    borderRadius: 10,
-  },
-  exThumbPlaceholder: {
-    width: 52,
-    height: 52,
-    borderRadius: 10,
-    justifyContent: 'center',
-    alignItems: 'center',
+    gap: 14,
+    minHeight: 74,
   },
   flatExMain: {
     flex: 1,
   },
   flatExTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    letterSpacing: -0.2,
-    marginBottom: 3,
+    fontSize: 17,
+    fontWeight: '800',
+    letterSpacing: -0.3,
+    lineHeight: 22,
+    marginBottom: 5,
   },
   exSubRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 8,
   },
   catBadge: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 5,
+    borderWidth: StyleSheet.hairlineWidth,
   },
   catBadgeText: {
-    fontSize: 9,
+    fontSize: 10,
     fontWeight: '800',
+    letterSpacing: 0.4,
   },
   flatExSub: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '600',
   },
   exRowRight: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 8,
+  },
+  restTagWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
   },
   restTag: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '600',
   },
   bottomBar: {
@@ -874,12 +872,12 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    height: Platform.OS === 'ios' ? 76 : 60,
+    height: Platform.OS === 'ios' ? 82 : 64,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-around',
     borderTopWidth: StyleSheet.hairlineWidth,
-    paddingBottom: Platform.OS === 'ios' ? 16 : 4,
+    paddingBottom: Platform.OS === 'ios' ? 22 : 6,
   },
   navItem: {
     flex: 1,

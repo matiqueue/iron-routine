@@ -30,14 +30,14 @@ interface ProgressTabProps {
   onOpenProfileModal: () => void;
 }
 
-const CATEGORIES: { id: MuscleCategory | 'wszystkie'; label: string; emoji: string }[] = [
-  { id: 'wszystkie', label: 'Wszystkie', emoji: '✨' },
-  { id: 'klatka', label: 'Klatka', emoji: '💪' },
-  { id: 'plecy', label: 'Plecy', emoji: '🦅' },
-  { id: 'nogi', label: 'Nogi', emoji: '🦵' },
-  { id: 'barki', label: 'Barki', emoji: '🛡️' },
-  { id: 'ramiona', label: 'Ramiona', emoji: '🦾' },
-  { id: 'brzuch', label: 'Brzuch', emoji: '⚡' },
+const CATEGORIES: { id: MuscleCategory | 'wszystkie'; label: string }[] = [
+  { id: 'wszystkie', label: 'Wszystkie' },
+  { id: 'klatka', label: 'Klatka' },
+  { id: 'plecy', label: 'Plecy' },
+  { id: 'nogi', label: 'Nogi' },
+  { id: 'barki', label: 'Barki' },
+  { id: 'ramiona', label: 'Ramiona' },
+  { id: 'brzuch', label: 'Brzuch' },
 ];
 
 export const ProgressTab: React.FC<ProgressTabProps> = ({
@@ -197,21 +197,21 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
       {/* KPI Cards Strip */}
       <View style={styles.kpiRow}>
         <View style={[styles.kpiCard, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
-          <Text style={styles.kpiEmoji}>🏆</Text>
+          <Ionicons name="trophy-outline" size={20} color={theme.text} />
           <Text style={[styles.kpiVal, { color: theme.text }]}>{stats.totalCount}</Text>
           <Text style={[styles.kpiLbl, { color: theme.textMuted }]}>Rekordów</Text>
         </View>
 
         <View style={[styles.kpiCard, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
-          <Text style={styles.kpiEmoji}>⚡</Text>
+          <Ionicons name="barbell-outline" size={20} color={theme.text} />
           <Text style={[styles.kpiVal, { color: theme.text }]}>
             {stats.maxWeight > 0 ? `${stats.maxWeight} kg` : '—'}
           </Text>
-          <Text style={[styles.kpiLbl, { color: theme.textMuted }]}>Max Ciężar</Text>
+          <Text style={[styles.kpiLbl, { color: theme.textMuted }]}>Maks. Ciężar</Text>
         </View>
 
         <View style={[styles.kpiCard, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
-          <Text style={styles.kpiEmoji}>🎯</Text>
+          <Ionicons name="flash-outline" size={20} color={theme.text} />
           <Text style={[styles.kpiVal, { color: theme.text }]}>
             {stats.max1RM > 0 ? `${stats.max1RM} kg` : '—'}
           </Text>
@@ -221,7 +221,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
 
       {/* Search Input */}
       <View style={[styles.searchWrapper, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
-        <Ionicons name="search" size={17} color={theme.textMuted} />
+        <Ionicons name="search" size={18} color={theme.textMuted} />
         <TextInput
           style={[styles.searchInput, { color: theme.text }]}
           placeholder="Szukaj ćwiczenia..."
@@ -232,7 +232,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
         />
         {searchQuery.length > 0 && (
           <TouchableOpacity onPress={() => setSearchQuery('')}>
-            <Ionicons name="close-circle" size={17} color={theme.textMuted} />
+            <Ionicons name="close-circle" size={18} color={theme.textMuted} />
           </TouchableOpacity>
         )}
       </View>
@@ -262,7 +262,6 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                 }}
                 activeOpacity={0.7}
               >
-                <Text style={styles.catEmoji}>{cat.emoji}</Text>
                 <Text
                   style={[
                     styles.catPillText,
@@ -277,7 +276,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
         </ScrollView>
       </View>
 
-      {/* List of Exercises */}
+      {/* List of Exercises (NO THUMBNAILS - airy and typographic) */}
       <ScrollView
         style={styles.list}
         contentContainerStyle={styles.listInner}
@@ -285,7 +284,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
       >
         {filteredExercises.length === 0 ? (
           <View style={styles.emptyView}>
-            <Text style={{ fontSize: 24, marginBottom: 6 }}>🔍</Text>
+            <Ionicons name="search-outline" size={28} color={theme.textMuted} style={{ marginBottom: 8 }} />
             <Text style={[styles.emptyText, { color: theme.textMuted }]}>
               Nie znaleziono pasujących ćwiczeń
             </Text>
@@ -304,25 +303,12 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                 onPress={() => handleOpenExercise(exercise)}
                 activeOpacity={0.75}
               >
-                {/* Thumbnail Image */}
-                {exercise.imageUrl ? (
-                  <Image
-                    source={{ uri: exercise.imageUrl }}
-                    style={styles.thumbnail}
-                    resizeMode="cover"
-                  />
-                ) : (
-                  <View style={[styles.thumbnailPlaceholder, { backgroundColor: theme.bgTertiary }]}>
-                    <Ionicons name="barbell-outline" size={18} color={theme.textMuted} />
-                  </View>
-                )}
-
                 <View style={styles.rowLeft}>
                   <Text style={[styles.exTitle, { color: theme.text }]}>
                     {exercise.name}
                   </Text>
                   <View style={styles.subMeta}>
-                    <View style={[styles.catTag, { backgroundColor: theme.bgTertiary }]}>
+                    <View style={[styles.catTag, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
                       <Text style={[styles.catTagText, { color: theme.textSecondary }]}>
                         {exercise.category.toUpperCase()}
                       </Text>
@@ -343,12 +329,12 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                         × {pr.reps} powt.
                       </Text>
                       <Text style={[styles.pr1RMText, { color: theme.textMuted }]}>
-                        ⚡ 1RM: ~{pr.estimated1RM} kg
+                        1RM: ~{pr.estimated1RM} kg
                       </Text>
                     </View>
                   ) : (
                     <View style={[styles.addBadge, { borderColor: theme.borderDark, backgroundColor: theme.bgSecondary }]}>
-                      <Ionicons name="add" size={14} color={theme.text} />
+                      <Ionicons name="add" size={15} color={theme.text} />
                       <Text style={[styles.addBadgeText, { color: theme.text }]}>Dodaj</Text>
                     </View>
                   )}
@@ -394,7 +380,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
               {/* Form */}
               <View style={[styles.formContainer, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
                 <Text style={[styles.formHeaderTitle, { color: theme.text }]}>
-                  ✍️ Zapisz nowy wynik
+                  Nowy wynik dla ćwiczenia
                 </Text>
 
                 <View style={styles.formInputsRow}>
@@ -450,7 +436,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                 {/* 1RM projection banner */}
                 <View style={[styles.projectionBanner, { backgroundColor: theme.card, borderColor: theme.hairline }]}>
                   <Text style={[styles.projectionLabel, { color: theme.textSecondary }]}>
-                    ⚡ Szacowany 1RM z tej serii:
+                    Szacowany 1RM z tej serii:
                   </Text>
                   <Text style={[styles.projectionValue, { color: theme.text }]}>
                     {currentEst1RM} kg
@@ -484,7 +470,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
               {/* History Timeline */}
               <View style={styles.historySection}>
                 <Text style={[styles.historyTitle, { color: theme.text }]}>
-                  📜 Historia postępów ({history.length})
+                  Historia wyników ({history.length})
                 </Text>
 
                 {history.length === 0 ? (
@@ -508,7 +494,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
 
                       <View style={styles.histMeta}>
                         <Text style={[styles.hist1RM, { color: theme.textMuted }]}>
-                          ⚡ 1RM: ~{record.estimated1RM} kg
+                          1RM: ~{record.estimated1RM} kg
                         </Text>
                         <Text style={[styles.histDate, { color: theme.textMuted }]}>
                           {new Date(record.date).toLocaleDateString('pl-PL', {
@@ -543,82 +529,76 @@ const styles = StyleSheet.create({
   header: {
     paddingHorizontal: 20,
     paddingTop: 12,
-    paddingBottom: 6,
+    paddingBottom: 8,
   },
   title: {
-    fontSize: 28,
+    fontSize: 32,
     fontWeight: '900',
-    letterSpacing: -0.5,
+    letterSpacing: -0.6,
   },
   subtitle: {
-    fontSize: 13,
-    marginTop: 2,
+    fontSize: 14,
+    marginTop: 3,
   },
   kpiRow: {
     flexDirection: 'row',
-    gap: 8,
+    gap: 10,
     paddingHorizontal: 20,
-    marginTop: 10,
-    marginBottom: 12,
+    marginTop: 12,
+    marginBottom: 16,
   },
   kpiCard: {
     flex: 1,
-    paddingVertical: 12,
-    paddingHorizontal: 8,
-    borderRadius: 14,
+    paddingVertical: 16,
+    paddingHorizontal: 12,
+    borderRadius: 16,
     borderWidth: 1,
     alignItems: 'center',
-    gap: 2,
-  },
-  kpiEmoji: {
-    fontSize: 16,
+    gap: 4,
   },
   kpiVal: {
-    fontSize: 17,
+    fontSize: 20,
     fontWeight: '900',
     fontVariant: ['tabular-nums'],
+    marginTop: 2,
   },
   kpiLbl: {
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: '700',
   },
   searchWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
     marginHorizontal: 20,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 14,
     borderWidth: 1,
-    gap: 8,
-    marginBottom: 10,
+    gap: 10,
+    marginBottom: 14,
   },
   searchInput: {
     flex: 1,
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '500',
   },
   categoryWrap: {
-    marginBottom: 10,
+    marginBottom: 14,
   },
   categoryScroll: {
     paddingHorizontal: 20,
-    gap: 8,
+    gap: 10,
   },
   catPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
     borderRadius: 18,
     borderWidth: 1,
   },
-  catEmoji: {
-    fontSize: 12,
-  },
   catPillText: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '700',
   },
   list: {
@@ -626,59 +606,51 @@ const styles = StyleSheet.create({
   },
   listInner: {
     paddingHorizontal: 20,
-    paddingBottom: 60,
+    paddingBottom: 80,
   },
   emptyView: {
-    paddingVertical: 40,
+    paddingVertical: 48,
     alignItems: 'center',
   },
   emptyText: {
-    fontSize: 13,
+    fontSize: 14,
   },
   exerciseRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
+    paddingVertical: 18,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    gap: 12,
-  },
-  thumbnail: {
-    width: 50,
-    height: 50,
-    borderRadius: 10,
-  },
-  thumbnailPlaceholder: {
-    width: 50,
-    height: 50,
-    borderRadius: 10,
-    justifyContent: 'center',
-    alignItems: 'center',
+    gap: 14,
+    minHeight: 74,
   },
   rowLeft: {
     flex: 1,
   },
   exTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    letterSpacing: -0.2,
-    marginBottom: 3,
+    fontSize: 18,
+    fontWeight: '800',
+    letterSpacing: -0.3,
+    lineHeight: 23,
+    marginBottom: 5,
   },
   subMeta: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 8,
   },
   catTag: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 5,
+    borderWidth: StyleSheet.hairlineWidth,
   },
   catTagText: {
-    fontSize: 9,
+    fontSize: 10,
     fontWeight: '800',
+    letterSpacing: 0.4,
   },
   planHint: {
-    fontSize: 11,
+    fontSize: 13,
   },
   rowRight: {
     alignItems: 'flex-end',
@@ -687,31 +659,31 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
   },
   prWeightText: {
-    fontSize: 16,
+    fontSize: 19,
     fontWeight: '900',
     fontVariant: ['tabular-nums'],
   },
   prRepsText: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '600',
   },
   pr1RMText: {
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: '700',
-    marginTop: 1,
+    marginTop: 2,
   },
   addBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 3,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
+    gap: 4,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 10,
     borderWidth: 1,
   },
   addBadgeText: {
-    fontSize: 11,
-    fontWeight: '700',
+    fontSize: 13,
+    fontWeight: '800',
   },
   modalOverlay: {
     flex: 1,

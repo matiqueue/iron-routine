@@ -83,7 +83,6 @@ export const PlanTab: React.FC<PlanTabProps> = ({
                 }}
                 activeOpacity={0.7}
               >
-                <Text style={styles.dayEmoji}>{day.emoji}</Text>
                 <Text
                   style={[
                     styles.dayShort,
@@ -123,25 +122,28 @@ export const PlanTab: React.FC<PlanTabProps> = ({
             <View
               style={[
                 styles.bannerOverlay,
-                { backgroundColor: isDark ? 'rgba(0,0,0,0.65)' : 'rgba(0,0,0,0.45)' },
+                { backgroundColor: isDark ? 'rgba(0,0,0,0.72)' : 'rgba(0,0,0,0.52)' },
               ]}
             >
               <View style={styles.bannerBadge}>
                 <Text style={styles.bannerBadgeText}>
-                  {currentPlan.badgeEmoji} {currentPlan.type === 'rest' ? 'REGENERACJA' : 'TRENING SIŁOWY'}
+                  {currentPlan.type === 'rest' ? 'REGENERACJA' : 'TRENING SIŁOWY'}
                 </Text>
               </View>
               <Text style={styles.bannerTitle}>{currentPlan.name}</Text>
               <Text style={styles.bannerSubtitle}>{currentPlan.subtitle}</Text>
               <View style={styles.bannerMetaRow}>
-                <Text style={styles.bannerMetaText}>⏱️ {currentPlan.time}</Text>
+                <View style={styles.metaTimeWrap}>
+                  <Ionicons name="time-outline" size={13} color="#FFFFFF" />
+                  <Text style={styles.bannerMetaText}>{currentPlan.time}</Text>
+                </View>
                 {currentPlan.exercises && (
                   <>
                     <Text style={styles.bannerMetaDot}>•</Text>
-                    <Text style={styles.bannerMetaText}>🎯 {currentPlan.exercises.length} ćwiczeń</Text>
+                    <Text style={styles.bannerMetaText}>{currentPlan.exercises.length} ćwiczeń</Text>
                     <Text style={styles.bannerMetaDot}>•</Text>
                     <Text style={styles.bannerMetaText}>
-                      ⚡ {currentPlan.exercises.reduce((acc, e) => acc + e.sets, 0)} serii
+                      {currentPlan.exercises.reduce((acc, e) => acc + e.sets, 0)} serii
                     </Text>
                   </>
                 )}
@@ -153,7 +155,7 @@ export const PlanTab: React.FC<PlanTabProps> = ({
         {/* Warmup advice */}
         {currentPlan.warmup ? (
           <View style={[styles.warmupNotice, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
-            <Text style={styles.warmupIcon}>💡</Text>
+            <Ionicons name="information-circle-outline" size={20} color={theme.text} style={{ marginTop: 1 }} />
             <View style={{ flex: 1 }}>
               <Text style={[styles.warmupTitle, { color: theme.text }]}>Wskazówka rozgrzewkowa</Text>
               <Text style={[styles.warmupDesc, { color: theme.textSecondary }]}>
@@ -189,7 +191,7 @@ export const PlanTab: React.FC<PlanTabProps> = ({
               </Text>
             </View>
 
-            {currentPlan.exercises.map((exercise, index) => {
+            {currentPlan.exercises.map((exercise) => {
               const isExpanded = expandedExerciseId === exercise.id;
 
               return (
@@ -198,7 +200,7 @@ export const PlanTab: React.FC<PlanTabProps> = ({
                   style={[
                     styles.exerciseItem,
                     { borderBottomColor: theme.hairline },
-                    isExpanded && { backgroundColor: theme.bgSecondary, borderRadius: 14, marginVertical: 6 },
+                    isExpanded && { backgroundColor: theme.bgSecondary, borderRadius: 16, marginVertical: 8, paddingHorizontal: 16 },
                   ]}
                 >
                   <TouchableOpacity
@@ -206,25 +208,12 @@ export const PlanTab: React.FC<PlanTabProps> = ({
                     onPress={() => toggleExpand(exercise.id)}
                     activeOpacity={0.7}
                   >
-                    {/* Thumbnail Image */}
-                    {exercise.imageUrl ? (
-                      <Image
-                        source={{ uri: exercise.imageUrl }}
-                        style={styles.thumbnail}
-                        resizeMode="cover"
-                      />
-                    ) : (
-                      <View style={[styles.thumbnailPlaceholder, { backgroundColor: theme.bgTertiary }]}>
-                        <Ionicons name="barbell-outline" size={18} color={theme.textMuted} />
-                      </View>
-                    )}
-
                     <View style={styles.exerciseInfo}>
                       <Text style={[styles.exerciseName, { color: theme.text }]}>
                         {exercise.name}
                       </Text>
                       <View style={styles.metaRow}>
-                        <View style={[styles.categoryTag, { backgroundColor: theme.bgTertiary }]}>
+                        <View style={[styles.categoryTag, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
                           <Text style={[styles.categoryTagText, { color: theme.textSecondary }]}>
                             {exercise.category.toUpperCase()}
                           </Text>
@@ -232,39 +221,44 @@ export const PlanTab: React.FC<PlanTabProps> = ({
                         <Text style={[styles.repsInfo, { color: theme.textSecondary }]}>
                           {exercise.sets} serie × {exercise.reps}
                         </Text>
-                        <Text style={[styles.restPill, { color: theme.textMuted }]}>
-                          ⏱️ {exercise.rest}s
-                        </Text>
+                        <View style={styles.restTagWrap}>
+                          <Ionicons name="time-outline" size={13} color={theme.textMuted} />
+                          <Text style={[styles.restPill, { color: theme.textMuted }]}>
+                            {exercise.rest}s
+                          </Text>
+                        </View>
                       </View>
                     </View>
 
                     <Ionicons
-                      name={isExpanded ? 'chevron-up-circle' : 'chevron-down'}
+                      name={isExpanded ? 'chevron-up' : 'chevron-down'}
                       size={20}
                       color={isExpanded ? theme.text : theme.textMuted}
                     />
                   </TouchableOpacity>
 
-                  {/* Expanded detail */}
+                  {/* Expanded detail - ONLY SHOW IMAGE WHEN EXPANDED */}
                   {isExpanded && (
                     <View style={styles.expandedContent}>
                       {/* Full preview image */}
-                      <View style={styles.largeImgWrap}>
-                        <Image
-                          source={{ uri: exercise.imageUrl }}
-                          style={styles.largeImg}
-                          resizeMode="cover"
-                        />
-                        <TouchableOpacity
-                          style={[styles.fullImgBtn, { backgroundColor: isDark ? '#000' : '#FFF' }]}
-                          onPress={() => setModalExercise(exercise)}
-                        >
-                          <Ionicons name="expand" size={13} color={theme.text} />
-                          <Text style={[styles.fullImgBtnText, { color: theme.text }]}>
-                            Pełny opis
-                          </Text>
-                        </TouchableOpacity>
-                      </View>
+                      {exercise.imageUrl ? (
+                        <View style={styles.largeImgWrap}>
+                          <Image
+                            source={{ uri: exercise.imageUrl }}
+                            style={styles.largeImg}
+                            resizeMode="cover"
+                          />
+                          <TouchableOpacity
+                            style={[styles.fullImgBtn, { backgroundColor: isDark ? '#000000' : '#FFFFFF' }]}
+                            onPress={() => setModalExercise(exercise)}
+                          >
+                            <Ionicons name="expand" size={13} color={theme.text} />
+                            <Text style={[styles.fullImgBtnText, { color: theme.text }]}>
+                              Pełny opis
+                            </Text>
+                          </TouchableOpacity>
+                        </View>
+                      ) : null}
 
                       <Text style={[styles.expandedDesc, { color: theme.textSecondary }]}>
                         {exercise.description}
@@ -273,7 +267,7 @@ export const PlanTab: React.FC<PlanTabProps> = ({
                       {exercise.note ? (
                         <View style={[styles.expandedTip, { borderLeftColor: theme.text }]}>
                           <Text style={[styles.expandedTipText, { color: theme.textMuted }]}>
-                            💡 {exercise.note}
+                            {exercise.note}
                           </Text>
                         </View>
                       ) : null}
@@ -284,7 +278,7 @@ export const PlanTab: React.FC<PlanTabProps> = ({
                           onPress={() => onSelectExerciseForPR(exercise)}
                           activeOpacity={0.8}
                         >
-                          <Ionicons name="trophy-outline" size={15} color={theme.primaryText} />
+                          <Ionicons name="trophy-outline" size={16} color={theme.primaryText} />
                           <Text style={[styles.prActionBtnText, { color: theme.primaryText }]}>
                             Zapisz lub zobacz rekord w Osiągach
                           </Text>
@@ -316,61 +310,58 @@ const styles = StyleSheet.create({
   header: {
     paddingHorizontal: 20,
     paddingTop: 12,
-    paddingBottom: 6,
+    paddingBottom: 8,
   },
   title: {
-    fontSize: 28,
+    fontSize: 32,
     fontWeight: '900',
-    letterSpacing: -0.5,
+    letterSpacing: -0.6,
   },
   subtitle: {
-    fontSize: 13,
-    marginTop: 2,
+    fontSize: 14,
+    marginTop: 3,
   },
   daySelectorWrapper: {
     borderBottomWidth: StyleSheet.hairlineWidth,
-    paddingBottom: 12,
-    marginTop: 6,
+    paddingBottom: 14,
+    marginTop: 8,
   },
   daySelectorScroll: {
     paddingHorizontal: 20,
-    gap: 8,
+    gap: 10,
   },
   dayPill: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 16,
     borderWidth: 1,
     alignItems: 'center',
-    minWidth: 58,
-    gap: 2,
-  },
-  dayEmoji: {
-    fontSize: 14,
+    minWidth: 64,
+    gap: 4,
   },
   dayShort: {
-    fontSize: 13,
+    fontSize: 15,
     fontWeight: '800',
   },
   daySub: {
-    fontSize: 9,
-    fontWeight: '600',
+    fontSize: 11,
+    fontWeight: '700',
   },
   contentScroll: {
     flex: 1,
   },
   contentInner: {
     paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 60,
+    paddingTop: 18,
+    paddingBottom: 80,
   },
   bannerWrapper: {
     width: '100%',
-    height: 180,
-    borderRadius: 18,
+    height: 195,
+    borderRadius: 20,
     overflow: 'hidden',
     position: 'relative',
-    marginBottom: 16,
+    marginBottom: 20,
   },
   bannerImage: {
     width: '100%',
@@ -378,168 +369,169 @@ const styles = StyleSheet.create({
   },
   bannerOverlay: {
     ...StyleSheet.absoluteFill,
-    padding: 18,
+    padding: 20,
     justifyContent: 'flex-end',
   },
   bannerBadge: {
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
+    backgroundColor: 'rgba(255, 255, 255, 0.22)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
     borderRadius: 6,
     alignSelf: 'flex-start',
-    marginBottom: 6,
+    marginBottom: 8,
   },
   bannerBadgeText: {
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: '800',
     color: '#FFFFFF',
-    letterSpacing: 0.5,
+    letterSpacing: 0.6,
   },
   bannerTitle: {
-    fontSize: 26,
+    fontSize: 28,
     fontWeight: '900',
     color: '#FFFFFF',
     letterSpacing: -0.4,
   },
   bannerSubtitle: {
-    fontSize: 13,
+    fontSize: 14,
     color: 'rgba(255, 255, 255, 0.85)',
-    marginTop: 2,
+    marginTop: 3,
   },
   bannerMetaRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    marginTop: 8,
+    gap: 8,
+    marginTop: 10,
+  },
+  metaTimeWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
   },
   bannerMetaText: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '600',
     color: '#FFFFFF',
   },
   bannerMetaDot: {
-    fontSize: 10,
+    fontSize: 11,
     color: 'rgba(255, 255, 255, 0.6)',
   },
   warmupNotice: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: 10,
-    padding: 14,
-    borderRadius: 14,
+    gap: 12,
+    padding: 16,
+    borderRadius: 16,
     borderWidth: 1,
-    marginBottom: 14,
-  },
-  warmupIcon: {
-    fontSize: 18,
+    marginBottom: 20,
   },
   warmupTitle: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '800',
-    marginBottom: 2,
+    marginBottom: 4,
   },
   warmupDesc: {
-    fontSize: 12,
-    lineHeight: 18,
+    fontSize: 13,
+    lineHeight: 19,
   },
   startWorkoutBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    paddingVertical: 14,
-    borderRadius: 14,
-    marginBottom: 18,
+    paddingVertical: 18,
+    borderRadius: 16,
+    marginBottom: 22,
   },
   startWorkoutBtnText: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '900',
     letterSpacing: 0.5,
   },
   exerciseSection: {
-    marginTop: 4,
+    marginTop: 6,
   },
   sectionDivider: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     borderTopWidth: StyleSheet.hairlineWidth,
-    paddingTop: 16,
-    paddingBottom: 10,
+    paddingTop: 18,
+    paddingBottom: 12,
   },
   sectionTitle: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '800',
-    letterSpacing: 0.8,
+    letterSpacing: 0.9,
   },
   sectionHint: {
-    fontSize: 11,
+    fontSize: 12,
   },
   exerciseItem: {
     borderBottomWidth: StyleSheet.hairlineWidth,
-    paddingVertical: 10,
-    paddingHorizontal: 6,
+    paddingVertical: 16,
+    paddingHorizontal: 8,
   },
   exerciseHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     gap: 12,
-  },
-  thumbnail: {
-    width: 52,
-    height: 52,
-    borderRadius: 10,
-  },
-  thumbnailPlaceholder: {
-    width: 52,
-    height: 52,
-    borderRadius: 10,
-    justifyContent: 'center',
-    alignItems: 'center',
+    minHeight: 52,
   },
   exerciseInfo: {
     flex: 1,
   },
   exerciseName: {
-    fontSize: 16,
-    fontWeight: '700',
-    letterSpacing: -0.2,
-    marginBottom: 4,
+    fontSize: 18,
+    fontWeight: '800',
+    letterSpacing: -0.3,
+    lineHeight: 23,
+    marginBottom: 5,
   },
   metaRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 8,
     flexWrap: 'wrap',
   },
   categoryTag: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 5,
+    borderWidth: StyleSheet.hairlineWidth,
   },
   categoryTagText: {
-    fontSize: 9,
+    fontSize: 10,
     fontWeight: '800',
+    letterSpacing: 0.4,
   },
   repsInfo: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  restTagWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  restPill: {
     fontSize: 12,
     fontWeight: '600',
   },
-  restPill: {
-    fontSize: 11,
-  },
   expandedContent: {
-    paddingTop: 12,
+    paddingTop: 16,
     paddingHorizontal: 4,
-    paddingBottom: 6,
+    paddingBottom: 8,
   },
   largeImgWrap: {
     width: '100%',
-    height: 180,
-    borderRadius: 12,
+    height: 190,
+    borderRadius: 14,
     overflow: 'hidden',
     position: 'relative',
-    marginBottom: 12,
+    marginBottom: 14,
   },
   largeImg: {
     width: '100%',
@@ -547,44 +539,44 @@ const styles = StyleSheet.create({
   },
   fullImgBtn: {
     position: 'absolute',
-    bottom: 8,
-    right: 8,
+    bottom: 10,
+    right: 10,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
   },
   fullImgBtnText: {
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: '700',
   },
   expandedDesc: {
-    fontSize: 13,
-    lineHeight: 20,
-    marginBottom: 10,
+    fontSize: 14,
+    lineHeight: 22,
+    marginBottom: 12,
   },
   expandedTip: {
     borderLeftWidth: 2,
-    paddingLeft: 8,
-    marginBottom: 14,
+    paddingLeft: 10,
+    marginBottom: 16,
   },
   expandedTipText: {
-    fontSize: 12,
+    fontSize: 13,
     fontStyle: 'italic',
-    lineHeight: 17,
+    lineHeight: 19,
   },
   prActionBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 12,
-    borderRadius: 10,
+    gap: 8,
+    paddingVertical: 15,
+    borderRadius: 12,
   },
   prActionBtnText: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '800',
   },
 });
