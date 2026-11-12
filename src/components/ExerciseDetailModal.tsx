@@ -45,6 +45,9 @@ export const ExerciseDetailModal: React.FC<ExerciseDetailModalProps> = ({
       <ScrollView
         style={styles.content}
         showsVerticalScrollIndicator={false}
+        bounces={false}
+        alwaysBounceVertical={false}
+        overScrollMode="never"
         contentContainerStyle={{ paddingBottom: 40 }}
       >
         {/* Exercise Image */}

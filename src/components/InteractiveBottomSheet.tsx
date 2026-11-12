@@ -44,6 +44,8 @@ export const InteractiveBottomSheet: React.FC<InteractiveBottomSheetProps> = ({
 
   // Mode: 0 = collapsed (default height percent), 1 = expanded (full 94% height)
   const [isExpanded, setIsExpanded] = useState(false);
+  const isExpandedRef = useRef(isExpanded);
+  isExpandedRef.current = isExpanded;
 
   const collapsedHeight = SCREEN_HEIGHT * Math.min(0.92, Math.max(0.5, initialHeightPercent));
   const expandedHeight = SCREEN_HEIGHT * 0.94;
@@ -58,6 +60,7 @@ export const InteractiveBottomSheet: React.FC<InteractiveBottomSheetProps> = ({
   useEffect(() => {
     if (visible) {
       setIsExpanded(false);
+      isExpandedRef.current = false;
       sheetHeightAnim.setValue(collapsedHeight);
       translateY.setValue(SCREEN_HEIGHT);
 
@@ -103,6 +106,7 @@ export const InteractiveBottomSheet: React.FC<InteractiveBottomSheetProps> = ({
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     } catch {}
     setIsExpanded(expand);
+    isExpandedRef.current = expand;
     Animated.spring(sheetHeightAnim, {
       toValue: expand ? expandedHeight : collapsedHeight,
       friction: 8,
@@ -111,16 +115,20 @@ export const InteractiveBottomSheet: React.FC<InteractiveBottomSheetProps> = ({
     }).start();
   };
 
-  // Pan responder attached to top handle and header
+  // Pan responder attached to entire sheet container for fluid swipe-down dismissal
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => false,
       onStartShouldSetPanResponderCapture: () => false,
       onMoveShouldSetPanResponder: (_, gestureState) => {
-        return Math.abs(gestureState.dy) > 6 && Math.abs(gestureState.dy) > Math.abs(gestureState.dx) * 1.2;
+        return gestureState.dy > 5 && Math.abs(gestureState.dy) > Math.abs(gestureState.dx) * 1.1;
       },
       onMoveShouldSetPanResponderCapture: (_, gestureState) => {
-        return Math.abs(gestureState.dy) > 6 && Math.abs(gestureState.dy) > Math.abs(gestureState.dx) * 1.2;
+        // Intercept downward drag from anywhere in the sheet
+        return gestureState.dy > 5 && Math.abs(gestureState.dy) > Math.abs(gestureState.dx) * 1.1;
+      },
+      onPanResponderGrant: () => {
+        translateY.stopAnimation();
       },
       onPanResponderMove: (_, gestureState) => {
         // Dragging down: move sheet down
@@ -128,7 +136,7 @@ export const InteractiveBottomSheet: React.FC<InteractiveBottomSheetProps> = ({
           translateY.setValue(gestureState.dy);
           const ratio = Math.max(0, 1 - gestureState.dy / (SCREEN_HEIGHT * 0.45));
           backdropOpacity.setValue(ratio);
-        } else if (gestureState.dy < 0 && !isExpanded) {
+        } else if (gestureState.dy < 0 && !isExpandedRef.current) {
           // Dragging up when not expanded: expand height smoothly
           const target = Math.min(expandedHeight, collapsedHeight + Math.abs(gestureState.dy) * 1.2);
           sheetHeightAnim.setValue(target);
@@ -136,7 +144,7 @@ export const InteractiveBottomSheet: React.FC<InteractiveBottomSheetProps> = ({
       },
       onPanResponderRelease: (_, gestureState) => {
         // If swiped down with enough distance or velocity -> DISMISS
-        if (gestureState.dy > 60 || gestureState.vy > 0.4) {
+        if (gestureState.dy > 50 || gestureState.vy > 0.35) {
           handleDismiss();
         } else if (gestureState.dy < -40 || gestureState.vy < -0.4) {
           // Swiped up -> EXPAND FULL
@@ -161,13 +169,29 @@ export const InteractiveBottomSheet: React.FC<InteractiveBottomSheetProps> = ({
               useNativeDriver: true,
             }),
             Animated.spring(sheetHeightAnim, {
-              toValue: isExpanded ? expandedHeight : collapsedHeight,
+              toValue: isExpandedRef.current ? expandedHeight : collapsedHeight,
               friction: 7,
               tension: 60,
               useNativeDriver: false,
             }),
           ]).start();
         }
+      },
+      onPanResponderTerminationRequest: () => false,
+      onPanResponderTerminate: () => {
+        Animated.parallel([
+          Animated.spring(translateY, {
+            toValue: 0,
+            friction: 7,
+            tension: 60,
+            useNativeDriver: true,
+          }),
+          Animated.timing(backdropOpacity, {
+            toValue: 1,
+            duration: 150,
+            useNativeDriver: true,
+          }),
+        ]).start();
       },
     })
   ).current;
@@ -192,7 +216,7 @@ export const InteractiveBottomSheet: React.FC<InteractiveBottomSheetProps> = ({
           </TouchableWithoutFeedback>
         </Animated.View>
 
-        {/* Sliding Sheet */}
+        {/* Sliding Sheet with gesture panHandlers on entire surface */}
         <Animated.View
           style={[
             styles.sheet,
@@ -203,9 +227,10 @@ export const InteractiveBottomSheet: React.FC<InteractiveBottomSheetProps> = ({
               transform: [{ translateY }],
             },
           ]}
+          {...panResponder.panHandlers}
         >
-          {/* Grab Area: Handle bar + Header with PanResponder */}
-          <View {...panResponder.panHandlers} style={styles.grabArea}>
+          {/* Grab Area: Handle bar + Header */}
+          <View style={styles.grabArea}>
             {showHandle && (
               <View style={styles.handleWrapper}>
                 <View style={[styles.handleBar, { backgroundColor: theme.borderDark }]} />

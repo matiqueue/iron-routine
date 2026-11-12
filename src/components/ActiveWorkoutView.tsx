@@ -34,6 +34,31 @@ interface ActiveWorkoutViewProps {
   onExitWorkout: () => void;
 }
 
+const getSetRows = (totalSets: number): number[][] => {
+  if (totalSets <= 3) {
+    return [Array.from({ length: totalSets }, (_, i) => i)];
+  }
+  if (totalSets === 4) {
+    return [[0, 1], [2, 3]];
+  }
+  if (totalSets === 5) {
+    return [[0, 1, 2], [3, 4]];
+  }
+  if (totalSets === 6) {
+    return [[0, 1, 2], [3, 4, 5]];
+  }
+  const perRow = totalSets > 6 ? 4 : 3;
+  const rows: number[][] = [];
+  for (let i = 0; i < totalSets; i += perRow) {
+    const row: number[] = [];
+    for (let j = i; j < Math.min(i + perRow, totalSets); j++) {
+      row.push(j);
+    }
+    rows.push(row);
+  }
+  return rows;
+};
+
 export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
   dayPlan,
   dayProgress,
@@ -536,77 +561,81 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
             </Text>
           </View>
 
-          {/* Series Stepper / Selector Row */}
+          {/* Series Stepper / Selector Grid - No horizontal scroll, wrapping downward & stretching full width */}
           <View style={styles.seriesSelectorWrap}>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.seriesScroll}>
-              {Array.from({ length: currentExercise.sets }).map((_, idx) => {
-                const isSelected = idx === currentSetIndex;
-                const sEntry = currentExerciseSets[idx];
-                const isDone = !!sEntry?.completed;
+            {getSetRows(currentExercise.sets).map((row, rIdx) => (
+              <View key={rIdx} style={styles.seriesRow}>
+                {row.map((idx) => {
+                  const isSelected = idx === currentSetIndex;
+                  const sEntry = currentExerciseSets[idx];
+                  const isDone = !!sEntry?.completed;
 
-                return (
-                  <TouchableOpacity
-                    key={idx}
-                    style={[
-                      styles.seriesPill,
-                      {
-                        backgroundColor: isSelected
-                          ? theme.primary
-                          : isDone
-                          ? theme.bgSecondary
-                          : theme.bgTertiary,
-                        borderColor: isSelected
-                          ? theme.primary
-                          : isDone
-                          ? theme.borderDark
-                          : theme.border,
-                      },
-                    ]}
-                    onPress={() => handleChangeSetIndex(idx)}
-                    activeOpacity={0.7}
-                  >
-                    {isDone ? (
-                      <Ionicons
-                        name="checkmark"
-                        size={14}
-                        color={isSelected ? theme.primaryText : theme.text}
-                        style={{ marginRight: 4 }}
-                      />
-                    ) : null}
-                    <Text
+                  return (
+                    <TouchableOpacity
+                      key={idx}
                       style={[
-                        styles.seriesPillText,
+                        styles.seriesPill,
                         {
-                          color: isSelected
-                            ? theme.primaryText
+                          backgroundColor: isSelected
+                            ? theme.primary
                             : isDone
-                            ? theme.text
-                            : theme.textMuted,
+                            ? theme.bgSecondary
+                            : theme.bgTertiary,
+                          borderColor: isSelected
+                            ? theme.primary
+                            : isDone
+                            ? theme.borderDark
+                            : theme.border,
                         },
                       ]}
+                      onPress={() => handleChangeSetIndex(idx)}
+                      activeOpacity={0.7}
                     >
-                      Seria {idx + 1}
-                    </Text>
-                    {sEntry?.weight ? (
+                      {isDone ? (
+                        <Ionicons
+                          name="checkmark"
+                          size={13}
+                          color={isSelected ? theme.primaryText : theme.text}
+                          style={{ marginRight: 3 }}
+                        />
+                      ) : null}
                       <Text
                         style={[
-                          styles.seriesPillWeight,
+                          styles.seriesPillText,
                           {
                             color: isSelected
                               ? theme.primaryText
                               : isDone
-                              ? theme.textSecondary
+                              ? theme.text
                               : theme.textMuted,
                           },
                         ]}
+                        numberOfLines={1}
                       >
-                        • {sEntry.weight}kg
+                        Seria {idx + 1}
                       </Text>
-                    ) : null}
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
+                      {sEntry?.weight ? (
+                        <Text
+                          style={[
+                            styles.seriesPillWeight,
+                            {
+                              color: isSelected
+                                ? theme.primaryText
+                                : isDone
+                                ? theme.textSecondary
+                                : theme.textMuted,
+                            },
+                          ]}
+                          numberOfLines={1}
+                        >
+                          • {sEntry.weight}kg
+                        </Text>
+                      ) : null}
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            ))}
           </View>
 
           {/* ACTIVE SERIES FOCUS CARD with Spring Bounce on Set Switch */}
@@ -993,15 +1022,20 @@ const styles = StyleSheet.create({
   },
   seriesSelectorWrap: {
     marginBottom: 14,
-  },
-  seriesScroll: {
     gap: 8,
   },
+  seriesRow: {
+    flexDirection: 'row',
+    gap: 8,
+    width: '100%',
+  },
   seriesPill: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 9,
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 10,
     borderRadius: 12,
     borderWidth: 1,
   },
@@ -1012,7 +1046,7 @@ const styles = StyleSheet.create({
   seriesPillWeight: {
     fontSize: 12,
     fontWeight: '600',
-    marginLeft: 4,
+    marginLeft: 3,
   },
   focusCard: {
     padding: 20,

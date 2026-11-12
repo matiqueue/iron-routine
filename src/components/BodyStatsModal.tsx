@@ -224,7 +224,14 @@ export const BodyStatsModal: React.FC<BodyStatsModalProps> = ({
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={{ flex: 1 }}
       >
-        <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
+        <ScrollView
+          style={styles.scroll}
+          showsVerticalScrollIndicator={false}
+          bounces={false}
+          alwaysBounceVertical={false}
+          overScrollMode="never"
+          contentContainerStyle={{ paddingBottom: 40 }}
+        >
           {/* KPI Cards Strip */}
             <View style={styles.kpiRow}>
               <View style={[styles.kpiCard, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>

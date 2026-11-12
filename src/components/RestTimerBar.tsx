@@ -46,17 +46,22 @@ export const RestTimerBar: React.FC<RestTimerBarProps> = ({
       onStartShouldSetPanResponder: () => false,
       onStartShouldSetPanResponderCapture: () => false,
       onMoveShouldSetPanResponder: (_, gestureState) =>
-        gestureState.dy > 6 && Math.abs(gestureState.dy) > Math.abs(gestureState.dx) * 1.2,
+        gestureState.dy > 5 && Math.abs(gestureState.dy) > Math.abs(gestureState.dx) * 1.1,
       onMoveShouldSetPanResponderCapture: (_, gestureState) =>
-        gestureState.dy > 6 && Math.abs(gestureState.dy) > Math.abs(gestureState.dx) * 1.2,
+        gestureState.dy > 5 && Math.abs(gestureState.dy) > Math.abs(gestureState.dx) * 1.1,
+      onPanResponderGrant: () => {
+        slideAnim.stopAnimation();
+      },
       onPanResponderMove: (_, gestureState) => {
         if (gestureState.dy > 0) {
           slideAnim.setValue(gestureState.dy);
+          const ratio = Math.max(0, 1 - gestureState.dy / 300);
+          fadeAnim.setValue(ratio);
         }
       },
       onPanResponderRelease: (_, gestureState) => {
         // If swiped down enough or with high downward velocity, dismiss
-        if (gestureState.dy > 60 || gestureState.vy > 0.4) {
+        if (gestureState.dy > 50 || gestureState.vy > 0.35) {
           try {
             Haptics.selectionAsync();
           } catch {}
@@ -76,13 +81,36 @@ export const RestTimerBar: React.FC<RestTimerBarProps> = ({
           });
         } else {
           // Snap back up smoothly
+          Animated.parallel([
+            Animated.spring(slideAnim, {
+              toValue: 0,
+              friction: 7,
+              tension: 50,
+              useNativeDriver: true,
+            }),
+            Animated.timing(fadeAnim, {
+              toValue: 1,
+              duration: 140,
+              useNativeDriver: true,
+            }),
+          ]).start();
+        }
+      },
+      onPanResponderTerminationRequest: () => false,
+      onPanResponderTerminate: () => {
+        Animated.parallel([
           Animated.spring(slideAnim, {
             toValue: 0,
             friction: 7,
             tension: 50,
             useNativeDriver: true,
-          }).start();
-        }
+          }),
+          Animated.timing(fadeAnim, {
+            toValue: 1,
+            duration: 140,
+            useNativeDriver: true,
+          }),
+        ]).start();
       },
     })
   ).current;

@@ -60,7 +60,13 @@ export const ProfileSelectorModal: React.FC<ProfileSelectorModalProps> = ({
         style={{ flex: 1, paddingHorizontal: 20, paddingTop: 16 }}
       >
         {/* Profiles */}
-        <ScrollView style={styles.list} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          style={styles.list}
+          showsVerticalScrollIndicator={false}
+          bounces={false}
+          alwaysBounceVertical={false}
+          overScrollMode="never"
+        >
           {profiles.map((profile) => {
             const isSelected = profile.id === activeProfile?.id;
 

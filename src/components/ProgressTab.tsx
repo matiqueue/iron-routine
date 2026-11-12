@@ -774,7 +774,14 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           style={{ flex: 1 }}
         >
-          <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
+          <ScrollView
+            style={styles.modalScroll}
+            showsVerticalScrollIndicator={false}
+            bounces={false}
+            alwaysBounceVertical={false}
+            overScrollMode="never"
+            contentContainerStyle={{ paddingBottom: 40 }}
+          >
             {/* Form */}
               <View style={[styles.formContainer, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
                 <Text style={[styles.formHeaderTitle, { color: theme.text }]}>
