@@ -8,6 +8,7 @@ import {
   Modal,
   Animated,
   PanResponder,
+  AppState,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -114,32 +115,60 @@ export const RestTimerBar: React.FC<RestTimerBarProps> = ({
     });
   };
 
+  const endTimeRef = useRef<number>(Date.now() + initialSeconds * 1000);
+  const pausedRemainingRef = useRef<number | null>(null);
+
   useEffect(() => {
+    endTimeRef.current = Date.now() + initialSeconds * 1000;
+    pausedRemainingRef.current = null;
     setSecondsLeft(initialSeconds);
     setIsRunning(true);
     setIsFinished(false);
   }, [initialSeconds]);
 
+  // Synchronize timer with real wall-clock time
   useEffect(() => {
     let interval: ReturnType<typeof setInterval> | null = null;
 
-    if (isRunning && secondsLeft > 0) {
-      interval = setInterval(() => {
-        setSecondsLeft((prev) => {
-          if (prev <= 1) {
-            triggerCompletionFeedback();
-            setIsFinished(true);
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
+    const tick = () => {
+      if (!isRunning) return;
+      const now = Date.now();
+      const diff = Math.max(0, Math.ceil((endTimeRef.current - now) / 1000));
+      setSecondsLeft(diff);
+      if (diff <= 0) {
+        setIsFinished(true);
+        setIsRunning(false);
+        triggerCompletionFeedback();
+      }
+    };
+
+    if (isRunning) {
+      tick();
+      interval = setInterval(tick, 500); // 500ms check for razor-sharp accuracy
     }
 
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [isRunning, secondsLeft]);
+  }, [isRunning]);
+
+  // Re-sync immediately when returning from background / unlocking device!
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active' && isRunning) {
+        const now = Date.now();
+        const diff = Math.max(0, Math.ceil((endTimeRef.current - now) / 1000));
+        setSecondsLeft(diff);
+        if (diff <= 0) {
+          setIsFinished(true);
+          setIsRunning(false);
+          triggerCompletionFeedback();
+        }
+      }
+    });
+
+    return () => subscription.remove();
+  }, [isRunning]);
 
   const triggerCompletionFeedback = async () => {
     try {
@@ -147,15 +176,50 @@ export const RestTimerBar: React.FC<RestTimerBarProps> = ({
     } catch {}
   };
 
+  const handleTogglePause = () => {
+    try {
+      Haptics.selectionAsync();
+    } catch {}
+
+    if (isRunning) {
+      // Pause
+      const now = Date.now();
+      const remaining = Math.max(0, Math.ceil((endTimeRef.current - now) / 1000));
+      pausedRemainingRef.current = remaining;
+      setSecondsLeft(remaining);
+      setIsRunning(false);
+    } else {
+      // Resume
+      const remaining = pausedRemainingRef.current ?? secondsLeft;
+      if (remaining <= 0) return;
+      endTimeRef.current = Date.now() + remaining * 1000;
+      pausedRemainingRef.current = null;
+      setIsRunning(true);
+      setIsFinished(false);
+      onSecondsChanged?.(remaining);
+    }
+  };
+
   const adjustTime = (delta: number) => {
-    setSecondsLeft((prev) => {
-      const next = Math.max(0, prev + delta);
-      onSecondsChanged?.(next);
-      return next;
-    });
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     } catch {}
+
+    if (isRunning) {
+      const now = Date.now();
+      const currentRemaining = Math.max(0, Math.ceil((endTimeRef.current - now) / 1000));
+      const next = Math.max(0, currentRemaining + delta);
+      endTimeRef.current = Date.now() + next * 1000;
+      setSecondsLeft(next);
+      if (next > 0) setIsFinished(false);
+      onSecondsChanged?.(next);
+    } else {
+      const prev = pausedRemainingRef.current ?? secondsLeft;
+      const next = Math.max(0, prev + delta);
+      pausedRemainingRef.current = next;
+      setSecondsLeft(next);
+      if (next > 0) setIsFinished(false);
+    }
   };
 
   const formatTime = (totalSeconds: number) => {
@@ -256,7 +320,7 @@ export const RestTimerBar: React.FC<RestTimerBarProps> = ({
               </TouchableOpacity>
 
               <TouchableOpacity
-                onPress={() => setIsRunning(!isRunning)}
+                onPress={handleTogglePause}
                 style={[styles.playBtn, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}
                 activeOpacity={0.7}
               >

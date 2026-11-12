@@ -10,6 +10,7 @@ import {
   Platform,
   Animated,
   PanResponder,
+  AppState,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -163,11 +164,27 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
     })
   ).current;
 
+  const workoutStartTimeRef = useRef<number>(Date.now());
+
   useEffect(() => {
-    const interval = setInterval(() => {
-      setElapsedSeconds((prev) => prev + 1);
-    }, 1000);
-    return () => clearInterval(interval);
+    const updateElapsed = () => {
+      const diff = Math.floor((Date.now() - workoutStartTimeRef.current) / 1000);
+      setElapsedSeconds(Math.max(0, diff));
+    };
+
+    updateElapsed();
+    const interval = setInterval(updateElapsed, 1000);
+
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') {
+        updateElapsed();
+      }
+    });
+
+    return () => {
+      clearInterval(interval);
+      subscription.remove();
+    };
   }, []);
 
   const formatTime = (secs: number) => {
