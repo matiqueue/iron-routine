@@ -16,9 +16,14 @@
       "bundleIdentifier": "com.matique.ironroutine",
       "buildNumber": "1",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSSupportsLiveActivities": true,
+        "NSSupportsLiveActivitiesFrequentUpdates": true
       }
     },
+    "plugins": [
+      "expo-live-activity"
+    ],
     "android": {
       "package": "com.matique.ironroutine",
       "versionCode": 1,

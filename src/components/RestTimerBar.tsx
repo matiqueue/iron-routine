@@ -17,6 +17,7 @@ interface RestTimerBarProps {
   initialSeconds: number;
   exerciseName?: string;
   nextSetInfo?: string;
+  onSecondsChanged?: (seconds: number) => void;
   onClose: () => void;
 }
 
@@ -24,6 +25,7 @@ export const RestTimerBar: React.FC<RestTimerBarProps> = ({
   initialSeconds,
   exerciseName,
   nextSetInfo,
+  onSecondsChanged,
   onClose,
 }) => {
   const { theme, isDark } = useAppTheme();
@@ -146,7 +148,11 @@ export const RestTimerBar: React.FC<RestTimerBarProps> = ({
   };
 
   const adjustTime = (delta: number) => {
-    setSecondsLeft((prev) => Math.max(0, prev + delta));
+    setSecondsLeft((prev) => {
+      const next = Math.max(0, prev + delta);
+      onSecondsChanged?.(next);
+      return next;
+    });
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     } catch {}

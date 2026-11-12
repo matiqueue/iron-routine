@@ -18,6 +18,7 @@ import { DayPlan, Exercise, SetEntry } from '../types/workout';
 import { RestTimerBar } from './RestTimerBar';
 import { ExerciseDetailModal } from './ExerciseDetailModal';
 import { getLastExerciseMetrics } from '../services/storage';
+import { updateWorkoutLiveActivity } from '../services/liveActivity';
 
 interface ActiveWorkoutViewProps {
   dayPlan: DayPlan;
@@ -225,6 +226,46 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
   }, [exercises, dayProgress]);
 
   const progressPercent = totalSets > 0 ? Math.round((completedSetsCount / totalSets) * 100) : 0;
+
+  // Synchronize Live Activity on Lock Screen and Dynamic Island
+  useEffect(() => {
+    if (!currentExercise) return;
+
+    if (timerActive && timerSeconds > 0) {
+      updateWorkoutLiveActivity({
+        workoutName: dayPlan.name,
+        exerciseName: currentExercise.name,
+        currentSet: currentSetIndex + 1,
+        totalSets: currentExercise.sets,
+        completedSets: completedSetsCount,
+        totalWorkoutSets: totalSets,
+        isRest: true,
+        restSeconds: timerSeconds,
+        nextExerciseName: timerNextInfo,
+      });
+    } else {
+      updateWorkoutLiveActivity({
+        workoutName: dayPlan.name,
+        exerciseName: currentExercise.name,
+        currentSet: currentSetIndex + 1,
+        totalSets: currentExercise.sets,
+        completedSets: completedSetsCount,
+        totalWorkoutSets: totalSets,
+        isRest: false,
+      });
+    }
+  }, [
+    currentExercise?.id,
+    currentExercise?.name,
+    currentExercise?.sets,
+    currentSetIndex,
+    completedSetsCount,
+    totalSets,
+    timerActive,
+    timerSeconds,
+    dayPlan.name,
+    timerNextInfo,
+  ]);
 
   if (!currentExercise) return null;
 
@@ -720,6 +761,19 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
           initialSeconds={timerSeconds}
           exerciseName={timerLabel}
           nextSetInfo={timerNextInfo}
+          onSecondsChanged={(newSecs) => {
+            updateWorkoutLiveActivity({
+              workoutName: dayPlan.name,
+              exerciseName: currentExercise.name,
+              currentSet: currentSetIndex + 1,
+              totalSets: currentExercise.sets,
+              completedSets: completedSetsCount,
+              totalWorkoutSets: totalSets,
+              isRest: true,
+              restSeconds: newSecs,
+              nextExerciseName: timerNextInfo,
+            });
+          }}
           onClose={() => setTimerActive(false)}
         />
       )}

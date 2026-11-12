@@ -69,6 +69,8 @@ PODS:
     - ExpoModulesCore
   - ExpoKeepAwake (58.0.4):
     - ExpoModulesCore
+  - ExpoLiveActivity (0.4.2):
+    - ExpoModulesCore
   - ExpoLogBox (58.0.15):
     - React-Core
   - ExpoModulesCore (58.1.0):
@@ -1934,6 +1936,7 @@ DEPENDENCIES:
   - ExpoFont (from `../node_modules/expo-font/ios/ExpoFont.podspec`)
   - ExpoHaptics (from `../node_modules/expo-haptics/ios`)
   - ExpoKeepAwake (from `../node_modules/expo-keep-awake/ios`)
+  - ExpoLiveActivity (from `../node_modules/expo-live-activity/ios`)
   - "ExpoLogBox (from `../node_modules/@expo/log-box`)"
   - ExpoModulesCore (from `../node_modules/expo-modules-core/ExpoModulesCore.podspec`)
   - ExpoModulesJSI (from `../node_modules/expo-modules-jsi/apple`)
@@ -2052,6 +2055,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/expo-haptics/ios"
   ExpoKeepAwake:
     :path: "../node_modules/expo-keep-awake/ios"
+  ExpoLiveActivity:
+    :path: "../node_modules/expo-live-activity/ios"
   ExpoLogBox:
     :path: "../node_modules/@expo/log-box"
   ExpoModulesCore:
@@ -2249,6 +2254,7 @@ SPEC CHECKSUMS:
   ExpoFont: daea737a2e3742f9a946f2884518e70dd37011f3
   ExpoHaptics: d3a61f836a88c0061644473761a6ca499a14b19a
   ExpoKeepAwake: 3dc7cce59bdc13796f772ac54d3af1ca6b6954cd
+  ExpoLiveActivity: d0dd0e8e1460b6b26555b611c4826cdb1036eea2
   ExpoLogBox: 9bfba7bb99c806b678703e6c62323f3c4785e706
   ExpoModulesCore: 14422e046fbe8669653396d79f8cc2c94dada405
   ExpoModulesJSI: 6684bdf9d04f2e5e39f6b90189dcb0def22a55d6
@@ -2341,6 +2347,6 @@ SPEC CHECKSUMS:
   SocketRocket: 37aec555668fb852ec12e3c0de59a86ca58f0871
   Yoga: d1c536142c5ff8ec8cd856ab2a7c227a1d875c8e
 
-PODFILE CHECKSUM: 1ef1e31e722e9cce69496804eebbd84ca4f5dd3f
+PODFILE CHECKSUM: 7afa8428f15fd7ec2a81463f7e4dd539489f757e
 
 COCOAPODS: 1.17.0

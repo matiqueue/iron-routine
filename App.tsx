@@ -36,6 +36,10 @@ import {
   scheduleCreatineReminders,
   handleNotificationResponse,
 } from './src/services/notifications';
+import {
+  startWorkoutLiveActivity,
+  stopWorkoutLiveActivity,
+} from './src/services/liveActivity';
 
 import { SplashScreen } from './src/components/SplashScreen';
 import { ProfileSelectorModal } from './src/components/ProfileSelectorModal';
@@ -228,6 +232,20 @@ function MainApp() {
     setActiveWorkoutDayId(targetDay);
     refreshDayProgress(targetDay);
     setIsActiveWorkout(true);
+
+    const plan = WORKOUT_PLAN.find((p) => p.id === targetDay);
+    if (plan && plan.exercises && plan.exercises.length > 0) {
+      const firstEx = plan.exercises[0];
+      const total = plan.exercises.reduce((sum, e) => sum + e.sets, 0);
+      startWorkoutLiveActivity({
+        workoutName: plan.name,
+        exerciseName: firstEx.name,
+        currentSet: 1,
+        totalSets: firstEx.sets,
+        completedSets: 0,
+        totalWorkoutSets: total,
+      });
+    }
   };
 
   const handleFinishWorkout = async () => {
@@ -254,6 +272,11 @@ function MainApp() {
       const curStreak = await getWorkoutStreak(activeProfile.id);
       setStreak(curStreak);
     }
+
+    await stopWorkoutLiveActivity({
+      summaryTitle: 'Trening ukończony! 🏆',
+      summarySubtitle: `${done} z ${total} serii zaliczonych`,
+    });
 
     setSummaryDayName(currentPlan.name);
     setSummaryCompletedSets(done);
@@ -289,7 +312,13 @@ function MainApp() {
             dayProgress={dayProgress}
             onUpdateSet={handleUpdateSet}
             onFinishWorkout={handleFinishWorkout}
-            onExitWorkout={() => setIsActiveWorkout(false)}
+            onExitWorkout={() => {
+              stopWorkoutLiveActivity({
+                summaryTitle: 'Trening przerwany',
+                summarySubtitle: 'Sesja została zakończona',
+              });
+              setIsActiveWorkout(false);
+            }}
           />
         </SafeAreaView>
       </SafeAreaProvider>

@@ -17,6 +17,7 @@ xcodebuild -workspace ios/IronRoutine.xcworkspace \
            -scheme IronRoutine \
            -configuration Release \
            -destination "id=$UDID" \
+           -allowProvisioningUpdates \
            build -quiet
 
 APP_DIR=$(ls -td "$HOME/Library/Developer/Xcode/DerivedData/IronRoutine-"*"/Build/Products/Release-iphoneos/IronRoutine.app" 2>/dev/null | head -n 1)
@@ -26,18 +27,43 @@ if [ ! -d "$APP_DIR" ]; then
     exit 1
 fi
 
-PROVISION=$(ls -t "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles/"*.mobileprovision 2>/dev/null | head -n 1)
-echo "📲 Weryfikacja profilu provisioning..."
-xcrun devicectl device profile install --device "$UDID" "$PROVISION" 2>/dev/null || true
+# Detect main app and widget provisioning profiles
+PROFILES=$(python3 -c "
+import os, glob, subprocess, plistlib
+main_p = ''
+widget_p = ''
+for p in glob.glob(os.path.expanduser('~/Library/Developer/Xcode/UserData/Provisioning Profiles/*.mobileprovision')):
+    try:
+        out = subprocess.check_output(['security', 'cms', '-D', '-i', p], stderr=subprocess.DEVNULL)
+        data = plistlib.loads(out)
+        aid = data.get('Entitlements', {}).get('application-identifier', '')
+        if aid.endswith('.com.matique.ironroutine.LiveActivity'):
+            widget_p = p
+        elif aid.endswith('.com.matique.ironroutine'):
+            main_p = p
+    except:
+        pass
+print(main_p + '|' + widget_p)
+")
 
-# Copy provisioning profile into app bundle as embedded.mobileprovision
-cp "$PROVISION" "$APP_DIR/embedded.mobileprovision"
+MAIN_PROVISION=$(echo "$PROFILES" | cut -d '|' -f 1)
+WIDGET_PROVISION=$(echo "$PROFILES" | cut -d '|' -f 2)
 
-# Extract exact entitlements directly from provisioning profile
-security cms -D -i "$PROVISION" | plutil -extract Entitlements xml1 -o /tmp/iron_entitlements.plist -
+echo "📲 Weryfikacja profili provisioning..."
+if [ -n "$MAIN_PROVISION" ]; then
+    xcrun devicectl device profile install --device "$UDID" "$MAIN_PROVISION" 2>/dev/null || true
+    cp "$MAIN_PROVISION" "$APP_DIR/embedded.mobileprovision"
+    security cms -D -i "$MAIN_PROVISION" | plutil -extract Entitlements xml1 -o /tmp/iron_entitlements.plist -
+fi
+
+if [ -n "$WIDGET_PROVISION" ] && [ -d "$APP_DIR/PlugIns/LiveActivity.appex" ]; then
+    xcrun devicectl device profile install --device "$UDID" "$WIDGET_PROVISION" 2>/dev/null || true
+    cp "$WIDGET_PROVISION" "$APP_DIR/PlugIns/LiveActivity.appex/embedded.mobileprovision"
+    security cms -D -i "$WIDGET_PROVISION" | plutil -extract Entitlements xml1 -o /tmp/widget_entitlements.plist -
+fi
 
 CERT="901CBB46BC4EC94F5D6ADDE75E14CAA4B03E6386"
-echo "🔐 Podpisywanie aplikacji certyfikatem Szymona ($CERT) wraz z Entitlements..."
+echo "🔐 Podpisywanie aplikacji certyfikatem Szymona ($CERT)..."
 
 for f in "$APP_DIR"/Frameworks/*.framework; do
     if [ -d "$f" ]; then
@@ -45,7 +71,14 @@ for f in "$APP_DIR"/Frameworks/*.framework; do
     fi
 done
 
-codesign --force --sign "$CERT" --entitlements /tmp/iron_entitlements.plist --timestamp=none "$APP_DIR"
+if [ -d "$APP_DIR/PlugIns/LiveActivity.appex" ] && [ -f /tmp/widget_entitlements.plist ]; then
+    echo "🔐 Podpisywanie rozszerzenia LiveActivity.appex..."
+    codesign --force --sign "$CERT" --entitlements /tmp/widget_entitlements.plist --timestamp=none "$APP_DIR/PlugIns/LiveActivity.appex"
+fi
+
+if [ -f /tmp/iron_entitlements.plist ]; then
+    codesign --force --sign "$CERT" --entitlements /tmp/iron_entitlements.plist --timestamp=none "$APP_DIR"
+fi
 
 echo "📦 Wgrywanie na fizycznego iPhone'a ($UDID)..."
 xcrun devicectl device install app --device "$UDID" "$APP_DIR"
