@@ -43,3 +43,7 @@ yarn-error.*
 # Private personal routine
 src/data/myPlan.ts
 
+# Vercel
+.vercel
+website/.vercel
+

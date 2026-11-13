@@ -3,12 +3,15 @@
   <p><b>Minimalistyczny, monochromatyczny dziennik treningowy i tracker progresu siłowego (iOS & Android, 100% offline)</b></p>
 
   <p>
+    <a href="https://iron-routine-app.vercel.app"><img src="https://img.shields.io/badge/Strona_WWW-Pobierz_Aplikację-CCFF00?style=for-the-badge&labelColor=09090B" alt="Strona WWW" /></a>
     <a href="https://github.com/matiqueue/iron-routine/releases"><img src="https://img.shields.io/github/v/release/matiqueue/iron-routine?style=for-the-badge&color=111827" alt="Release" /></a>
     <a href="https://github.com/matiqueue/iron-routine/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/matiqueue/iron-routine/ci.yml?branch=main&style=for-the-badge&label=CI" alt="CI Status" /></a>
     <a href="https://github.com/matiqueue/iron-routine/issues"><img src="https://img.shields.io/github/issues/matiqueue/iron-routine?style=for-the-badge" alt="Issues" /></a>
     <a href="https://github.com/matiqueue/iron-routine/discussions"><img src="https://img.shields.io/github/discussions/matiqueue/iron-routine?style=for-the-badge" alt="Discussions" /></a>
   </p>
 </div>
+
+> **Oficjalny portal pobierania (Android APK & poradnik iOS):** [iron-routine-app.vercel.app](https://iron-routine-app.vercel.app)
 
 ---
 
@@ -63,7 +66,13 @@
      ```bash
      npx expo start
      ```
-   - **Android APK**: Gotowe pliki `.apk` budowane są automatycznie przez GitHub Actions w zakładce **[Releases](https://github.com/matiqueue/iron-routine/releases)**.
+   - **Android APK**: Pobierz gotowy plik `.apk` bezpośrednio ze strony **[iron-routine-app.vercel.app](https://iron-routine-app.vercel.app)** lub z zakładki **[Releases](https://github.com/matiqueue/iron-routine/releases)**.
+
+---
+
+## Strona internetowa (`website/`)
+
+W katalogu [`website/`](./website/) znajduje się strona pobierania zbudowana w **Vite + React + TypeScript + Tailwind CSS** w stylu *Industrial Monochrome Athletic* (hostowana na Vercel pod adresem [iron-routine-app.vercel.app](https://iron-routine-app.vercel.app)).
 
 ---
 

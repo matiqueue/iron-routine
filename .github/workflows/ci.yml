@@ -24,8 +24,16 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Install website dependencies
+        working-directory: website
+        run: npm ci
+
       - name: Run TypeScript typecheck
         run: npx tsc --noEmit
 
       - name: Verify Expo config
         run: npx expo config --type public > /dev/null
+
+      - name: Verify website build
+        working-directory: website
+        run: npm run build

@@ -2,6 +2,12 @@
 
 Wszystkie istotne zmiany w aplikacji **Iron Routine**.
 
+## [v1.0.1] - 2026-11-13
+
+### Dodano
+- Dedykowana strona internetowa pobierania (`website/`) w stylu Industrial Monochrome Athletic z bezpośrednim pobieraniem APK oraz instrukcją instalacji iOS, wdrożona na Vercel.
+- Rozszerzenie CI (`ci.yml`) o automatyczną weryfikację buildu strony WWW.
+
 ## [v1.0.0] - 2026-11-13
 
 ### Dodano
