@@ -112,6 +112,16 @@ async function applyLocalDeviceSeedIfNeeded(): Promise<void> {
         );
       }
     }
+    if (LOCAL_DEVICE_SEED.prRecords) {
+      await Promise.all(
+        Object.entries(LOCAL_DEVICE_SEED.prRecords).map(([exId, records]) =>
+          AsyncStorage.setItem(
+            `${STORAGE_KEYS.PR_RECORDS_PREFIX}${seededProfile.id}_${exId}`,
+            JSON.stringify(records)
+          )
+        )
+      );
+    }
     await AsyncStorage.setItem(STORAGE_KEYS.LOCAL_SEED_VERSION, LOCAL_DEVICE_SEED.seedVersion);
   } catch (e) {
     console.warn('Local device seed failed:', e);
