@@ -6,8 +6,6 @@ import {
   TouchableOpacity,
   ScrollView,
   Image,
-  Dimensions,
-  Platform,
   ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -28,7 +26,7 @@ export const ExerciseDetailModal: React.FC<ExerciseDetailModalProps> = ({
   onClose,
   onOpenPR,
 }) => {
-  const { theme, isDark } = useAppTheme();
+  const { theme } = useAppTheme();
   const [imageLoading, setImageLoading] = useState(true);
   const [imageError, setImageError] = useState(false);
 
@@ -50,8 +48,14 @@ export const ExerciseDetailModal: React.FC<ExerciseDetailModalProps> = ({
         overScrollMode="never"
         contentContainerStyle={{ paddingBottom: 40 }}
       >
-        {/* Exercise Image */}
-        <View style={[styles.imageContainer, { backgroundColor: theme.bgSecondary }]}>
+        {/* Exercise Image / Minimal Header */}
+        <View
+          style={[
+            styles.imageContainer,
+            !exercise.imageUrl && { height: 112, borderRadius: 14, borderWidth: 1, borderColor: theme.border, marginBottom: 4 },
+            { backgroundColor: theme.bgSecondary },
+          ]}
+        >
           {exercise.imageUrl && !imageError ? (
             <>
               <Image
@@ -73,9 +77,9 @@ export const ExerciseDetailModal: React.FC<ExerciseDetailModalProps> = ({
             </>
           ) : (
             <View style={styles.imagePlaceholder}>
-              <Ionicons name="barbell-outline" size={44} color={theme.textMuted} />
+              <Ionicons name="barbell-outline" size={32} color={theme.textMuted} />
               <Text style={[styles.imagePlaceholderText, { color: theme.textMuted }]}>
-                Podgląd ćwiczenia
+                {exercise.equipment ? `Sprzęt: ${exercise.equipment}` : 'Podgląd techniki ćwiczenia'}
               </Text>
             </View>
           )}
@@ -90,6 +94,7 @@ export const ExerciseDetailModal: React.FC<ExerciseDetailModalProps> = ({
           >
             <Text style={[styles.categoryBadgeText, { color: theme.primaryText }]}>
               {exercise.category.toUpperCase()}
+              {exercise.equipment ? ` • ${exercise.equipment.toUpperCase()}` : ''}
             </Text>
           </View>
         </View>

@@ -1,4 +1,5 @@
 import * as Notifications from 'expo-notifications';
+import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Storage keys
@@ -312,4 +313,60 @@ export async function cancelDailyWeightReminder(): Promise<void> {
   try {
     await Notifications.cancelScheduledNotificationAsync(NOTIF_IDS.WEIGHT);
   } catch {}
+}
+
+// ==================== WORKOUT REST TIMER NOTIFICATION ====================
+
+const REST_TIMER_CHANNEL_ID = 'rest_timer';
+const REST_TIMER_NOTIF_ID = 'iron_routine_rest_timer_done';
+
+async function ensureRestTimerChannel(): Promise<void> {
+  if (Platform.OS !== 'android') return;
+  try {
+    await Notifications.setNotificationChannelAsync(REST_TIMER_CHANNEL_ID, {
+      name: 'Koniec przerwy w treningu',
+      importance: Notifications.AndroidImportance.HIGH,
+      vibrationPattern: [0, 200, 120, 200],
+      sound: 'default',
+    });
+  } catch {}
+}
+
+export async function cancelRestFinishedNotification(): Promise<void> {
+  try {
+    await Notifications.cancelScheduledNotificationAsync(REST_TIMER_NOTIF_ID);
+  } catch {}
+}
+
+export async function scheduleRestFinishedNotification(
+  seconds: number,
+  exerciseName: string,
+  nextInfo?: string
+): Promise<void> {
+  try {
+    await cancelRestFinishedNotification();
+    if (seconds <= 1) return;
+
+    const { status } = await Notifications.getPermissionsAsync();
+    if (status !== 'granted') return;
+
+    await ensureRestTimerChannel();
+
+    await Notifications.scheduleNotificationAsync({
+      identifier: REST_TIMER_NOTIF_ID,
+      content: {
+        title: 'Koniec przerwy — czas na kolejną serię!',
+        body: nextInfo ? `${exerciseName} • ${nextInfo}` : exerciseName,
+        sound: true,
+      },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+        seconds: Math.max(2, Math.round(seconds)),
+        repeats: false,
+        ...(Platform.OS === 'android' ? { channelId: REST_TIMER_CHANNEL_ID } : {}),
+      },
+    });
+  } catch (e) {
+    console.warn('Error scheduling rest notification:', e);
+  }
 }
