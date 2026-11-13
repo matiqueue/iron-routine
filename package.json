@@ -21,7 +21,7 @@
     "typescript": "~6.0.3"
   },
   "scripts": {
-    "prepare": "node -e \"const fs=require('fs'); if(!fs.existsSync('src/data/myPlan.ts')) fs.copyFileSync('src/data/myPlan.template.ts','src/data/myPlan.ts')\"",
+    "prepare": "node -e \"const fs=require('fs'); if(!fs.existsSync('src/data/myPlan.ts')) fs.copyFileSync('src/data/myPlan.template.ts','src/data/myPlan.ts'); if(!fs.existsSync('src/data/localSeed.ts')) fs.copyFileSync('src/data/localSeed.template.ts','src/data/localSeed.ts')\"",
     "start": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",

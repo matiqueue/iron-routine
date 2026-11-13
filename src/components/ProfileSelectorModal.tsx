@@ -33,10 +33,10 @@ export interface CreateProfileOptions {
 interface ProfileSelectorModalProps {
   visible: boolean;
   profiles: UserProfile[];
-  activeProfile: UserProfile;
+  activeProfile: UserProfile | null;
   onSelectProfile: (profile: UserProfile) => void;
   onCreateProfile: (name: string, options?: CreateProfileOptions) => Promise<void>;
-  onProfilesChanged?: (nextActiveProfile?: UserProfile) => Promise<void> | void;
+  onProfilesChanged?: (nextActiveProfile?: UserProfile | null) => Promise<void> | void;
   onClose: () => void;
 }
 
@@ -53,7 +53,7 @@ export const ProfileSelectorModal: React.FC<ProfileSelectorModalProps> = ({
   const [newProfileName, setNewProfileName] = useState('');
   const [newHeight, setNewHeight] = useState('');
   const [newWeight, setNewWeight] = useState('');
-  const [newTemplate, setNewTemplate] = useState<Exclude<PlanTemplateKey, 'clone_current'>>('fbw3');
+  const [newTemplate, setNewTemplate] = useState<Exclude<PlanTemplateKey, 'clone_current'>>('blank');
   const [isCreating, setIsCreating] = useState(false);
 
   const [editingProfileId, setEditingProfileId] = useState<string | null>(null);
@@ -86,14 +86,16 @@ export const ProfileSelectorModal: React.FC<ProfileSelectorModalProps> = ({
     if (!trimmed) return;
     const updated = await updateProfile(profileId, { name: trimmed });
     setEditingProfileId(null);
-    await onProfilesChanged?.(updated.id === activeProfile.id ? updated : undefined);
+    await onProfilesChanged?.(updated.id === activeProfile?.id ? updated : undefined);
   };
 
   const handleDeleteProfile = (profile: UserProfile) => {
-    if (profile.isOwner || profiles.length <= 1) return;
+    const isLast = profiles.length <= 1;
     Alert.alert(
       'Usunąć profil?',
-      `Wszystkie plany, rekordy i historia profilu „${profile.name}” zostaną trwale usunięte.`,
+      isLast
+        ? `Wszystkie plany, rekordy i historia profilu „${profile.name}” zostaną trwale usunięte, a aplikacja wróci do ekranu startowego.`
+        : `Wszystkie plany, rekordy i historia profilu „${profile.name}” zostaną trwale usunięte.`,
       [
         { text: 'Anuluj', style: 'cancel' },
         {
@@ -103,6 +105,9 @@ export const ProfileSelectorModal: React.FC<ProfileSelectorModalProps> = ({
             try {
               const fallback = await deleteProfile(profile.id);
               await onProfilesChanged?.(fallback);
+              if (!fallback) {
+                onClose();
+              }
             } catch (e: any) {
               Alert.alert('Błąd', e?.message || 'Nie udało się usunąć profilu.');
             }
@@ -113,6 +118,7 @@ export const ProfileSelectorModal: React.FC<ProfileSelectorModalProps> = ({
   };
 
   const handleExportBackup = async () => {
+    if (!activeProfile) return;
     try {
       const payload = await exportProfileBackup(activeProfile.id);
       const jsonStr = JSON.stringify(payload, null, 2);
@@ -191,16 +197,7 @@ export const ProfileSelectorModal: React.FC<ProfileSelectorModalProps> = ({
                   </View>
 
                   <View style={{ flex: 1 }}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                      <Text style={[styles.profileName, { color: theme.text }]}>{profile.name}</Text>
-                      {profile.isOwner ? (
-                        <View style={[styles.ownerBadge, { backgroundColor: theme.card }]}>
-                          <Text style={[styles.ownerBadgeText, { color: theme.textSecondary }]}>
-                            GŁÓWNY
-                          </Text>
-                        </View>
-                      ) : null}
-                    </View>
+                    <Text style={[styles.profileName, { color: theme.text }]}>{profile.name}</Text>
                     <Text style={[styles.profileStatus, { color: theme.textMuted }]}>
                       {profile.weight ? `${profile.weight} kg` : ''}
                       {profile.weight && profile.height ? ' • ' : ''}
@@ -228,14 +225,12 @@ export const ProfileSelectorModal: React.FC<ProfileSelectorModalProps> = ({
                       <Ionicons name="pencil-outline" size={16} color={theme.textMuted} />
                     </TouchableOpacity>
 
-                    {!profile.isOwner && profiles.length > 1 && (
-                      <TouchableOpacity
-                        style={styles.miniActionBtn}
-                        onPress={() => handleDeleteProfile(profile)}
-                      >
-                        <Ionicons name="trash-outline" size={16} color={theme.textMuted} />
-                      </TouchableOpacity>
-                    )}
+                    <TouchableOpacity
+                      style={styles.miniActionBtn}
+                      onPress={() => handleDeleteProfile(profile)}
+                    >
+                      <Ionicons name="trash-outline" size={16} color={theme.textMuted} />
+                    </TouchableOpacity>
 
                     {isSelected && (
                       <Ionicons name="checkmark-circle" size={20} color={theme.text} />
@@ -475,16 +470,6 @@ const styles = StyleSheet.create({
   profileName: {
     fontSize: 15,
     fontWeight: '700',
-  },
-  ownerBadge: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  ownerBadgeText: {
-    fontSize: 9,
-    fontWeight: '800',
-    letterSpacing: 0.5,
   },
   profileStatus: {
     fontSize: 12,

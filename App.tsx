@@ -50,6 +50,7 @@ import {
 } from './src/services/liveActivity';
 
 import { SplashScreen } from './src/components/SplashScreen';
+import { OnboardingScreen } from './src/components/OnboardingScreen';
 import {
   ProfileSelectorModal,
   CreateProfileOptions,
@@ -154,13 +155,18 @@ function MainApp() {
       setProfiles(allProfiles);
       setActiveProfile(current);
 
-      await loadPlansForProfile(current.id);
-
-      const curStreak = await getWorkoutStreak(current.id);
-      setStreak(curStreak);
-
-      const prog = await loadDayProgress(todayDayId, undefined, current.id);
-      setDayProgress(prog);
+      if (current) {
+        await loadPlansForProfile(current.id);
+        const curStreak = await getWorkoutStreak(current.id);
+        setStreak(curStreak);
+        const prog = await loadDayProgress(todayDayId, undefined, current.id);
+        setDayProgress(prog);
+      } else {
+        setProfilePlans([]);
+        setActivePlan(null);
+        setStreak(0);
+        setDayProgress({ sets: {} });
+      }
     } catch (e) {
       console.warn('Initialization error', e);
     }
@@ -231,15 +237,37 @@ function MainApp() {
     setProgressRefreshKey((k) => k + 1);
   };
 
-  const handleProfilesChanged = async (nextActive?: UserProfile) => {
+  const handleProfilesChanged = async (nextActive?: UserProfile | null) => {
     const updatedProfiles = await getProfiles();
     setProfiles(updatedProfiles);
-    const current = nextActive || (await getActiveProfile());
+    const current = nextActive === undefined ? await getActiveProfile() : nextActive;
     setActiveProfile(current);
-    await loadPlansForProfile(current.id);
-    const curStreak = await getWorkoutStreak(current.id);
+    if (current) {
+      await loadPlansForProfile(current.id);
+      const curStreak = await getWorkoutStreak(current.id);
+      setStreak(curStreak);
+      const prog = await loadDayProgress(todayDayId, undefined, current.id);
+      setDayProgress(prog);
+    } else {
+      setShowProfileModal(false);
+      setShowPlanManagerModal(false);
+      setShowBodyStatsModal(false);
+      setProfilePlans([]);
+      setActivePlan(null);
+      setStreak(0);
+      setDayProgress({ sets: {} });
+    }
+    setProgressRefreshKey((k) => k + 1);
+  };
+
+  const handleOnboardingComplete = async (profile: UserProfile) => {
+    const updatedProfiles = await getProfiles();
+    setProfiles(updatedProfiles);
+    setActiveProfile(profile);
+    await loadPlansForProfile(profile.id);
+    const curStreak = await getWorkoutStreak(profile.id);
     setStreak(curStreak);
-    const prog = await loadDayProgress(todayDayId, undefined, current.id);
+    const prog = await loadDayProgress(todayDayId, undefined, profile.id);
     setDayProgress(prog);
     setProgressRefreshKey((k) => k + 1);
   };
@@ -413,6 +441,20 @@ function MainApp() {
         <StatusBar style={isDark ? 'light' : 'dark'} />
         <SplashScreen onFinish={() => setShowSplash(false)} />
       </View>
+    );
+  }
+
+  if (!activeProfile) {
+    return (
+      <SafeAreaProvider>
+        <SafeAreaView
+          style={[styles.safeArea, { backgroundColor: theme.bg }]}
+          edges={['top', 'left', 'right', 'bottom']}
+        >
+          <StatusBar style={isDark ? 'light' : 'dark'} />
+          <OnboardingScreen onCompleted={handleOnboardingComplete} />
+        </SafeAreaView>
+      </SafeAreaProvider>
     );
   }
 
