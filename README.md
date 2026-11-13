@@ -1,5 +1,6 @@
 <div align="center">
-  <h1>Iron Routine</h1>
+  <img src="./assets/banner-mono.svg" alt="Iron Routine Monochrome Banner" width="100%" />
+  <br /><br />
   <p><b>Minimalistyczny, monochromatyczny dziennik treningowy i tracker progresu siłowego (iOS & Android, 100% offline)</b></p>
 
   <p>
