@@ -1,0 +1,22 @@
+name: Zadanie techniczne / Plan treningowy (Task)
+description: Zgłoś zadanie refaktoryzacji, dokumentacji lub szablonu planu treningowego
+title: "[TASK] "
+type: Task
+labels: ["documentation"]
+body:
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priorytet (Project Field - Priority)
+      options:
+        - Low
+        - Medium
+        - High
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: Szczegóły zadania
+    validations:
+      required: true

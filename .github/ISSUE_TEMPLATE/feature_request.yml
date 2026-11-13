@@ -1,0 +1,53 @@
+name: Propozycja funkcji (Feature Request)
+description: Zaproponuj nową funkcję lub ulepszenie UI/UX w Iron Routine
+title: "[FEAT] "
+type: Feature
+labels: ["enhancement"]
+body:
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platforma (Project Field - Platform)
+      options:
+        - iOS & Android
+        - iOS (Live Activities / Dynamic Island)
+        - Android (APK)
+    validations:
+      required: true
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priorytet (Project Field - Priority)
+      options:
+        - Medium
+        - High
+        - Low
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Obszar aplikacji (Project Field - Area)
+      options:
+        - Active Workout & Timer
+        - Live Activities
+        - Notifications & Creatine
+        - Progress & Charts
+        - Storage & Backup
+        - UI/UX
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Jaki problem rozwiązuje ta funkcja?
+      description: Opisz krótko, czego brakuje lub co warto poprawić.
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proponowane rozwiązanie
+      description: Jak dokładnie powinno to działać lub wyglądać?
+    validations:
+      required: true

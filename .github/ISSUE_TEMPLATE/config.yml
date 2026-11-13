@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Dyskusje i pytania (GitHub Discussions)
+    url: https://github.com/matiqueue/iron-routine/discussions
+    about: Zadaj pytanie, podziel się swoim planem treningowym lub pomysłami na rozwój Iron Routine
+  - name: Wydania i pliki APK (GitHub Releases)
+    url: https://github.com/matiqueue/iron-routine/releases
+    about: Pobierz najnowsze wydanie aplikacji Iron Routine
