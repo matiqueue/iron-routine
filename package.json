@@ -18,7 +18,7 @@
   },
   "devDependencies": {
     "@types/react": "~19.3.0",
-    "typescript": "~6.0.3"
+    "typescript": "~7.0.2"
   },
   "scripts": {
     "prepare": "node -e \"const fs=require('fs'); if(!fs.existsSync('src/data/myPlan.ts')) fs.copyFileSync('src/data/myPlan.template.ts','src/data/myPlan.ts')\"",
