@@ -19,6 +19,20 @@ export interface Exercise {
 
 export type DayType = 'workout' | 'walk' | 'rest';
 
+export type DayBannerTag =
+  | 'push'
+  | 'pull'
+  | 'legs'
+  | 'upper'
+  | 'lower'
+  | 'fbw'
+  | 'chest'
+  | 'back'
+  | 'shoulders'
+  | 'arms'
+  | 'cardio'
+  | 'rest';
+
 export interface DayPlan {
   id: string; // 'mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'
   name: string;
@@ -26,10 +40,30 @@ export interface DayPlan {
   iconName: string; // Ionicons name
   badgeEmoji?: string;
   bannerUrl?: string;
+  bannerTag?: DayBannerTag;
   time: string;
   type: DayType;
   warmup?: string;
   exercises?: Exercise[];
+}
+
+export interface SessionExerciseConfig {
+  orderedIds: string[];
+  skippedIds: string[];
+}
+
+export interface AppSettings {
+  hapticsEnabled: boolean;
+  hapticsIntensity: 'subtle' | 'medium' | 'strong';
+  restEndMultiBuzz: boolean;
+  restNotificationsEnabled: boolean;
+  restTimeSensitive: boolean;
+  creatineRemindersEnabled: boolean;
+  creatineMorningHour: number;
+  creatineEveningHour: number;
+  weightReminderEnabled: boolean;
+  weightReminderHour: number;
+  defaultRestSeconds: number;
 }
 
 export type PlanTemplateKey = 'blank' | 'fbw3' | 'ppl' | 'upper_lower' | 'clone_current';
@@ -54,6 +88,7 @@ export interface SetEntry {
 export interface DayProgress {
   sets: { [exerciseId: string]: { [setIndex: number]: SetEntry } };
   finishedAt?: string; // ISO string
+  sessionConfig?: SessionExerciseConfig;
 }
 
 export interface UserProfile {
@@ -130,4 +165,5 @@ export interface ProfileBackupPayload {
   prRecords: { [exerciseId: string]: PRRecord[] };
   history: WorkoutHistoryEntry[];
   weightHistory: WeightEntry[];
+  settings?: AppSettings;
 }

@@ -1,4 +1,4 @@
-import type { PRRecord, UserProfile, WorkoutPlan } from '../types/workout';
+import type { AppSettings, Exercise, PRRecord, UserProfile, WorkoutPlan } from '../types/workout';
 
 export interface LocalDeviceSeedConfig {
   seedVersion: string;
@@ -6,6 +6,8 @@ export interface LocalDeviceSeedConfig {
   plans: WorkoutPlan[];
   activePlanId: string;
   prRecords?: Record<string, PRRecord[]>;
+  customExercises?: Exercise[];
+  settings?: Partial<AppSettings>;
   replaceExampleProfiles?: boolean;
 }
 

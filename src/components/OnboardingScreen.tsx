@@ -11,15 +11,18 @@ import {
   Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import * as Haptics from 'expo-haptics';
 import { useAppTheme } from '../context/ThemeContext';
 import { PlanTemplateKey, UserProfile } from '../types/workout';
 import { PLAN_TEMPLATE_OPTIONS } from '../data/exerciseLibrary';
 import { createProfile, importProfileBackup } from '../services/storage';
+import { updateAppSettings } from '../services/settings';
+import { triggerNotificationHaptic, triggerSelectionHaptic } from '../services/haptics';
 
 interface OnboardingScreenProps {
   onCompleted: (profile: UserProfile) => Promise<void> | void;
 }
+
+const ONBOARDING_REST_PRESETS = [90, 120, 180];
 
 export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted }) => {
   const { theme, isDark, toggleTheme } = useAppTheme();
@@ -29,6 +32,8 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
   const [heightText, setHeightText] = useState('');
   const [templateKey, setTemplateKey] =
     useState<Exclude<PlanTemplateKey, 'clone_current'>>('blank');
+  const [defaultRestSeconds, setDefaultRestSeconds] = useState(120);
+  const [hapticsEnabled, setHapticsEnabled] = useState(true);
   const [showImport, setShowImport] = useState(false);
   const [importText, setImportText] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -37,12 +42,17 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
     if (isSubmitting) return;
     const trimmed = name.trim();
     if (!trimmed) {
-      Alert.alert('Podaj nazwę profilu', 'Wpisz swoje imię lub pseudonim, aby utworzyć profil.');
+      Alert.alert('Podaj imię', 'Wpisz swoje imię lub pseudonim, aby skonfigurować profil.');
       return;
     }
 
     setIsSubmitting(true);
     try {
+      await updateAppSettings({
+        defaultRestSeconds,
+        hapticsEnabled,
+      });
+      triggerNotificationHaptic('success');
       const parsedWeight = parseFloat(weightText.replace(',', '.'));
       const parsedHeight = parseFloat(heightText.replace(',', '.'));
       const profile = await createProfile(trimmed, {
@@ -52,7 +62,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
       });
       await onCompleted(profile);
     } catch (e: any) {
-      Alert.alert('Błąd', e?.message || 'Nie udało się utworzyć profilu.');
+      Alert.alert('Błąd', e?.message || 'Nie udało się skonfigurować konta.');
     } finally {
       setIsSubmitting(false);
     }
@@ -62,10 +72,14 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
     if (isSubmitting) return;
     setIsSubmitting(true);
     try {
-      const profile = await createProfile('Mój Profil', { templateKey: 'blank' });
+      await updateAppSettings({
+        defaultRestSeconds,
+        hapticsEnabled,
+      });
+      const profile = await createProfile('Sportowiec', { templateKey: 'blank' });
       await onCompleted(profile);
     } catch (e: any) {
-      Alert.alert('Błąd', e?.message || 'Nie udało się utworzyć pustego profilu.');
+      Alert.alert('Błąd', e?.message || 'Nie udało się uruchomić czystego profilu.');
     } finally {
       setIsSubmitting(false);
     }
@@ -74,7 +88,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
   const handleImportJson = async () => {
     if (isSubmitting) return;
     if (!importText.trim()) {
-      Alert.alert('Brak danych', 'Wklej najpierw wyeksportowaną kopię zapasową JSON.');
+      Alert.alert('Brak danych', 'Wklej najpierw JSON kopii zapasowej lub seeda planu.');
       return;
     }
 
@@ -104,10 +118,10 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
             <View style={[styles.logoBox, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
               <Ionicons name="barbell-outline" size={20} color={theme.text} />
             </View>
-            <View>
+            <View style={{ flexShrink: 1, minWidth: 0 }}>
               <Text style={[styles.brandTitle, { color: theme.text }]}>IRON ROUTINE</Text>
               <Text style={[styles.brandSub, { color: theme.textMuted }]}>
-                CZYSTY START • 100% OFFLINE
+                KONFIGURACJA KONTA • 100% OFFLINE
               </Text>
             </View>
           </View>
@@ -115,9 +129,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
           <TouchableOpacity
             style={[styles.themeBtn, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}
             onPress={() => {
-              try {
-                Haptics.selectionAsync();
-              } catch {}
+              triggerSelectionHaptic();
               toggleTheme();
             }}
             activeOpacity={0.7}
@@ -132,21 +144,21 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
         </View>
 
         <Text style={[styles.heroHeadline, { color: theme.text }]}>
-          Zacznij od zera lub ułóż własny plan.
+          Twój dziennik treningowy, od zera po rekordy.
         </Text>
         <Text style={[styles.heroCopy, { color: theme.textSecondary }]}>
-          Wszystkie dane zostają lokalnie na Twoim urządzeniu. Utwórz swój pierwszy profil, żeby rozpocząć treningi i śledzić rekordy.
+          Aplikacja należy w pełni do Ciebie — jeden profil gromadzi wspólne rekordy PR i progres dla wszystkich Twoich planów treningowych.
         </Text>
 
         {/* Main Create Card */}
         <View style={[styles.card, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
-          <Text style={[styles.kicker, { color: theme.textMuted }]}>TWÓJ PROFIL</Text>
+          <Text style={[styles.kicker, { color: theme.textMuted }]}>DANE OSOBOWE (1 PROFIL)</Text>
           <TextInput
             style={[
               styles.input,
               { backgroundColor: theme.card, borderColor: theme.border, color: theme.text },
             ]}
-            placeholder="Imię lub nazwa profilu..."
+            placeholder="Twoje imię lub ksywka..."
             placeholderTextColor={theme.textMuted}
             value={name}
             onChangeText={setName}
@@ -154,7 +166,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
           />
 
           <View style={styles.twoCols}>
-            <View style={{ flex: 1 }}>
+            <View style={{ flex: 1, minWidth: 0 }}>
               <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>Waga (opcjonalnie)</Text>
               <TextInput
                 style={[
@@ -169,7 +181,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
               />
             </View>
 
-            <View style={{ flex: 1 }}>
+            <View style={{ flex: 1, minWidth: 0 }}>
               <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>Wzrost (opcjonalnie)</Text>
               <TextInput
                 style={[
@@ -186,7 +198,63 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
           </View>
 
           <Text style={[styles.kicker, { color: theme.textMuted, marginTop: 4 }]}>
-            PLAN NA START
+            PREFERENCJE STARTU
+          </Text>
+          <View style={styles.twoCols}>
+            {ONBOARDING_REST_PRESETS.map((secs) => {
+              const active = defaultRestSeconds === secs;
+              return (
+                <TouchableOpacity
+                  key={secs}
+                  style={[
+                    styles.prefPill,
+                    {
+                      backgroundColor: active ? theme.primary : theme.card,
+                      borderColor: active ? theme.primary : theme.border,
+                    },
+                  ]}
+                  onPress={() => {
+                    triggerSelectionHaptic();
+                    setDefaultRestSeconds(secs);
+                  }}
+                  activeOpacity={0.75}
+                >
+                  <Text style={[styles.prefPillText, { color: active ? theme.primaryText : theme.text }]}>
+                    Przerwa {secs}s
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          <TouchableOpacity
+            style={[
+              styles.hapticToggleRow,
+              { backgroundColor: theme.card, borderColor: theme.border },
+            ]}
+            onPress={() => {
+              triggerSelectionHaptic();
+              setHapticsEnabled((v) => !v);
+            }}
+            activeOpacity={0.75}
+          >
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={[styles.templateTitle, { color: theme.text }]}>
+                Wibracje i alert końca przerwy
+              </Text>
+              <Text style={[styles.templateSub, { color: theme.textMuted }]}>
+                Potrójna wibracja + powiadomienie w tle (możesz zmienić w Ustawieniach)
+              </Text>
+            </View>
+            <Ionicons
+              name={hapticsEnabled ? 'checkmark-circle' : 'ellipse-outline'}
+              size={22}
+              color={hapticsEnabled ? theme.text : theme.textMuted}
+            />
+          </TouchableOpacity>
+
+          <Text style={[styles.kicker, { color: theme.textMuted, marginTop: 14 }]}>
+            PIERWSZY PLAN TRENINGOWY
           </Text>
           <View style={styles.templatesWrap}>
             {PLAN_TEMPLATE_OPTIONS.map((tpl) => {
@@ -202,9 +270,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
                     },
                   ]}
                   onPress={() => {
-                    try {
-                      Haptics.selectionAsync();
-                    } catch {}
+                    triggerSelectionHaptic();
                     setTemplateKey(tpl.id as Exclude<PlanTemplateKey, 'clone_current'>);
                   }}
                   activeOpacity={0.75}
@@ -240,7 +306,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
             activeOpacity={0.8}
           >
             <Text style={[styles.primaryBtnText, { color: theme.primaryText }]}>
-              Utwórz profil i wejdź
+              Rozpocznij z Iron Routine
             </Text>
             <Ionicons name="arrow-forward" size={18} color={theme.primaryText} />
           </TouchableOpacity>
@@ -252,7 +318,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
             activeOpacity={0.7}
           >
             <Text style={[styles.skipBtnText, { color: theme.textMuted }]}>
-              Pomiń — wejdź od razu z pustym kontem
+              Pomiń konfigurację (pusty plan)
             </Text>
           </TouchableOpacity>
         </View>
@@ -263,10 +329,10 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
           onPress={() => setShowImport((v) => !v)}
           activeOpacity={0.75}
         >
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1, minWidth: 0 }}>
             <Ionicons name="download-outline" size={18} color={theme.text} />
-            <Text style={[styles.importToggleText, { color: theme.text }]}>
-              Przywróć profil z kopii JSON
+            <Text style={[styles.importToggleText, { color: theme.text, flexShrink: 1 }]} numberOfLines={1}>
+              Importuj Seed planu lub Backup JSON
             </Text>
           </View>
           <Ionicons
@@ -330,6 +396,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
+    flex: 1,
+    minWidth: 0,
   },
   logoBox: {
     width: 42,
@@ -398,6 +466,29 @@ const styles = StyleSheet.create({
   },
   twoCols: {
     flexDirection: 'row',
+    gap: 10,
+  },
+  prefPill: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: 11,
+    paddingVertical: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  prefPillText: {
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  hapticToggleRow: {
+    marginTop: 10,
+    borderWidth: 1,
+    borderRadius: 13,
+    paddingHorizontal: 13,
+    paddingVertical: 11,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     gap: 10,
   },
   templatesWrap: {

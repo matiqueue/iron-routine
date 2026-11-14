@@ -156,12 +156,26 @@ struct LiveActivityWidget: Widget {
     progressViewTint: String?
   ) -> some View {
     if timerType == .digital {
-      Text(Date(timeIntervalSince1970: endDate / 1000), style: .timer)
+      let targetDate = Date(timeIntervalSince1970: endDate / 1000)
+      if targetDate > Date.now {
+        Text(
+          timerInterval: Date.toTimerInterval(miliseconds: endDate),
+          pauseTime: targetDate,
+          countsDown: true,
+          showsHours: false
+        )
         .font(.system(size: 13, weight: .bold))
         .monospacedDigit()
         .minimumScaleFactor(0.8)
         .frame(maxWidth: 60)
         .multilineTextAlignment(.trailing)
+      } else {
+        Text("GOTÓW")
+          .font(.system(size: 11, weight: .heavy))
+          .minimumScaleFactor(0.8)
+          .frame(maxWidth: 60)
+          .multilineTextAlignment(.trailing)
+      }
     } else {
       circularTimer(endDate: endDate)
         .tint(progressViewTint.map { Color(hex: $0) })
@@ -196,7 +210,7 @@ struct LiveActivityWidget: Widget {
   private func dynamicIslandExpandedBottom(endDate: Double, progressViewTint: String?) -> some View {
     ProgressView(
       timerInterval: Date.toTimerInterval(miliseconds: endDate),
-      countsDown: false,
+      countsDown: true,
       label: { EmptyView() },
       currentValueLabel: { EmptyView() }
     )
@@ -208,7 +222,7 @@ struct LiveActivityWidget: Widget {
   private func circularTimer(endDate: Double) -> some View {
     ProgressView(
       timerInterval: Date.toTimerInterval(miliseconds: endDate),
-      countsDown: false,
+      countsDown: true,
       label: { EmptyView() },
       currentValueLabel: {
         EmptyView()

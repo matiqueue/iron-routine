@@ -830,7 +830,175 @@ export const EXERCISE_LIBRARY: Exercise[] = [
     'Utrzymuj tętno w strefie konwersacyjnej (ok. 125–140 bpm) dla wspomagania regeneracji i wydolności.',
     'Zero obciążenia udarowego dla stawów kolanowych.'
   ),
+  ex(
+    'lib_incline_chest_press_machine',
+    'Wyciskanie na klatkę (Skos + Maszyna)',
+    'klatka',
+    'Maszyna',
+    2,
+    '6-8',
+    150,
+    'Stabilne wyciskanie na maszynie pod kątem dodatnim — maksymalna izolacja i praca do bliskiego upadku górnej części klatki.',
+    'Ściągnij łopatki, kontroluj fazę ekscentryczną przez 2-3 sekundy.'
+  ),
+  ex(
+    'lib_single_arm_lat_pulldown',
+    'Ściąganie jednorącz na wyciągu (Lat Pulldown)',
+    'plecy',
+    'Wyciąg',
+    2,
+    '6-8',
+    120,
+    'Jednostronne ściąganie uchwytu w kierunku biodra dla pełnego rozciągnięcia i skurczu mięśnia najszerszego grzbietu.',
+    'Utrzymuj lekko pochylony tułów w stronę pracującego ramienia i prowadź łokieć w dół.'
+  ),
+  ex(
+    'lib_cable_tricep_extension',
+    'Wyprost ramion na wyciągu (Triceps Extension)',
+    'ramiona',
+    'Wyciąg',
+    2,
+    '6-10',
+    90,
+    'Izolowany wyprost łokci na wyciągu (linka lub prosty drążek) pod stałym napięciem wszystkich głów tricepsa.',
+    'Łokcie zablokowane przy żebrach lub lekko przed tułowiem, bez szarpania barkami.'
+  ),
+  ex(
+    'lib_jm_press',
+    'JM Press (Sztanga / Maszyna)',
+    'ramiona',
+    'Sztanga',
+    2,
+    '5-8',
+    120,
+    'Hybryda wyciskania wąsko i wyciskania francuskiego — potężne przeciążenie tricepsów bez nadmiernego bólu łokci.',
+    'Opuszczaj ciężar pod kontrolą w okolicę brody/szyi, utrzymując przedramiona blisko pionu.'
+  ),
+  ex(
+    'lib_hip_adduction',
+    'Przywodzenie nóg na maszynie (Hip Adductor)',
+    'nogi',
+    'Maszyna',
+    2,
+    '8-12',
+    90,
+    'Izolowana praca mięśni przywodzicieli uda zwiększająca obwód nóg i stabilność kolan przy przysiadach.',
+    'Wykonuj pełen zakres bez odbijania stosu na dole ruchu.'
+  ),
+  ex(
+    'lib_partial_chinup',
+    'Częściowe podciąganie podchwytem (Partial Chin-Up)',
+    'plecy',
+    'Masa ciała',
+    2,
+    '6-10',
+    120,
+    'Podciąganie w zakresie optymalnej dźwigni i najwyższego napięcia dla najszerszych grzbietu oraz bicepsów.',
+    'Kontrolowane opuszczenie do pozycji wyjściowej w serii bez szarpania nogami.'
+  ),
 ];
+
+export const EXERCISE_ID_ALIASES: Record<string, string> = {
+  // Normalizacja starych i planowych wariantów ID do wspólnej kanonicznej bazy
+  hr_pec_deck: 'lib_butterfly',
+  hr_incline_chest_machine: 'lib_incline_chest_press_machine',
+  hr_cable_lateral: 'lib_cable_lateral_raise',
+  hr_shoulder_press_machine: 'lib_machine_shoulder_press',
+  hr_wide_lat_pulldown: 'lib_lat_pulldown_wide',
+  hr_single_arm_pulldown: 'lib_single_arm_lat_pulldown',
+  hr_tbar_row: 'lib_tbar_row',
+  hr_cable_tricep_ext: 'lib_cable_tricep_extension',
+  hr_jm_press: 'lib_jm_press',
+  hr_preacher_curl_machine: 'lib_preacher_curl',
+  hr_hammer_curl: 'lib_hammer_curl',
+  hr_abs_crunch: 'lib_machine_crunch',
+  hr_leg_ext: 'lib_leg_extension',
+  hr_leg_curl: 'lib_seated_leg_curl',
+  hr_leg_press_45: 'lib_leg_press',
+  hr_stiff_leg_deadlift: 'lib_rdl',
+  hr_hip_adductor: 'lib_hip_adduction',
+  hr_hip_abductor: 'lib_hip_abduction',
+  hr_calf_leg_press: 'lib_calf_raise',
+  hr_partial_chinup: 'lib_partial_chinup',
+  mon_bench: 'lib_barbell_bench',
+  mon_fly: 'lib_db_fly',
+  mon_tricep_rope: 'lib_tricep_rope_pushdown',
+  wed_pullups: 'lib_pullups_overhand',
+  wed_row: 'lib_barbell_row',
+  wed_lat_pulldown: 'lib_lat_pulldown_wide',
+  fri_squat: 'lib_back_squat',
+  fri_rdl: 'lib_rdl',
+  fri_leg_press: 'lib_leg_press',
+  fri_leg_ext: 'lib_leg_extension',
+  fri_leg_curl: 'lib_seated_leg_curl',
+  fri_calf_raise: 'lib_calf_raise',
+};
+
+const NAME_TO_CANONICAL_ID: Record<string, string> = {
+  'pec deck': 'lib_butterfly',
+  'pec deck (machine)': 'lib_butterfly',
+  'incline chest press (machine)': 'lib_incline_chest_press_machine',
+  'lateral raise (cable)': 'lib_cable_lateral_raise',
+  'shoulder press (machine)': 'lib_machine_shoulder_press',
+  'wide grip lat pulldown': 'lib_lat_pulldown_wide',
+  'lat pulldown (single arm)': 'lib_single_arm_lat_pulldown',
+  't-bar row': 'lib_tbar_row',
+  'tricep extension (cable)': 'lib_cable_tricep_extension',
+  'jm press': 'lib_jm_press',
+  'preacher curl (machine)': 'lib_preacher_curl',
+  'hammer curl (dumbbell)': 'lib_hammer_curl',
+  'abs crunch (machine)': 'lib_machine_crunch',
+  'leg extension': 'lib_leg_extension',
+  'leg curl': 'lib_seated_leg_curl',
+  'leg press (45 degrees)': 'lib_leg_press',
+  'stiff leg deadlift': 'lib_rdl',
+  'hip adductor (machine)': 'lib_hip_adduction',
+  'hip abductor (machine)': 'lib_hip_abduction',
+  'calf raise (leg press)': 'lib_calf_raise',
+  'partial chin-up': 'lib_partial_chinup',
+};
+
+export function resolveCanonicalExerciseId(exerciseId: string, exerciseName?: string): string {
+  if (!exerciseId) return exerciseId;
+  const directAlias = EXERCISE_ID_ALIASES[exerciseId];
+  if (directAlias) return directAlias;
+
+  if (EXERCISE_LIBRARY.some((item) => item.id === exerciseId)) {
+    return exerciseId;
+  }
+
+  if (exerciseName) {
+    const clean = exerciseName.trim().toLowerCase();
+    if (NAME_TO_CANONICAL_ID[clean]) {
+      return NAME_TO_CANONICAL_ID[clean];
+    }
+    const exactMatch = EXERCISE_LIBRARY.find((item) => item.name.trim().toLowerCase() === clean);
+    if (exactMatch) {
+      return exactMatch.id;
+    }
+  }
+
+  return exerciseId;
+}
+
+export function normalizeExercise(exercise: Exercise): Exercise {
+  const canonicalId = resolveCanonicalExerciseId(exercise.id, exercise.name);
+  const libMatch = EXERCISE_LIBRARY.find((item) => item.id === canonicalId);
+  return {
+    ...exercise,
+    id: canonicalId,
+    equipment: exercise.equipment || libMatch?.equipment || 'Inne',
+    description: exercise.description || libMatch?.description || '',
+  };
+}
+
+export function normalizeDayPlan(day: DayPlan): DayPlan {
+  const exercises = (day.exercises || []).map(normalizeExercise);
+  return {
+    ...day,
+    exercises,
+  };
+}
 
 export function cloneExercise(exercise: Exercise): Exercise {
   return { ...exercise };
@@ -863,6 +1031,7 @@ function makeRestDay(
     name,
     subtitle,
     iconName: type === 'walk' ? 'walk-outline' : 'bed-outline',
+    bannerTag: type === 'walk' ? 'cardio' : 'rest',
     time: type === 'walk' ? '30-45 min' : 'Regeneracja',
     type,
     warmup:
@@ -889,6 +1058,7 @@ export function buildPlanDaysFromTemplate(
       name: 'FBW A — Siła bazowa',
       subtitle: 'Nogi • Klatka • Plecy • Barki • Brzuch',
       iconName: 'barbell-outline',
+      bannerTag: 'fbw',
       time: '60-75 min',
       type: 'workout',
       warmup: '5 min orbitrek/bieżnia, krążenia stawów, 2 serie wstępne głównych bojów.',
@@ -905,6 +1075,7 @@ export function buildPlanDaysFromTemplate(
       name: 'FBW B — Hipertrofia',
       subtitle: 'Dwugłowe • Góra klatki • Drążek • Barki',
       iconName: 'fitness-outline',
+      bannerTag: 'fbw',
       time: '60-70 min',
       type: 'workout',
       warmup: 'Rozgrzewka bioder i rotatorów barków gumą oporową.',
@@ -921,6 +1092,7 @@ export function buildPlanDaysFromTemplate(
       name: 'FBW C — Akcesoria & Wyciągi',
       subtitle: 'Suwnica • Rozpiętki • Wiosło • Ramiona',
       iconName: 'flash-outline',
+      bannerTag: 'fbw',
       time: '60-70 min',
       type: 'workout',
       warmup: 'Aktywacja pośladków, 2 serie rozgrzewkowe wyciskań.',
@@ -950,6 +1122,7 @@ export function buildPlanDaysFromTemplate(
       name: 'Upper A — Siła Góry',
       subtitle: 'Klatka • Plecy • Barki • Ramiona',
       iconName: 'barbell-outline',
+      bannerTag: 'upper',
       time: '60-75 min',
       type: 'workout',
       warmup: 'Rotatory barków z gumą, 2 serie wstępne wyciskania.',
@@ -967,6 +1140,7 @@ export function buildPlanDaysFromTemplate(
       name: 'Lower A — Przysiad & Przód uda',
       subtitle: 'Czworogłowe • Dwugłowe • Łydki • Brzuch',
       iconName: 'walk-outline',
+      bannerTag: 'lower',
       time: '60-75 min',
       type: 'workout',
       warmup: 'Mobilizacja stawu skokowego i bioder, przysiady bez ciężaru.',
@@ -983,6 +1157,7 @@ export function buildPlanDaysFromTemplate(
       name: 'Upper B — Hipertrofia Góry',
       subtitle: 'Skos dodatni • Wiosłowanie • Barki bok • Tył',
       iconName: 'fitness-outline',
+      bannerTag: 'upper',
       time: '60-75 min',
       type: 'workout',
       warmup: '5 min rozgrzewki ramion i łopatek.',
@@ -1000,6 +1175,7 @@ export function buildPlanDaysFromTemplate(
       name: 'Lower B — Tył uda & Pośladek',
       subtitle: 'Dwugłowe • Pośladki • Suwnica • Brzuch',
       iconName: 'flame-outline',
+      bannerTag: 'lower',
       time: '60-70 min',
       type: 'workout',
       warmup: 'Glute bridge bez ciężaru i wymachy nóg.',
@@ -1029,6 +1205,7 @@ export function buildPlanDaysFromTemplate(
       name,
       subtitle: 'Klatka • Przedni i boczny bark • Triceps',
       iconName: 'flash-outline',
+      bannerTag: 'push',
       time: '65-75 min',
       type: 'workout',
       warmup: 'Rotatory zewnętrzne barków i serie wstępne wyciskania.',
@@ -1046,6 +1223,7 @@ export function buildPlanDaysFromTemplate(
       name,
       subtitle: 'Plecy szerokość i grubość • Tył barku • Biceps',
       iconName: 'barbell-outline',
+      bannerTag: 'pull',
       time: '65-75 min',
       type: 'workout',
       warmup: 'Zwis na drążku i ściągania łopatek na wyciągu.',
@@ -1063,6 +1241,7 @@ export function buildPlanDaysFromTemplate(
       name,
       subtitle: 'Uda • Pośladki • Łydki • Brzuch',
       iconName: 'fitness-outline',
+      bannerTag: 'legs',
       time: '65-80 min',
       type: 'workout',
       warmup: 'Rozgrzewka bioder, 2 serie wstępne przysiadu.',

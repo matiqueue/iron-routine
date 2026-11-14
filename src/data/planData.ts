@@ -3,6 +3,7 @@ import {
   buildPlanDaysFromTemplate,
   DEFAULT_DAYS_OF_WEEK,
   EXERCISE_LIBRARY,
+  resolveCanonicalExerciseId,
 } from './exerciseLibrary';
 
 export const DAYS_OF_WEEK = DEFAULT_DAYS_OF_WEEK;
@@ -11,7 +12,7 @@ export { EXERCISE_LIBRARY };
 
 /**
  * Merges exercises from user plans, custom exercises, and the built-in gym catalog
- * while deduplicating by ID (earlier arrays take precedence for reps/sets overrides).
+ * while deduplicating by canonical ID (earlier arrays take precedence for reps/sets overrides).
  */
 export function mergeAllExercises(...groups: Exercise[][]): Exercise[] {
   const seen = new Set<string>();
@@ -19,9 +20,11 @@ export function mergeAllExercises(...groups: Exercise[][]): Exercise[] {
 
   for (const group of groups) {
     for (const ex of group) {
-      if (!ex?.id || seen.has(ex.id)) continue;
-      seen.add(ex.id);
-      merged.push(ex);
+      if (!ex?.id) continue;
+      const cid = resolveCanonicalExerciseId(ex.id, ex.name);
+      if (seen.has(cid)) continue;
+      seen.add(cid);
+      merged.push(cid === ex.id ? ex : { ...ex, id: cid });
     }
   }
 
@@ -40,5 +43,6 @@ export function getAllExercises(): Exercise[] {
 }
 
 export function getExerciseById(id: string): Exercise | undefined {
-  return EXERCISE_LIBRARY.find((e) => e.id === id);
+  const cid = resolveCanonicalExerciseId(id);
+  return EXERCISE_LIBRARY.find((e) => e.id === cid);
 }

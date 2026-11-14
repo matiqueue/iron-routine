@@ -13,13 +13,13 @@ import {
   AppState,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import * as Haptics from 'expo-haptics';
 import { useAppTheme } from '../context/ThemeContext';
-import { DayPlan, Exercise, SetEntry } from '../types/workout';
+import { DayPlan, DayProgress, Exercise, SessionExerciseConfig, SetEntry } from '../types/workout';
 import { RestTimerBar } from './RestTimerBar';
 import { ExerciseDetailModal } from './ExerciseDetailModal';
 import { InteractiveBottomSheet } from './InteractiveBottomSheet';
 import { ExerciseLibraryContent } from './ExerciseLibraryContent';
+import { SessionExercisePickerModal } from './SessionExercisePickerModal';
 import { calculate1RM, getLastExerciseMetrics } from '../services/storage';
 import { cloneExercise } from '../data/exerciseLibrary';
 import { updateWorkoutLiveActivity } from '../services/liveActivity';
@@ -27,6 +27,12 @@ import {
   cancelRestFinishedNotification,
   scheduleRestFinishedNotification,
 } from '../services/notifications';
+import {
+  triggerImpactHaptic,
+  triggerNotificationHaptic,
+  triggerRestFinishedHapticSequence,
+  triggerSelectionHaptic,
+} from '../services/haptics';
 
 export interface ActiveWorkoutFinishSummary {
   durationMinutes: number;
@@ -40,13 +46,15 @@ interface ActiveWorkoutViewProps {
   dayPlan: DayPlan;
   profileId?: string;
   extraLibraryExercises?: Exercise[];
-  dayProgress: { sets: { [exerciseId: string]: { [setIndex: number]: SetEntry } } };
+  dayProgress: DayProgress;
+  autoOpenSessionPicker?: boolean;
   onUpdateSet: (
     exerciseId: string,
     setIndex: number,
     data: Partial<SetEntry>,
     restSeconds: number
   ) => void;
+  onSaveSessionConfig?: (config: SessionExerciseConfig) => void;
   onFinishWorkout: (summary?: ActiveWorkoutFinishSummary) => void;
   onExitWorkout: () => void;
 }
@@ -81,14 +89,42 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
   profileId,
   extraLibraryExercises = [],
   dayProgress,
+  autoOpenSessionPicker = false,
   onUpdateSet,
+  onSaveSessionConfig,
   onFinishWorkout,
   onExitWorkout,
 }) => {
   const { theme, isDark } = useAppTheme();
-  const [exercises, setExercises] = useState<Exercise[]>(() =>
-    (dayPlan.exercises || []).map(cloneExercise)
+  const [allSessionExercises, setAllSessionExercises] = useState<Exercise[]>(() => {
+    const base = (dayPlan.exercises || []).map(cloneExercise);
+    const savedOrder = dayProgress.sessionConfig?.orderedIds;
+    if (!savedOrder?.length) return base;
+    const byId = new Map(base.map((e) => [e.id, e]));
+    const ordered: Exercise[] = [];
+    for (const id of savedOrder) {
+      const found = byId.get(id);
+      if (found) ordered.push(found);
+    }
+    for (const ex of base) {
+      if (!ordered.some((o) => o.id === ex.id)) ordered.push(ex);
+    }
+    return ordered;
+  });
+  const [skippedIds, setSkippedIds] = useState<string[]>(
+    () => dayProgress.sessionConfig?.skippedIds || []
   );
+  const [showSessionPicker, setShowSessionPicker] = useState<boolean>(autoOpenSessionPicker);
+  const [sessionPickerMode, setSessionPickerMode] = useState<'start' | 'edit'>(
+    autoOpenSessionPicker ? 'start' : 'edit'
+  );
+
+  const exercises = useMemo(() => {
+    const skippedSet = new Set(skippedIds);
+    const filtered = allSessionExercises.filter((ex) => !skippedSet.has(ex.id));
+    return filtered.length > 0 ? filtered : allSessionExercises;
+  }, [allSessionExercises, skippedIds]);
+
   const [extraSetsMap, setExtraSetsMap] = useState<{ [exId: string]: number }>({});
   const [currentExerciseIndex, setCurrentExerciseIndex] = useState(0);
   const [currentSetIndex, setCurrentSetIndex] = useState(0);
@@ -100,11 +136,13 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
   const [swapExerciseIdx, setSwapExerciseIdx] = useState<number | null>(null);
 
   useEffect(() => {
-    setExercises((dayPlan.exercises || []).map(cloneExercise));
+    const base = (dayPlan.exercises || []).map(cloneExercise);
+    setAllSessionExercises(base);
+    setSkippedIds(dayProgress.sessionConfig?.skippedIds || []);
     setExtraSetsMap({});
     setCurrentExerciseIndex(0);
     setCurrentSetIndex(0);
-  }, [dayPlan.id, dayPlan.exercises]);
+  }, [dayPlan.id]);
 
   useEffect(() => {
     return () => {
@@ -114,11 +152,15 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
 
   // Rest Timer State
   const [isResting, setIsResting] = useState(false);
+  const [isRestFinished, setIsRestFinished] = useState(false);
   const [isRestModalVisible, setIsRestModalVisible] = useState(false);
   const [restSecondsLeft, setRestSecondsLeft] = useState(90);
+  const [restModalSeedSecs, setRestModalSeedSecs] = useState(90);
+  const [restModalTargetMs, setRestModalTargetMs] = useState<number | undefined>(undefined);
   const [timerLabel, setTimerLabel] = useState('');
   const [timerNextInfo, setTimerNextInfo] = useState('');
   const restEndTimeRef = useRef<number>(0);
+  const restFinishNotifiedRef = useRef(false);
 
   // Background-persistent tick for rest timer
   useEffect(() => {
@@ -129,10 +171,11 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
       setRestSecondsLeft(diff);
       if (diff <= 0) {
         setIsResting(false);
-        setIsRestModalVisible(false);
-        try {
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        } catch {}
+        setIsRestFinished(true);
+        if (!restFinishNotifiedRef.current) {
+          restFinishNotifiedRef.current = true;
+          triggerRestFinishedHapticSequence();
+        }
       }
     };
 
@@ -175,9 +218,7 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
       return;
     }
 
-    try {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    } catch {}
+    triggerImpactHaptic('light');
 
     const direction = targetIndex > currentExerciseIndex ? 1 : -1;
     isTransitioningRef.current = true;
@@ -223,9 +264,7 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
   // Series change animation
   const handleChangeSetIndex = (newSetIdx: number) => {
     if (newSetIdx === currentSetIndex) return;
-    try {
-      Haptics.selectionAsync();
-    } catch {}
+    triggerSelectionHaptic();
 
     cardScaleAnim.setValue(0.96);
     cardFadeAnim.setValue(0.55);
@@ -376,7 +415,8 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
   useEffect(() => {
     if (!currentExerciseId || !currentExerciseName) return;
 
-    if (isResting && restSecondsLeft > 0) {
+    if (isResting && restEndTimeRef.current > Date.now()) {
+      const secsRemaining = Math.max(1, Math.ceil((restEndTimeRef.current - Date.now()) / 1000));
       updateWorkoutLiveActivity({
         workoutName: dayPlan.name,
         exerciseName: currentExerciseName,
@@ -385,7 +425,21 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
         completedSets: completedSetsCount,
         totalWorkoutSets: totalSets,
         isRest: true,
-        restSeconds: restSecondsLeft,
+        isRestFinished: false,
+        restSeconds: secsRemaining,
+        nextExerciseName: timerNextInfo,
+      });
+    } else if (isRestFinished) {
+      updateWorkoutLiveActivity({
+        workoutName: dayPlan.name,
+        exerciseName: currentExerciseName,
+        currentSet: currentSetIndex + 1,
+        totalSets: currentTotalSets,
+        completedSets: completedSetsCount,
+        totalWorkoutSets: totalSets,
+        isRest: true,
+        isRestFinished: true,
+        restSeconds: 0,
         nextExerciseName: timerNextInfo,
       });
     } else {
@@ -397,6 +451,7 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
         completedSets: completedSetsCount,
         totalWorkoutSets: totalSets,
         isRest: false,
+        isRestFinished: false,
       });
     }
   }, [
@@ -407,7 +462,8 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
     completedSetsCount,
     totalSets,
     isResting,
-    restSecondsLeft,
+    isRestFinished,
+    restModalTargetMs,
     dayPlan.name,
     timerNextInfo,
   ]);
@@ -419,70 +475,94 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
   const activeEntry: SetEntry = currentExerciseSets[currentSetIndex] || { completed: false };
   const isCurrentSetDone = !!activeEntry.completed;
 
-  // Resolved weight and reps for the active set
-  const displayWeight =
+  // Local synchronous draft state prevents TextInput resets/overwrites while typing or clearing
+  const draftKey = `${currentExerciseId || ''}_${currentSetIndex}`;
+  const prevDraftKeyRef = useRef<string>('');
+  const hasEditedWeightRef = useRef<boolean>(false);
+  const hasEditedRepsRef = useRef<boolean>(false);
+
+  const resolvedSavedWeight =
     activeEntry.weight !== undefined
       ? String(activeEntry.weight)
       : lastMetrics?.weight !== undefined
       ? String(lastMetrics.weight)
       : '';
 
-  const displayReps =
+  const resolvedSavedReps =
     activeEntry.reps !== undefined
       ? String(activeEntry.reps)
       : lastMetrics?.reps !== undefined
       ? String(lastMetrics.reps)
       : '';
 
+  const [weightDraft, setWeightDraft] = useState<string>(resolvedSavedWeight);
+  const [repsDraft, setRepsDraft] = useState<string>(resolvedSavedReps);
+
+  useEffect(() => {
+    if (prevDraftKeyRef.current !== draftKey) {
+      prevDraftKeyRef.current = draftKey;
+      hasEditedWeightRef.current = false;
+      hasEditedRepsRef.current = false;
+      setWeightDraft(resolvedSavedWeight);
+      setRepsDraft(resolvedSavedReps);
+      return;
+    }
+
+    if (!hasEditedWeightRef.current && weightDraft !== resolvedSavedWeight) {
+      setWeightDraft(resolvedSavedWeight);
+    }
+    if (!hasEditedRepsRef.current && repsDraft !== resolvedSavedReps) {
+      setRepsDraft(resolvedSavedReps);
+    }
+  }, [draftKey, resolvedSavedWeight, resolvedSavedReps, weightDraft, repsDraft]);
+
   const liveEst1RM = useMemo(() => {
-    const w = parseFloat((displayWeight || '').replace(',', '.'));
-    const r = parseInt(displayReps || '', 10);
+    const w = parseFloat((weightDraft || '').replace(',', '.'));
+    const r = parseInt(repsDraft || '', 10);
     if (isNaN(w) || w <= 0 || isNaN(r) || r <= 0) return 0;
     return calculate1RM(w, r);
-  }, [displayWeight, displayReps]);
+  }, [weightDraft, repsDraft]);
 
   if (!currentExercise) return null;
 
   const handleUpdateActiveWeight = (val: string) => {
+    hasEditedWeightRef.current = true;
+    setWeightDraft(val);
     onUpdateSet(currentExercise.id, currentSetIndex, { weight: val }, 0);
   };
 
   const handleUpdateActiveReps = (val: string) => {
+    hasEditedRepsRef.current = true;
+    setRepsDraft(val);
     onUpdateSet(currentExercise.id, currentSetIndex, { reps: val }, 0);
   };
 
   const handleAdjustWeight = (delta: number) => {
-    const curVal = parseFloat((displayWeight || '60').replace(',', '.')) || 0;
+    const baseStr = weightDraft !== '' ? weightDraft : lastMetrics?.weight || '60';
+    const curVal = parseFloat(baseStr.replace(',', '.')) || 0;
     const nextVal = Math.max(0, Math.round((curVal + delta) * 10) / 10);
     handleUpdateActiveWeight(String(nextVal));
-    try {
-      Haptics.selectionAsync();
-    } catch {}
+    triggerSelectionHaptic();
   };
 
   const handleAdjustReps = (delta: number) => {
-    const curVal = parseInt(displayReps || '10', 10) || 0;
+    const baseStr = repsDraft !== '' ? repsDraft : lastMetrics?.reps || '10';
+    const curVal = parseInt(baseStr, 10) || 0;
     const nextVal = Math.max(1, curVal + delta);
     handleUpdateActiveReps(String(nextVal));
-    try {
-      Haptics.selectionAsync();
-    } catch {}
+    triggerSelectionHaptic();
   };
 
   const handleFillFromLast = () => {
     if (!lastMetrics) return;
-    try {
-      Haptics.selectionAsync();
-    } catch {}
+    triggerSelectionHaptic();
     if (lastMetrics.weight) handleUpdateActiveWeight(lastMetrics.weight);
     if (lastMetrics.reps) handleUpdateActiveReps(lastMetrics.reps);
   };
 
   // Complete current set and auto-advance to currentSetIndex + 1
   const handleCompleteActiveSet = () => {
-    try {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    } catch {}
+    triggerNotificationHaptic('success');
 
     // Tactile button punch animation
     Animated.sequence([
@@ -499,8 +579,8 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
       }),
     ]).start();
 
-    const weightToSave = displayWeight || '60';
-    const repsToSave = displayReps || String(currentExercise.reps);
+    const weightToSave = weightDraft !== '' ? weightDraft : lastMetrics?.weight || '60';
+    const repsToSave = repsDraft !== '' ? repsDraft : lastMetrics?.reps || String(currentExercise.reps);
 
     // Save set as completed
     onUpdateSet(
@@ -527,8 +607,13 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
 
     // Trigger animated rest countdown + local notification
     const restDur = currentExercise.rest;
-    restEndTimeRef.current = Date.now() + restDur * 1000;
+    const targetEndMs = Date.now() + restDur * 1000;
+    restEndTimeRef.current = targetEndMs;
+    restFinishNotifiedRef.current = false;
+    setIsRestFinished(false);
     setRestSecondsLeft(restDur);
+    setRestModalSeedSecs(restDur);
+    setRestModalTargetMs(targetEndMs);
     setTimerLabel(currentExercise.name);
     const nextInfoStr = !isExerciseFinished
       ? `Przed serią ${nextSetIdx + 1} z ${currentTotalSets}`
@@ -547,11 +632,12 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
   };
 
   const handleFinishRestExplicitly = () => {
-    try {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    } catch {}
+    triggerNotificationHaptic('success');
     cancelRestFinishedNotification();
+    restFinishNotifiedRef.current = false;
     setIsResting(false);
+    setIsRestFinished(false);
+    setRestModalTargetMs(undefined);
     setIsRestModalVisible(false);
   };
 
@@ -562,13 +648,11 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
 
   const handleToggleCompleteManually = () => {
     const willBeCompleted = !isCurrentSetDone;
-    try {
-      if (willBeCompleted) {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      } else {
-        Haptics.selectionAsync();
-      }
-    } catch {}
+    if (willBeCompleted) {
+      triggerNotificationHaptic('success');
+    } else {
+      triggerSelectionHaptic();
+    }
 
     onUpdateSet(
       currentExercise.id,
@@ -579,9 +663,7 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
   };
 
   const handleAddBonusSet = () => {
-    try {
-      Haptics.selectionAsync();
-    } catch {}
+    triggerSelectionHaptic();
     const nextTarget = currentTotalSets + 1;
     setExtraSetsMap((prev) => ({
       ...prev,
@@ -592,9 +674,7 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
 
   const handleRemoveBonusSet = () => {
     if (currentTotalSets <= currentExercise.sets) return;
-    try {
-      Haptics.selectionAsync();
-    } catch {}
+    triggerSelectionHaptic();
     const nextExtra = Math.max(0, (extraSetsMap[currentExercise.id] || 0) - 1);
     setExtraSetsMap((prev) => ({ ...prev, [currentExercise.id]: nextExtra }));
     if (currentSetIndex >= currentExercise.sets + nextExtra) {
@@ -626,26 +706,53 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
     });
   };
 
+  const handleApplySessionConfig = (config: SessionExerciseConfig) => {
+    const byId = new Map(allSessionExercises.map((e) => [e.id, e]));
+    const reordered: Exercise[] = [];
+    for (const id of config.orderedIds) {
+      const found = byId.get(id);
+      if (found) reordered.push(found);
+    }
+    for (const ex of allSessionExercises) {
+      if (!reordered.some((r) => r.id === ex.id)) reordered.push(ex);
+    }
+
+    setAllSessionExercises(reordered);
+    setSkippedIds(config.skippedIds);
+    onSaveSessionConfig?.(config);
+
+    const skippedSet = new Set(config.skippedIds);
+    const activeAfter = reordered.filter((e) => !skippedSet.has(e.id));
+    if (activeAfter.length > 0) {
+      const currentPos = currentExercise
+        ? activeAfter.findIndex((e) => e.id === currentExercise.id)
+        : 0;
+      setCurrentExerciseIndex(currentPos >= 0 ? currentPos : 0);
+      setCurrentSetIndex(0);
+    }
+  };
+
   const handlePickSessionExercise = (picked: Exercise) => {
-    try {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    } catch {}
+    triggerNotificationHaptic('success');
     const fresh = cloneExercise(picked);
 
     if (swapExerciseIdx !== null) {
-      setExercises((prev) =>
-        prev.map((item, idx) => (idx === swapExerciseIdx ? fresh : item))
+      const targetEx = exercises[swapExerciseIdx];
+      setAllSessionExercises((prev) =>
+        prev.map((item) => (targetEx && item.id === targetEx.id ? fresh : item))
       );
       setCurrentExerciseIndex(swapExerciseIdx);
       setCurrentSetIndex(0);
     } else {
-      const alreadyExists = exercises.some((e) => e.id === fresh.id);
+      const alreadyExists = allSessionExercises.some((e) => e.id === fresh.id);
       const nextItem = alreadyExists
         ? { ...fresh, id: `${fresh.id}_session_${Date.now()}` }
         : fresh;
-      const nextIndex = exercises.length;
-      setExercises((prev) => [...prev, nextItem]);
-      setCurrentExerciseIndex(nextIndex);
+      const nextList = [...allSessionExercises, nextItem];
+      setAllSessionExercises(nextList);
+      const skippedSet = new Set(skippedIds);
+      const nextActiveCount = nextList.filter((e) => !skippedSet.has(e.id)).length;
+      setCurrentExerciseIndex(Math.max(0, nextActiveCount - 1));
       setCurrentSetIndex(0);
     }
 
@@ -687,6 +794,20 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
         </View>
 
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <TouchableOpacity
+            onPress={() => {
+              triggerSelectionHaptic();
+              setSessionPickerMode('edit');
+              setShowSessionPicker(true);
+            }}
+            style={[styles.pickerPillBtn, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="checkbox-outline" size={16} color={theme.text} />
+            <Text style={[styles.pickerPillText, { color: theme.text }]} numberOfLines={1}>
+              Wybór
+            </Text>
+          </TouchableOpacity>
           <TouchableOpacity
             onPress={() => {
               setOverviewMode('list');
@@ -910,7 +1031,7 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
                 <TextInput
                   style={[styles.stepperInput, { color: theme.text }]}
                   keyboardType="decimal-pad"
-                  value={displayWeight}
+                  value={weightDraft}
                   onChangeText={handleUpdateActiveWeight}
                   placeholder={lastMetrics?.weight || 'kg'}
                   placeholderTextColor={theme.textMuted}
@@ -941,7 +1062,7 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
                 <TextInput
                   style={[styles.stepperInput, { color: theme.text }]}
                   keyboardType="number-pad"
-                  value={displayReps}
+                  value={repsDraft}
                   onChangeText={handleUpdateActiveReps}
                   placeholder={lastMetrics?.reps || '10'}
                   placeholderTextColor={theme.textMuted}
@@ -1064,32 +1185,64 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
         </View>
       </ScrollView>
 
-      {/* Floating Minimized Rest Banner (visible when break is ticking in background) */}
-      {isResting && !isRestModalVisible && (
+      {/* Floating Minimized Rest / Rest-Finished Alert Banner */}
+      {(isResting || isRestFinished) && !isRestModalVisible && (
         <View style={styles.floatingRestContainer}>
           <TouchableOpacity
             style={[
               styles.floatingRestBar,
-              { backgroundColor: theme.card, borderColor: theme.border },
+              {
+                backgroundColor: isRestFinished ? theme.primary : theme.card,
+                borderColor: isRestFinished ? theme.primary : theme.border,
+              },
             ]}
-            onPress={() => setIsRestModalVisible(true)}
+            onPress={() => {
+              setRestModalSeedSecs(restSecondsLeft);
+              setRestModalTargetMs(isRestFinished ? Date.now() : restEndTimeRef.current);
+              setIsRestModalVisible(true);
+            }}
             activeOpacity={0.85}
           >
             <View style={styles.floatingRestLeft}>
-              <View style={[styles.floatingTimerBadge, { backgroundColor: theme.primary }]}>
-                <Ionicons name="timer" size={16} color={theme.primaryText} />
+              <View
+                style={[
+                  styles.floatingTimerBadge,
+                  { backgroundColor: isRestFinished ? theme.primaryText : theme.primary },
+                ]}
+              >
+                <Ionicons
+                  name={isRestFinished ? 'notifications' : 'timer'}
+                  size={16}
+                  color={isRestFinished ? theme.primary : theme.primaryText}
+                />
               </View>
               <View style={{ flex: 1, paddingRight: 8 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <Text style={[styles.floatingTimerTime, { color: theme.text }]}>
-                    {formatTime(restSecondsLeft)}
+                  <Text
+                    style={[
+                      styles.floatingTimerTime,
+                      { color: isRestFinished ? theme.primaryText : theme.text },
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {isRestFinished ? 'KONIEC PRZERWY!' : formatTime(restSecondsLeft)}
                   </Text>
-                  <Text style={[styles.floatingTapHint, { color: theme.textMuted }]}>
-                    • Dotknij, aby powiększyć
-                  </Text>
+                  {!isRestFinished && (
+                    <Text style={[styles.floatingTapHint, { color: theme.textMuted }]} numberOfLines={1}>
+                      • Dotknij
+                    </Text>
+                  )}
                 </View>
-                <Text style={[styles.floatingTimerNext, { color: theme.textSecondary }]} numberOfLines={1}>
-                  {timerNextInfo || 'Odpoczynek przed kolejną serią'}
+                <Text
+                  style={[
+                    styles.floatingTimerNext,
+                    { color: isRestFinished ? theme.primaryText : theme.textSecondary },
+                  ]}
+                  numberOfLines={1}
+                >
+                  {isRestFinished
+                    ? 'Czas na kolejną serię!'
+                    : timerNextInfo || 'Odpoczynek przed kolejną serią'}
                 </Text>
               </View>
             </View>
@@ -1097,13 +1250,31 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
             <TouchableOpacity
               style={[
                 styles.floatingFinishBtn,
-                { backgroundColor: isDark ? '#27272A' : '#E5E5EA', borderColor: theme.border },
+                {
+                  backgroundColor: isRestFinished
+                    ? theme.primaryText
+                    : isDark
+                    ? '#27272A'
+                    : '#E5E5EA',
+                  borderColor: isRestFinished ? theme.primaryText : theme.border,
+                },
               ]}
               onPress={handleFinishRestExplicitly}
               activeOpacity={0.7}
             >
-              <Ionicons name="checkmark-done" size={14} color={theme.text} />
-              <Text style={[styles.floatingFinishBtnText, { color: theme.text }]}>Zakończ</Text>
+              <Ionicons
+                name={isRestFinished ? 'play' : 'checkmark-done'}
+                size={14}
+                color={isRestFinished ? theme.primary : theme.text}
+              />
+              <Text
+                style={[
+                  styles.floatingFinishBtnText,
+                  { color: isRestFinished ? theme.primary : theme.text },
+                ]}
+              >
+                {isRestFinished ? 'Start' : 'Zakończ'}
+              </Text>
             </TouchableOpacity>
           </TouchableOpacity>
         </View>
@@ -1112,12 +1283,20 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
       {/* Modern Animated Rest Countdown Modal */}
       {isRestModalVisible && (
         <RestTimerBar
-          initialSeconds={restSecondsLeft}
+          initialSeconds={restModalSeedSecs}
+          targetEndTimeMs={restModalTargetMs}
           exerciseName={timerLabel}
           nextSetInfo={timerNextInfo}
           onSecondsChanged={(newSecs) => {
-            restEndTimeRef.current = Date.now() + newSecs * 1000;
+            const newEnd = Date.now() + newSecs * 1000;
+            restEndTimeRef.current = newEnd;
+            restFinishNotifiedRef.current = newSecs <= 0;
             setRestSecondsLeft(newSecs);
+            setRestModalTargetMs(newEnd);
+            if (newSecs > 0) {
+              setIsRestFinished(false);
+              setIsResting(true);
+            }
             scheduleRestFinishedNotification(
               newSecs,
               timerLabel || currentExercise.name,
@@ -1276,6 +1455,25 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
         exercise={detailModalExercise}
         onClose={() => setDetailModalExercise(null)}
       />
+
+      {/* Exercise Checklist & Order Modal (start or mid-workout) */}
+      <SessionExercisePickerModal
+        visible={showSessionPicker}
+        onClose={() => setShowSessionPicker(false)}
+        exercises={allSessionExercises}
+        dayProgress={dayProgress}
+        initialConfig={{
+          orderedIds: allSessionExercises.map((e) => e.id),
+          skippedIds,
+        }}
+        mode={sessionPickerMode}
+        onConfirm={handleApplySessionConfig}
+        onOpenAddExercise={() => {
+          setSwapExerciseIdx(null);
+          setOverviewMode('library');
+          setShowOverviewSheet(true);
+        }}
+      />
     </View>
   );
 };
@@ -1288,8 +1486,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   exitBtn: {
@@ -1304,8 +1502,8 @@ const styles = StyleSheet.create({
   stopwatchPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 12,
+    gap: 5,
+    paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 14,
     borderWidth: 1,
@@ -1314,6 +1512,19 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '800',
     fontVariant: ['tabular-nums'],
+  },
+  pickerPillBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 9,
+    paddingVertical: 6,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  pickerPillText: {
+    fontSize: 11,
+    fontWeight: '700',
   },
   infoBtn: {
     width: 32,
@@ -1447,14 +1658,15 @@ const styles = StyleSheet.create({
   },
   inputsGrid: {
     flexDirection: 'row',
-    gap: 12,
+    gap: 8,
     marginBottom: 14,
   },
   inputCol: {
     flex: 1,
+    minWidth: 0,
   },
   inputLabel: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '800',
     letterSpacing: 0.6,
     marginBottom: 6,
@@ -1465,23 +1677,26 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     overflow: 'hidden',
-    height: 52,
+    height: 50,
   },
   stepBtn: {
-    width: 44,
+    width: 38,
     height: '100%',
     justifyContent: 'center',
     alignItems: 'center',
+    flexShrink: 0,
   },
   stepBtnText: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '800',
   },
   stepperInput: {
     flex: 1,
-    fontSize: 22,
+    minWidth: 0,
+    fontSize: 19,
     fontWeight: '900',
     textAlign: 'center',
+    paddingHorizontal: 2,
   },
   quickAdjustRow: {
     flexDirection: 'row',

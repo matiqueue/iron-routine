@@ -11,6 +11,7 @@ export interface WorkoutLiveActivityParams {
   completedSets: number;
   totalWorkoutSets: number;
   isRest?: boolean;
+  isRestFinished?: boolean;
   restSeconds?: number;
   nextExerciseName?: string;
 }
@@ -77,7 +78,18 @@ export async function updateWorkoutLiveActivity(params: WorkoutLiveActivityParam
       return;
     }
 
-    if (params.isRest && params.restSeconds && params.restSeconds > 0) {
+    const progress =
+      params.totalWorkoutSets > 0
+        ? Math.min(1, Math.max(0, params.completedSets / params.totalWorkoutSets))
+        : 0;
+
+    if (params.isRestFinished) {
+      LiveActivity.updateActivity(currentActivityId, {
+        title: 'Koniec przerwy!',
+        subtitle: `${params.exerciseName} • Seria ${params.currentSet} z ${params.totalSets}`,
+        progressBar: { progress },
+      });
+    } else if (params.isRest && params.restSeconds && params.restSeconds > 0) {
       const targetDate = Date.now() + params.restSeconds * 1000;
       const subtitle = params.nextExerciseName
         ? `Następnie: ${params.nextExerciseName}`
@@ -89,11 +101,6 @@ export async function updateWorkoutLiveActivity(params: WorkoutLiveActivityParam
         progressBar: { date: targetDate },
       });
     } else {
-      const progress =
-        params.totalWorkoutSets > 0
-          ? Math.min(1, Math.max(0, params.completedSets / params.totalWorkoutSets))
-          : 0;
-
       LiveActivity.updateActivity(currentActivityId, {
         title: params.exerciseName,
         subtitle: `Seria ${params.currentSet} z ${params.totalSets} • ${params.workoutName}`,
