@@ -16,6 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAppTheme } from '../context/ThemeContext';
 import { DayPlan, DayProgress, Exercise, SessionExerciseConfig, SetEntry } from '../types/workout';
 import { RestTimerBar } from './RestTimerBar';
+import { AnimatedIcon } from './AnimatedIcon';
 import { ExerciseDetailModal } from './ExerciseDetailModal';
 import { InteractiveBottomSheet } from './InteractiveBottomSheet';
 import { ExerciseLibraryContent } from './ExerciseLibraryContent';
@@ -84,6 +85,21 @@ const getSetRows = (totalSets: number): number[][] => {
   return rows;
 };
 
+const buildOrderedExercises = (raw: Exercise[], savedOrder?: string[]): Exercise[] => {
+  const base = (raw || []).map(cloneExercise);
+  if (!savedOrder?.length) return base;
+  const byId = new Map(base.map((e) => [e.id, e]));
+  const ordered: Exercise[] = [];
+  for (const id of savedOrder) {
+    const found = byId.get(id);
+    if (found) ordered.push(found);
+  }
+  for (const ex of base) {
+    if (!ordered.some((o) => o.id === ex.id)) ordered.push(ex);
+  }
+  return ordered;
+};
+
 export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
   dayPlan,
   profileId,
@@ -96,21 +112,9 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
   onExitWorkout,
 }) => {
   const { theme, isDark } = useAppTheme();
-  const [allSessionExercises, setAllSessionExercises] = useState<Exercise[]>(() => {
-    const base = (dayPlan.exercises || []).map(cloneExercise);
-    const savedOrder = dayProgress.sessionConfig?.orderedIds;
-    if (!savedOrder?.length) return base;
-    const byId = new Map(base.map((e) => [e.id, e]));
-    const ordered: Exercise[] = [];
-    for (const id of savedOrder) {
-      const found = byId.get(id);
-      if (found) ordered.push(found);
-    }
-    for (const ex of base) {
-      if (!ordered.some((o) => o.id === ex.id)) ordered.push(ex);
-    }
-    return ordered;
-  });
+  const [allSessionExercises, setAllSessionExercises] = useState<Exercise[]>(() =>
+    buildOrderedExercises(dayPlan.exercises || [], dayProgress.sessionConfig?.orderedIds)
+  );
   const [skippedIds, setSkippedIds] = useState<string[]>(
     () => dayProgress.sessionConfig?.skippedIds || []
   );
@@ -135,9 +139,13 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
   const [overviewMode, setOverviewMode] = useState<'list' | 'library'>('list');
   const [swapExerciseIdx, setSwapExerciseIdx] = useState<number | null>(null);
 
+  const prevDayPlanIdRef = useRef(dayPlan.id);
   useEffect(() => {
-    const base = (dayPlan.exercises || []).map(cloneExercise);
-    setAllSessionExercises(base);
+    if (prevDayPlanIdRef.current === dayPlan.id) return;
+    prevDayPlanIdRef.current = dayPlan.id;
+    setAllSessionExercises(
+      buildOrderedExercises(dayPlan.exercises || [], dayProgress.sessionConfig?.orderedIds)
+    );
     setSkippedIds(dayProgress.sessionConfig?.skippedIds || []);
     setExtraSetsMap({});
     setCurrentExerciseIndex(0);
@@ -1210,11 +1218,17 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
                   { backgroundColor: isRestFinished ? theme.primaryText : theme.primary },
                 ]}
               >
-                <Ionicons
-                  name={isRestFinished ? 'notifications' : 'timer'}
-                  size={16}
-                  color={isRestFinished ? theme.primary : theme.primaryText}
-                />
+                {isRestFinished ? (
+                  <AnimatedIcon
+                    name="notifications"
+                    preset="bell"
+                    size={16}
+                    color={theme.primary}
+                    active={true}
+                  />
+                ) : (
+                  <Ionicons name="timer" size={16} color={theme.primaryText} />
+                )}
               </View>
               <View style={{ flex: 1, paddingRight: 8 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>

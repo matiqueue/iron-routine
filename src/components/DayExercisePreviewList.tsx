@@ -10,6 +10,7 @@ interface DayExercisePreviewListProps {
   exercises: Exercise[];
   daySets?: { [exerciseId: string]: { [setIndex: number]: SetEntry } };
   bestPRs?: { [exerciseId: string]: PRRecord };
+  skippedIds?: string[];
   onPressExercise: (ex: Exercise) => void;
   showIndex?: boolean;
   compact?: boolean;
@@ -36,11 +37,13 @@ export const DayExercisePreviewList: React.FC<DayExercisePreviewListProps> = ({
   exercises,
   daySets = {},
   bestPRs = {},
+  skippedIds = [],
   onPressExercise,
   showIndex = true,
   compact = false,
 }) => {
   const { theme } = useAppTheme();
+  const skippedSet = React.useMemo(() => new Set(skippedIds), [skippedIds]);
 
   return (
     <View style={styles.container}>
@@ -48,7 +51,8 @@ export const DayExercisePreviewList: React.FC<DayExercisePreviewListProps> = ({
         const canonicalId = resolveCanonicalExerciseId(ex.id, ex.name);
         const loggedForEx = daySets[ex.id] || daySets[canonicalId] || {};
         const doneCount = Object.values(loggedForEx).filter((s) => s?.completed).length;
-        const isCompleted = doneCount >= ex.sets && ex.sets > 0;
+        const isSkipped = skippedSet.has(ex.id);
+        const isCompleted = !isSkipped && doneCount >= ex.sets && ex.sets > 0;
         const pr = bestPRs[canonicalId] || bestPRs[ex.id];
         const equipment = ex.equipment || 'Inne';
 
@@ -66,6 +70,7 @@ export const DayExercisePreviewList: React.FC<DayExercisePreviewListProps> = ({
               {
                 backgroundColor: isCompleted ? theme.bgSecondary : theme.card,
                 borderColor: isCompleted ? theme.text : theme.border,
+                opacity: isSkipped ? 0.5 : 1,
               },
             ]}
           >
@@ -82,6 +87,8 @@ export const DayExercisePreviewList: React.FC<DayExercisePreviewListProps> = ({
               >
                 {isCompleted ? (
                   <Ionicons name="checkmark" size={16} color={theme.bg} />
+                ) : isSkipped ? (
+                  <Ionicons name="remove" size={16} color={theme.textMuted} />
                 ) : (
                   <Text style={[styles.indexText, { color: theme.textSecondary }]}>
                     {String(idx + 1).padStart(2, '0')}
@@ -98,6 +105,7 @@ export const DayExercisePreviewList: React.FC<DayExercisePreviewListProps> = ({
                     styles.title,
                     { color: theme.text },
                     isCompleted && styles.titleCompleted,
+                    isSkipped && { textDecorationLine: 'line-through', color: theme.textMuted },
                   ]}
                   numberOfLines={2}
                 >
@@ -107,6 +115,11 @@ export const DayExercisePreviewList: React.FC<DayExercisePreviewListProps> = ({
 
               {/* Tag Pills Row */}
               <View style={styles.pillsRow}>
+                {isSkipped && (
+                  <View style={[styles.metaChip, { backgroundColor: theme.bgTertiary }]}>
+                    <Text style={[styles.metaChipText, { color: theme.textMuted }]}>POMINIĘTE</Text>
+                  </View>
+                )}
                 <View style={[styles.metaChip, { backgroundColor: theme.bgTertiary }]}>
                   <Text style={[styles.metaChipText, { color: theme.textSecondary }]} numberOfLines={1}>
                     {equipment} • {getCategoryShort(ex.category)}

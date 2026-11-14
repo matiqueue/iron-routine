@@ -1,11 +1,15 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
+  Animated,
   Alert,
+  LayoutChangeEvent,
+  PanResponder,
+  PanResponderInstance,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAppTheme } from '../context/ThemeContext';
@@ -24,6 +28,9 @@ interface SessionExercisePickerModalProps {
   onOpenAddExercise?: () => void;
 }
 
+const ROW_GAP = 8;
+const DEFAULT_ROW_HEIGHT = 68;
+
 export const SessionExercisePickerModal: React.FC<SessionExercisePickerModalProps> = ({
   visible,
   onClose,
@@ -37,20 +44,44 @@ export const SessionExercisePickerModal: React.FC<SessionExercisePickerModalProp
   const { theme } = useAppTheme();
   const [orderedIds, setOrderedIds] = useState<string[]>([]);
   const [skippedSet, setSkippedSet] = useState<Set<string>>(new Set());
+  const [draggingId, setDraggingId] = useState<string | null>(null);
 
+  const prevVisibleRef = useRef(false);
+  const orderedIdsRef = useRef<string[]>([]);
+  orderedIdsRef.current = orderedIds;
+
+  const rowHeightsRef = useRef<Record<string, number>>({});
+  const dragYAnim = useRef(new Animated.Value(0)).current;
+  const dragStateRef = useRef<{
+    id: string;
+    currentIndex: number;
+    swapAccumulatedDy: number;
+  } | null>(null);
+  const panRespondersRef = useRef<Record<string, PanResponderInstance>>({});
+
+  // Fix checkbox snap-back bug: only initialize state on modal open rising edge
   useEffect(() => {
-    if (!visible) return;
+    const justOpened = !prevVisibleRef.current && visible;
+    prevVisibleRef.current = visible;
+    if (!justOpened) return;
+
     const allIds = exercises.map((e) => e.id);
     if (initialConfig?.orderedIds?.length) {
       const validSaved = initialConfig.orderedIds.filter((id) => allIds.includes(id));
       const missingNew = allIds.filter((id) => !validSaved.includes(id));
-      setOrderedIds([...validSaved, ...missingNew]);
+      const nextOrder = [...validSaved, ...missingNew];
+      orderedIdsRef.current = nextOrder;
+      setOrderedIds(nextOrder);
       setSkippedSet(new Set((initialConfig.skippedIds || []).filter((id) => allIds.includes(id))));
     } else {
+      orderedIdsRef.current = allIds;
       setOrderedIds(allIds);
       setSkippedSet(new Set());
     }
-  }, [visible, exercises, initialConfig]);
+    setDraggingId(null);
+    dragStateRef.current = null;
+    dragYAnim.setValue(0);
+  }, [visible, exercises, initialConfig, dragYAnim]);
 
   const orderedExercises: Exercise[] = orderedIds
     .map((id) => exercises.find((e) => e.id === id))
@@ -59,6 +90,7 @@ export const SessionExercisePickerModal: React.FC<SessionExercisePickerModalProp
   const activeCount = orderedExercises.filter((e) => !skippedSet.has(e.id)).length;
 
   const toggleExercise = (id: string) => {
+    if (draggingId) return;
     triggerSelectionHaptic();
     setSkippedSet((prev) => {
       const next = new Set(prev);
@@ -71,17 +103,93 @@ export const SessionExercisePickerModal: React.FC<SessionExercisePickerModalProp
     });
   };
 
-  const moveExercise = (index: number, direction: -1 | 1) => {
-    const target = index + direction;
-    if (target < 0 || target >= orderedIds.length) return;
-    triggerImpactHaptic('light');
-    setOrderedIds((prev) => {
-      const next = [...prev];
-      const temp = next[index];
-      next[index] = next[target];
-      next[target] = temp;
-      return next;
-    });
+  const getDragPanResponder = (exerciseId: string): PanResponderInstance => {
+    if (!panRespondersRef.current[exerciseId]) {
+      panRespondersRef.current[exerciseId] = PanResponder.create({
+        onStartShouldSetPanResponder: () => true,
+        onStartShouldSetPanResponderCapture: () => true,
+        onMoveShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponderCapture: () => true,
+        onPanResponderGrant: () => {
+          const idx = orderedIdsRef.current.indexOf(exerciseId);
+          if (idx === -1) return;
+          dragYAnim.stopAnimation();
+          dragYAnim.setValue(0);
+          dragStateRef.current = {
+            id: exerciseId,
+            currentIndex: idx,
+            swapAccumulatedDy: 0,
+          };
+          setDraggingId(exerciseId);
+          triggerImpactHaptic('light');
+        },
+        onPanResponderMove: (_, gestureState) => {
+          const st = dragStateRef.current;
+          if (!st || st.id !== exerciseId) return;
+
+          let localDy = gestureState.dy - st.swapAccumulatedDy;
+          const list = orderedIdsRef.current;
+
+          if (localDy > 0 && st.currentIndex < list.length - 1) {
+            const nextId = list[st.currentIndex + 1];
+            const nextStep = (rowHeightsRef.current[nextId] || DEFAULT_ROW_HEIGHT) + ROW_GAP;
+            if (localDy > nextStep * 0.52) {
+              const updated = [...list];
+              updated[st.currentIndex] = nextId;
+              updated[st.currentIndex + 1] = st.id;
+              orderedIdsRef.current = updated;
+              setOrderedIds(updated);
+              st.currentIndex += 1;
+              st.swapAccumulatedDy += nextStep;
+              localDy = gestureState.dy - st.swapAccumulatedDy;
+              triggerSelectionHaptic();
+            }
+          } else if (localDy < 0 && st.currentIndex > 0) {
+            const prevId = list[st.currentIndex - 1];
+            const prevStep = (rowHeightsRef.current[prevId] || DEFAULT_ROW_HEIGHT) + ROW_GAP;
+            if (localDy < -(prevStep * 0.52)) {
+              const updated = [...list];
+              updated[st.currentIndex] = prevId;
+              updated[st.currentIndex - 1] = st.id;
+              orderedIdsRef.current = updated;
+              setOrderedIds(updated);
+              st.currentIndex -= 1;
+              st.swapAccumulatedDy -= prevStep;
+              localDy = gestureState.dy - st.swapAccumulatedDy;
+              triggerSelectionHaptic();
+            }
+          }
+
+          dragYAnim.setValue(localDy);
+        },
+        onPanResponderTerminationRequest: () => false,
+        onPanResponderRelease: () => {
+          dragStateRef.current = null;
+          Animated.spring(dragYAnim, {
+            toValue: 0,
+            friction: 8,
+            tension: 120,
+            useNativeDriver: true,
+          }).start(() => {
+            setDraggingId(null);
+          });
+          triggerImpactHaptic('light');
+        },
+        onPanResponderTerminate: () => {
+          dragStateRef.current = null;
+          dragYAnim.setValue(0);
+          setDraggingId(null);
+        },
+      });
+    }
+    return panRespondersRef.current[exerciseId];
+  };
+
+  const handleRowLayout = (id: string, e: LayoutChangeEvent) => {
+    const h = e.nativeEvent.layout.height;
+    if (h > 20) {
+      rowHeightsRef.current[id] = h;
+    }
   };
 
   const handleSelectAll = () => {
@@ -91,7 +199,9 @@ export const SessionExercisePickerModal: React.FC<SessionExercisePickerModalProp
 
   const handleResetOrder = () => {
     triggerSelectionHaptic();
-    setOrderedIds(exercises.map((e) => e.id));
+    const defaultIds = exercises.map((e) => e.id);
+    orderedIdsRef.current = defaultIds;
+    setOrderedIds(defaultIds);
     setSkippedSet(new Set());
   };
 
@@ -105,8 +215,8 @@ export const SessionExercisePickerModal: React.FC<SessionExercisePickerModalProp
     }
     triggerImpactHaptic('medium');
     onConfirm({
-      orderedIds,
-      skippedIds: orderedIds.filter((id) => skippedSet.has(id)),
+      orderedIds: orderedIdsRef.current,
+      skippedIds: orderedIdsRef.current.filter((id) => skippedSet.has(id)),
     });
     onClose();
   };
@@ -116,8 +226,8 @@ export const SessionExercisePickerModal: React.FC<SessionExercisePickerModalProp
       visible={visible}
       onClose={onClose}
       title={mode === 'start' ? 'Konfiguracja dzisiejszej sesji' : 'Kolejność i wybór ćwiczeń'}
-      subtitle="Odznacz pomijane ćwiczenia lub zamień ich kolejność"
-      initialHeightPercent={0.84}
+      subtitle="Odznacz pomijane lub przytrzymaj ≡ i przeciągnij"
+      initialHeightPercent={0.86}
     >
       <View style={styles.wrapper}>
         {/* Quick Toolbar */}
@@ -144,23 +254,49 @@ export const SessionExercisePickerModal: React.FC<SessionExercisePickerModalProp
           </View>
         </View>
 
-        <ScrollView style={styles.list} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          style={styles.list}
+          showsVerticalScrollIndicator={false}
+          scrollEnabled={!draggingId}
+        >
           {orderedExercises.map((ex, idx) => {
             const isSkipped = skippedSet.has(ex.id);
+            const isDragging = draggingId === ex.id;
             const loggedCount = Object.values(dayProgress.sets?.[ex.id] || {}).filter(
               (s) => s?.completed
             ).length;
+            const dragPan = getDragPanResponder(ex.id);
 
             return (
-              <View
+              <Animated.View
                 key={ex.id}
+                onLayout={(e) => handleRowLayout(ex.id, e)}
                 style={[
                   styles.row,
                   {
-                    backgroundColor: isSkipped ? theme.bgSecondary : theme.card,
-                    borderColor: isSkipped ? theme.border : theme.borderDark,
-                    opacity: isSkipped ? 0.62 : 1,
+                    backgroundColor: isDragging
+                      ? theme.bgCardElevated
+                      : isSkipped
+                      ? theme.bgSecondary
+                      : theme.card,
+                    borderColor: isDragging
+                      ? theme.text
+                      : isSkipped
+                      ? theme.border
+                      : theme.borderDark,
+                    opacity: isDragging ? 0.96 : isSkipped ? 0.62 : 1,
+                    zIndex: isDragging ? 99 : 1,
+                    elevation: isDragging ? 10 : 0,
                   },
+                  isDragging
+                    ? {
+                        transform: [{ translateY: dragYAnim }, { scale: 1.02 }],
+                        shadowColor: '#000',
+                        shadowOpacity: 0.28,
+                        shadowRadius: 10,
+                        shadowOffset: { width: 0, height: 6 },
+                      }
+                    : undefined,
                 ]}
               >
                 <TouchableOpacity
@@ -178,6 +314,17 @@ export const SessionExercisePickerModal: React.FC<SessionExercisePickerModalProp
                     ]}
                   >
                     {!isSkipped && <Ionicons name="checkmark" size={14} color={theme.bg} />}
+                  </View>
+
+                  <View
+                    style={[
+                      styles.orderBadge,
+                      { backgroundColor: theme.bgSecondary, borderColor: theme.border },
+                    ]}
+                  >
+                    <Text style={[styles.orderBadgeText, { color: theme.textMuted }]}>
+                      {idx + 1}
+                    </Text>
                   </View>
 
                   <View style={styles.rowInfo}>
@@ -200,32 +347,25 @@ export const SessionExercisePickerModal: React.FC<SessionExercisePickerModalProp
                   </View>
                 </TouchableOpacity>
 
-                <View style={styles.reorderGroup}>
-                  <TouchableOpacity
-                    disabled={idx === 0}
-                    onPress={() => moveExercise(idx, -1)}
-                    style={[
-                      styles.moveBtn,
-                      { backgroundColor: theme.bgTertiary, opacity: idx === 0 ? 0.3 : 1 },
-                    ]}
-                  >
-                    <Ionicons name="chevron-up" size={16} color={theme.text} />
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    disabled={idx === orderedExercises.length - 1}
-                    onPress={() => moveExercise(idx, 1)}
-                    style={[
-                      styles.moveBtn,
-                      {
-                        backgroundColor: theme.bgTertiary,
-                        opacity: idx === orderedExercises.length - 1 ? 0.3 : 1,
-                      },
-                    ]}
-                  >
-                    <Ionicons name="chevron-down" size={16} color={theme.text} />
-                  </TouchableOpacity>
+                {/* Drag Handle */}
+                <View
+                  {...dragPan.panHandlers}
+                  style={[
+                    styles.dragHandle,
+                    {
+                      backgroundColor: isDragging ? theme.primary : theme.bgSecondary,
+                      borderColor: isDragging ? theme.primary : theme.border,
+                    },
+                  ]}
+                  accessibilityLabel="Przeciągnij, aby zmienić kolejność"
+                >
+                  <Ionicons
+                    name="reorder-three"
+                    size={21}
+                    color={isDragging ? theme.primaryText : theme.textSecondary}
+                  />
                 </View>
-              </View>
+              </Animated.View>
             );
           })}
           <View style={{ height: 18 }} />
@@ -234,7 +374,10 @@ export const SessionExercisePickerModal: React.FC<SessionExercisePickerModalProp
         <View style={[styles.footer, { borderTopColor: theme.border, backgroundColor: theme.card }]}>
           {onOpenAddExercise && (
             <TouchableOpacity
-              style={[styles.secondaryBtn, { borderColor: theme.borderDark, backgroundColor: theme.bgSecondary }]}
+              style={[
+                styles.secondaryBtn,
+                { borderColor: theme.borderDark, backgroundColor: theme.bgSecondary },
+              ]}
               onPress={() => {
                 onClose();
                 setTimeout(() => onOpenAddExercise(), 220);
@@ -347,17 +490,27 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginTop: 2,
   },
-  reorderGroup: {
-    flexDirection: 'row',
-    gap: 5,
-    flexShrink: 0,
-  },
-  moveBtn: {
-    width: 30,
-    height: 30,
-    borderRadius: 9,
+  orderBadge: {
+    width: 24,
+    height: 24,
+    borderRadius: 7,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    flexShrink: 0,
+  },
+  orderBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  dragHandle: {
+    width: 40,
+    height: 40,
+    borderRadius: 11,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
   },
   footer: {
     paddingHorizontal: 18,

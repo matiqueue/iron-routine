@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAppTheme } from '../context/ThemeContext';
+import { AnimatedIcon } from './AnimatedIcon';
 import {
   triggerImpactHaptic,
   triggerNotificationHaptic,
@@ -333,9 +334,18 @@ export const RestTimerBar: React.FC<RestTimerBarProps> = ({
             {/* Header row */}
             <View style={styles.headerRow}>
               <View style={{ flex: 1 }}>
-                <Text style={[styles.kicker, { color: isFinished ? theme.text : theme.textMuted }]}>
-                  {isFinished ? 'KONIEC PRZERWY — CZAS NA SERIĘ!' : 'ODLICZANIE PRZERWY'}
-                </Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 4 }}>
+                  <AnimatedIcon
+                    name={isFinished ? 'notifications' : 'timer-outline'}
+                    preset="bell"
+                    size={13}
+                    color={isFinished ? '#F59E0B' : theme.textMuted}
+                    active={isFinished}
+                  />
+                  <Text style={[styles.kicker, { color: isFinished ? theme.text : theme.textMuted, marginBottom: 0 }]}>
+                    {isFinished ? 'KONIEC PRZERWY — CZAS NA SERIĘ!' : 'ODLICZANIE PRZERWY'}
+                  </Text>
+                </View>
                 <Text numberOfLines={1} style={[styles.exerciseTitle, { color: theme.text }]}>
                   {exerciseName || 'Odpoczynek'}
                 </Text>

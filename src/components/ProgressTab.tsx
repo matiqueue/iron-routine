@@ -20,11 +20,14 @@ import {
   MuscleCategory,
   MuscleVolumeStat,
   PRRecord,
+  SupplementItem,
   UserProfile,
   WorkoutHistoryEntry,
   WorkoutPlan,
 } from '../types/workout';
 import { getAllExercises, mergeAllExercises } from '../data/planData';
+import { formatSupplementDose } from '../data/supplements';
+import { getAppSettings } from '../services/settings';
 import {
   getAllBestPRs,
   getExerciseHistory,
@@ -157,6 +160,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
   const [weeklyVolume, setWeeklyVolume] = useState<MuscleVolumeStat[]>([]);
   const [workoutHistory, setWorkoutHistory] = useState<WorkoutHistoryEntry[]>([]);
   const [showAllHistory, setShowAllHistory] = useState(false);
+  const [activeSupplements, setActiveSupplements] = useState<SupplementItem[]>([]);
 
   const activePlanExerciseIds = useMemo(() => {
     const ids = new Set<string>();
@@ -182,13 +186,14 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
       const daysCount = timeframe === '7d' ? 7 : timeframe === '30d' ? 30 : 90;
       const planDaysForVol = activePlan?.days || [];
 
-      const [cLog, wStats, imp, customList, volStats, histList] = await Promise.all([
+      const [cLog, wStats, imp, customList, volStats, histList, appSettings] = await Promise.all([
         getCreatineLog(timeframe === '7d' ? 7 : 14),
         getWeightStatsSummary(daysCount, activeProfile.id),
         getExerciseImprovements(activeProfile.id),
         getCustomExercises(),
         getWeeklyVolumeByMuscle(planDaysForVol, undefined, activeProfile.id),
         getWorkoutHistory(activeProfile.id),
+        getAppSettings(),
       ]);
 
       setCreatineLog(cLog);
@@ -197,6 +202,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
       setCustomExercises(customList);
       setWeeklyVolume(volStats);
       setWorkoutHistory(histList);
+      setActiveSupplements((appSettings.supplements || []).filter((s) => s.enabled));
     } catch (e) {
       console.warn('Error loading progress stats:', e);
     }
@@ -352,7 +358,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
       <View style={styles.header}>
         <Text style={[styles.title, { color: theme.text }]}>Osiągi & Statystyki</Text>
         <Text style={[styles.subtitle, { color: theme.textMuted }]}>
-          Monitoruj progres siły, wagę i regularność kreatyny
+          Monitoruj progres siły, wagę i regularność suplementacji
         </Text>
       </View>
 
@@ -535,12 +541,12 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
             </View>
           </View>
 
-          {/* SECTION 2: CREATINE 5G TRACKER & HEATMAP */}
+          {/* SECTION 2: SUPPLEMENT TRACKER & HEATMAP */}
           <View style={[styles.card, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
             <View style={styles.cardHeaderRow}>
               <View>
                 <Text style={[styles.cardKicker, { color: theme.textMuted }]}>SUPLEMENTACJA</Text>
-                <Text style={[styles.cardTitle, { color: theme.text }]}>Kreatyna 5g (Regularność)</Text>
+                <Text style={[styles.cardTitle, { color: theme.text }]}>Regularność i dawki</Text>
               </View>
 
               <View
@@ -558,16 +564,40 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                     { color: creatineStats.todayTaken ? theme.primaryText : theme.text },
                   ]}
                 >
-                  {creatineStats.todayTaken ? 'DZISIAJ: WZIĘTA ✅' : 'DZISIAJ: DO WZIĘCIA ⏳'}
+                  {creatineStats.todayTaken ? 'DZISIAJ: WZIĘTE ✅' : 'DZISIAJ: DO WZIĘCIA ⏳'}
                 </Text>
               </View>
             </View>
 
+            {activeSupplements.length > 0 && (
+              <View style={styles.suppChipsWrap}>
+                {activeSupplements.map((item) => (
+                  <View
+                    key={item.id}
+                    style={[
+                      styles.suppChip,
+                      { backgroundColor: theme.card, borderColor: theme.border },
+                    ]}
+                  >
+                    <Text style={[styles.suppChipText, { color: theme.text }]}>
+                      {item.name} ·{' '}
+                      <Text style={{ color: theme.textSecondary }}>
+                        {formatSupplementDose(item, weightStats?.current ?? activeProfile.weight)}
+                      </Text>
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            )}
+
             <Text style={[styles.creatineSubtitle, { color: theme.textSecondary }]}>
-              Regularność w wybranym okresie: <Text style={{ fontWeight: '800', color: theme.text }}>{creatineStats.count}/{creatineStats.total} dni ({creatineStats.percent}%)</Text>
+              Regularność w wybranym okresie:{' '}
+              <Text style={{ fontWeight: '800', color: theme.text }}>
+                {creatineStats.count}/{creatineStats.total} dni ({creatineStats.percent}%)
+              </Text>
             </Text>
 
-            {/* Interactive Creatine Week Ribbon */}
+            {/* Interactive Supplement Week Ribbon */}
             <View style={styles.creatineRibbon}>
               {creatineLog.slice(-7).map((item) => {
                 return (
@@ -607,7 +637,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
             </View>
 
             <Text style={[styles.creatineTip, { color: theme.textMuted }]}>
-              Dotknij dnia, aby szybko zmienić status. Przypomnienia iOS aktywne (09:00 rano & 22:00 przed snem).
+              Dotknij dnia, aby szybko zmienić status. Suplementy i ich dawki zmienisz w Ustawieniach.
             </Text>
           </View>
 
@@ -1356,6 +1386,22 @@ const styles = StyleSheet.create({
   creatineTip: {
     fontSize: 11,
     marginTop: 4,
+  },
+  suppChipsWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginBottom: 10,
+  },
+  suppChip: {
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 9,
+    borderWidth: 1,
+  },
+  suppChipText: {
+    fontSize: 11,
+    fontWeight: '700',
   },
   improvementsList: {
     marginTop: 4,

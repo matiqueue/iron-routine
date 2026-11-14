@@ -28,6 +28,8 @@ import {
   setCreatineReminderEnabled,
   sendTestCreatineNotification,
 } from '../services/notifications';
+import { getAppSettings } from '../services/settings';
+import { buildActiveSupplementsSummary } from '../data/supplements';
 import { InteractiveBottomSheet } from './InteractiveBottomSheet';
 
 interface BodyStatsModalProps {
@@ -57,6 +59,7 @@ export const BodyStatsModal: React.FC<BodyStatsModalProps> = ({
   // Notification toggles
   const [notifEnabled, setNotifEnabled] = useState<boolean>(false);
   const [creatineNotifEnabled, setCreatineNotifEnabled] = useState<boolean>(true);
+  const [supplementsSummary, setSupplementsSummary] = useState<string>('Suplementacja i przypomnienia');
 
   const loadData = useCallback(async () => {
     try {
@@ -68,11 +71,16 @@ export const BodyStatsModal: React.FC<BodyStatsModalProps> = ({
       setInputWeight(nextWeight > 0 ? String(nextWeight) : '');
       setCurrentHeight(nextHeight);
       setInputHeight(nextHeight > 0 ? String(nextHeight) : '');
-      const enabled = await isDailyWeightReminderEnabled();
+      const [enabled, creatineEnabled, appSettings] = await Promise.all([
+        isDailyWeightReminderEnabled(),
+        isCreatineReminderEnabled(),
+        getAppSettings(),
+      ]);
       setNotifEnabled(enabled);
-
-      const creatineEnabled = await isCreatineReminderEnabled();
       setCreatineNotifEnabled(creatineEnabled);
+      setSupplementsSummary(
+        buildActiveSupplementsSummary(appSettings.supplements, nextWeight > 0 ? nextWeight : undefined)
+      );
     } catch (e) {
       console.warn('Error loading body stats', e);
     }
@@ -193,11 +201,11 @@ export const BodyStatsModal: React.FC<BodyStatsModalProps> = ({
       if (val && !success) {
         Alert.alert(
           'Brak uprawnień',
-          'Włącz powiadomienia w ustawieniach systemu iOS, aby otrzymywać interaktywne powiadomienia o kreatynie.'
+          'Włącz powiadomienia w ustawieniach systemu, aby otrzymywać interaktywne przypomnienia o suplementacji.'
         );
       }
     } catch (e) {
-      console.warn('Error toggling creatine notif', e);
+      console.warn('Error toggling supplement notif', e);
     }
   };
 
@@ -207,7 +215,7 @@ export const BodyStatsModal: React.FC<BodyStatsModalProps> = ({
       await sendTestCreatineNotification();
       Alert.alert(
         'Powiadomienie testowe wysłane! 💧',
-        'Zablokuj iPhone\'a lub odczekaj 3 sekundy. Na banerze/lockscreenie pojawi się powiadomienie z przyciskami:\n\n• [Wziąłem (5g) ✅]\n• [Nie jeszcze ⏳]\n\nMożesz bezpośrednio z ekranu blokady potwierdzić zażycie!'
+        'Zablokuj telefon lub odczekaj 3 sekundy. Na ekranie blokady pojawią się szybkie akcje potwierdzenia dzisiejszych suplementów:\n\n• [Wziąłem porcję ✅]\n• [Przypomnij wieczorem ⏳]'
       );
     } catch (e) {
       console.warn('Error sending test notif', e);
@@ -374,17 +382,17 @@ export const BodyStatsModal: React.FC<BodyStatsModalProps> = ({
               />
             </View>
 
-            {/* Creatine Interactive Reminder (09:00 & 22:00) */}
+            {/* Supplement Interactive Reminder */}
             <View style={[styles.notifRow, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
               <View style={styles.notifIconWrap}>
                 <Ionicons name="water-outline" size={20} color={theme.text} />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={[styles.notifTitle, { color: theme.text }]}>
-                  Kreatyna 5g (09:00 / 22:00)
+                  Przypomnienia o suplementacji
                 </Text>
                 <Text style={[styles.notifSub, { color: theme.textMuted }]}>
-                  Interaktywne z poziomu lockscreena. Pyta o 09:00, a jeśli zaznaczysz „Nie jeszcze” — zapyta o 22:00.
+                  {supplementsSummary} • interaktywnie z ekranu blokady (dawki skonfigurujesz w Ustawieniach)
                 </Text>
               </View>
               <Switch

@@ -7,6 +7,7 @@ import { DayPlan } from '../types/workout';
 import { getDayBannerTagMeta, resolveDayBannerTag } from '../data/dayTags';
 import { triggerImpactHaptic } from '../services/haptics';
 import { DayBannerArtwork } from './DayBannerArtwork';
+import { AnimatedIcon } from './AnimatedIcon';
 
 interface RestDayViewProps {
   dayPlan: DayPlan;
@@ -83,7 +84,13 @@ export const RestDayView: React.FC<RestDayViewProps> = ({ dayPlan }) => {
           onPress={() => toggleHabit('walk')}
         >
           <View style={styles.habitIconCol}>
-            <Ionicons name="footsteps-outline" size={20} color={theme.text} />
+            <AnimatedIcon
+              name="footsteps-outline"
+              preset="footsteps"
+              size={20}
+              color={theme.text}
+              active={!habits.walk}
+            />
           </View>
           <View style={styles.habitTextCol}>
             <Text style={[styles.habitTitle, { color: theme.text }]}>Aktywny spacer</Text>
@@ -134,7 +141,13 @@ export const RestDayView: React.FC<RestDayViewProps> = ({ dayPlan }) => {
         onPress={() => toggleHabit('sleep')}
       >
         <View style={styles.habitIconCol}>
-          <Ionicons name="moon-outline" size={20} color={theme.text} />
+          <AnimatedIcon
+            name="moon-outline"
+            preset="moon"
+            size={20}
+            color={theme.text}
+            active={!habits.sleep}
+          />
         </View>
         <View style={styles.habitTextCol}>
           <Text style={[styles.habitTitle, { color: theme.text }]}>Głęboki sen</Text>

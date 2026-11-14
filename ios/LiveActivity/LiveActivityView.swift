@@ -260,12 +260,11 @@ import WidgetKit
                   if isTimerActive {
                     Text(
                       timerInterval: Date.toTimerInterval(miliseconds: date),
-                      pauseTime: targetDate,
-                      countsDown: true,
-                      showsHours: false
+                      countsDown: true
                     )
-                    .font(.system(size: 13, weight: .heavy))
+                    .font(.system(size: 14, weight: .heavy))
                     .monospacedDigit()
+                    .frame(minWidth: 46, alignment: .leading)
                     .foregroundColor(.white)
                   } else {
                     Text("Koniec przerwy!")

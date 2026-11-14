@@ -1,17 +1,28 @@
-import React from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useMemo } from 'react';
+import {
+  ActivityIndicator,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAppTheme } from '../context/ThemeContext';
 import {
   DayPlan,
   DayProgress,
   Exercise,
+  HealthDailySummary,
   PRRecord,
   UserProfile,
   WorkoutPlan,
 } from '../types/workout';
 import { getDayBannerTagMeta, resolveDayBannerTag } from '../data/dayTags';
 import { triggerSelectionHaptic } from '../services/haptics';
+import { generateHealthCoachingInsight } from '../services/health';
+import { AnimatedIcon } from '../components/AnimatedIcon';
 import { DayBannerArtwork } from '../components/DayBannerArtwork';
 import { DayExercisePreviewList } from '../components/DayExercisePreviewList';
 import { HoldToStartButton } from '../components/HoldToStartButton';
@@ -24,6 +35,11 @@ interface TodayScreenProps {
   dayProgress: DayProgress;
   streak: number;
   bestPRs: { [exerciseId: string]: PRRecord };
+  healthSummary: HealthDailySummary | null;
+  isHealthLoading?: boolean;
+  onRefreshHealth?: () => void;
+  onConnectHealth: () => void;
+  onConfigureSession: () => void;
   onOpenPlanManager: () => void;
   onOpenBodyStats: () => void;
   onStartWorkout: (dayId?: string) => void;
@@ -38,6 +54,11 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
   dayProgress,
   streak,
   bestPRs,
+  healthSummary,
+  isHealthLoading = false,
+  onRefreshHealth,
+  onConnectHealth,
+  onConfigureSession,
   onOpenPlanManager,
   onOpenBodyStats,
   onStartWorkout,
@@ -50,7 +71,35 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
   const tagMeta = getDayBannerTagMeta(bannerTag);
   const firstName = activeProfile?.name?.trim().split(' ')[0] || 'Zawodniku';
   const totalExercises = currentPlan.exercises?.length || 0;
-  const totalSets = (currentPlan.exercises || []).reduce((acc, e) => acc + e.sets, 0);
+  const skippedIds = dayProgress.sessionConfig?.skippedIds || [];
+
+  const sessionPreviewExercises = useMemo(() => {
+    const raw = currentPlan.exercises || [];
+    const savedOrder = dayProgress.sessionConfig?.orderedIds;
+    if (!savedOrder?.length) return raw;
+    const byId = new Map(raw.map((e) => [e.id, e]));
+    const ordered: Exercise[] = [];
+    for (const id of savedOrder) {
+      const found = byId.get(id);
+      if (found) ordered.push(found);
+    }
+    for (const ex of raw) {
+      if (!ordered.some((o) => o.id === ex.id)) ordered.push(ex);
+    }
+    return ordered;
+  }, [currentPlan.exercises, dayProgress.sessionConfig?.orderedIds]);
+
+  const { activeExercisesCount, totalSets } = useMemo(() => {
+    const skippedSet = new Set(skippedIds);
+    const activeList = sessionPreviewExercises.filter((ex) => !skippedSet.has(ex.id));
+    const effectiveList = activeList.length > 0 ? activeList : sessionPreviewExercises;
+    return {
+      activeExercisesCount: effectiveList.length,
+      totalSets: effectiveList.reduce((acc, e) => acc + e.sets, 0),
+    };
+  }, [sessionPreviewExercises, skippedIds]);
+
+  const isRestOrWalk = currentPlan.type === 'rest' || currentPlan.type === 'walk';
 
   return (
     <ScrollView
@@ -130,7 +179,13 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
           <View
             style={[styles.streakIconWrap, { backgroundColor: theme.card, borderColor: theme.border }]}
           >
-            <Ionicons name="flame" size={19} color={theme.text} />
+            <AnimatedIcon
+              name="flame"
+              preset="flame"
+              size={19}
+              color={streak > 0 ? '#F59E0B' : theme.textMuted}
+              active={streak > 0}
+            />
           </View>
           <View style={styles.streakTextCol}>
             <Text style={[styles.streakTitle, { color: theme.text }]} numberOfLines={1}>
@@ -146,7 +201,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
       </View>
 
       {/* Rest / Active Recovery Day View or Workout Day */}
-      {currentPlan.type === 'rest' || currentPlan.type === 'walk' ? (
+      {isRestOrWalk ? (
         <>
           <RestDayView dayPlan={currentPlan} />
           <BodyStatsQuickCard
@@ -154,6 +209,13 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
             height={activeProfile?.height}
             onPress={onOpenBodyStats}
             marginTop={14}
+          />
+          <HealthRecoveryCard
+            summary={healthSummary}
+            isWorkoutDay={false}
+            isLoading={isHealthLoading}
+            onRefresh={onRefreshHealth}
+            onConnect={onConnectHealth}
           />
         </>
       ) : (
@@ -255,11 +317,60 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
 
           {/* HOLD TO START BUTTON or Empty Setup CTA */}
           {totalExercises > 0 ? (
-            <HoldToStartButton
-              onComplete={() => onStartWorkout(currentPlan.id)}
-              title="PRZYTRZYMAJ, ABY ZACZĄĆ"
-              subtitle="Po starcie wybierzesz ćwiczenia i kolejność na dziś"
-            />
+            <View style={styles.startStack}>
+              <TouchableOpacity
+                style={[
+                  styles.configureSessionBtn,
+                  { backgroundColor: theme.bgSecondary, borderColor: theme.border },
+                ]}
+                onPress={() => {
+                  triggerSelectionHaptic();
+                  onConfigureSession();
+                }}
+                activeOpacity={0.78}
+              >
+                <View style={styles.configureLeft}>
+                  <View
+                    style={[
+                      styles.configureIconWrap,
+                      { backgroundColor: theme.card, borderColor: theme.border },
+                    ]}
+                  >
+                    <AnimatedIcon
+                      name="options-outline"
+                      preset="barbell"
+                      size={17}
+                      color={theme.text}
+                      active={false}
+                    />
+                  </View>
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={[styles.configureTitle, { color: theme.text }]} numberOfLines={1}>
+                      Konfiguruj dzisiejszą sesję
+                    </Text>
+                    <Text style={[styles.configureSub, { color: theme.textMuted }]} numberOfLines={1}>
+                      {dayProgress.sessionConfig
+                        ? `Aktywne: ${activeExercisesCount}/${totalExercises} ćwiczeń · własna kolejność`
+                        : 'Zaznacz ćwiczenia i ustaw kolejność przed startem'}
+                    </Text>
+                  </View>
+                </View>
+                <View style={styles.bodyStatsActionWrap}>
+                  <Text style={[styles.bodyStatsActionText, { color: theme.text }]}>Ustaw</Text>
+                  <Ionicons name="chevron-forward" size={15} color={theme.textMuted} />
+                </View>
+              </TouchableOpacity>
+
+              <HoldToStartButton
+                onComplete={() => onStartWorkout(currentPlan.id)}
+                title="PRZYTRZYMAJ, ABY ZACZĄĆ"
+                subtitle={
+                  dayProgress.sessionConfig
+                    ? `Gotowe (${activeExercisesCount} ćwiczeń, ${totalSets} serii) · przytrzymaj`
+                    : 'Przytrzymaj — przed startem potwierdzisz ćwiczenia i kolejność'
+                }
+              />
+            </View>
           ) : (
             <TouchableOpacity
               style={[
@@ -283,12 +394,21 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
             onPress={onOpenBodyStats}
           />
 
+          {/* System Health Recovery Card (Apple Health / Health Connect) */}
+          <HealthRecoveryCard
+            summary={healthSummary}
+            isWorkoutDay={true}
+            isLoading={isHealthLoading}
+            onRefresh={onRefreshHealth}
+            onConnect={onConnectHealth}
+          />
+
           {/* Upgraded Modern Card List of Today's Exercises (No thumbnails, high clarity) */}
           {totalExercises > 0 && currentPlan.exercises && (
             <View style={styles.todayExercises}>
               <View style={[styles.sectionDivider, { borderTopColor: theme.hairline }]}>
                 <Text style={[styles.sectionTitle, { color: theme.textMuted }]}>
-                  ĆWICZENIA W DZISIEJSZYM BLOKU ({totalExercises})
+                  ĆWICZENIA W DZISIEJSZYM BLOKU ({activeExercisesCount}/{totalExercises})
                 </Text>
                 <TouchableOpacity onPress={onSwitchToPlanTab} activeOpacity={0.7}>
                   <Text style={[styles.sectionAction, { color: theme.text }]}>Tydzień →</Text>
@@ -296,9 +416,10 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
               </View>
 
               <DayExercisePreviewList
-                exercises={currentPlan.exercises}
+                exercises={sessionPreviewExercises}
                 daySets={dayProgress.sets}
                 bestPRs={bestPRs}
+                skippedIds={skippedIds}
                 onPressExercise={onOpenExerciseDetail}
               />
             </View>
@@ -366,6 +487,147 @@ const BodyStatsQuickCard: React.FC<BodyStatsQuickCardProps> = ({
         <Ionicons name="chevron-forward" size={16} color={theme.textMuted} />
       </View>
     </TouchableOpacity>
+  );
+};
+
+interface HealthRecoveryCardProps {
+  summary: HealthDailySummary | null;
+  isWorkoutDay: boolean;
+  isLoading?: boolean;
+  onRefresh?: () => void;
+  onConnect: () => void;
+}
+
+const HealthRecoveryCard: React.FC<HealthRecoveryCardProps> = ({
+  summary,
+  isWorkoutDay,
+  isLoading = false,
+  onRefresh,
+  onConnect,
+}) => {
+  const { theme } = useAppTheme();
+  const isConnected = Boolean(summary?.authorized);
+  const insight = generateHealthCoachingInsight(summary, isWorkoutDay);
+  const platformLabel = Platform.OS === 'ios' ? 'APPLE HEALTH' : 'HEALTH CONNECT';
+  const accentBorder =
+    insight.tone === 'warning'
+      ? 'rgba(245, 158, 11, 0.35)'
+      : insight.tone === 'good'
+      ? 'rgba(16, 185, 129, 0.32)'
+      : theme.border;
+
+  return (
+    <View
+      style={[
+        styles.healthCard,
+        { backgroundColor: theme.bgSecondary, borderColor: theme.border },
+      ]}
+    >
+      <View style={styles.healthTopRow}>
+        <View style={styles.healthTitleRow}>
+          <AnimatedIcon
+            name="heart"
+            preset="heart"
+            size={15}
+            color="#EF4444"
+            active={isConnected}
+          />
+          <Text style={[styles.healthTitle, { color: theme.textMuted }]}>{platformLabel}</Text>
+        </View>
+
+        {isConnected ? (
+          <TouchableOpacity
+            onPress={() => {
+              triggerSelectionHaptic();
+              onRefresh?.();
+            }}
+            disabled={isLoading}
+            style={[styles.healthRefreshBtn, { backgroundColor: theme.card, borderColor: theme.border }]}
+            activeOpacity={0.75}
+          >
+            {isLoading ? (
+              <ActivityIndicator size="small" color={theme.text} />
+            ) : (
+              <Ionicons name="refresh-outline" size={14} color={theme.text} />
+            )}
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity
+            onPress={onConnect}
+            disabled={isLoading}
+            style={[styles.healthConnectBtn, { backgroundColor: theme.primary }]}
+            activeOpacity={0.8}
+          >
+            {isLoading ? (
+              <ActivityIndicator size="small" color={theme.primaryText} />
+            ) : (
+              <>
+                <Ionicons name="link-outline" size={13} color={theme.primaryText} />
+                <Text style={[styles.healthConnectText, { color: theme.primaryText }]}>Połącz</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {isConnected && summary ? (
+        <View style={styles.healthMetricsRow}>
+          <View style={[styles.healthMetricBox, { backgroundColor: theme.card, borderColor: theme.border }]}>
+            <AnimatedIcon name="footsteps-outline" preset="footsteps" size={14} color={theme.text} active />
+            <Text style={[styles.healthMetricVal, { color: theme.text }]} numberOfLines={1}>
+              {summary.steps !== null ? summary.steps.toLocaleString('pl-PL') : '—'}
+            </Text>
+            <Text style={[styles.healthMetricLbl, { color: theme.textMuted }]}>Kroki</Text>
+          </View>
+
+          <View style={[styles.healthMetricBox, { backgroundColor: theme.card, borderColor: theme.border }]}>
+            <AnimatedIcon name="moon-outline" preset="moon" size={14} color={theme.text} active />
+            <Text style={[styles.healthMetricVal, { color: theme.text }]} numberOfLines={1}>
+              {summary.sleepHours !== null ? `${summary.sleepHours} h` : '—'}
+            </Text>
+            <Text style={[styles.healthMetricLbl, { color: theme.textMuted }]}>Sen</Text>
+          </View>
+
+          <View style={[styles.healthMetricBox, { backgroundColor: theme.card, borderColor: theme.border }]}>
+            <Ionicons name="flame-outline" size={14} color="#F59E0B" />
+            <Text style={[styles.healthMetricVal, { color: theme.text }]} numberOfLines={1}>
+              {summary.activeCalories !== null
+                ? `${summary.activeCalories}`
+                : summary.distanceKm !== null
+                ? `${summary.distanceKm} km`
+                : '—'}
+            </Text>
+            <Text style={[styles.healthMetricLbl, { color: theme.textMuted }]}>
+              {summary.activeCalories !== null ? 'Kcal' : 'Dystans'}
+            </Text>
+          </View>
+        </View>
+      ) : null}
+
+      <View
+        style={[
+          styles.healthTipBox,
+          { backgroundColor: theme.card, borderColor: accentBorder },
+        ]}
+      >
+        <Ionicons
+          name={insight.icon}
+          size={16}
+          color={
+            insight.tone === 'warning'
+              ? '#F59E0B'
+              : insight.tone === 'good'
+              ? '#10B981'
+              : theme.text
+          }
+          style={{ marginTop: 1 }}
+        />
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text style={[styles.healthTipHeadline, { color: theme.text }]}>{insight.headline}</Text>
+          <Text style={[styles.healthTipText, { color: theme.textSecondary }]}>{insight.tip}</Text>
+        </View>
+      </View>
+    </View>
   );
 };
 
@@ -640,6 +902,131 @@ const styles = StyleSheet.create({
   },
   todayExercises: {
     marginTop: 4,
+  },
+  startStack: {
+    gap: 10,
+    marginBottom: 2,
+  },
+  configureSessionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 16,
+    borderWidth: 1,
+    gap: 10,
+  },
+  configureLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 11,
+    flex: 1,
+    minWidth: 0,
+  },
+  configureIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  configureTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  configureSub: {
+    fontSize: 11,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  healthCard: {
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 14,
+    marginBottom: 18,
+    gap: 11,
+  },
+  healthTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  healthTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+  },
+  healthTitle: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.9,
+  },
+  healthRefreshBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 9,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  healthConnectBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 10,
+  },
+  healthConnectText: {
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  healthMetricsRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  healthMetricBox: {
+    flex: 1,
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    alignItems: 'center',
+    gap: 3,
+    minWidth: 0,
+  },
+  healthMetricVal: {
+    fontSize: 14,
+    fontWeight: '900',
+    fontVariant: ['tabular-nums'],
+    marginTop: 2,
+  },
+  healthMetricLbl: {
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  healthTipBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 9,
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 11,
+    paddingVertical: 10,
+  },
+  healthTipHeadline: {
+    fontSize: 12,
+    fontWeight: '800',
+    lineHeight: 16,
+  },
+  healthTipText: {
+    fontSize: 11,
+    lineHeight: 15,
+    marginTop: 2,
   },
   sectionDivider: {
     flexDirection: 'row',
