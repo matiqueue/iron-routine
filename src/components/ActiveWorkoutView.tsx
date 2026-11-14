@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -13,24 +13,52 @@ import {
   AppState,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import * as Haptics from 'expo-haptics';
 import { useAppTheme } from '../context/ThemeContext';
-import { DayPlan, Exercise, SetEntry } from '../types/workout';
+import { DayPlan, DayProgress, Exercise, SessionExerciseConfig, SetEntry } from '../types/workout';
 import { RestTimerBar } from './RestTimerBar';
+import { AnimatedIcon } from './AnimatedIcon';
 import { ExerciseDetailModal } from './ExerciseDetailModal';
-import { getLastExerciseMetrics } from '../services/storage';
+import { BottomSheetScrollView, InteractiveBottomSheet } from './InteractiveBottomSheet';
+import { ExerciseLibraryContent } from './ExerciseLibraryContent';
+import { SessionExercisePickerModal } from './SessionExercisePickerModal';
+import { calculate1RM, getLastExerciseMetrics } from '../services/storage';
+import { cloneExercise } from '../data/exerciseLibrary';
+import { resolveOrderedSessionExercises } from '../utils/sessionExercises';
 import { updateWorkoutLiveActivity } from '../services/liveActivity';
+import {
+  cancelRestFinishedNotification,
+  ensureNotificationPermissions,
+  scheduleRestFinishedNotification,
+} from '../services/notifications';
+import { getAppSettings } from '../services/settings';
+import {
+  triggerImpactHaptic,
+  triggerNotificationHaptic,
+  triggerSelectionHaptic,
+} from '../services/haptics';
+
+export interface ActiveWorkoutFinishSummary {
+  durationMinutes: number;
+  totalVolumeKg: number;
+  exercises: Exercise[];
+  completedSets: number;
+  totalSets: number;
+}
 
 interface ActiveWorkoutViewProps {
   dayPlan: DayPlan;
-  dayProgress: { sets: { [exerciseId: string]: { [setIndex: number]: SetEntry } } };
+  profileId?: string;
+  extraLibraryExercises?: Exercise[];
+  dayProgress: DayProgress;
+  autoOpenSessionPicker?: boolean;
   onUpdateSet: (
     exerciseId: string,
     setIndex: number,
     data: Partial<SetEntry>,
     restSeconds: number
   ) => void;
-  onFinishWorkout: () => void;
+  onSaveSessionConfig?: (config: SessionExerciseConfig) => void;
+  onFinishWorkout: (summary?: ActiveWorkoutFinishSummary) => void;
   onExitWorkout: () => void;
 }
 
@@ -61,38 +89,95 @@ const getSetRows = (totalSets: number): number[][] => {
 
 export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
   dayPlan,
+  profileId,
+  extraLibraryExercises = [],
   dayProgress,
+  autoOpenSessionPicker = false,
   onUpdateSet,
+  onSaveSessionConfig,
   onFinishWorkout,
   onExitWorkout,
 }) => {
   const { theme, isDark } = useAppTheme();
-  const exercises = dayPlan.exercises || [];
+  const [allSessionExercises, setAllSessionExercises] = useState<Exercise[]>(() =>
+    resolveOrderedSessionExercises(dayPlan.exercises || [], dayProgress.sessionConfig)
+  );
+  const [skippedIds, setSkippedIds] = useState<string[]>(
+    () => dayProgress.sessionConfig?.skippedIds || []
+  );
+  const [showSessionPicker, setShowSessionPicker] = useState<boolean>(autoOpenSessionPicker);
+  const [sessionPickerMode, setSessionPickerMode] = useState<'start' | 'edit'>(
+    autoOpenSessionPicker ? 'start' : 'edit'
+  );
+
+  const exercises = useMemo(() => {
+    const skippedSet = new Set(skippedIds);
+    const filtered = allSessionExercises.filter((ex) => !skippedSet.has(ex.id));
+    return filtered.length > 0 ? filtered : allSessionExercises;
+  }, [allSessionExercises, skippedIds]);
+
+  const [extraSetsMap, setExtraSetsMap] = useState<{ [exId: string]: number }>({});
   const [currentExerciseIndex, setCurrentExerciseIndex] = useState(0);
   const [currentSetIndex, setCurrentSetIndex] = useState(0);
   const [detailModalExercise, setDetailModalExercise] = useState<Exercise | null>(null);
 
+  // Session overview & ad-hoc exercise drawer (single modal avoids stacked RN modal bug on iOS)
+  const [showOverviewSheet, setShowOverviewSheet] = useState(false);
+  const [overviewMode, setOverviewMode] = useState<'list' | 'library'>('list');
+  const [swapExerciseIdx, setSwapExerciseIdx] = useState<number | null>(null);
+
+  const prevDayPlanIdRef = useRef(dayPlan.id);
+  useEffect(() => {
+    setAllSessionExercises(
+      resolveOrderedSessionExercises(dayPlan.exercises || [], dayProgress.sessionConfig)
+    );
+    setSkippedIds(dayProgress.sessionConfig?.skippedIds || []);
+    setExtraSetsMap({});
+    setCurrentExerciseIndex(0);
+    setCurrentSetIndex(0);
+  }, [dayPlan.id]);
+
+  useEffect(() => {
+    getAppSettings().then((s) => {
+      if (s.restNotificationsEnabled) {
+        ensureNotificationPermissions(true);
+      }
+    });
+    return () => {
+      cancelRestFinishedNotification();
+    };
+  }, []);
+
   // Rest Timer State
   const [isResting, setIsResting] = useState(false);
+  const [isRestPaused, setIsRestPaused] = useState(false);
+  const [isRestFinished, setIsRestFinished] = useState(false);
   const [isRestModalVisible, setIsRestModalVisible] = useState(false);
   const [restSecondsLeft, setRestSecondsLeft] = useState(90);
+  const [restModalSeedSecs, setRestModalSeedSecs] = useState(90);
+  const [restModalTargetMs, setRestModalTargetMs] = useState<number | undefined>(undefined);
   const [timerLabel, setTimerLabel] = useState('');
   const [timerNextInfo, setTimerNextInfo] = useState('');
   const restEndTimeRef = useRef<number>(0);
+  const restFinishNotifiedRef = useRef(false);
 
-  // Background-persistent tick for rest timer
+  // Background-persistent tick for rest timer (no in-app haptic; background alarm handles outside-app alert)
   useEffect(() => {
-    if (!isResting) return;
+    if (!isResting || isRestPaused) return;
 
     const tick = () => {
       const diff = Math.max(0, Math.ceil((restEndTimeRef.current - Date.now()) / 1000));
       setRestSecondsLeft(diff);
       if (diff <= 0) {
         setIsResting(false);
-        setIsRestModalVisible(false);
-        try {
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        } catch {}
+        setIsRestPaused(false);
+        setIsRestFinished(true);
+        if (!restFinishNotifiedRef.current) {
+          restFinishNotifiedRef.current = true;
+          if (AppState.currentState === 'active') {
+            cancelRestFinishedNotification();
+          }
+        }
       }
     };
 
@@ -109,7 +194,7 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
       clearInterval(interval);
       sub.remove();
     };
-  }, [isResting]);
+  }, [isResting, isRestPaused]);
 
   // Elapsed
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
@@ -135,9 +220,7 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
       return;
     }
 
-    try {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    } catch {}
+    triggerImpactHaptic('light');
 
     const direction = targetIndex > currentExerciseIndex ? 1 : -1;
     isTransitioningRef.current = true;
@@ -183,9 +266,7 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
   // Series change animation
   const handleChangeSetIndex = (newSetIdx: number) => {
     if (newSetIdx === currentSetIndex) return;
-    try {
-      Haptics.selectionAsync();
-    } catch {}
+    triggerSelectionHaptic();
 
     cardScaleAnim.setValue(0.96);
     cardFadeAnim.setValue(0.55);
@@ -222,9 +303,12 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
     })
   ).current;
 
-  const workoutStartTimeRef = useRef<number>(Date.now());
+  const workoutStartTimeRef = useRef<number>(0);
 
   useEffect(() => {
+    if (!workoutStartTimeRef.current) {
+      workoutStartTimeRef.current = Date.now();
+    }
     const updateElapsed = () => {
       const diff = Math.floor((Date.now() - workoutStartTimeRef.current) / 1000);
       setElapsedSeconds(Math.max(0, diff));
@@ -252,41 +336,68 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
   };
 
   const currentExercise = exercises[currentExerciseIndex] || exercises[0];
+  const currentExerciseId = currentExercise?.id;
+  const currentExerciseName = currentExercise?.name;
   const nextExercise = exercises[currentExerciseIndex + 1];
+
+  const dayProgressRef = useRef(dayProgress);
+  const extraSetsMapRef = useRef(extraSetsMap);
+  const currentExerciseRef = useRef(currentExercise);
+  useEffect(() => {
+    dayProgressRef.current = dayProgress;
+    extraSetsMapRef.current = extraSetsMap;
+    currentExerciseRef.current = currentExercise;
+  }, [dayProgress, extraSetsMap, currentExercise]);
 
   // Smart auto-fill from previous workouts
   const [lastMetrics, setLastMetrics] = useState<{ weight?: string; reps?: string } | null>(null);
 
   useEffect(() => {
     let isMounted = true;
-    if (currentExercise) {
-      getLastExerciseMetrics(currentExercise.id).then((metrics) => {
+    if (currentExerciseId) {
+      getLastExerciseMetrics(currentExerciseId, profileId).then((metrics) => {
         if (isMounted) setLastMetrics(metrics);
       });
     }
     return () => {
       isMounted = false;
     };
-  }, [currentExercise?.id]);
+  }, [currentExerciseId, profileId]);
+
+  const getEffectiveSets = useCallback(
+    (ex: Exercise): number => {
+      const extra = extraSetsMap[ex.id] || 0;
+      const loggedIndices = Object.keys(dayProgress.sets[ex.id] || {}).map((k) => Number(k));
+      const maxLogged = loggedIndices.length > 0 ? Math.max(...loggedIndices) + 1 : 0;
+      return Math.max(ex.sets + extra, maxLogged);
+    },
+    [extraSetsMap, dayProgress.sets]
+  );
+
+  const currentTotalSets = currentExercise ? getEffectiveSets(currentExercise) : 0;
 
   // When changing exercise, jump to first uncompleted set
   useEffect(() => {
-    if (currentExercise) {
-      const setsObj = dayProgress.sets[currentExercise.id] || {};
-      let firstIncomplete = 0;
-      for (let i = 0; i < currentExercise.sets; i++) {
-        if (!setsObj[i]?.completed) {
-          firstIncomplete = i;
-          break;
-        }
+    const activeEx = currentExerciseRef.current;
+    if (!activeEx) return;
+    const setsObj = dayProgressRef.current.sets[activeEx.id] || {};
+    const extra = extraSetsMapRef.current[activeEx.id] || 0;
+    const loggedIndices = Object.keys(setsObj).map((k) => Number(k));
+    const maxLogged = loggedIndices.length > 0 ? Math.max(...loggedIndices) + 1 : 0;
+    const effSets = Math.max(activeEx.sets + extra, maxLogged);
+    let firstIncomplete = 0;
+    for (let i = 0; i < effSets; i++) {
+      if (!setsObj[i]?.completed) {
+        firstIncomplete = i;
+        break;
       }
-      setCurrentSetIndex(firstIncomplete);
     }
-  }, [currentExerciseIndex, currentExercise?.id]);
+    setCurrentSetIndex(firstIncomplete);
+  }, [currentExerciseIndex, currentExerciseId]);
 
   const totalSets = useMemo(
-    () => exercises.reduce((acc, ex) => acc + ex.sets, 0),
-    [exercises]
+    () => exercises.reduce((acc, ex) => acc + getEffectiveSets(ex), 0),
+    [exercises, getEffectiveSets]
   );
 
   const completedSetsCount = useMemo(() => {
@@ -304,105 +415,176 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
 
   // Synchronize Live Activity on Lock Screen and Dynamic Island
   useEffect(() => {
-    if (!currentExercise) return;
+    if (!currentExerciseId || !currentExerciseName) return;
 
-    if (isResting && restSecondsLeft > 0) {
+    if (isRestPaused && isResting) {
       updateWorkoutLiveActivity({
         workoutName: dayPlan.name,
-        exerciseName: currentExercise.name,
+        exerciseName: currentExerciseName,
         currentSet: currentSetIndex + 1,
-        totalSets: currentExercise.sets,
+        totalSets: currentTotalSets,
         completedSets: completedSetsCount,
         totalWorkoutSets: totalSets,
         isRest: true,
-        restSeconds: restSecondsLeft,
+        isRestPaused: true,
+        isRestFinished: false,
+        pausedRestSeconds: restModalSeedSecs,
+        restSeconds: restModalSeedSecs,
+        nextExerciseName: timerNextInfo,
+      });
+    } else if (isResting && !isRestPaused && restEndTimeRef.current > Date.now()) {
+      const secsRemaining = Math.max(1, Math.ceil((restEndTimeRef.current - Date.now()) / 1000));
+      updateWorkoutLiveActivity({
+        workoutName: dayPlan.name,
+        exerciseName: currentExerciseName,
+        currentSet: currentSetIndex + 1,
+        totalSets: currentTotalSets,
+        completedSets: completedSetsCount,
+        totalWorkoutSets: totalSets,
+        isRest: true,
+        isRestPaused: false,
+        isRestFinished: false,
+        restSeconds: secsRemaining,
+        nextExerciseName: timerNextInfo,
+      });
+    } else if (isRestFinished) {
+      updateWorkoutLiveActivity({
+        workoutName: dayPlan.name,
+        exerciseName: currentExerciseName,
+        currentSet: currentSetIndex + 1,
+        totalSets: currentTotalSets,
+        completedSets: completedSetsCount,
+        totalWorkoutSets: totalSets,
+        isRest: true,
+        isRestPaused: false,
+        isRestFinished: true,
+        restSeconds: 0,
         nextExerciseName: timerNextInfo,
       });
     } else {
       updateWorkoutLiveActivity({
         workoutName: dayPlan.name,
-        exerciseName: currentExercise.name,
+        exerciseName: currentExerciseName,
         currentSet: currentSetIndex + 1,
-        totalSets: currentExercise.sets,
+        totalSets: currentTotalSets,
         completedSets: completedSetsCount,
         totalWorkoutSets: totalSets,
         isRest: false,
+        isRestPaused: false,
+        isRestFinished: false,
       });
     }
   }, [
-    currentExercise?.id,
-    currentExercise?.name,
-    currentExercise?.sets,
+    currentExerciseId,
+    currentExerciseName,
+    currentTotalSets,
     currentSetIndex,
     completedSetsCount,
     totalSets,
     isResting,
-    restSecondsLeft,
+    isRestPaused,
+    isRestFinished,
+    restModalTargetMs,
+    restModalSeedSecs,
     dayPlan.name,
     timerNextInfo,
   ]);
 
-  if (!currentExercise) return null;
-
-  const currentExerciseSets = dayProgress.sets[currentExercise.id] || {};
+  const currentExerciseSets = useMemo(
+    () => (currentExerciseId ? dayProgress.sets[currentExerciseId] || {} : {}),
+    [currentExerciseId, dayProgress.sets]
+  );
   const activeEntry: SetEntry = currentExerciseSets[currentSetIndex] || { completed: false };
   const isCurrentSetDone = !!activeEntry.completed;
 
-  // Resolved weight and reps for the active set
-  const displayWeight =
+  // Local synchronous draft state prevents TextInput resets/overwrites while typing or clearing
+  const draftKey = `${currentExerciseId || ''}_${currentSetIndex}`;
+  const prevDraftKeyRef = useRef<string>('');
+  const hasEditedWeightRef = useRef<boolean>(false);
+  const hasEditedRepsRef = useRef<boolean>(false);
+
+  const resolvedSavedWeight =
     activeEntry.weight !== undefined
       ? String(activeEntry.weight)
       : lastMetrics?.weight !== undefined
       ? String(lastMetrics.weight)
       : '';
 
-  const displayReps =
+  const resolvedSavedReps =
     activeEntry.reps !== undefined
       ? String(activeEntry.reps)
       : lastMetrics?.reps !== undefined
       ? String(lastMetrics.reps)
       : '';
 
+  const [weightDraft, setWeightDraft] = useState<string>(resolvedSavedWeight);
+  const [repsDraft, setRepsDraft] = useState<string>(resolvedSavedReps);
+
+  useEffect(() => {
+    if (prevDraftKeyRef.current !== draftKey) {
+      prevDraftKeyRef.current = draftKey;
+      hasEditedWeightRef.current = false;
+      hasEditedRepsRef.current = false;
+      setWeightDraft(resolvedSavedWeight);
+      setRepsDraft(resolvedSavedReps);
+      return;
+    }
+
+    if (!hasEditedWeightRef.current && weightDraft !== resolvedSavedWeight) {
+      setWeightDraft(resolvedSavedWeight);
+    }
+    if (!hasEditedRepsRef.current && repsDraft !== resolvedSavedReps) {
+      setRepsDraft(resolvedSavedReps);
+    }
+  }, [draftKey, resolvedSavedWeight, resolvedSavedReps, weightDraft, repsDraft]);
+
+  const liveEst1RM = useMemo(() => {
+    const w = parseFloat((weightDraft || '').replace(',', '.'));
+    const r = parseInt(repsDraft || '', 10);
+    if (isNaN(w) || w <= 0 || isNaN(r) || r <= 0) return 0;
+    return calculate1RM(w, r);
+  }, [weightDraft, repsDraft]);
+
+  if (!currentExercise) return null;
+
   const handleUpdateActiveWeight = (val: string) => {
+    hasEditedWeightRef.current = true;
+    setWeightDraft(val);
     onUpdateSet(currentExercise.id, currentSetIndex, { weight: val }, 0);
   };
 
   const handleUpdateActiveReps = (val: string) => {
+    hasEditedRepsRef.current = true;
+    setRepsDraft(val);
     onUpdateSet(currentExercise.id, currentSetIndex, { reps: val }, 0);
   };
 
   const handleAdjustWeight = (delta: number) => {
-    const curVal = parseFloat((displayWeight || '60').replace(',', '.')) || 0;
+    const baseStr = weightDraft !== '' ? weightDraft : lastMetrics?.weight || '60';
+    const curVal = parseFloat(baseStr.replace(',', '.')) || 0;
     const nextVal = Math.max(0, Math.round((curVal + delta) * 10) / 10);
     handleUpdateActiveWeight(String(nextVal));
-    try {
-      Haptics.selectionAsync();
-    } catch {}
+    triggerSelectionHaptic();
   };
 
   const handleAdjustReps = (delta: number) => {
-    const curVal = parseInt(displayReps || '10', 10) || 0;
+    const baseStr = repsDraft !== '' ? repsDraft : lastMetrics?.reps || '10';
+    const curVal = parseInt(baseStr, 10) || 0;
     const nextVal = Math.max(1, curVal + delta);
     handleUpdateActiveReps(String(nextVal));
-    try {
-      Haptics.selectionAsync();
-    } catch {}
+    triggerSelectionHaptic();
   };
 
   const handleFillFromLast = () => {
     if (!lastMetrics) return;
-    try {
-      Haptics.selectionAsync();
-    } catch {}
+    triggerSelectionHaptic();
     if (lastMetrics.weight) handleUpdateActiveWeight(lastMetrics.weight);
     if (lastMetrics.reps) handleUpdateActiveReps(lastMetrics.reps);
   };
 
   // Complete current set and auto-advance to currentSetIndex + 1
   const handleCompleteActiveSet = () => {
-    try {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    } catch {}
+    triggerNotificationHaptic('success');
 
     // Tactile button punch animation
     Animated.sequence([
@@ -419,8 +601,8 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
       }),
     ]).start();
 
-    const weightToSave = displayWeight || '60';
-    const repsToSave = displayReps || String(currentExercise.reps);
+    const weightToSave = weightDraft !== '' ? weightDraft : lastMetrics?.weight || '60';
+    const repsToSave = repsDraft !== '' ? repsDraft : lastMetrics?.reps || String(currentExercise.reps);
 
     // Save set as completed
     onUpdateSet(
@@ -435,7 +617,7 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
     );
 
     // Propagate forward to next empty sets so user has easy defaults
-    for (let i = currentSetIndex + 1; i < currentExercise.sets; i++) {
+    for (let i = currentSetIndex + 1; i < currentTotalSets; i++) {
       const nextS = currentExerciseSets[i];
       if (!nextS?.weight) {
         onUpdateSet(currentExercise.id, i, { weight: weightToSave, reps: repsToSave }, 0);
@@ -443,21 +625,28 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
     }
 
     const nextSetIdx = currentSetIndex + 1;
-    const isExerciseFinished = nextSetIdx >= currentExercise.sets;
+    const isExerciseFinished = nextSetIdx >= currentTotalSets;
 
-    // Trigger animated rest countdown
+    // Trigger animated rest countdown + local notification
     const restDur = currentExercise.rest;
-    restEndTimeRef.current = Date.now() + restDur * 1000;
+    const targetEndMs = Date.now() + restDur * 1000;
+    restEndTimeRef.current = targetEndMs;
+    restFinishNotifiedRef.current = false;
+    setIsRestPaused(false);
+    setIsRestFinished(false);
     setRestSecondsLeft(restDur);
+    setRestModalSeedSecs(restDur);
+    setRestModalTargetMs(targetEndMs);
     setTimerLabel(currentExercise.name);
     const nextInfoStr = !isExerciseFinished
-      ? `Przed serią ${nextSetIdx + 1} z ${currentExercise.sets}`
+      ? `Przed serią ${nextSetIdx + 1} z ${currentTotalSets}`
       : nextExercise
       ? `Kolejne ćwiczenie: ${nextExercise.name}`
       : 'Wszystkie ćwiczenia ukończone!';
     setTimerNextInfo(nextInfoStr);
     setIsResting(true);
     setIsRestModalVisible(true);
+    scheduleRestFinishedNotification(restDur, currentExercise.name, nextInfoStr);
 
     // Auto-advance to next set with spring animation
     if (!isExerciseFinished) {
@@ -466,11 +655,87 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
   };
 
   const handleFinishRestExplicitly = () => {
-    try {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    } catch {}
+    triggerNotificationHaptic('success');
+    cancelRestFinishedNotification();
+    restEndTimeRef.current = 0;
+    restFinishNotifiedRef.current = false;
+    setIsRestPaused(false);
     setIsResting(false);
+    setIsRestFinished(false);
+    setRestModalTargetMs(undefined);
     setIsRestModalVisible(false);
+  };
+
+  const handleStopRestSyncImmediate = () => {
+    cancelRestFinishedNotification();
+    restEndTimeRef.current = 0;
+    restFinishNotifiedRef.current = false;
+    setIsRestPaused(false);
+    setIsResting(false);
+    setIsRestFinished(false);
+    setRestModalTargetMs(undefined);
+  };
+
+  const handlePauseRest = (remainingSeconds: number) => {
+    const safeRem = Math.max(0, Math.round(remainingSeconds));
+    restEndTimeRef.current = 0;
+    restFinishNotifiedRef.current = false;
+    cancelRestFinishedNotification();
+    setIsRestPaused(true);
+    setIsResting(safeRem > 0);
+    setIsRestFinished(safeRem <= 0);
+    setRestSecondsLeft(safeRem);
+    setRestModalSeedSecs(safeRem);
+    setRestModalTargetMs(undefined);
+  };
+
+  const handleResumeRest = (remainingSeconds: number) => {
+    const safeRem = Math.max(0, Math.round(remainingSeconds));
+    if (safeRem <= 0) {
+      handleFinishRestExplicitly();
+      return;
+    }
+    const newEnd = Date.now() + safeRem * 1000;
+    restEndTimeRef.current = newEnd;
+    restFinishNotifiedRef.current = false;
+    setIsRestPaused(false);
+    setIsRestFinished(false);
+    setIsResting(true);
+    setRestSecondsLeft(safeRem);
+    setRestModalSeedSecs(safeRem);
+    setRestModalTargetMs(newEnd);
+    scheduleRestFinishedNotification(safeRem, timerLabel || currentExerciseName, timerNextInfo);
+  };
+
+  const handleAdjustRestSeconds = (newSecs: number, paused: boolean) => {
+    const safe = Math.max(0, Math.round(newSecs));
+    if (paused) {
+      restEndTimeRef.current = 0;
+      restFinishNotifiedRef.current = false;
+      cancelRestFinishedNotification();
+      setIsRestPaused(true);
+      setIsResting(safe > 0);
+      setIsRestFinished(false);
+      setRestSecondsLeft(safe);
+      setRestModalSeedSecs(safe);
+      setRestModalTargetMs(undefined);
+      return;
+    }
+
+    const newEnd = Date.now() + safe * 1000;
+    restEndTimeRef.current = newEnd;
+    restFinishNotifiedRef.current = safe <= 0;
+    setIsRestPaused(false);
+    setIsRestFinished(safe <= 0);
+    setIsResting(safe > 0);
+    setRestSecondsLeft(safe);
+    setRestModalSeedSecs(safe);
+    setRestModalTargetMs(newEnd);
+    if (safe > 0) {
+      scheduleRestFinishedNotification(safe, timerLabel || currentExerciseName, timerNextInfo);
+    } else {
+      cancelRestFinishedNotification();
+    }
   };
 
   const handleHideRestModal = () => {
@@ -480,13 +745,11 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
 
   const handleToggleCompleteManually = () => {
     const willBeCompleted = !isCurrentSetDone;
-    try {
-      if (willBeCompleted) {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      } else {
-        Haptics.selectionAsync();
-      }
-    } catch {}
+    if (willBeCompleted) {
+      triggerNotificationHaptic('success');
+    } else {
+      triggerSelectionHaptic();
+    }
 
     onUpdateSet(
       currentExercise.id,
@@ -496,23 +759,133 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
     );
   };
 
+  const handleAddBonusSet = () => {
+    triggerSelectionHaptic();
+    const nextTarget = currentTotalSets + 1;
+    setExtraSetsMap((prev) => ({
+      ...prev,
+      [currentExercise.id]: Math.max(0, nextTarget - currentExercise.sets),
+    }));
+    handleChangeSetIndex(nextTarget - 1);
+  };
+
+  const handleRemoveBonusSet = () => {
+    if (currentTotalSets <= currentExercise.sets) return;
+    triggerSelectionHaptic();
+    const nextExtra = Math.max(0, (extraSetsMap[currentExercise.id] || 0) - 1);
+    setExtraSetsMap((prev) => ({ ...prev, [currentExercise.id]: nextExtra }));
+    if (currentSetIndex >= currentExercise.sets + nextExtra) {
+      setCurrentSetIndex(Math.max(0, currentExercise.sets + nextExtra - 1));
+    }
+  };
+
+  const handleTriggerFinish = () => {
+    handleStopRestSyncImmediate();
+    let totalVolumeKg = 0;
+    for (const ex of exercises) {
+      const setsMap = dayProgress.sets[ex.id] || {};
+      for (const sEntry of Object.values(setsMap)) {
+        if (!sEntry?.completed) continue;
+        const w = parseFloat(String(sEntry.weight || '').replace(',', '.'));
+        const r = parseInt(String(sEntry.reps || ''), 10);
+        if (!isNaN(w) && w > 0 && !isNaN(r) && r > 0) {
+          totalVolumeKg += w * r;
+        }
+      }
+    }
+
+    onFinishWorkout({
+      durationMinutes: Math.max(1, Math.round(elapsedSeconds / 60)),
+      totalVolumeKg: Math.round(totalVolumeKg),
+      exercises,
+      completedSets: completedSetsCount,
+      totalSets,
+    });
+  };
+
+  const handleApplySessionConfig = (config: SessionExerciseConfig) => {
+    const reordered = resolveOrderedSessionExercises(allSessionExercises, config);
+    const persistedAdded = reordered.filter(
+      (ex) => !(dayPlan.exercises || []).some((base) => base.id === ex.id)
+    );
+    const mergedConfig: SessionExerciseConfig = {
+      orderedIds: reordered.map((e) => e.id),
+      skippedIds: config.skippedIds,
+      addedExercises: persistedAdded.length > 0 ? persistedAdded : undefined,
+    };
+
+    setAllSessionExercises(reordered);
+    setSkippedIds(config.skippedIds);
+    onSaveSessionConfig?.(mergedConfig);
+
+    const skippedSet = new Set(config.skippedIds);
+    const activeAfter = reordered.filter((e) => !skippedSet.has(e.id));
+    if (activeAfter.length > 0) {
+      const currentPos = currentExercise
+        ? activeAfter.findIndex((e) => e.id === currentExercise.id)
+        : 0;
+      setCurrentExerciseIndex(currentPos >= 0 ? currentPos : 0);
+      setCurrentSetIndex(0);
+    }
+  };
+
+  const handlePickSessionExercise = (picked: Exercise) => {
+    triggerNotificationHaptic('success');
+    const fresh = cloneExercise(picked);
+    let nextAllList: Exercise[];
+
+    if (swapExerciseIdx !== null) {
+      const targetEx = exercises[swapExerciseIdx];
+      nextAllList = allSessionExercises.map((item) =>
+        targetEx && item.id === targetEx.id ? fresh : item
+      );
+      setAllSessionExercises(nextAllList);
+      setCurrentExerciseIndex(swapExerciseIdx);
+      setCurrentSetIndex(0);
+    } else {
+      const alreadyExists = allSessionExercises.some((e) => e.id === fresh.id);
+      const nextItem = alreadyExists
+        ? { ...fresh, id: `${fresh.id}_session_${Date.now()}` }
+        : fresh;
+      nextAllList = [...allSessionExercises, nextItem];
+      setAllSessionExercises(nextAllList);
+      const skippedSet = new Set(skippedIds);
+      const nextActiveCount = nextAllList.filter((e) => !skippedSet.has(e.id)).length;
+      setCurrentExerciseIndex(Math.max(0, nextActiveCount - 1));
+      setCurrentSetIndex(0);
+    }
+
+    const persistedAdded = nextAllList.filter(
+      (ex) => !(dayPlan.exercises || []).some((b) => b.id === ex.id)
+    );
+    onSaveSessionConfig?.({
+      orderedIds: nextAllList.map((e) => e.id),
+      skippedIds,
+      addedExercises: persistedAdded.length > 0 ? persistedAdded : undefined,
+    });
+
+    setSwapExerciseIdx(null);
+    setOverviewMode('list');
+    setShowOverviewSheet(false);
+  };
+
   const handlePromptExit = () => {
     Alert.alert(
       'Przerwać trening?',
       'Dotychczasowy postęp w seriach jest bezpiecznie zapisany.',
       [
         { text: 'Kontynuuj', style: 'cancel' },
-        { text: 'Wyjdź', style: 'destructive', onPress: onExitWorkout },
+        {
+          text: 'Wyjdź',
+          style: 'destructive',
+          onPress: () => {
+            handleStopRestSyncImmediate();
+            onExitWorkout();
+          },
+        },
       ]
     );
   };
-
-  const allSetsOfExerciseDone = useMemo(() => {
-    for (let i = 0; i < currentExercise.sets; i++) {
-      if (!currentExerciseSets[i]?.completed) return false;
-    }
-    return true;
-  }, [currentExerciseSets, currentExercise.sets]);
 
   return (
     <View style={[styles.container, { backgroundColor: theme.bg }]}>
@@ -528,13 +901,40 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
           <Text style={[styles.stopwatchText, { color: theme.text }]}>{formatTime(elapsedSeconds)}</Text>
         </View>
 
-        <TouchableOpacity
-          onPress={() => setDetailModalExercise(currentExercise)}
-          style={[styles.infoBtn, { backgroundColor: theme.bgSecondary }]}
-          activeOpacity={0.7}
-        >
-          <Ionicons name="information-circle-outline" size={20} color={theme.text} />
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <TouchableOpacity
+            onPress={() => {
+              triggerSelectionHaptic();
+              setSessionPickerMode('edit');
+              setShowSessionPicker(true);
+            }}
+            style={[styles.pickerPillBtn, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="checkbox-outline" size={16} color={theme.text} />
+            <Text style={[styles.pickerPillText, { color: theme.text }]} numberOfLines={1}>
+              Wybór
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => {
+              setOverviewMode('list');
+              setSwapExerciseIdx(null);
+              setShowOverviewSheet(true);
+            }}
+            style={[styles.infoBtn, { backgroundColor: theme.bgSecondary }]}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="list-outline" size={20} color={theme.text} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => setDetailModalExercise(currentExercise)}
+            style={[styles.infoBtn, { backgroundColor: theme.bgSecondary }]}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="information-circle-outline" size={20} color={theme.text} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Progress track */}
@@ -552,18 +952,29 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
         >
           {/* Exercise Header - Clean, Focused & Swipeable */}
           <View style={styles.exerciseHeader} {...headerPanResponder.panHandlers}>
-            <Text style={[styles.catBadgeText, { color: theme.textMuted }]}>
-              {currentExercise.category.toUpperCase()} • ĆWICZENIE {currentExerciseIndex + 1} Z {exercises.length}
-            </Text>
+            <TouchableOpacity
+              style={styles.catBadgeBtn}
+              onPress={() => {
+                setOverviewMode('list');
+                setSwapExerciseIdx(null);
+                setShowOverviewSheet(true);
+              }}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.catBadgeText, { color: theme.textMuted }]}>
+                {currentExercise.category.toUpperCase()} • ĆWICZENIE {currentExerciseIndex + 1} Z {exercises.length}
+              </Text>
+              <Ionicons name="chevron-down" size={13} color={theme.textMuted} />
+            </TouchableOpacity>
             <Text style={[styles.heroTitle, { color: theme.text }]}>{currentExercise.name}</Text>
             <Text style={[styles.heroSubtitle, { color: theme.textSecondary }]}>
-              Plan: {currentExercise.sets} serie × {currentExercise.reps} • {currentExercise.rest}s odpoczynku
+              Plan: {currentTotalSets} serie × {currentExercise.reps} • {currentExercise.rest}s odpoczynku
             </Text>
           </View>
 
           {/* Series Stepper / Selector Grid - No horizontal scroll, wrapping downward & stretching full width */}
           <View style={styles.seriesSelectorWrap}>
-            {getSetRows(currentExercise.sets).map((row, rIdx) => (
+            {getSetRows(currentTotalSets).map((row, rIdx) => (
               <View key={rIdx} style={styles.seriesRow}>
                 {row.map((idx) => {
                   const isSelected = idx === currentSetIndex;
@@ -638,6 +1049,29 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
             ))}
           </View>
 
+          {/* Dynamic Bonus Set Controls */}
+          <View style={styles.bonusSetRow}>
+            <TouchableOpacity
+              style={[styles.bonusSetPill, { borderColor: theme.border, backgroundColor: theme.bgSecondary }]}
+              onPress={handleAddBonusSet}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="add" size={13} color={theme.text} />
+              <Text style={[styles.bonusSetText, { color: theme.text }]}>Dodaj serię</Text>
+            </TouchableOpacity>
+
+            {(extraSetsMap[currentExercise.id] || 0) > 0 && (
+              <TouchableOpacity
+                style={[styles.bonusSetPill, { borderColor: theme.border, backgroundColor: theme.bgSecondary }]}
+                onPress={handleRemoveBonusSet}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="remove" size={13} color={theme.textMuted} />
+                <Text style={[styles.bonusSetText, { color: theme.textMuted }]}>Usuń dodatkową</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
           {/* ACTIVE SERIES FOCUS CARD with Spring Bounce on Set Switch */}
           <Animated.View
             style={[
@@ -654,7 +1088,7 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
           <View style={styles.focusHeader}>
             <View>
               <Text style={[styles.focusTitle, { color: theme.text }]}>
-                SERIA {currentSetIndex + 1} Z {currentExercise.sets}
+                SERIA {currentSetIndex + 1} Z {currentTotalSets}
               </Text>
               <Text style={[styles.focusSubtitle, { color: theme.textMuted }]}>
                 Cel: {currentExercise.reps} powt. • {currentExercise.rest}s przerwy
@@ -705,7 +1139,7 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
                 <TextInput
                   style={[styles.stepperInput, { color: theme.text }]}
                   keyboardType="decimal-pad"
-                  value={displayWeight}
+                  value={weightDraft}
                   onChangeText={handleUpdateActiveWeight}
                   placeholder={lastMetrics?.weight || 'kg'}
                   placeholderTextColor={theme.textMuted}
@@ -736,7 +1170,7 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
                 <TextInput
                   style={[styles.stepperInput, { color: theme.text }]}
                   keyboardType="number-pad"
-                  value={displayReps}
+                  value={repsDraft}
                   onChangeText={handleUpdateActiveReps}
                   placeholder={lastMetrics?.reps || '10'}
                   placeholderTextColor={theme.textMuted}
@@ -753,20 +1187,30 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
             </View>
           </View>
 
-          {/* Last session subtle hint */}
-          {lastMetrics && (lastMetrics.weight || lastMetrics.reps) && !isCurrentSetDone ? (
-            <TouchableOpacity
-              style={styles.cleanHintRow}
-              onPress={handleFillFromLast}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="flash-outline" size={13} color={theme.textMuted} />
-              <Text style={[styles.cleanHintText, { color: theme.textMuted }]}>
-                Ostatnio: {lastMetrics.weight ? `${lastMetrics.weight} kg` : ''}
-                {lastMetrics.weight && lastMetrics.reps ? ' × ' : ''}
-                {lastMetrics.reps ? `${lastMetrics.reps} powt.` : ''} • <Text style={{ color: theme.text, fontWeight: '700' }}>Wstaw dane ➔</Text>
-              </Text>
-            </TouchableOpacity>
+          {/* Last session subtle hint + live 1RM */}
+          {(lastMetrics && (lastMetrics.weight || lastMetrics.reps) && !isCurrentSetDone) || liveEst1RM > 0 ? (
+            <View style={styles.hintAnd1rmRow}>
+              {lastMetrics && (lastMetrics.weight || lastMetrics.reps) && !isCurrentSetDone ? (
+                <TouchableOpacity
+                  style={styles.cleanHintRow}
+                  onPress={handleFillFromLast}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="flash-outline" size={13} color={theme.textMuted} />
+                  <Text style={[styles.cleanHintText, { color: theme.textMuted }]}>
+                    Ostatnio: {lastMetrics.weight ? `${lastMetrics.weight} kg` : ''}
+                    {lastMetrics.weight && lastMetrics.reps ? ' × ' : ''}
+                    {lastMetrics.reps ? `${lastMetrics.reps}` : ''} • <Text style={{ color: theme.text, fontWeight: '700' }}>Wstaw ➔</Text>
+                  </Text>
+                </TouchableOpacity>
+              ) : <View />}
+
+              {liveEst1RM > 0 && (
+                <Text style={[styles.live1rmText, { color: theme.textMuted }]}>
+                  Szac. 1RM: <Text style={{ color: theme.text, fontWeight: '800' }}>~{liveEst1RM} kg</Text>
+                </Text>
+              )}
+            </View>
           ) : null}
 
           {/* MAIN SET ACTION BUTTON */}
@@ -779,7 +1223,7 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
               >
                 <Ionicons name="checkmark-circle" size={20} color={theme.primaryText} />
                 <Text style={[styles.completeSetBtnText, { color: theme.primaryText }]}>
-                  ZALICZ SERIĘ {currentSetIndex + 1} Z {currentExercise.sets}
+                  ZALICZ SERIĘ {currentSetIndex + 1} Z {currentTotalSets}
                 </Text>
               </TouchableOpacity>
             </Animated.View>
@@ -794,7 +1238,7 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
                 <Text style={[styles.undoBtnText, { color: theme.text }]}>Cofnij zaliczenie</Text>
               </TouchableOpacity>
 
-              {currentSetIndex < currentExercise.sets - 1 ? (
+              {currentSetIndex < currentTotalSets - 1 ? (
                 <TouchableOpacity
                   style={[styles.nextSetBtn, { backgroundColor: theme.primary }]}
                   onPress={() => handleChangeSetIndex(currentSetIndex + 1)}
@@ -840,7 +1284,7 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
           ) : (
             <TouchableOpacity
               style={[styles.finishBtn, { backgroundColor: theme.primary }]}
-              onPress={onFinishWorkout}
+              onPress={handleTriggerFinish}
               activeOpacity={0.8}
             >
               <Text style={[styles.finishBtnText, { color: theme.primaryText }]}>ZAKOŃCZ TRENING</Text>
@@ -849,32 +1293,94 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
         </View>
       </ScrollView>
 
-      {/* Floating Minimized Rest Banner (visible when break is ticking in background) */}
-      {isResting && !isRestModalVisible && (
+      {/* Floating Minimized Rest / Rest-Finished Alert Banner */}
+      {(isResting || isRestFinished) && !isRestModalVisible && (
         <View style={styles.floatingRestContainer}>
           <TouchableOpacity
             style={[
               styles.floatingRestBar,
-              { backgroundColor: theme.card, borderColor: theme.border },
+              {
+                backgroundColor: isRestFinished ? theme.primary : theme.card,
+                borderColor: isRestFinished ? theme.primary : isRestPaused ? '#F59E0B' : theme.border,
+              },
             ]}
-            onPress={() => setIsRestModalVisible(true)}
+            onPress={() => {
+              setRestModalSeedSecs(restSecondsLeft);
+              setRestModalTargetMs(
+                isRestPaused ? undefined : isRestFinished ? Date.now() : restEndTimeRef.current
+              );
+              setIsRestModalVisible(true);
+            }}
             activeOpacity={0.85}
           >
             <View style={styles.floatingRestLeft}>
-              <View style={[styles.floatingTimerBadge, { backgroundColor: theme.primary }]}>
-                <Ionicons name="timer" size={16} color={theme.primaryText} />
+              <View
+                style={[
+                  styles.floatingTimerBadge,
+                  {
+                    backgroundColor: isRestFinished
+                      ? theme.primaryText
+                      : isRestPaused
+                      ? '#F59E0B'
+                      : theme.primary,
+                  },
+                ]}
+              >
+                {isRestFinished ? (
+                  <AnimatedIcon
+                    name="notifications"
+                    preset="bell"
+                    size={16}
+                    color={theme.primary}
+                    active={true}
+                  />
+                ) : (
+                  <Ionicons
+                    name={isRestPaused ? 'pause' : 'timer'}
+                    size={16}
+                    color={isRestPaused ? '#000000' : theme.primaryText}
+                  />
+                )}
               </View>
               <View style={{ flex: 1, paddingRight: 8 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <Text style={[styles.floatingTimerTime, { color: theme.text }]}>
-                    {formatTime(restSecondsLeft)}
+                  <Text
+                    style={[
+                      styles.floatingTimerTime,
+                      {
+                        color: isRestFinished
+                          ? theme.primaryText
+                          : isRestPaused
+                          ? '#F59E0B'
+                          : theme.text,
+                      },
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {isRestFinished
+                      ? 'KONIEC PRZERWY!'
+                      : isRestPaused
+                      ? `PAUZA • ${formatTime(restSecondsLeft)}`
+                      : formatTime(restSecondsLeft)}
                   </Text>
-                  <Text style={[styles.floatingTapHint, { color: theme.textMuted }]}>
-                    • Dotknij, aby powiększyć
-                  </Text>
+                  {!isRestFinished && (
+                    <Text style={[styles.floatingTapHint, { color: theme.textMuted }]} numberOfLines={1}>
+                      • Dotknij
+                    </Text>
+                  )}
                 </View>
-                <Text style={[styles.floatingTimerNext, { color: theme.textSecondary }]} numberOfLines={1}>
-                  {timerNextInfo || 'Odpoczynek przed kolejną serią'}
+                <Text
+                  style={[
+                    styles.floatingTimerNext,
+                    { color: isRestFinished ? theme.primaryText : theme.textSecondary },
+                  ]}
+                  numberOfLines={1}
+                >
+                  {isRestFinished
+                    ? 'Czas na kolejną serię!'
+                    : isRestPaused
+                    ? 'Wstrzymana • Powiadomienie zatrzymane'
+                    : timerNextInfo || 'Odpoczynek przed kolejną serią'}
                 </Text>
               </View>
             </View>
@@ -882,13 +1388,31 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
             <TouchableOpacity
               style={[
                 styles.floatingFinishBtn,
-                { backgroundColor: isDark ? '#27272A' : '#E5E5EA', borderColor: theme.border },
+                {
+                  backgroundColor: isRestFinished
+                    ? theme.primaryText
+                    : isDark
+                    ? '#27272A'
+                    : '#E5E5EA',
+                  borderColor: isRestFinished ? theme.primaryText : theme.border,
+                },
               ]}
               onPress={handleFinishRestExplicitly}
               activeOpacity={0.7}
             >
-              <Ionicons name="checkmark-done" size={14} color={theme.text} />
-              <Text style={[styles.floatingFinishBtnText, { color: theme.text }]}>Zakończ</Text>
+              <Ionicons
+                name={isRestFinished ? 'play' : 'checkmark-done'}
+                size={14}
+                color={isRestFinished ? theme.primary : theme.text}
+              />
+              <Text
+                style={[
+                  styles.floatingFinishBtnText,
+                  { color: isRestFinished ? theme.primary : theme.text },
+                ]}
+              >
+                {isRestFinished ? 'Start' : 'Zakończ'}
+              </Text>
             </TouchableOpacity>
           </TouchableOpacity>
         </View>
@@ -897,34 +1421,178 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
       {/* Modern Animated Rest Countdown Modal */}
       {isRestModalVisible && (
         <RestTimerBar
-          initialSeconds={restSecondsLeft}
+          initialSeconds={restModalSeedSecs}
+          targetEndTimeMs={restModalTargetMs}
+          isPaused={isRestPaused}
           exerciseName={timerLabel}
           nextSetInfo={timerNextInfo}
-          onSecondsChanged={(newSecs) => {
-            restEndTimeRef.current = Date.now() + newSecs * 1000;
-            setRestSecondsLeft(newSecs);
-            updateWorkoutLiveActivity({
-              workoutName: dayPlan.name,
-              exerciseName: currentExercise.name,
-              currentSet: currentSetIndex + 1,
-              totalSets: currentExercise.sets,
-              completedSets: completedSetsCount,
-              totalWorkoutSets: totalSets,
-              isRest: true,
-              restSeconds: newSecs,
-              nextExerciseName: timerNextInfo,
-            });
+          onPauseToggle={(paused, remainingSecs) => {
+            if (paused) {
+              handlePauseRest(remainingSecs);
+            } else {
+              handleResumeRest(remainingSecs);
+            }
           }}
+          onSecondsChanged={handleAdjustRestSeconds}
+          onStopImmediate={handleStopRestSyncImmediate}
           onFinishRest={handleFinishRestExplicitly}
           onClose={handleHideRestModal}
         />
       )}
+
+      {/* Session Overview & Ad-hoc Swap/Add Sheet */}
+      <InteractiveBottomSheet
+        visible={showOverviewSheet}
+        onClose={() => {
+          setOverviewMode('list');
+          setSwapExerciseIdx(null);
+          setShowOverviewSheet(false);
+        }}
+        title={
+          overviewMode === 'library'
+            ? swapExerciseIdx !== null
+              ? 'Zamień ćwiczenie na dziś'
+              : 'Dodaj ćwiczenie do sesji'
+            : 'Przegląd sesji treningowej'
+        }
+        subtitle={
+          overviewMode === 'library'
+            ? 'Zmiana dotyczy tylko dzisiejszego treningu'
+            : `${completedSetsCount}/${totalSets} ukończonych serii • ${formatTime(elapsedSeconds)}`
+        }
+        initialHeightPercent={0.88}
+        headerRight={
+          overviewMode === 'library' ? (
+            <TouchableOpacity
+              style={[
+                styles.sheetBackPill,
+                { backgroundColor: theme.bgSecondary, borderColor: theme.border },
+              ]}
+              onPress={() => {
+                setSwapExerciseIdx(null);
+                setOverviewMode('list');
+              }}
+            >
+              <Ionicons name="arrow-back" size={14} color={theme.text} />
+              <Text style={[styles.sheetBackText, { color: theme.text }]}>Wróć</Text>
+            </TouchableOpacity>
+          ) : undefined
+        }
+      >
+        {overviewMode === 'library' ? (
+          <ExerciseLibraryContent
+            mode={swapExerciseIdx !== null ? 'swap' : 'pick'}
+            alreadyInDayIds={exercises.map((e) => e.id)}
+            extraExercises={extraLibraryExercises}
+            onSelectExercise={handlePickSessionExercise}
+          />
+        ) : (
+          <BottomSheetScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 32 }}>
+            {exercises.map((ex, idx) => {
+              const effTotal = getEffectiveSets(ex);
+              const exSets = dayProgress.sets[ex.id] || {};
+              const done = Object.values(exSets).filter((s) => s?.completed).length;
+              const isCurrent = idx === currentExerciseIndex;
+
+              return (
+                <View
+                  key={`${ex.id}_${idx}`}
+                  style={[
+                    styles.sessionRow,
+                    {
+                      backgroundColor: isCurrent ? theme.bgSecondary : 'transparent',
+                      borderBottomColor: theme.hairline,
+                    },
+                  ]}
+                >
+                  <TouchableOpacity
+                    style={{ flex: 1, paddingRight: 8 }}
+                    onPress={() => {
+                      setCurrentExerciseIndex(idx);
+                      setShowOverviewSheet(false);
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[styles.sessionExCat, { color: theme.textMuted }]}>
+                      #{idx + 1} • {ex.category.toUpperCase()}
+                    </Text>
+                    <Text style={[styles.sessionExName, { color: theme.text }]}>{ex.name}</Text>
+                    <Text style={[styles.sessionExStatus, { color: theme.textSecondary }]}>
+                      {done}/{effTotal} serii • {ex.reps} powt.
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.swapMiniBtn, { borderColor: theme.border, backgroundColor: theme.card }]}
+                    onPress={() => {
+                      setSwapExerciseIdx(idx);
+                      setOverviewMode('library');
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name="swap-horizontal" size={14} color={theme.text} />
+                    <Text style={[styles.swapMiniText, { color: theme.text }]}>Zamień</Text>
+                  </TouchableOpacity>
+                </View>
+              );
+            })}
+
+            <TouchableOpacity
+              style={[
+                styles.addSessionExBtn,
+                { borderColor: theme.borderDark, backgroundColor: theme.bgSecondary },
+              ]}
+              onPress={() => {
+                setSwapExerciseIdx(null);
+                setOverviewMode('library');
+              }}
+              activeOpacity={0.75}
+            >
+              <Ionicons name="add" size={18} color={theme.text} />
+              <Text style={[styles.addSessionExText, { color: theme.text }]}>
+                Dodaj dodatkowe ćwiczenie do dzisiaj
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.overviewFinishBtn, { backgroundColor: theme.primary }]}
+              onPress={() => {
+                setShowOverviewSheet(false);
+                handleTriggerFinish();
+              }}
+              activeOpacity={0.85}
+            >
+              <Text style={[styles.overviewFinishText, { color: theme.primaryText }]}>
+                ZAKOŃCZ TRENING ({completedSetsCount}/{totalSets})
+              </Text>
+            </TouchableOpacity>
+          </BottomSheetScrollView>
+        )}
+      </InteractiveBottomSheet>
 
       {/* Technique Modal */}
       <ExerciseDetailModal
         visible={detailModalExercise !== null}
         exercise={detailModalExercise}
         onClose={() => setDetailModalExercise(null)}
+      />
+
+      {/* Exercise Checklist & Order Modal (start or mid-workout) */}
+      <SessionExercisePickerModal
+        visible={showSessionPicker}
+        onClose={() => setShowSessionPicker(false)}
+        exercises={allSessionExercises}
+        extraLibraryExercises={extraLibraryExercises}
+        dayProgress={dayProgress}
+        initialConfig={{
+          orderedIds: allSessionExercises.map((e) => e.id),
+          skippedIds,
+          addedExercises: allSessionExercises.filter(
+            (ex) => !(dayPlan.exercises || []).some((b) => b.id === ex.id)
+          ),
+        }}
+        mode={sessionPickerMode}
+        onConfirm={handleApplySessionConfig}
       />
     </View>
   );
@@ -938,8 +1606,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   exitBtn: {
@@ -954,8 +1622,8 @@ const styles = StyleSheet.create({
   stopwatchPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 12,
+    gap: 5,
+    paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 14,
     borderWidth: 1,
@@ -964,6 +1632,19 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '800',
     fontVariant: ['tabular-nums'],
+  },
+  pickerPillBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 9,
+    paddingVertical: 6,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  pickerPillText: {
+    fontSize: 11,
+    fontWeight: '700',
   },
   infoBtn: {
     width: 32,
@@ -1097,14 +1778,15 @@ const styles = StyleSheet.create({
   },
   inputsGrid: {
     flexDirection: 'row',
-    gap: 12,
+    gap: 8,
     marginBottom: 14,
   },
   inputCol: {
     flex: 1,
+    minWidth: 0,
   },
   inputLabel: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '800',
     letterSpacing: 0.6,
     marginBottom: 6,
@@ -1115,23 +1797,26 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     overflow: 'hidden',
-    height: 52,
+    height: 50,
   },
   stepBtn: {
-    width: 44,
+    width: 38,
     height: '100%',
     justifyContent: 'center',
     alignItems: 'center',
+    flexShrink: 0,
   },
   stepBtnText: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '800',
   },
   stepperInput: {
     flex: 1,
-    fontSize: 22,
+    minWidth: 0,
+    fontSize: 19,
     fontWeight: '900',
     textAlign: 'center',
+    paddingHorizontal: 2,
   },
   quickAdjustRow: {
     flexDirection: 'row',
@@ -1375,5 +2060,120 @@ const styles = StyleSheet.create({
   floatingFinishBtnText: {
     fontSize: 12,
     fontWeight: '800',
+  },
+  catBadgeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  bonusSetRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 8,
+    marginBottom: 6,
+  },
+  bonusSetPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  bonusSetText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  hintAnd1rmRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  live1rmText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  sheetBackPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  sheetBackText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  sessionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 13,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  sessionExCat: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  sessionExName: {
+    fontSize: 15,
+    fontWeight: '700',
+    marginTop: 2,
+  },
+  sessionExStatus: {
+    fontSize: 12,
+    marginTop: 2,
+    fontWeight: '600',
+  },
+  swapMiniBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  swapMiniText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  addSessionExBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 13,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    marginTop: 14,
+  },
+  addSessionExText: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  overviewFinishBtn: {
+    marginTop: 12,
+    height: 46,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  overviewFinishText: {
+    fontSize: 13,
+    fontWeight: '900',
+    letterSpacing: 0.5,
   },
 });

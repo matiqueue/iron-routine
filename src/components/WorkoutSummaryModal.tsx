@@ -2,12 +2,17 @@ import React from 'react';
 import { View, Text, Modal, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAppTheme } from '../context/ThemeContext';
+import { NewPRHighlight } from '../types/workout';
+import { AnimatedIcon } from './AnimatedIcon';
 
 interface WorkoutSummaryModalProps {
   visible: boolean;
   dayName: string;
   completedSets: number;
   totalSets: number;
+  durationMinutes?: number;
+  totalVolumeKg?: number;
+  newPRs?: NewPRHighlight[];
   onClose: () => void;
 }
 
@@ -16,16 +21,21 @@ export const WorkoutSummaryModal: React.FC<WorkoutSummaryModalProps> = ({
   dayName,
   completedSets,
   totalSets,
+  durationMinutes,
+  totalVolumeKg,
+  newPRs = [],
   onClose,
 }) => {
   const { theme } = useAppTheme();
+  const completionPct =
+    totalSets > 0 ? Math.min(100, Math.round((completedSets / totalSets) * 100)) : 100;
 
   return (
     <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
       <View style={styles.overlay}>
         <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
           <View style={[styles.iconCircle, { backgroundColor: theme.bgSecondary }]}>
-            <Ionicons name="trophy-outline" size={32} color={theme.text} />
+            <AnimatedIcon name="trophy" preset="trophy" size={32} color="#F59E0B" active={visible} />
           </View>
 
           <Text style={[styles.title, { color: theme.text }]}>Trening ukończony</Text>
@@ -33,27 +43,50 @@ export const WorkoutSummaryModal: React.FC<WorkoutSummaryModalProps> = ({
 
           <View style={[styles.statsRow, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
             <View style={styles.statBox}>
-              <Text style={[styles.statNumber, { color: theme.text }]}>{completedSets}</Text>
-              <Text style={[styles.statLabel, { color: theme.textMuted }]}>Wykonane</Text>
+              <Text style={[styles.statNumber, { color: theme.text }]}>
+                {completedSets}/{totalSets}
+              </Text>
+              <Text style={[styles.statLabel, { color: theme.textMuted }]}>Serie</Text>
             </View>
 
             <View style={[styles.statDivider, { backgroundColor: theme.border }]} />
 
             <View style={styles.statBox}>
-              <Text style={[styles.statNumber, { color: theme.text }]}>{totalSets}</Text>
-              <Text style={[styles.statLabel, { color: theme.textMuted }]}>Wszystkie</Text>
+              <Text style={[styles.statNumber, { color: theme.text }]}>
+                {totalVolumeKg && totalVolumeKg > 0 ? `${totalVolumeKg}` : `${completionPct}%`}
+              </Text>
+              <Text style={[styles.statLabel, { color: theme.textMuted }]}>
+                {totalVolumeKg && totalVolumeKg > 0 ? 'Objętość (kg)' : 'Realizacja'}
+              </Text>
             </View>
 
             <View style={[styles.statDivider, { backgroundColor: theme.border }]} />
 
             <View style={styles.statBox}>
-              <Text style={[styles.statNumber, { color: theme.text }]}>100%</Text>
-              <Text style={[styles.statLabel, { color: theme.textMuted }]}>Zrealizowano</Text>
+              <Text style={[styles.statNumber, { color: theme.text }]}>
+                {durationMinutes ? `${durationMinutes}m` : `${completionPct}%`}
+              </Text>
+              <Text style={[styles.statLabel, { color: theme.textMuted }]}>
+                {durationMinutes ? 'Czas' : 'Zrealizowano'}
+              </Text>
             </View>
           </View>
 
+          {newPRs.length > 0 && (
+            <View style={[styles.prBox, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
+              <Text style={[styles.prBoxTitle, { color: theme.text }]}>
+                NOWE REKORDY PR ({newPRs.length})
+              </Text>
+              {newPRs.slice(0, 3).map((pr) => (
+                <Text key={pr.exerciseId} style={[styles.prItemText, { color: theme.textSecondary }]}>
+                  • {pr.exerciseName}: {pr.weight} kg × {pr.reps} (~{pr.estimated1RM} kg 1RM)
+                </Text>
+              ))}
+            </View>
+          )}
+
           <Text style={[styles.cheerText, { color: theme.textSecondary }]}>
-            Wszystkie serie zostały zapisane w pamięci Twojego iPhone'a. Odpocznij i przygotuj się na kolejną sesję.
+            Wszystkie serie i statystyki zostały zapisane lokalnie w pamięci urządzenia. Odpocznij przed kolejną sesją.
           </Text>
 
           <TouchableOpacity
@@ -147,5 +180,22 @@ const styles = StyleSheet.create({
   btnText: {
     fontSize: 14,
     fontWeight: '800',
+  },
+  prBox: {
+    width: '100%',
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 12,
+    marginBottom: 14,
+  },
+  prBoxTitle: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.7,
+    marginBottom: 4,
+  },
+  prItemText: {
+    fontSize: 12,
+    lineHeight: 18,
   },
 });

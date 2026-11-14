@@ -156,12 +156,24 @@ struct LiveActivityWidget: Widget {
     progressViewTint: String?
   ) -> some View {
     if timerType == .digital {
-      Text(Date(timeIntervalSince1970: endDate / 1000), style: .timer)
+      let targetDate = Date(timeIntervalSince1970: endDate / 1000)
+      if targetDate > Date.now {
+        Text(
+          timerInterval: Date.toTimerInterval(miliseconds: endDate),
+          countsDown: true
+        )
         .font(.system(size: 13, weight: .bold))
         .monospacedDigit()
         .minimumScaleFactor(0.8)
-        .frame(maxWidth: 60)
+        .frame(minWidth: 38, maxWidth: 64, alignment: .trailing)
         .multilineTextAlignment(.trailing)
+      } else {
+        Text("GOTÓW")
+          .font(.system(size: 11, weight: .heavy))
+          .minimumScaleFactor(0.8)
+          .frame(maxWidth: 60)
+          .multilineTextAlignment(.trailing)
+      }
     } else {
       circularTimer(endDate: endDate)
         .tint(progressViewTint.map { Color(hex: $0) })
@@ -194,21 +206,50 @@ struct LiveActivityWidget: Widget {
   }
 
   private func dynamicIslandExpandedBottom(endDate: Double, progressViewTint: String?) -> some View {
-    ProgressView(
-      timerInterval: Date.toTimerInterval(miliseconds: endDate),
-      countsDown: false,
-      label: { EmptyView() },
-      currentValueLabel: { EmptyView() }
-    )
-    .foregroundStyle(.white)
-    .tint(progressViewTint.map { Color(hex: $0) })
+    let targetDate = Date(timeIntervalSince1970: endDate / 1000)
+    let isTimerActive = targetDate > Date.now
+    return VStack(spacing: 6) {
+      HStack {
+        HStack(spacing: 5) {
+          Image(systemName: isTimerActive ? "timer" : "bell.badge.fill")
+            .font(.system(size: 12, weight: .bold))
+          Text(isTimerActive ? "Pozostała przerwa" : "Koniec przerwy!")
+            .font(.system(size: 12, weight: .bold))
+        }
+        .foregroundStyle(.white.opacity(0.8))
+        Spacer()
+        if isTimerActive {
+          Text(
+            timerInterval: Date.toTimerInterval(miliseconds: endDate),
+            countsDown: true
+          )
+          .font(.system(size: 14, weight: .heavy))
+          .monospacedDigit()
+          .frame(minWidth: 48, alignment: .trailing)
+          .foregroundStyle(.white)
+        } else {
+          Text("SERIA!")
+            .font(.system(size: 12, weight: .heavy))
+            .foregroundStyle(.orange)
+        }
+      }
+
+      ProgressView(
+        timerInterval: Date.toTimerInterval(miliseconds: endDate),
+        countsDown: true,
+        label: { EmptyView() },
+        currentValueLabel: { EmptyView() }
+      )
+      .foregroundStyle(.white)
+      .tint(progressViewTint.map { Color(hex: $0) })
+    }
     .padding(.top, 5)
   }
 
   private func circularTimer(endDate: Double) -> some View {
     ProgressView(
       timerInterval: Date.toTimerInterval(miliseconds: endDate),
-      countsDown: false,
+      countsDown: true,
       label: { EmptyView() },
       currentValueLabel: {
         EmptyView()

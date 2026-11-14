@@ -1,29 +1,48 @@
 import { DayPlan, Exercise } from '../types/workout';
-import { WORKOUT_PLAN as IMPORTED_PLAN, DAYS_OF_WEEK as IMPORTED_DAYS } from './myPlan';
+import {
+  buildPlanDaysFromTemplate,
+  DEFAULT_DAYS_OF_WEEK,
+  EXERCISE_LIBRARY,
+  resolveCanonicalExerciseId,
+} from './exerciseLibrary';
 
-export const DAYS_OF_WEEK = IMPORTED_DAYS;
-export const WORKOUT_PLAN: DayPlan[] = IMPORTED_PLAN;
+export const DAYS_OF_WEEK = DEFAULT_DAYS_OF_WEEK;
+export const WORKOUT_PLAN: DayPlan[] = buildPlanDaysFromTemplate('blank');
+export { EXERCISE_LIBRARY };
 
-export function getAllExercises(): Exercise[] {
-  const map = new Map<string, Exercise>();
-  for (const day of WORKOUT_PLAN) {
-    if (day.exercises) {
-      for (const ex of day.exercises) {
-        if (!map.has(ex.id)) {
-          map.set(ex.id, ex);
-        }
-      }
+/**
+ * Merges exercises from user plans, custom exercises, and the built-in gym catalog
+ * while deduplicating by canonical ID (earlier arrays take precedence for reps/sets overrides).
+ */
+export function mergeAllExercises(...groups: Exercise[][]): Exercise[] {
+  const seen = new Set<string>();
+  const merged: Exercise[] = [];
+
+  for (const group of groups) {
+    for (const ex of group) {
+      if (!ex?.id) continue;
+      const cid = resolveCanonicalExerciseId(ex.id, ex.name);
+      if (seen.has(cid)) continue;
+      seen.add(cid);
+      merged.push(cid === ex.id ? ex : { ...ex, id: cid });
     }
   }
-  return Array.from(map.values());
+
+  for (const libEx of EXERCISE_LIBRARY) {
+    if (!seen.has(libEx.id)) {
+      seen.add(libEx.id);
+      merged.push(libEx);
+    }
+  }
+
+  return merged;
+}
+
+export function getAllExercises(): Exercise[] {
+  return EXERCISE_LIBRARY;
 }
 
 export function getExerciseById(id: string): Exercise | undefined {
-  for (const day of WORKOUT_PLAN) {
-    if (day.exercises) {
-      const found = day.exercises.find((e) => e.id === id);
-      if (found) return found;
-    }
-  }
-  return undefined;
+  const cid = resolveCanonicalExerciseId(id);
+  return EXERCISE_LIBRARY.find((e) => e.id === cid);
 }

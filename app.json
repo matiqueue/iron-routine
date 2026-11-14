@@ -2,33 +2,69 @@
   "expo": {
     "name": "Iron Routine",
     "slug": "iron-routine",
-    "version": "1.0.1",
+    "version": "2.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#0F172A"
+      "backgroundColor": "#050608"
     },
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.matique.ironroutine",
-      "buildNumber": "1",
+      "buildNumber": "2",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSSupportsLiveActivities": true,
-        "NSSupportsLiveActivitiesFrequentUpdates": true
+        "NSSupportsLiveActivitiesFrequentUpdates": true,
+        "NSHealthShareUsageDescription": "Iron Routine odczytuje kroki, sen i aktywność z Apple Health, aby wspierać regenerację i plan treningowy.",
+        "NSHealthUpdateUsageDescription": "Iron Routine może zapisywać dane o treningu w Apple Health."
       }
     },
     "plugins": [
-      "expo-live-activity"
+      "expo-live-activity",
+      [
+        "expo-notifications",
+        {
+          "enableRemoteNotifications": false,
+          "sounds": [
+            "./assets/sounds/rest_alarm.wav"
+          ]
+        }
+      ],
+      [
+        "@kingstinct/react-native-healthkit",
+        {
+          "NSHealthShareUsageDescription": "Iron Routine odczytuje kroki, sen i aktywność z Apple Health, aby wspierać regenerację i plan treningowy.",
+          "NSHealthUpdateUsageDescription": "Iron Routine może zapisywać dane o treningu w Apple Health.",
+          "background": false
+        }
+      ],
+      "react-native-health-connect",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "compileSdkVersion": 36,
+            "targetSdkVersion": 36,
+            "minSdkVersion": 26
+          }
+        }
+      ]
     ],
     "android": {
       "package": "com.matique.ironroutine",
-      "versionCode": 2,
+      "versionCode": 3,
+      "permissions": [
+        "android.permission.health.READ_STEPS",
+        "android.permission.health.READ_SLEEP",
+        "android.permission.health.READ_ACTIVE_CALORIES_BURNED",
+        "android.permission.health.READ_DISTANCE"
+      ],
       "adaptiveIcon": {
-        "backgroundColor": "#0F172A",
+        "backgroundColor": "#050608",
         "foregroundImage": "./assets/android-icon-foreground.png"
       }
     },

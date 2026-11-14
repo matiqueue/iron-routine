@@ -186,9 +186,9 @@ export const ModernSplineChart: React.FC<ModernSplineChartProps> = ({
       style={styles.container}
       onLayout={(e) => setContainerWidth(e.nativeEvent.layout.width)}
     >
-      {/* Top Header with Selected Value & Timeframe Pills */}
+      {/* Top Header with Selected Value & Responsive Stacked/Full-Width Timeframe Segmented Bar */}
       <View style={styles.topHeader}>
-        <View>
+        <View style={styles.valCol}>
           {activeEntry ? (
             <View style={styles.valRow}>
               <Text style={[styles.mainVal, { color: theme.text }]}>
@@ -201,7 +201,7 @@ export const ModernSplineChart: React.FC<ModernSplineChartProps> = ({
               </View>
             </View>
           ) : (
-            <Text style={[styles.mainVal, { color: theme.text }]}>— kg</Text>
+            <Text style={[styles.mainVal, { color: theme.text }]}>- kg</Text>
           )}
         </View>
 
@@ -229,6 +229,7 @@ export const ModernSplineChart: React.FC<ModernSplineChartProps> = ({
                       styles.tfBtnText,
                       { color: isActive ? theme.bg : theme.textMuted },
                     ]}
+                    numberOfLines={1}
                   >
                     {label}
                   </Text>
@@ -367,15 +368,18 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   topHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 4,
-    marginBottom: 8,
+    flexDirection: 'column',
+    gap: 10,
+    paddingHorizontal: 2,
+    marginBottom: 10,
+  },
+  valCol: {
+    width: '100%',
   },
   valRow: {
     flexDirection: 'row',
-    alignItems: 'baseline',
+    flexWrap: 'wrap',
+    alignItems: 'center',
     gap: 8,
   },
   mainVal: {
@@ -399,20 +403,24 @@ const styles = StyleSheet.create({
   },
   timeframeRow: {
     flexDirection: 'row',
+    width: '100%',
     padding: 3,
-    borderRadius: 10,
+    borderRadius: 11,
     borderWidth: 1,
-    gap: 2,
+    gap: 4,
   },
   tfBtn: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 7,
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 6,
+    paddingVertical: 6,
+    borderRadius: 8,
   },
   tfBtnText: {
-    fontSize: 9,
+    fontSize: 10,
     fontWeight: '800',
-    letterSpacing: 0.3,
+    letterSpacing: 0.4,
   },
   datesRow: {
     flexDirection: 'row',

@@ -1,12 +1,10 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-  Modal,
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
   TextInput,
-  ScrollView,
   Switch,
   Alert,
   KeyboardAvoidingView,
@@ -29,7 +27,9 @@ import {
   setCreatineReminderEnabled,
   sendTestCreatineNotification,
 } from '../services/notifications';
-import { InteractiveBottomSheet } from './InteractiveBottomSheet';
+import { getAppSettings } from '../services/settings';
+import { buildActiveSupplementsSummary } from '../data/supplements';
+import { BottomSheetScrollView, InteractiveBottomSheet } from './InteractiveBottomSheet';
 
 interface BodyStatsModalProps {
   visible: boolean;
@@ -44,38 +44,46 @@ export const BodyStatsModal: React.FC<BodyStatsModalProps> = ({
   onClose,
   onProfileUpdated,
 }) => {
-  const { theme, isDark } = useAppTheme();
+  const { theme } = useAppTheme();
 
   const [history, setHistory] = useState<WeightEntry[]>([]);
-  const [currentWeight, setCurrentWeight] = useState<number>(profile.weight || 60.1);
-  const [currentHeight, setCurrentHeight] = useState<number>(profile.height || 180);
+  const [currentWeight, setCurrentWeight] = useState<number>(profile.weight || 0);
+  const [currentHeight, setCurrentHeight] = useState<number>(profile.height || 0);
 
   // Form input
-  const [inputWeight, setInputWeight] = useState<string>(String(profile.weight || 60.1));
-  const [inputHeight, setInputHeight] = useState<string>(String(profile.height || 180));
+  const [inputWeight, setInputWeight] = useState<string>(profile.weight ? String(profile.weight) : '');
+  const [inputHeight, setInputHeight] = useState<string>(profile.height ? String(profile.height) : '');
   const [isEditingHeight, setIsEditingHeight] = useState<boolean>(false);
 
   // Notification toggles
   const [notifEnabled, setNotifEnabled] = useState<boolean>(false);
   const [creatineNotifEnabled, setCreatineNotifEnabled] = useState<boolean>(true);
+  const [supplementsSummary, setSupplementsSummary] = useState<string>('Suplementacja i przypomnienia');
 
   const loadData = useCallback(async () => {
     try {
       const hist = await getWeightHistory(profile.id);
       setHistory(hist);
-      if (hist.length > 0) {
-        setCurrentWeight(hist[0].weight);
-        setInputWeight(String(hist[0].weight));
-      }
-      const enabled = await isDailyWeightReminderEnabled();
+      const nextWeight = hist.length > 0 ? hist[0].weight : profile.weight || 0;
+      const nextHeight = profile.height || 0;
+      setCurrentWeight(nextWeight);
+      setInputWeight(nextWeight > 0 ? String(nextWeight) : '');
+      setCurrentHeight(nextHeight);
+      setInputHeight(nextHeight > 0 ? String(nextHeight) : '');
+      const [enabled, creatineEnabled, appSettings] = await Promise.all([
+        isDailyWeightReminderEnabled(),
+        isCreatineReminderEnabled(),
+        getAppSettings(),
+      ]);
       setNotifEnabled(enabled);
-
-      const creatineEnabled = await isCreatineReminderEnabled();
       setCreatineNotifEnabled(creatineEnabled);
+      setSupplementsSummary(
+        buildActiveSupplementsSummary(appSettings.supplements, nextWeight > 0 ? nextWeight : undefined)
+      );
     } catch (e) {
       console.warn('Error loading body stats', e);
     }
-  }, [profile.id]);
+  }, [profile.id, profile.weight, profile.height]);
 
   useEffect(() => {
     if (visible) {
@@ -84,13 +92,14 @@ export const BodyStatsModal: React.FC<BodyStatsModalProps> = ({
   }, [visible, loadData]);
 
   const bmi = useMemo(() => {
-    if (!currentHeight || currentHeight <= 0) return 0;
+    if (!currentHeight || currentHeight <= 0 || !currentWeight || currentWeight <= 0) return 0;
     const heightInMeters = currentHeight / 100;
     const val = currentWeight / (heightInMeters * heightInMeters);
     return Math.round(val * 10) / 10;
   }, [currentWeight, currentHeight]);
 
   const bmiCategory = useMemo(() => {
+    if (bmi <= 0) return 'Uzupełnij wagę i wzrost';
     if (bmi < 18.5) return 'Szczupła sylwetka (budowanie masy)';
     if (bmi < 25) return 'Prawidłowa masa ciała (zdrowy zakres)';
     if (bmi < 30) return 'Masa podwyższona';
@@ -98,7 +107,7 @@ export const BodyStatsModal: React.FC<BodyStatsModalProps> = ({
   }, [bmi]);
 
   const handleAdjustWeight = (delta: number) => {
-    const cur = parseFloat(inputWeight.replace(',', '.')) || currentWeight;
+    const cur = parseFloat(inputWeight.replace(',', '.')) || currentWeight || 70;
     const next = Math.max(30, Math.round((cur + delta) * 10) / 10);
     setInputWeight(String(next));
     try {
@@ -109,7 +118,7 @@ export const BodyStatsModal: React.FC<BodyStatsModalProps> = ({
   const handleSaveWeight = async () => {
     const val = parseFloat(inputWeight.replace(',', '.'));
     if (isNaN(val) || val < 30 || val > 300) {
-      Alert.alert('Błędna waga', 'Podaj poprawną masę ciała w kg (np. 60.1).');
+      Alert.alert('Błędna waga', 'Podaj poprawną masę ciała w kg (np. 72.5).');
       return;
     }
 
@@ -191,11 +200,11 @@ export const BodyStatsModal: React.FC<BodyStatsModalProps> = ({
       if (val && !success) {
         Alert.alert(
           'Brak uprawnień',
-          'Włącz powiadomienia w ustawieniach systemu iOS, aby otrzymywać interaktywne powiadomienia o kreatynie.'
+          'Włącz powiadomienia w ustawieniach systemu, aby otrzymywać interaktywne przypomnienia o suplementacji.'
         );
       }
     } catch (e) {
-      console.warn('Error toggling creatine notif', e);
+      console.warn('Error toggling supplement notif', e);
     }
   };
 
@@ -205,7 +214,7 @@ export const BodyStatsModal: React.FC<BodyStatsModalProps> = ({
       await sendTestCreatineNotification();
       Alert.alert(
         'Powiadomienie testowe wysłane! 💧',
-        'Zablokuj iPhone\'a lub odczekaj 3 sekundy. Na banerze/lockscreenie pojawi się powiadomienie z przyciskami:\n\n• [Wziąłem (5g) ✅]\n• [Nie jeszcze ⏳]\n\nMożesz bezpośrednio z ekranu blokady potwierdzić zażycie!'
+        'Zablokuj telefon lub odczekaj 3 sekundy. Na ekranie blokady pojawią się szybkie akcje potwierdzenia dzisiejszych suplementów:\n\n• [Wziąłem porcję ✅]\n• [Przypomnij wieczorem ⏳]'
       );
     } catch (e) {
       console.warn('Error sending test notif', e);
@@ -224,19 +233,18 @@ export const BodyStatsModal: React.FC<BodyStatsModalProps> = ({
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={{ flex: 1 }}
       >
-        <ScrollView
+        <BottomSheetScrollView
           style={styles.scroll}
           showsVerticalScrollIndicator={false}
-          bounces={false}
-          alwaysBounceVertical={false}
-          overScrollMode="never"
           contentContainerStyle={{ paddingBottom: 40 }}
         >
           {/* KPI Cards Strip */}
             <View style={styles.kpiRow}>
               <View style={[styles.kpiCard, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
                 <Ionicons name="scale-outline" size={20} color={theme.text} />
-                <Text style={[styles.kpiVal, { color: theme.text }]}>{currentWeight} kg</Text>
+                <Text style={[styles.kpiVal, { color: theme.text }]}>
+                  {currentWeight > 0 ? `${currentWeight} kg` : '-'}
+                </Text>
                 <Text style={[styles.kpiLbl, { color: theme.textMuted }]}>Aktualna waga</Text>
               </View>
 
@@ -246,13 +254,17 @@ export const BodyStatsModal: React.FC<BodyStatsModalProps> = ({
                 activeOpacity={0.7}
               >
                 <Ionicons name="resize-outline" size={20} color={theme.text} />
-                <Text style={[styles.kpiVal, { color: theme.text }]}>{currentHeight} cm</Text>
+                <Text style={[styles.kpiVal, { color: theme.text }]}>
+                  {currentHeight > 0 ? `${currentHeight} cm` : '-'}
+                </Text>
                 <Text style={[styles.kpiLbl, { color: theme.textMuted }]}>Wzrost (edytuj)</Text>
               </TouchableOpacity>
 
               <View style={[styles.kpiCard, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
                 <Ionicons name="fitness-outline" size={20} color={theme.text} />
-                <Text style={[styles.kpiVal, { color: theme.text }]}>{bmi}</Text>
+                <Text style={[styles.kpiVal, { color: theme.text }]}>
+                  {bmi > 0 ? bmi : '-'}
+                </Text>
                 <Text style={[styles.kpiLbl, { color: theme.textMuted }]}>Wskaźnik BMI</Text>
               </View>
             </View>
@@ -263,7 +275,9 @@ export const BodyStatsModal: React.FC<BodyStatsModalProps> = ({
               <View style={{ flex: 1 }}>
                 <Text style={[styles.statusTitle, { color: theme.text }]}>{bmiCategory}</Text>
                 <Text style={[styles.statusSub, { color: theme.textMuted }]}>
-                  Przy 180 cm waga 60.1 kg to idealna baza pod budowanie suchej masy mięśniowej (FBW).
+                  {bmi > 0
+                    ? `BMI ${bmi} wyliczone na podstawie wagi ${currentWeight} kg i wzrostu ${currentHeight} cm.`
+                    : 'Wpisz aktualną wagę oraz wzrost, aby wyliczyć wskaźnik BMI i śledzić progres.'}
                 </Text>
               </View>
             </View>
@@ -276,6 +290,8 @@ export const BodyStatsModal: React.FC<BodyStatsModalProps> = ({
                   <TextInput
                     style={[styles.input, { backgroundColor: theme.card, borderColor: theme.border, color: theme.text }]}
                     keyboardType="number-pad"
+                    placeholder="np. 178"
+                    placeholderTextColor={theme.textMuted}
                     value={inputHeight}
                     onChangeText={setInputHeight}
                   />
@@ -312,6 +328,8 @@ export const BodyStatsModal: React.FC<BodyStatsModalProps> = ({
                   <TextInput
                     style={[styles.weightInputText, { color: theme.text }]}
                     keyboardType="decimal-pad"
+                    placeholder="72.5"
+                    placeholderTextColor={theme.textMuted}
                     value={inputWeight}
                     onChangeText={setInputWeight}
                   />
@@ -360,17 +378,17 @@ export const BodyStatsModal: React.FC<BodyStatsModalProps> = ({
               />
             </View>
 
-            {/* Creatine Interactive Reminder (09:00 & 22:00) */}
+            {/* Supplement Interactive Reminder */}
             <View style={[styles.notifRow, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
               <View style={styles.notifIconWrap}>
                 <Ionicons name="water-outline" size={20} color={theme.text} />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={[styles.notifTitle, { color: theme.text }]}>
-                  Kreatyna 5g (09:00 / 22:00)
+                  Przypomnienia o suplementacji
                 </Text>
                 <Text style={[styles.notifSub, { color: theme.textMuted }]}>
-                  Interaktywne z poziomu lockscreena. Pyta o 09:00, a jeśli zaznaczysz „Nie jeszcze” — zapyta o 22:00.
+                  {supplementsSummary} • interaktywnie z ekranu blokady (dawki skonfigurujesz w Ustawieniach)
                 </Text>
               </View>
               <Switch
@@ -453,7 +471,7 @@ export const BodyStatsModal: React.FC<BodyStatsModalProps> = ({
                 })
               )}
             </View>
-          </ScrollView>
+          </BottomSheetScrollView>
         </KeyboardAvoidingView>
     </InteractiveBottomSheet>
   );

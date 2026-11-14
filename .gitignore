@@ -40,8 +40,10 @@ yarn-error.*
 # /ios
 /android
 
-# Private personal routine
+# Private personal routine & device seed
 src/data/myPlan.ts
+src/data/localSeed.ts
+seeds/
 
 # Vercel
 .vercel

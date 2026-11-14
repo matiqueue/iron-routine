@@ -5,36 +5,53 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Image,
-  LayoutAnimation,
-  Platform,
-  UIManager,
   Animated,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import * as Haptics from 'expo-haptics';
 import { useAppTheme } from '../context/ThemeContext';
 import { DAYS_OF_WEEK, WORKOUT_PLAN } from '../data/planData';
-import { Exercise, DayPlan } from '../types/workout';
+import { getDayBannerTagMeta, resolveDayBannerTag } from '../data/dayTags';
+import { Exercise, DayPlan, PRRecord, WorkoutPlan } from '../types/workout';
 import { ExerciseDetailModal } from './ExerciseDetailModal';
-
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
+import { PlanDayEditorModal } from './PlanDayEditorModal';
+import { ExerciseLibraryModal } from './ExerciseLibraryModal';
+import { DayBannerArtwork } from './DayBannerArtwork';
+import { DayExercisePreviewList } from './DayExercisePreviewList';
+import { updateDayInPlan } from '../services/storage';
+import { triggerSelectionHaptic } from '../services/haptics';
 
 interface PlanTabProps {
+  profileId?: string;
+  activePlan?: WorkoutPlan | null;
+  allPlansCount?: number;
+  extraLibraryExercises?: Exercise[];
+  bestPRs?: { [exerciseId: string]: PRRecord };
+  onOpenPlanManager?: () => void;
+  onPlanUpdated?: () => Promise<void> | void;
+  onLibraryChanged?: () => void;
   onSelectExerciseForPR?: (exercise: Exercise) => void;
   onStartWorkoutForDay?: (dayId: string) => void;
 }
 
 export const PlanTab: React.FC<PlanTabProps> = ({
+  profileId,
+  activePlan,
+  allPlansCount = 1,
+  extraLibraryExercises = [],
+  bestPRs = {},
+  onOpenPlanManager,
+  onPlanUpdated,
+  onLibraryChanged,
   onSelectExerciseForPR,
   onStartWorkoutForDay,
 }) => {
-  const { theme, isDark } = useAppTheme();
+  const { theme } = useAppTheme();
   const [selectedDayId, setSelectedDayId] = useState<string>('mon');
-  const [expandedExerciseId, setExpandedExerciseId] = useState<string | null>(null);
   const [modalExercise, setModalExercise] = useState<Exercise | null>(null);
+  const [editingDay, setEditingDay] = useState(false);
+  const [showLibrary, setShowLibrary] = useState(false);
+
+  const planDays: DayPlan[] = activePlan?.days?.length ? activePlan.days : WORKOUT_PLAN;
 
   // Smooth animated transition when switching days
   const contentFadeAnim = useRef(new Animated.Value(1)).current;
@@ -42,14 +59,11 @@ export const PlanTab: React.FC<PlanTabProps> = ({
 
   const handleSelectDay = (dayId: string) => {
     if (dayId === selectedDayId) return;
-    try {
-      Haptics.selectionAsync();
-    } catch {}
+    triggerSelectionHaptic();
 
     contentFadeAnim.setValue(0);
     contentSlideAnim.setValue(10);
     setSelectedDayId(dayId);
-    setExpandedExerciseId(null);
 
     Animated.parallel([
       Animated.timing(contentFadeAnim, {
@@ -67,22 +81,83 @@ export const PlanTab: React.FC<PlanTabProps> = ({
   };
 
   const currentPlan: DayPlan =
-    WORKOUT_PLAN.find((d) => d.id === selectedDayId) || WORKOUT_PLAN[0];
+    planDays.find((d) => d.id === selectedDayId) || planDays[0];
+  const currentDayMeta =
+    DAYS_OF_WEEK.find((d) => d.id === currentPlan.id) || DAYS_OF_WEEK[0];
+  const resolvedBannerTag = resolveDayBannerTag(currentPlan);
+  const tagMeta = getDayBannerTagMeta(resolvedBannerTag);
 
-  const toggleExpand = (id: string) => {
-    Haptics.selectionAsync();
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setExpandedExerciseId((prev) => (prev === id ? null : id));
+  const handleSaveEditedDay = async (updatedDay: DayPlan) => {
+    if (!activePlan) return;
+    await updateDayInPlan(activePlan.id, updatedDay, profileId);
+    await onPlanUpdated?.();
   };
 
   return (
     <View style={[styles.container, { backgroundColor: theme.bg }]}>
-      {/* Editorial Title */}
+      {/* Editorial Title + Plan Switcher */}
       <View style={styles.header}>
-        <Text style={[styles.title, { color: theme.text }]}>Plan treningowy</Text>
-        <Text style={[styles.subtitle, { color: theme.textMuted }]}>
-          Rozkład tygodnia • Technika • Progres
-        </Text>
+        <View style={styles.headerTopRow}>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={[styles.title, { color: theme.text }]}>Plan treningowy</Text>
+            <Text style={[styles.subtitle, { color: theme.textMuted }]} numberOfLines={1}>
+              Rozkład tygodnia • Technika • Konfigurator
+            </Text>
+          </View>
+
+          <TouchableOpacity
+            style={[
+              styles.libraryBtn,
+              { backgroundColor: theme.bgSecondary, borderColor: theme.border },
+            ]}
+            onPress={() => {
+              triggerSelectionHaptic();
+              setShowLibrary(true);
+            }}
+            activeOpacity={0.75}
+          >
+            <Ionicons name="barbell-outline" size={16} color={theme.text} />
+            <Text style={[styles.libraryBtnText, { color: theme.text }]}>Baza</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.planControlsRow}>
+          <TouchableOpacity
+            style={[
+              styles.planSelectorPill,
+              { backgroundColor: theme.bgSecondary, borderColor: theme.border },
+            ]}
+            onPress={() => {
+              triggerSelectionHaptic();
+              onOpenPlanManager?.();
+            }}
+            activeOpacity={0.75}
+          >
+            <Ionicons name="layers-outline" size={15} color={theme.text} />
+            <Text style={[styles.planSelectorText, { color: theme.text }]} numberOfLines={1}>
+              {activePlan?.name || 'Mój Plan'}
+            </Text>
+            <Text style={[styles.planCountBadge, { color: theme.textMuted }]}>
+              ({allPlansCount})
+            </Text>
+            <Ionicons name="chevron-down" size={14} color={theme.textMuted} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.editDayHeaderBtn,
+              { backgroundColor: theme.bgSecondary, borderColor: theme.border },
+            ]}
+            onPress={() => {
+              triggerSelectionHaptic();
+              setEditingDay(true);
+            }}
+            activeOpacity={0.75}
+          >
+            <Ionicons name="create-outline" size={15} color={theme.text} />
+            <Text style={[styles.editDayHeaderBtnText, { color: theme.text }]}>Edytuj dzień</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Day Selector Pills */}
@@ -94,7 +169,7 @@ export const PlanTab: React.FC<PlanTabProps> = ({
         >
           {DAYS_OF_WEEK.map((day) => {
             const isSelected = day.id === selectedDayId;
-            const plan = WORKOUT_PLAN.find((p) => p.id === day.id);
+            const plan = planDays.find((p) => p.id === day.id);
             const isRest = plan?.type === 'rest';
 
             return (
@@ -144,46 +219,58 @@ export const PlanTab: React.FC<PlanTabProps> = ({
             transform: [{ translateY: contentSlideAnim }],
           }}
         >
-        {/* Banner with image */}
-        {currentPlan.bannerUrl ? (
-          <View style={styles.bannerWrapper}>
-            <Image
-              source={{ uri: currentPlan.bannerUrl }}
-              style={styles.bannerImage}
-              resizeMode="cover"
-            />
-            <View
-              style={[
-                styles.bannerOverlay,
-                { backgroundColor: isDark ? 'rgba(0,0,0,0.72)' : 'rgba(0,0,0,0.52)' },
-              ]}
-            >
-              <View style={styles.bannerBadge}>
-                <Text style={styles.bannerBadgeText}>
-                  {currentPlan.type === 'rest' ? 'REGENERACJA' : 'TRENING SIŁOWY'}
-                </Text>
-              </View>
-              <Text style={styles.bannerTitle}>{currentPlan.name}</Text>
-              <Text style={styles.bannerSubtitle}>{currentPlan.subtitle}</Text>
-              <View style={styles.bannerMetaRow}>
-                <View style={styles.metaTimeWrap}>
-                  <Ionicons name="time-outline" size={13} color="#FFFFFF" />
-                  <Text style={styles.bannerMetaText}>{currentPlan.time}</Text>
-                </View>
-                {currentPlan.exercises && (
-                  <>
-                    <Text style={styles.bannerMetaDot}>•</Text>
-                    <Text style={styles.bannerMetaText}>{currentPlan.exercises.length} ćwiczeń</Text>
-                    <Text style={styles.bannerMetaDot}>•</Text>
-                    <Text style={styles.bannerMetaText}>
-                      {currentPlan.exercises.reduce((acc, e) => acc + e.sets, 0)} serii
-                    </Text>
-                  </>
-                )}
-              </View>
+        {/* Universal Tagged Monochrome Graphic Banner */}
+        <View
+          style={[
+            styles.monoBannerCard,
+            { backgroundColor: theme.bgSecondary, borderColor: theme.border },
+          ]}
+        >
+          <DayBannerArtwork tag={resolvedBannerTag} />
+
+          <View style={styles.monoBannerTop}>
+            <View style={[styles.monoBannerBadge, { backgroundColor: theme.primary }]}>
+              <Text style={[styles.monoBannerBadgeText, { color: theme.primaryText }]}>
+                {tagMeta.badge}
+              </Text>
             </View>
+            <Ionicons
+              name={(tagMeta.icon as any) || (currentPlan.iconName as any) || 'barbell-outline'}
+              size={22}
+              color={theme.text}
+            />
           </View>
-        ) : null}
+
+          <Text style={[styles.monoBannerTitle, { color: theme.text }]}>
+            {currentPlan.name}
+          </Text>
+          {currentPlan.subtitle ? (
+            <Text style={[styles.monoBannerSubtitle, { color: theme.textSecondary }]}>
+              {currentPlan.subtitle}
+            </Text>
+          ) : null}
+
+          <View style={styles.bannerMetaRow}>
+            <View style={styles.metaTimeWrap}>
+              <Ionicons name="time-outline" size={13} color={theme.textMuted} />
+              <Text style={[styles.monoMetaText, { color: theme.textSecondary }]}>
+                {currentPlan.time}
+              </Text>
+            </View>
+            {currentPlan.type === 'workout' && (
+              <>
+                <Text style={[styles.monoMetaDot, { color: theme.textMuted }]}>•</Text>
+                <Text style={[styles.monoMetaText, { color: theme.textSecondary }]}>
+                  {currentPlan.exercises?.length || 0} ćwiczeń
+                </Text>
+                <Text style={[styles.monoMetaDot, { color: theme.textMuted }]}>•</Text>
+                <Text style={[styles.monoMetaText, { color: theme.textSecondary }]}>
+                  {(currentPlan.exercises || []).reduce((acc, e) => acc + e.sets, 0)} serii
+                </Text>
+              </>
+            )}
+          </View>
+        </View>
 
         {/* Warmup advice */}
         {currentPlan.warmup ? (
@@ -199,129 +286,60 @@ export const PlanTab: React.FC<PlanTabProps> = ({
         ) : null}
 
         {/* Start workout button */}
-        {currentPlan.type === 'workout' && onStartWorkoutForDay && (
-          <TouchableOpacity
-            style={[styles.startWorkoutBtn, { backgroundColor: theme.primary }]}
-            onPress={() => onStartWorkoutForDay(currentPlan.id)}
-            activeOpacity={0.8}
-          >
-            <Ionicons name="play" size={16} color={theme.primaryText} />
-            <Text style={[styles.startWorkoutBtnText, { color: theme.primaryText }]}>
-              ROZPOCZNIJ TEN TRENING
-            </Text>
-          </TouchableOpacity>
-        )}
+        {currentPlan.type === 'workout' &&
+          currentPlan.exercises &&
+          currentPlan.exercises.length > 0 &&
+          onStartWorkoutForDay && (
+            <TouchableOpacity
+              style={[styles.startWorkoutBtn, { backgroundColor: theme.primary }]}
+              onPress={() => onStartWorkoutForDay(currentPlan.id)}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="play" size={16} color={theme.primaryText} />
+              <Text style={[styles.startWorkoutBtnText, { color: theme.primaryText }]}>
+                ROZPOCZNIJ TEN TRENING
+              </Text>
+            </TouchableOpacity>
+          )}
 
-        {/* Exercise List */}
+        {/* Empty workout day prompt */}
+        {currentPlan.type === 'workout' &&
+          (!currentPlan.exercises || currentPlan.exercises.length === 0) && (
+            <TouchableOpacity
+              style={[
+                styles.emptyDayCard,
+                { backgroundColor: theme.bgSecondary, borderColor: theme.border },
+              ]}
+              onPress={() => setEditingDay(true)}
+              activeOpacity={0.75}
+            >
+              <Ionicons name="add-circle-outline" size={28} color={theme.text} />
+              <Text style={[styles.emptyDayTitle, { color: theme.text }]}>
+                Ten dzień nie ma jeszcze ćwiczeń
+              </Text>
+              <Text style={[styles.emptyDaySub, { color: theme.textMuted }]}>
+                Dotknij, aby dobrać ćwiczenia z bazy siłowni lub zmienić dzień na regenerację.
+              </Text>
+            </TouchableOpacity>
+          )}
+
+        {/* Upgraded Athletic Exercise List */}
         {currentPlan.exercises && currentPlan.exercises.length > 0 && (
           <View style={styles.exerciseSection}>
             <View style={[styles.sectionDivider, { borderTopColor: theme.hairline }]}>
               <Text style={[styles.sectionTitle, { color: theme.textMuted }]}>
-                ĆWICZENIA ({currentPlan.exercises.length})
+                ĆWICZENIA W DNIU ({currentPlan.exercises.length})
               </Text>
               <Text style={[styles.sectionHint, { color: theme.textMuted }]}>
-                Dotknij, aby rozwinąć
+                Dotknij po technikę i PR
               </Text>
             </View>
 
-            {currentPlan.exercises.map((exercise) => {
-              const isExpanded = expandedExerciseId === exercise.id;
-
-              return (
-                <View
-                  key={exercise.id}
-                  style={[
-                    styles.exerciseItem,
-                    { borderBottomColor: theme.hairline },
-                    isExpanded && { backgroundColor: theme.bgSecondary, borderRadius: 16, marginVertical: 8, paddingHorizontal: 16 },
-                  ]}
-                >
-                  <TouchableOpacity
-                    style={styles.exerciseHeaderRow}
-                    onPress={() => toggleExpand(exercise.id)}
-                    activeOpacity={0.7}
-                  >
-                    <View style={styles.exerciseInfo}>
-                      <Text style={[styles.exerciseName, { color: theme.text }]}>
-                        {exercise.name}
-                      </Text>
-                      <View style={styles.metaRow}>
-                        <View style={[styles.categoryTag, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
-                          <Text style={[styles.categoryTagText, { color: theme.textSecondary }]}>
-                            {exercise.category.toUpperCase()}
-                          </Text>
-                        </View>
-                        <Text style={[styles.repsInfo, { color: theme.textSecondary }]}>
-                          {exercise.sets} serie × {exercise.reps}
-                        </Text>
-                        <View style={styles.restTagWrap}>
-                          <Ionicons name="time-outline" size={13} color={theme.textMuted} />
-                          <Text style={[styles.restPill, { color: theme.textMuted }]}>
-                            {exercise.rest}s
-                          </Text>
-                        </View>
-                      </View>
-                    </View>
-
-                    <Ionicons
-                      name={isExpanded ? 'chevron-up' : 'chevron-down'}
-                      size={20}
-                      color={isExpanded ? theme.text : theme.textMuted}
-                    />
-                  </TouchableOpacity>
-
-                  {/* Expanded detail - ONLY SHOW IMAGE WHEN EXPANDED */}
-                  {isExpanded && (
-                    <View style={styles.expandedContent}>
-                      {/* Full preview image */}
-                      {exercise.imageUrl ? (
-                        <View style={styles.largeImgWrap}>
-                          <Image
-                            source={{ uri: exercise.imageUrl }}
-                            style={styles.largeImg}
-                            resizeMode="cover"
-                          />
-                          <TouchableOpacity
-                            style={[styles.fullImgBtn, { backgroundColor: isDark ? '#000000' : '#FFFFFF' }]}
-                            onPress={() => setModalExercise(exercise)}
-                          >
-                            <Ionicons name="expand" size={13} color={theme.text} />
-                            <Text style={[styles.fullImgBtnText, { color: theme.text }]}>
-                              Pełny opis
-                            </Text>
-                          </TouchableOpacity>
-                        </View>
-                      ) : null}
-
-                      <Text style={[styles.expandedDesc, { color: theme.textSecondary }]}>
-                        {exercise.description}
-                      </Text>
-
-                      {exercise.note ? (
-                        <View style={[styles.expandedTip, { borderLeftColor: theme.text }]}>
-                          <Text style={[styles.expandedTipText, { color: theme.textMuted }]}>
-                            {exercise.note}
-                          </Text>
-                        </View>
-                      ) : null}
-
-                      {onSelectExerciseForPR && (
-                        <TouchableOpacity
-                          style={[styles.prActionBtn, { backgroundColor: theme.primary }]}
-                          onPress={() => onSelectExerciseForPR(exercise)}
-                          activeOpacity={0.8}
-                        >
-                          <Ionicons name="trophy-outline" size={16} color={theme.primaryText} />
-                          <Text style={[styles.prActionBtnText, { color: theme.primaryText }]}>
-                            Zapisz lub zobacz rekord w Osiągach
-                          </Text>
-                        </TouchableOpacity>
-                      )}
-                    </View>
-                  )}
-                </View>
-              );
-            })}
+            <DayExercisePreviewList
+              exercises={currentPlan.exercises}
+              bestPRs={bestPRs}
+              onPressExercise={(exercise) => setModalExercise(exercise)}
+            />
           </View>
         )}
         </Animated.View>
@@ -332,6 +350,24 @@ export const PlanTab: React.FC<PlanTabProps> = ({
         exercise={modalExercise}
         onClose={() => setModalExercise(null)}
         onOpenPR={onSelectExerciseForPR}
+      />
+
+      <PlanDayEditorModal
+        visible={editingDay}
+        onClose={() => setEditingDay(false)}
+        dayPlan={currentPlan}
+        dayLabel={currentDayMeta.label}
+        extraExercises={extraLibraryExercises}
+        onSaveDay={handleSaveEditedDay}
+        onLibraryChanged={onLibraryChanged}
+      />
+
+      <ExerciseLibraryModal
+        visible={showLibrary}
+        onClose={() => setShowLibrary(false)}
+        mode="manage"
+        extraExercises={extraLibraryExercises}
+        onLibraryChanged={onLibraryChanged}
       />
     </View>
   );
@@ -385,9 +421,9 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   contentInner: {
-    paddingHorizontal: 20,
-    paddingTop: 18,
-    paddingBottom: 85,
+    paddingHorizontal: 18,
+    paddingTop: 16,
+    paddingBottom: 112,
   },
   bannerWrapper: {
     width: '100%',
@@ -613,5 +649,122 @@ const styles = StyleSheet.create({
   prActionBtnText: {
     fontSize: 14,
     fontWeight: '800',
+  },
+  headerTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  libraryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  libraryBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  planControlsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 12,
+  },
+  planSelectorPill: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  planSelectorText: {
+    fontSize: 13,
+    fontWeight: '800',
+    flexShrink: 1,
+  },
+  planCountBadge: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  editDayHeaderBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  editDayHeaderBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  monoBannerCard: {
+    borderRadius: 20,
+    borderWidth: 1,
+    padding: 18,
+    marginBottom: 20,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  monoBannerTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  monoBannerBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  monoBannerBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.6,
+  },
+  monoBannerTitle: {
+    fontSize: 26,
+    fontWeight: '900',
+    letterSpacing: -0.5,
+    lineHeight: 31,
+  },
+  monoBannerSubtitle: {
+    fontSize: 14,
+    marginTop: 4,
+  },
+  monoMetaText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  monoMetaDot: {
+    fontSize: 11,
+  },
+  emptyDayCard: {
+    borderRadius: 16,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    padding: 24,
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 20,
+  },
+  emptyDayTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    marginTop: 4,
+  },
+  emptyDaySub: {
+    fontSize: 13,
+    textAlign: 'center',
+    lineHeight: 19,
   },
 });

@@ -1,10 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import * as Haptics from 'expo-haptics';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAppTheme } from '../context/ThemeContext';
 import { DayPlan } from '../types/workout';
+import { getDayBannerTagMeta, resolveDayBannerTag } from '../data/dayTags';
+import { triggerImpactHaptic } from '../services/haptics';
+import { DayBannerArtwork } from './DayBannerArtwork';
+import { AnimatedIcon } from './AnimatedIcon';
 
 interface RestDayViewProps {
   dayPlan: DayPlan;
@@ -34,25 +37,36 @@ export const RestDayView: React.FC<RestDayViewProps> = ({ dayPlan }) => {
   const toggleHabit = async (key: string) => {
     const updated = { ...habits, [key]: !habits[key] };
     setHabits(updated);
+    triggerImpactHaptic('light');
     try {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       await AsyncStorage.setItem(storageKey, JSON.stringify(updated));
     } catch {}
   };
 
+  const bannerTag = resolveDayBannerTag(dayPlan);
+  const tagMeta = getDayBannerTagMeta(bannerTag);
+
   return (
     <View style={[styles.container, { backgroundColor: theme.bg }]}>
-      <View style={styles.hero}>
-        <Ionicons
-          name={(dayPlan.iconName as any) || 'bed-outline'}
-          size={32}
-          color={theme.text}
-          style={{ marginBottom: 8 }}
-        />
-        <Text style={[styles.tag, { color: theme.textMuted }]}>REGENERACJA</Text>
-        <Text style={[styles.title, { color: theme.text }]}>{dayPlan.name}</Text>
-        <Text style={[styles.subtitle, { color: theme.textSecondary }]}>{dayPlan.subtitle}</Text>
-        <Text style={[styles.desc, { color: theme.textMuted }]}>{dayPlan.warmup}</Text>
+      <View style={[styles.heroCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+        <View style={StyleSheet.absoluteFill} pointerEvents="none">
+          <DayBannerArtwork tag={bannerTag} compact />
+        </View>
+        <View style={styles.hero}>
+          <View style={[styles.tagBadge, { backgroundColor: theme.primary }]}>
+            <Ionicons name={tagMeta.icon as any} size={11} color={theme.primaryText} />
+            <Text style={[styles.tag, { color: theme.primaryText }]}>
+              {tagMeta.label.toUpperCase()}
+            </Text>
+          </View>
+          <Text style={[styles.title, { color: theme.text }]}>{dayPlan.name}</Text>
+          {dayPlan.subtitle ? (
+            <Text style={[styles.subtitle, { color: theme.textSecondary }]}>{dayPlan.subtitle}</Text>
+          ) : null}
+          {dayPlan.warmup ? (
+            <Text style={[styles.desc, { color: theme.textMuted }]}>{dayPlan.warmup}</Text>
+          ) : null}
+        </View>
       </View>
 
       <Text style={[styles.sectionTitle, { color: theme.textMuted }]}>CELE REGENERACYJNE</Text>
@@ -70,7 +84,13 @@ export const RestDayView: React.FC<RestDayViewProps> = ({ dayPlan }) => {
           onPress={() => toggleHabit('walk')}
         >
           <View style={styles.habitIconCol}>
-            <Ionicons name="footsteps-outline" size={20} color={theme.text} />
+            <AnimatedIcon
+              name="footsteps-outline"
+              preset="footsteps"
+              size={20}
+              color={theme.text}
+              active={!habits.walk}
+            />
           </View>
           <View style={styles.habitTextCol}>
             <Text style={[styles.habitTitle, { color: theme.text }]}>Aktywny spacer</Text>
@@ -121,7 +141,13 @@ export const RestDayView: React.FC<RestDayViewProps> = ({ dayPlan }) => {
         onPress={() => toggleHabit('sleep')}
       >
         <View style={styles.habitIconCol}>
-          <Ionicons name="moon-outline" size={20} color={theme.text} />
+          <AnimatedIcon
+            name="moon-outline"
+            preset="moon"
+            size={20}
+            color={theme.text}
+            active={!habits.sleep}
+          />
         </View>
         <View style={styles.habitTextCol}>
           <Text style={[styles.habitTitle, { color: theme.text }]}>Głęboki sen</Text>
@@ -139,17 +165,32 @@ export const RestDayView: React.FC<RestDayViewProps> = ({ dayPlan }) => {
 
 const styles = StyleSheet.create({
   container: {
-    paddingHorizontal: 20,
-    paddingTop: 12,
+    paddingTop: 2,
+  },
+  heroCard: {
+    borderRadius: 20,
+    borderWidth: 1,
+    overflow: 'hidden',
+    minHeight: 145,
+    justifyContent: 'flex-end',
   },
   hero: {
-    paddingVertical: 16,
+    padding: 18,
+  },
+  tagBadge: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 7,
+    marginBottom: 10,
   },
   tag: {
     fontSize: 10,
-    fontWeight: '800',
+    fontWeight: '900',
     letterSpacing: 0.8,
-    marginBottom: 4,
   },
   title: {
     fontSize: 26,
