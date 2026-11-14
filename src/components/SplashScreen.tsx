@@ -64,7 +64,7 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onFinish }) => {
 
         <Text style={[styles.title, { color: theme.text }]}>IRON ROUTINE</Text>
         <Text style={[styles.subtitle, { color: theme.textMuted }]}>
-          SZYMON GÓRAL • PLAN TRENINGOWY
+          TWOJA RUTYNA • 100% OFFLINE
         </Text>
 
         <View style={styles.progressArea}>

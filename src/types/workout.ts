@@ -1,5 +1,7 @@
 export type MuscleCategory = 'klatka' | 'plecy' | 'nogi' | 'barki' | 'ramiona' | 'brzuch' | 'ogolne';
 
+export type EquipmentType = 'Sztanga' | 'Hantle' | 'Maszyna' | 'Wyciąg' | 'Masa ciała' | 'Inne';
+
 export interface Exercise {
   id: string;
   name: string;
@@ -11,6 +13,8 @@ export interface Exercise {
   description: string;
   imageUrl: string;
   ab?: boolean;
+  equipment?: EquipmentType;
+  isCustom?: boolean;
 }
 
 export type DayType = 'workout' | 'walk' | 'rest';
@@ -26,6 +30,19 @@ export interface DayPlan {
   type: DayType;
   warmup?: string;
   exercises?: Exercise[];
+}
+
+export type PlanTemplateKey = 'blank' | 'fbw3' | 'ppl' | 'upper_lower' | 'clone_current';
+
+export interface WorkoutPlan {
+  id: string;
+  name: string;
+  subtitle?: string;
+  description?: string;
+  days: DayPlan[];
+  isDefault?: boolean;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface SetEntry {
@@ -72,7 +89,45 @@ export interface WorkoutHistoryEntry {
   date: string; // YYYY-MM-DD
   dayId: string;
   dayName: string;
+  planId?: string;
+  planName?: string;
   completedSets: number;
   totalSets: number;
   durationMinutes?: number;
+  totalVolumeKg?: number;
+}
+
+export interface NewPRHighlight {
+  exerciseId: string;
+  exerciseName: string;
+  weight: number;
+  reps: number;
+  estimated1RM: number;
+}
+
+export interface MuscleVolumeStat {
+  category: MuscleCategory;
+  label: string;
+  plannedSets: number;
+  completedSets: number;
+  volumeKg: number;
+}
+
+export interface DayMetaInfo {
+  id: string;
+  label: string;
+  short: string;
+}
+
+export interface ProfileBackupPayload {
+  version: 2;
+  app: 'iron-routine';
+  exportedAt: string;
+  profile: UserProfile;
+  plans: WorkoutPlan[];
+  activePlanId?: string;
+  customExercises: Exercise[];
+  prRecords: { [exerciseId: string]: PRRecord[] };
+  history: WorkoutHistoryEntry[];
+  weightHistory: WeightEntry[];
 }

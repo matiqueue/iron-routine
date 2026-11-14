@@ -15,19 +15,36 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useAppTheme } from '../context/ThemeContext';
 import { DAYS_OF_WEEK, WORKOUT_PLAN } from '../data/planData';
-import { Exercise, DayPlan } from '../types/workout';
+import { Exercise, DayPlan, WorkoutPlan } from '../types/workout';
 import { ExerciseDetailModal } from './ExerciseDetailModal';
+import { PlanDayEditorModal } from './PlanDayEditorModal';
+import { ExerciseLibraryModal } from './ExerciseLibraryModal';
+import { updateDayInPlan } from '../services/storage';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
 interface PlanTabProps {
+  profileId?: string;
+  activePlan?: WorkoutPlan | null;
+  allPlansCount?: number;
+  extraLibraryExercises?: Exercise[];
+  onOpenPlanManager?: () => void;
+  onPlanUpdated?: () => Promise<void> | void;
+  onLibraryChanged?: () => void;
   onSelectExerciseForPR?: (exercise: Exercise) => void;
   onStartWorkoutForDay?: (dayId: string) => void;
 }
 
 export const PlanTab: React.FC<PlanTabProps> = ({
+  profileId,
+  activePlan,
+  allPlansCount = 1,
+  extraLibraryExercises = [],
+  onOpenPlanManager,
+  onPlanUpdated,
+  onLibraryChanged,
   onSelectExerciseForPR,
   onStartWorkoutForDay,
 }) => {
@@ -35,6 +52,10 @@ export const PlanTab: React.FC<PlanTabProps> = ({
   const [selectedDayId, setSelectedDayId] = useState<string>('mon');
   const [expandedExerciseId, setExpandedExerciseId] = useState<string | null>(null);
   const [modalExercise, setModalExercise] = useState<Exercise | null>(null);
+  const [editingDay, setEditingDay] = useState(false);
+  const [showLibrary, setShowLibrary] = useState(false);
+
+  const planDays: DayPlan[] = activePlan?.days?.length ? activePlan.days : WORKOUT_PLAN;
 
   // Smooth animated transition when switching days
   const contentFadeAnim = useRef(new Animated.Value(1)).current;
@@ -67,7 +88,15 @@ export const PlanTab: React.FC<PlanTabProps> = ({
   };
 
   const currentPlan: DayPlan =
-    WORKOUT_PLAN.find((d) => d.id === selectedDayId) || WORKOUT_PLAN[0];
+    planDays.find((d) => d.id === selectedDayId) || planDays[0];
+  const currentDayMeta =
+    DAYS_OF_WEEK.find((d) => d.id === currentPlan.id) || DAYS_OF_WEEK[0];
+
+  const handleSaveEditedDay = async (updatedDay: DayPlan) => {
+    if (!activePlan) return;
+    await updateDayInPlan(activePlan.id, updatedDay, profileId);
+    await onPlanUpdated?.();
+  };
 
   const toggleExpand = (id: string) => {
     Haptics.selectionAsync();
@@ -77,12 +106,75 @@ export const PlanTab: React.FC<PlanTabProps> = ({
 
   return (
     <View style={[styles.container, { backgroundColor: theme.bg }]}>
-      {/* Editorial Title */}
+      {/* Editorial Title + Plan Switcher */}
       <View style={styles.header}>
-        <Text style={[styles.title, { color: theme.text }]}>Plan treningowy</Text>
-        <Text style={[styles.subtitle, { color: theme.textMuted }]}>
-          Rozkład tygodnia • Technika • Progres
-        </Text>
+        <View style={styles.headerTopRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.title, { color: theme.text }]}>Plan treningowy</Text>
+            <Text style={[styles.subtitle, { color: theme.textMuted }]}>
+              Rozkład tygodnia • Technika • Konfigurator
+            </Text>
+          </View>
+
+          <TouchableOpacity
+            style={[
+              styles.libraryBtn,
+              { backgroundColor: theme.bgSecondary, borderColor: theme.border },
+            ]}
+            onPress={() => {
+              try {
+                Haptics.selectionAsync();
+              } catch {}
+              setShowLibrary(true);
+            }}
+            activeOpacity={0.75}
+          >
+            <Ionicons name="barbell-outline" size={16} color={theme.text} />
+            <Text style={[styles.libraryBtnText, { color: theme.text }]}>Baza</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.planControlsRow}>
+          <TouchableOpacity
+            style={[
+              styles.planSelectorPill,
+              { backgroundColor: theme.bgSecondary, borderColor: theme.border },
+            ]}
+            onPress={() => {
+              try {
+                Haptics.selectionAsync();
+              } catch {}
+              onOpenPlanManager?.();
+            }}
+            activeOpacity={0.75}
+          >
+            <Ionicons name="layers-outline" size={15} color={theme.text} />
+            <Text style={[styles.planSelectorText, { color: theme.text }]} numberOfLines={1}>
+              {activePlan?.name || 'Mój Plan'}
+            </Text>
+            <Text style={[styles.planCountBadge, { color: theme.textMuted }]}>
+              ({allPlansCount})
+            </Text>
+            <Ionicons name="chevron-down" size={14} color={theme.textMuted} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.editDayHeaderBtn,
+              { backgroundColor: theme.bgSecondary, borderColor: theme.border },
+            ]}
+            onPress={() => {
+              try {
+                Haptics.selectionAsync();
+              } catch {}
+              setEditingDay(true);
+            }}
+            activeOpacity={0.75}
+          >
+            <Ionicons name="create-outline" size={15} color={theme.text} />
+            <Text style={[styles.editDayHeaderBtnText, { color: theme.text }]}>Edytuj dzień</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Day Selector Pills */}
@@ -94,7 +186,7 @@ export const PlanTab: React.FC<PlanTabProps> = ({
         >
           {DAYS_OF_WEEK.map((day) => {
             const isSelected = day.id === selectedDayId;
-            const plan = WORKOUT_PLAN.find((p) => p.id === day.id);
+            const plan = planDays.find((p) => p.id === day.id);
             const isRest = plan?.type === 'rest';
 
             return (
@@ -160,17 +252,23 @@ export const PlanTab: React.FC<PlanTabProps> = ({
             >
               <View style={styles.bannerBadge}>
                 <Text style={styles.bannerBadgeText}>
-                  {currentPlan.type === 'rest' ? 'REGENERACJA' : 'TRENING SIŁOWY'}
+                  {currentPlan.type === 'rest'
+                    ? 'REGENERACJA'
+                    : currentPlan.type === 'walk'
+                    ? 'AKTYWNOŚĆ'
+                    : 'TRENING SIŁOWY'}
                 </Text>
               </View>
               <Text style={styles.bannerTitle}>{currentPlan.name}</Text>
-              <Text style={styles.bannerSubtitle}>{currentPlan.subtitle}</Text>
+              {currentPlan.subtitle ? (
+                <Text style={styles.bannerSubtitle}>{currentPlan.subtitle}</Text>
+              ) : null}
               <View style={styles.bannerMetaRow}>
                 <View style={styles.metaTimeWrap}>
                   <Ionicons name="time-outline" size={13} color="#FFFFFF" />
                   <Text style={styles.bannerMetaText}>{currentPlan.time}</Text>
                 </View>
-                {currentPlan.exercises && (
+                {currentPlan.exercises && currentPlan.exercises.length > 0 && (
                   <>
                     <Text style={styles.bannerMetaDot}>•</Text>
                     <Text style={styles.bannerMetaText}>{currentPlan.exercises.length} ćwiczeń</Text>
@@ -183,7 +281,61 @@ export const PlanTab: React.FC<PlanTabProps> = ({
               </View>
             </View>
           </View>
-        ) : null}
+        ) : (
+          <View
+            style={[
+              styles.monoBannerCard,
+              { backgroundColor: theme.bgSecondary, borderColor: theme.border },
+            ]}
+          >
+            <View style={styles.monoBannerTop}>
+              <View style={[styles.monoBannerBadge, { backgroundColor: theme.primary }]}>
+                <Text style={[styles.monoBannerBadgeText, { color: theme.primaryText }]}>
+                  {currentPlan.type === 'rest'
+                    ? 'REGENERACJA'
+                    : currentPlan.type === 'walk'
+                    ? 'AKTYWNOŚĆ'
+                    : 'TRENING SIŁOWY'}
+                </Text>
+              </View>
+              <Ionicons
+                name={(currentPlan.iconName as any) || 'barbell-outline'}
+                size={22}
+                color={theme.text}
+              />
+            </View>
+
+            <Text style={[styles.monoBannerTitle, { color: theme.text }]}>
+              {currentPlan.name}
+            </Text>
+            {currentPlan.subtitle ? (
+              <Text style={[styles.monoBannerSubtitle, { color: theme.textSecondary }]}>
+                {currentPlan.subtitle}
+              </Text>
+            ) : null}
+
+            <View style={styles.bannerMetaRow}>
+              <View style={styles.metaTimeWrap}>
+                <Ionicons name="time-outline" size={13} color={theme.textMuted} />
+                <Text style={[styles.monoMetaText, { color: theme.textSecondary }]}>
+                  {currentPlan.time}
+                </Text>
+              </View>
+              {currentPlan.type === 'workout' && (
+                <>
+                  <Text style={[styles.monoMetaDot, { color: theme.textMuted }]}>•</Text>
+                  <Text style={[styles.monoMetaText, { color: theme.textSecondary }]}>
+                    {currentPlan.exercises?.length || 0} ćwiczeń
+                  </Text>
+                  <Text style={[styles.monoMetaDot, { color: theme.textMuted }]}>•</Text>
+                  <Text style={[styles.monoMetaText, { color: theme.textSecondary }]}>
+                    {(currentPlan.exercises || []).reduce((acc, e) => acc + e.sets, 0)} serii
+                  </Text>
+                </>
+              )}
+            </View>
+          </View>
+        )}
 
         {/* Warmup advice */}
         {currentPlan.warmup ? (
@@ -199,18 +351,42 @@ export const PlanTab: React.FC<PlanTabProps> = ({
         ) : null}
 
         {/* Start workout button */}
-        {currentPlan.type === 'workout' && onStartWorkoutForDay && (
-          <TouchableOpacity
-            style={[styles.startWorkoutBtn, { backgroundColor: theme.primary }]}
-            onPress={() => onStartWorkoutForDay(currentPlan.id)}
-            activeOpacity={0.8}
-          >
-            <Ionicons name="play" size={16} color={theme.primaryText} />
-            <Text style={[styles.startWorkoutBtnText, { color: theme.primaryText }]}>
-              ROZPOCZNIJ TEN TRENING
-            </Text>
-          </TouchableOpacity>
-        )}
+        {currentPlan.type === 'workout' &&
+          currentPlan.exercises &&
+          currentPlan.exercises.length > 0 &&
+          onStartWorkoutForDay && (
+            <TouchableOpacity
+              style={[styles.startWorkoutBtn, { backgroundColor: theme.primary }]}
+              onPress={() => onStartWorkoutForDay(currentPlan.id)}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="play" size={16} color={theme.primaryText} />
+              <Text style={[styles.startWorkoutBtnText, { color: theme.primaryText }]}>
+                ROZPOCZNIJ TEN TRENING
+              </Text>
+            </TouchableOpacity>
+          )}
+
+        {/* Empty workout day prompt */}
+        {currentPlan.type === 'workout' &&
+          (!currentPlan.exercises || currentPlan.exercises.length === 0) && (
+            <TouchableOpacity
+              style={[
+                styles.emptyDayCard,
+                { backgroundColor: theme.bgSecondary, borderColor: theme.border },
+              ]}
+              onPress={() => setEditingDay(true)}
+              activeOpacity={0.75}
+            >
+              <Ionicons name="add-circle-outline" size={28} color={theme.text} />
+              <Text style={[styles.emptyDayTitle, { color: theme.text }]}>
+                Ten dzień nie ma jeszcze ćwiczeń
+              </Text>
+              <Text style={[styles.emptyDaySub, { color: theme.textMuted }]}>
+                Dotknij, aby dobrać ćwiczenia z bazy siłowni lub zmienić dzień na regenerację.
+              </Text>
+            </TouchableOpacity>
+          )}
 
         {/* Exercise List */}
         {currentPlan.exercises && currentPlan.exercises.length > 0 && (
@@ -332,6 +508,24 @@ export const PlanTab: React.FC<PlanTabProps> = ({
         exercise={modalExercise}
         onClose={() => setModalExercise(null)}
         onOpenPR={onSelectExerciseForPR}
+      />
+
+      <PlanDayEditorModal
+        visible={editingDay}
+        onClose={() => setEditingDay(false)}
+        dayPlan={currentPlan}
+        dayLabel={currentDayMeta.label}
+        extraExercises={extraLibraryExercises}
+        onSaveDay={handleSaveEditedDay}
+        onLibraryChanged={onLibraryChanged}
+      />
+
+      <ExerciseLibraryModal
+        visible={showLibrary}
+        onClose={() => setShowLibrary(false)}
+        mode="manage"
+        extraExercises={extraLibraryExercises}
+        onLibraryChanged={onLibraryChanged}
       />
     </View>
   );
@@ -613,5 +807,120 @@ const styles = StyleSheet.create({
   prActionBtnText: {
     fontSize: 14,
     fontWeight: '800',
+  },
+  headerTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  libraryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  libraryBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  planControlsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 12,
+  },
+  planSelectorPill: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  planSelectorText: {
+    fontSize: 13,
+    fontWeight: '800',
+    flexShrink: 1,
+  },
+  planCountBadge: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  editDayHeaderBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  editDayHeaderBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  monoBannerCard: {
+    borderRadius: 20,
+    borderWidth: 1,
+    padding: 18,
+    marginBottom: 20,
+  },
+  monoBannerTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  monoBannerBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  monoBannerBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.6,
+  },
+  monoBannerTitle: {
+    fontSize: 26,
+    fontWeight: '900',
+    letterSpacing: -0.5,
+    lineHeight: 31,
+  },
+  monoBannerSubtitle: {
+    fontSize: 14,
+    marginTop: 4,
+  },
+  monoMetaText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  monoMetaDot: {
+    fontSize: 11,
+  },
+  emptyDayCard: {
+    borderRadius: 16,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    padding: 24,
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 20,
+  },
+  emptyDayTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    marginTop: 4,
+  },
+  emptyDaySub: {
+    fontSize: 13,
+    textAlign: 'center',
+    lineHeight: 19,
   },
 });

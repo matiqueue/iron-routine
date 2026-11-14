@@ -6,7 +6,6 @@ import {
   ScrollView,
   TouchableOpacity,
   TextInput,
-  Modal,
   Alert,
   KeyboardAvoidingView,
   Platform,
@@ -16,8 +15,16 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useAppTheme } from '../context/ThemeContext';
-import { Exercise, MuscleCategory, PRRecord, UserProfile } from '../types/workout';
-import { getAllExercises } from '../data/planData';
+import {
+  Exercise,
+  MuscleCategory,
+  MuscleVolumeStat,
+  PRRecord,
+  UserProfile,
+  WorkoutHistoryEntry,
+  WorkoutPlan,
+} from '../types/workout';
+import { getAllExercises, mergeAllExercises } from '../data/planData';
 import {
   getAllBestPRs,
   getExerciseHistory,
@@ -28,6 +35,9 @@ import {
   toggleCreatineDay,
   getWeightStatsSummary,
   getExerciseImprovements,
+  getWeeklyVolumeByMuscle,
+  getWorkoutHistory,
+  getCustomExercises,
   CreatineDayEntry,
   WeightStatsSummary,
   ExerciseImprovement,
@@ -37,6 +47,9 @@ import { InteractiveBottomSheet } from './InteractiveBottomSheet';
 
 interface ProgressTabProps {
   activeProfile: UserProfile;
+  activePlan?: WorkoutPlan | null;
+  profilePlans?: WorkoutPlan[];
+  refreshKey?: number;
   onOpenProfileModal: () => void;
 }
 
@@ -51,13 +64,17 @@ const CATEGORIES: { id: MuscleCategory | 'wszystkie'; label: string }[] = [
   { id: 'barki', label: 'Barki' },
   { id: 'ramiona', label: 'Ramiona' },
   { id: 'brzuch', label: 'Brzuch' },
+  { id: 'ogolne', label: 'Ogólne' },
 ];
 
 export const ProgressTab: React.FC<ProgressTabProps> = ({
   activeProfile,
+  activePlan,
+  profilePlans = [],
+  refreshKey = 0,
   onOpenProfileModal,
 }) => {
-  const { theme, isDark } = useAppTheme();
+  const { theme } = useAppTheme();
 
   // Mode: Stats & Trends vs Exercise PR list
   const [viewMode, setViewMode] = useState<ViewMode>('stats');
@@ -136,8 +153,26 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
   const [inputWeight, setInputWeight] = useState('80');
   const [inputReps, setInputReps] = useState('8');
   const [inputNote, setInputNote] = useState('');
+  const [customExercises, setCustomExercises] = useState<Exercise[]>([]);
+  const [weeklyVolume, setWeeklyVolume] = useState<MuscleVolumeStat[]>([]);
+  const [workoutHistory, setWorkoutHistory] = useState<WorkoutHistoryEntry[]>([]);
+  const [showAllHistory, setShowAllHistory] = useState(false);
 
-  const allExercises = useMemo(() => getAllExercises(), []);
+  const activePlanExerciseIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const day of activePlan?.days || []) {
+      for (const ex of day.exercises || []) ids.add(ex.id);
+    }
+    return ids;
+  }, [activePlan]);
+
+  const allExercises = useMemo(() => {
+    const planExercises = [
+      ...(activePlan?.days || []).flatMap((d) => d.exercises || []),
+      ...profilePlans.flatMap((p) => p.days.flatMap((d) => d.exercises || [])),
+    ];
+    return mergeAllExercises(planExercises, customExercises, getAllExercises());
+  }, [activePlan, profilePlans, customExercises]);
 
   const loadData = useCallback(async () => {
     try {
@@ -145,24 +180,31 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
       setBestPRs(records);
 
       const daysCount = timeframe === '7d' ? 7 : timeframe === '30d' ? 30 : 90;
+      const planDaysForVol = activePlan?.days || [];
 
-      const [cLog, wStats, imp] = await Promise.all([
+      const [cLog, wStats, imp, customList, volStats, histList] = await Promise.all([
         getCreatineLog(timeframe === '7d' ? 7 : 14),
         getWeightStatsSummary(daysCount, activeProfile.id),
         getExerciseImprovements(activeProfile.id),
+        getCustomExercises(),
+        getWeeklyVolumeByMuscle(planDaysForVol, undefined, activeProfile.id),
+        getWorkoutHistory(activeProfile.id),
       ]);
 
       setCreatineLog(cLog);
       setWeightStats(wStats);
       setImprovements(imp);
+      setCustomExercises(customList);
+      setWeeklyVolume(volStats);
+      setWorkoutHistory(histList);
     } catch (e) {
       console.warn('Error loading progress stats:', e);
     }
-  }, [activeProfile.id, timeframe]);
+  }, [activeProfile.id, timeframe, activePlan]);
 
   useEffect(() => {
     loadData();
-  }, [loadData]);
+  }, [loadData, refreshKey]);
 
   const handleToggleCreatine = async (entry: CreatineDayEntry) => {
     try {
@@ -278,15 +320,23 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
   }, [bestPRs]);
 
   const filteredExercises = useMemo(() => {
-    return allExercises.filter((ex) => {
-      const matchCat = selectedCategory === 'wszystkie' || ex.category === selectedCategory;
-      const matchQuery =
-        !searchQuery.trim() ||
-        ex.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        ex.category.toLowerCase().includes(searchQuery.toLowerCase());
-      return matchCat && matchQuery;
-    });
-  }, [allExercises, selectedCategory, searchQuery]);
+    const q = searchQuery.trim().toLowerCase();
+    return allExercises
+      .filter((ex) => {
+        const matchCat = selectedCategory === 'wszystkie' || ex.category === selectedCategory;
+        const matchQuery =
+          !q ||
+          ex.name.toLowerCase().includes(q) ||
+          ex.category.toLowerCase().includes(q) ||
+          (ex.equipment || '').toLowerCase().includes(q);
+        return matchCat && matchQuery;
+      })
+      .sort((a, b) => {
+        const aScore = (bestPRs[a.id] ? 2 : 0) + (activePlanExerciseIds.has(a.id) ? 1 : 0);
+        const bScore = (bestPRs[b.id] ? 2 : 0) + (activePlanExerciseIds.has(b.id) ? 1 : 0);
+        return bScore - aScore;
+      });
+  }, [allExercises, selectedCategory, searchQuery, bestPRs, activePlanExerciseIds]);
 
   const creatineStats = useMemo(() => {
     const count = creatineLog.filter((c) => c.taken).length;
@@ -440,17 +490,23 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
               <View style={styles.metricsSummaryRow}>
                 <View style={styles.metricItem}>
                   <Text style={[styles.metricLabel, { color: theme.textMuted }]}>Aktualna</Text>
-                  <Text style={[styles.metricVal, { color: theme.text }]}>{weightStats.current} kg</Text>
+                  <Text style={[styles.metricVal, { color: theme.text }]}>
+                    {weightStats.current > 0 ? `${weightStats.current} kg` : '—'}
+                  </Text>
                 </View>
                 <View style={styles.metricDivider} />
                 <View style={styles.metricItem}>
                   <Text style={[styles.metricLabel, { color: theme.textMuted }]}>Początkowa</Text>
-                  <Text style={[styles.metricVal, { color: theme.text }]}>{weightStats.start} kg</Text>
+                  <Text style={[styles.metricVal, { color: theme.text }]}>
+                    {weightStats.start > 0 ? `${weightStats.start} kg` : '—'}
+                  </Text>
                 </View>
                 <View style={styles.metricDivider} />
                 <View style={styles.metricItem}>
                   <Text style={[styles.metricLabel, { color: theme.textMuted }]}>Wzrost</Text>
-                  <Text style={[styles.metricVal, { color: theme.text }]}>{activeProfile.height || 180} cm</Text>
+                  <Text style={[styles.metricVal, { color: theme.text }]}>
+                    {activeProfile.height ? `${activeProfile.height} cm` : '—'}
+                  </Text>
                 </View>
               </View>
             ) : null}
@@ -470,7 +526,11 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
             <View style={[styles.insightPill, { backgroundColor: theme.card, borderColor: theme.hairline }]}>
               <Ionicons name="sparkles-outline" size={15} color={theme.text} />
               <Text style={[styles.insightText, { color: theme.textSecondary }]}>
-                Wzrost z 60.1 kg pod plan FBW 4-dniowy. Rekomendowane tempo masy: +0.2-0.3 kg / tydzień.
+                {weightStats && weightStats.entries.length >= 2
+                  ? `Bilans w tym okresie: ${weightStats.diff > 0 ? `+${weightStats.diff}` : weightStats.diff} kg (${weightStats.diffPercent > 0 ? `+${weightStats.diffPercent}` : weightStats.diffPercent}%) • Plan: ${activePlan?.name || 'Domyślny'}.`
+                  : weightStats && weightStats.entries.length === 1
+                  ? `Zapisana waga: ${weightStats.current} kg. Kolejne ważenia wyświetlą wykres trendu.`
+                  : `Brak zapisanych pomiarów wagi dla profilu ${activeProfile.name}.`}
               </Text>
             </View>
           </View>
@@ -561,48 +621,166 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
             </View>
 
             <Text style={[styles.creatineSubtitle, { color: theme.textSecondary }]}>
-              Porównanie z poprzednimi sesjami treningowymi (FBW):
+              Porównanie wyników ({activePlan?.name || 'Twój plan'}):
             </Text>
 
-            <View style={styles.improvementsList}>
-              {improvements.map((item) => (
-                <View
-                  key={item.id}
-                  style={[styles.improvementRow, { borderBottomColor: theme.hairline }]}
-                >
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.impName, { color: theme.text }]}>{item.name}</Text>
-                    <View style={styles.impSubRow}>
-                      <View style={[styles.catTag, { backgroundColor: theme.card, borderColor: theme.border }]}>
-                        <Text style={[styles.catTagText, { color: theme.textSecondary }]}>
-                          {item.category.toUpperCase()}
+            {improvements.length === 0 ? (
+              <Text style={[styles.emptyBlockText, { color: theme.textMuted }]}>
+                Zapisz wyniki w treningach lub w zakładce „Rekordy PR”, aby śledzić przyrosty ciężarów i 1RM.
+              </Text>
+            ) : (
+              <View style={styles.improvementsList}>
+                {improvements.map((item) => (
+                  <View
+                    key={item.id}
+                    style={[styles.improvementRow, { borderBottomColor: theme.hairline }]}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.impName, { color: theme.text }]}>{item.name}</Text>
+                      <View style={styles.impSubRow}>
+                        <View style={[styles.catTag, { backgroundColor: theme.card, borderColor: theme.border }]}>
+                          <Text style={[styles.catTagText, { color: theme.textSecondary }]}>
+                            {item.category.toUpperCase()}
+                          </Text>
+                        </View>
+                        <Text style={[styles.impPrevText, { color: theme.textMuted }]}>
+                          Poprzednio: {item.previousWeight} kg
                         </Text>
                       </View>
-                      <Text style={[styles.impPrevText, { color: theme.textMuted }]}>
-                        Poprzednio: {item.previousWeight} kg
-                      </Text>
                     </View>
-                  </View>
 
-                  <View style={styles.impRight}>
-                    <View style={styles.impWeightRow}>
-                      <Text style={[styles.impWeightCur, { color: theme.text }]}>
-                        {item.currentWeight} kg
+                    <View style={styles.impRight}>
+                      <View style={styles.impWeightRow}>
+                        <Text style={[styles.impWeightCur, { color: theme.text }]}>
+                          {item.currentWeight} kg
+                        </Text>
+                        <View style={[styles.deltaChip, { backgroundColor: theme.card, borderColor: theme.border }]}>
+                          <Ionicons
+                            name={item.diffWeight >= 0 ? 'arrow-up' : 'arrow-down'}
+                            size={11}
+                            color={theme.text}
+                          />
+                          <Text style={[styles.deltaChipText, { color: theme.text }]}>
+                            {item.diffWeight >= 0 ? `+${item.diffWeight}` : item.diffWeight} kg ({item.percentImprovement >= 0 ? `+${item.percentImprovement}` : item.percentImprovement}%)
+                          </Text>
+                        </View>
+                      </View>
+                      <Text style={[styles.imp1RM, { color: theme.textMuted }]}>
+                        1RM: ~{item.current1RM} kg ({item.diff1RM >= 0 ? `+${item.diff1RM}` : item.diff1RM} kg)
                       </Text>
-                      <View style={[styles.deltaChip, { backgroundColor: theme.card, borderColor: theme.border }]}>
-                        <Ionicons name="arrow-up" size={11} color={theme.text} />
-                        <Text style={[styles.deltaChipText, { color: theme.text }]}>
-                          +{item.diffWeight} kg (+{item.percentImprovement}%)
+                    </View>
+                  </View>
+                ))}
+              </View>
+            )}
+          </View>
+
+          {/* SECTION 4: WEEKLY MUSCLE VOLUME BREAKDOWN */}
+          <View style={[styles.card, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
+            <View style={styles.cardHeaderRow}>
+              <View>
+                <Text style={[styles.cardKicker, { color: theme.textMuted }]}>OBJĘTOŚĆ TYGODNIOWA</Text>
+                <Text style={[styles.cardTitle, { color: theme.text }]}>Serie wg partii mięśniowych</Text>
+              </View>
+            </View>
+
+            {weeklyVolume.length === 0 ? (
+              <Text style={[styles.emptyBlockText, { color: theme.textMuted }]}>
+                Brak zaplanowanych ćwiczeń w aktywnym planie. Skonfiguruj plan, aby monitorować objętość.
+              </Text>
+            ) : (
+              <View style={styles.volumeList}>
+                {weeklyVolume.map((vol) => {
+                  const pct =
+                    vol.plannedSets > 0
+                      ? Math.min(100, Math.round((vol.completedSets / vol.plannedSets) * 100))
+                      : 0;
+                  return (
+                    <View key={vol.category} style={styles.volumeRow}>
+                      <View style={styles.volumeLabelLine}>
+                        <Text style={[styles.volumeCatName, { color: theme.text }]}>
+                          {vol.label}
+                        </Text>
+                        <Text style={[styles.volumeMetaText, { color: theme.textMuted }]}>
+                          {vol.completedSets}/{vol.plannedSets} serii
+                          {vol.volumeKg > 0 ? ` • ${vol.volumeKg} kg` : ''}
                         </Text>
                       </View>
+                      <View style={[styles.volumeTrack, { backgroundColor: theme.bgTertiary }]}>
+                        <View
+                          style={[
+                            styles.volumeFill,
+                            { width: `${pct}%`, backgroundColor: theme.text },
+                          ]}
+                        />
+                      </View>
                     </View>
-                    <Text style={[styles.imp1RM, { color: theme.textMuted }]}>
-                      1RM: ~{item.current1RM} kg (+{item.diff1RM} kg)
-                    </Text>
-                  </View>
-                </View>
-              ))}
+                  );
+                })}
+              </View>
+            )}
+          </View>
+
+          {/* SECTION 5: WORKOUT HISTORY LOG */}
+          <View style={[styles.card, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
+            <View style={styles.cardHeaderRow}>
+              <View>
+                <Text style={[styles.cardKicker, { color: theme.textMuted }]}>DZIENNIK SESJI</Text>
+                <Text style={[styles.cardTitle, { color: theme.text }]}>
+                  Historia treningów ({workoutHistory.length})
+                </Text>
+              </View>
             </View>
+
+            {workoutHistory.length === 0 ? (
+              <Text style={[styles.emptyBlockText, { color: theme.textMuted }]}>
+                Ukończ pierwszy trening, aby pojawił się tutaj wraz z objętością i czasem trwania.
+              </Text>
+            ) : (
+              <>
+                {(showAllHistory ? workoutHistory : workoutHistory.slice(0, 5)).map((entry, idx) => (
+                  <View
+                    key={`${entry.date}_${entry.dayId}_${idx}`}
+                    style={[styles.workoutHistRow, { borderBottomColor: theme.hairline }]}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.workoutHistTitle, { color: theme.text }]}>
+                        {entry.dayName}
+                      </Text>
+                      <Text style={[styles.workoutHistSub, { color: theme.textMuted }]}>
+                        {entry.date}
+                        {entry.planName ? ` • ${entry.planName}` : ''}
+                      </Text>
+                    </View>
+
+                    <View style={styles.workoutHistRight}>
+                      <Text style={[styles.workoutHistSets, { color: theme.text }]}>
+                        {entry.completedSets}/{entry.totalSets} serii
+                      </Text>
+                      <Text style={[styles.workoutHistMeta, { color: theme.textMuted }]}>
+                        {entry.durationMinutes ? `${entry.durationMinutes} min` : ''}
+                        {entry.durationMinutes && entry.totalVolumeKg ? ' • ' : ''}
+                        {entry.totalVolumeKg ? `${entry.totalVolumeKg} kg` : ''}
+                      </Text>
+                    </View>
+                  </View>
+                ))}
+
+                {workoutHistory.length > 5 && (
+                  <TouchableOpacity
+                    style={[styles.showMoreHistBtn, { borderColor: theme.border }]}
+                    onPress={() => setShowAllHistory((prev) => !prev)}
+                    activeOpacity={0.75}
+                  >
+                    <Text style={[styles.showMoreHistText, { color: theme.text }]}>
+                      {showAllHistory
+                        ? 'Zwiń historię'
+                        : `Pokaż wszystkie (${workoutHistory.length})`}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </>
+            )}
           </View>
         </ScrollView>
       ) : (
@@ -847,6 +1025,21 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                     ~{currentEst1RM} kg
                   </Text>
                 </View>
+
+                {/* Percentage breakdown strips */}
+                {currentEst1RM > 0 && (
+                  <View style={[styles.pctTableRow, { borderColor: theme.hairline }]}>
+                    {[90, 85, 80, 75, 70].map((pct) => {
+                      const val = Math.round((currentEst1RM * (pct / 100)) * 2) / 2;
+                      return (
+                        <View key={pct} style={styles.pctCell}>
+                          <Text style={[styles.pctCellLabel, { color: theme.textMuted }]}>{pct}%</Text>
+                          <Text style={[styles.pctCellVal, { color: theme.text }]}>{val}</Text>
+                        </View>
+                      );
+                    })}
+                  </View>
+                )}
 
                 {/* Note input */}
                 <TextInput
@@ -1535,5 +1728,97 @@ const styles = StyleSheet.create({
   },
   trashBtn: {
     padding: 6,
+  },
+  emptyBlockText: {
+    fontSize: 13,
+    lineHeight: 19,
+    marginTop: 6,
+  },
+  volumeList: {
+    marginTop: 10,
+    gap: 10,
+  },
+  volumeRow: {
+    gap: 5,
+  },
+  volumeLabelLine: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  volumeCatName: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  volumeMetaText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  volumeTrack: {
+    height: 7,
+    borderRadius: 4,
+    overflow: 'hidden',
+  },
+  volumeFill: {
+    height: '100%',
+    borderRadius: 4,
+  },
+  workoutHistRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 11,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  workoutHistTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  workoutHistSub: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  workoutHistRight: {
+    alignItems: 'flex-end',
+  },
+  workoutHistSets: {
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  workoutHistMeta: {
+    fontSize: 11,
+    marginTop: 2,
+  },
+  showMoreHistBtn: {
+    marginTop: 12,
+    paddingVertical: 9,
+    borderRadius: 10,
+    borderWidth: 1,
+    alignItems: 'center',
+  },
+  showMoreHistText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  pctTableRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+    paddingHorizontal: 6,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    marginBottom: 12,
+  },
+  pctCell: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  pctCellLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  pctCellVal: {
+    fontSize: 13,
+    fontWeight: '800',
+    marginTop: 2,
   },
 });

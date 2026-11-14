@@ -1,5 +1,22 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
+import type {
+  DayPlan,
+  Exercise,
+  MuscleVolumeStat,
+  NewPRHighlight,
+  PlanTemplateKey,
+  ProfileBackupPayload,
+  WorkoutPlan,
+} from '../types/workout';
+import { WORKOUT_PLAN } from '../data/planData';
+import { LOCAL_DEVICE_SEED } from '../data/localSeed';
+import {
+  buildPlanDaysFromTemplate,
+  cloneDays,
+  MUSCLE_CATEGORY_META,
+  MUSCLE_LABELS,
+} from '../data/exerciseLibrary';
 import {
   DayProgress,
   MuscleCategory,
@@ -17,61 +34,130 @@ const STORAGE_KEYS = {
   WEEK_PREFIX: '@iron_routine_week_',
   HISTORY_PREFIX: '@iron_routine_history_',
   WEIGHT_PREFIX: '@iron_routine_weight_',
+  PLANS_PREFIX: '@iron_routine_plans_',
+  ACTIVE_PLAN_PREFIX: '@iron_routine_active_plan_',
+  CUSTOM_EXERCISES: '@iron_routine_custom_exercises',
+  LOCAL_SEED_VERSION: '@iron_routine_local_seed_version',
 };
 
-const DEFAULT_PROFILE: UserProfile = {
-  id: 'szymon_goral',
-  name: 'Szymon Góral',
-  height: 180,
-  weight: 60.1,
-  isOwner: true,
-  createdAt: new Date().toISOString(),
-  avatarColor: '#CCFF00',
-};
+async function clearProfileDataKeys(profileId: string): Promise<void> {
+  const allKeys = await AsyncStorage.getAllKeys();
+  const keysToRemove = allKeys.filter(
+    (k) =>
+      k === `${STORAGE_KEYS.PR_RECORDS_PREFIX}${profileId}` ||
+      k.startsWith(`${STORAGE_KEYS.PR_RECORDS_PREFIX}${profileId}_`) ||
+      k === `${STORAGE_KEYS.HISTORY_PREFIX}${profileId}` ||
+      k === `${STORAGE_KEYS.WEIGHT_PREFIX}${profileId}` ||
+      k === `${STORAGE_KEYS.PLANS_PREFIX}${profileId}` ||
+      k === `${STORAGE_KEYS.ACTIVE_PLAN_PREFIX}${profileId}` ||
+      k.startsWith(`${STORAGE_KEYS.WEEK_PREFIX}${profileId}_`)
+  );
+  if (keysToRemove.length > 0) {
+    await Promise.all(keysToRemove.map((k) => AsyncStorage.removeItem(k)));
+  }
+}
+
+async function applyLocalDeviceSeedIfNeeded(): Promise<void> {
+  if (!LOCAL_DEVICE_SEED) return;
+
+  try {
+    const appliedVersion = await AsyncStorage.getItem(STORAGE_KEYS.LOCAL_SEED_VERSION);
+    if (appliedVersion === LOCAL_DEVICE_SEED.seedVersion) return;
+
+    const rawProfiles = await AsyncStorage.getItem(STORAGE_KEYS.PROFILES);
+    let profiles: UserProfile[] = rawProfiles ? JSON.parse(rawProfiles) : [];
+    if (!Array.isArray(profiles)) profiles = [];
+
+    if (LOCAL_DEVICE_SEED.replaceExampleProfiles) {
+      const exampleIds = profiles
+        .filter((p) => p.id === 'szymon_goral' || p.isOwner)
+        .map((p) => p.id);
+      for (const exId of exampleIds) {
+        if (exId !== LOCAL_DEVICE_SEED.profile.id) {
+          await clearProfileDataKeys(exId);
+        }
+      }
+      profiles = profiles.filter((p) => p.id !== 'szymon_goral' && !p.isOwner);
+    }
+
+    const seededProfile = { ...LOCAL_DEVICE_SEED.profile };
+    const withoutTarget = profiles.filter((p) => p.id !== seededProfile.id);
+    const nextProfiles = [seededProfile, ...withoutTarget];
+
+    await AsyncStorage.setItem(STORAGE_KEYS.PROFILES, JSON.stringify(nextProfiles));
+    await AsyncStorage.setItem(STORAGE_KEYS.ACTIVE_PROFILE_ID, seededProfile.id);
+    await AsyncStorage.setItem(
+      `${STORAGE_KEYS.PLANS_PREFIX}${seededProfile.id}`,
+      JSON.stringify(LOCAL_DEVICE_SEED.plans)
+    );
+    await AsyncStorage.setItem(
+      `${STORAGE_KEYS.ACTIVE_PLAN_PREFIX}${seededProfile.id}`,
+      LOCAL_DEVICE_SEED.activePlanId
+    );
+    if (seededProfile.weight && seededProfile.weight > 0) {
+      const weightRaw = await AsyncStorage.getItem(
+        `${STORAGE_KEYS.WEIGHT_PREFIX}${seededProfile.id}`
+      );
+      if (!weightRaw) {
+        await AsyncStorage.setItem(
+          `${STORAGE_KEYS.WEIGHT_PREFIX}${seededProfile.id}`,
+          JSON.stringify([
+            {
+              id: `initial_weight_${seededProfile.id}`,
+              date: new Date().toISOString().slice(0, 10),
+              weight: seededProfile.weight,
+              note: 'Pomiar początkowy',
+            } satisfies WeightEntry,
+          ])
+        );
+      }
+    }
+    if (LOCAL_DEVICE_SEED.prRecords) {
+      await Promise.all(
+        Object.entries(LOCAL_DEVICE_SEED.prRecords).map(([exId, records]) =>
+          AsyncStorage.setItem(
+            `${STORAGE_KEYS.PR_RECORDS_PREFIX}${seededProfile.id}_${exId}`,
+            JSON.stringify(records)
+          )
+        )
+      );
+    }
+    await AsyncStorage.setItem(STORAGE_KEYS.LOCAL_SEED_VERSION, LOCAL_DEVICE_SEED.seedVersion);
+  } catch (e) {
+    console.warn('Local device seed failed:', e);
+  }
+}
 
 // ==================== PROFILE MANAGEMENT ====================
 
 export async function getProfiles(): Promise<UserProfile[]> {
   try {
+    await applyLocalDeviceSeedIfNeeded();
     const raw = await AsyncStorage.getItem(STORAGE_KEYS.PROFILES);
-    if (!raw) {
-      // Initialize with default profile
-      await AsyncStorage.setItem(STORAGE_KEYS.PROFILES, JSON.stringify([DEFAULT_PROFILE]));
-      await AsyncStorage.setItem(STORAGE_KEYS.ACTIVE_PROFILE_ID, DEFAULT_PROFILE.id);
-      return [DEFAULT_PROFILE];
-    }
-    const profiles: UserProfile[] = JSON.parse(raw);
-    if (profiles.length === 0) {
-      await AsyncStorage.setItem(STORAGE_KEYS.PROFILES, JSON.stringify([DEFAULT_PROFILE]));
-      return [DEFAULT_PROFILE];
-    }
-    // Automatically sanitize and remove "(ja)" suffix if saved in storage
-    let modified = false;
-    const cleaned = profiles.map((p) => {
-      if (p.name.includes('(ja)')) {
-        modified = true;
-        return { ...p, name: p.name.replace(/\s*\(ja\)/gi, '').trim() };
-      }
-      return p;
-    });
-    if (modified) {
-      await AsyncStorage.setItem(STORAGE_KEYS.PROFILES, JSON.stringify(cleaned));
-    }
-    return cleaned;
+    if (!raw) return [];
+    const parsed: UserProfile[] = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
   } catch {
-    return [DEFAULT_PROFILE];
+    return [];
   }
 }
 
-export async function getActiveProfile(): Promise<UserProfile> {
+export async function getActiveProfile(): Promise<UserProfile | null> {
   try {
     const profiles = await getProfiles();
+    if (profiles.length === 0) return null;
     const activeId = await AsyncStorage.getItem(STORAGE_KEYS.ACTIVE_PROFILE_ID);
     const found = profiles.find((p) => p.id === activeId);
-    return found || profiles[0] || DEFAULT_PROFILE;
+    return found || profiles[0];
   } catch {
-    return DEFAULT_PROFILE;
+    return null;
   }
+}
+
+async function resolveProfileId(profileId?: string): Promise<string | null> {
+  if (profileId) return profileId;
+  const active = await getActiveProfile();
+  return active?.id || null;
 }
 
 export async function setActiveProfileId(profileId: string): Promise<void> {
@@ -83,28 +169,122 @@ export async function setActiveProfileId(profileId: string): Promise<void> {
   }
 }
 
-export async function createProfile(name: string): Promise<UserProfile> {
+export async function createProfile(
+  name: string,
+  options?: {
+    height?: number;
+    weight?: number;
+    templateKey?: Exclude<PlanTemplateKey, 'clone_current'>;
+  }
+): Promise<UserProfile> {
   try {
     const profiles = await getProfiles();
     const colors = ['#CCFF00', '#38BDF8', '#F59E0B', '#A855F7', '#10B981', '#F43F5E'];
     const randomColor = colors[profiles.length % colors.length];
 
+    const parsedHeight =
+      options?.height && options.height > 0 ? Math.round(options.height) : undefined;
+    const parsedWeight =
+      options?.weight && options.weight > 0 ? Math.round(options.weight * 10) / 10 : undefined;
+
     const newProfile: UserProfile = {
       id: 'profile_' + Date.now(),
-      name: name.trim() || 'Użytkownik',
+      name: name.trim() || 'Mój Profil',
       createdAt: new Date().toISOString(),
       avatarColor: randomColor,
+      height: parsedHeight,
+      weight: parsedWeight,
     };
 
     const updated = [...profiles, newProfile];
     await AsyncStorage.setItem(STORAGE_KEYS.PROFILES, JSON.stringify(updated));
     await AsyncStorage.setItem(STORAGE_KEYS.ACTIVE_PROFILE_ID, newProfile.id);
+
+    if (parsedWeight) {
+      const initialWeight: WeightEntry = {
+        id: 'initial_weight_' + Date.now(),
+        date: new Date().toISOString().slice(0, 10),
+        weight: parsedWeight,
+        note: 'Pomiar początkowy',
+      };
+      await AsyncStorage.setItem(
+        `${STORAGE_KEYS.WEIGHT_PREFIX}${newProfile.id}`,
+        JSON.stringify([initialWeight])
+      );
+    }
+
+    const templateKey = options?.templateKey || 'blank';
+    const templateLabelMap: Record<Exclude<PlanTemplateKey, 'clone_current'>, { name: string; subtitle: string }> = {
+      blank: { name: 'Mój Plan', subtitle: 'Pusty tydzień — dodaj własne treningi' },
+      fbw3: { name: 'FBW 3 dni', subtitle: 'Full Body Workout (Pn / Śr / Pt)' },
+      upper_lower: { name: 'Upper / Lower', subtitle: 'Split 4-dniowy Góra / Dół' },
+      ppl: { name: 'Push / Pull / Legs', subtitle: 'Split 6-dniowy PPL' },
+    };
+    const meta = templateLabelMap[templateKey];
+    const nowIso = new Date().toISOString();
+    const starterPlan: WorkoutPlan = {
+      id: `plan_${templateKey}_${Date.now()}`,
+      name: meta.name,
+      subtitle: meta.subtitle,
+      days: buildPlanDaysFromTemplate(templateKey),
+      isDefault: true,
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    };
+    await AsyncStorage.setItem(
+      `${STORAGE_KEYS.PLANS_PREFIX}${newProfile.id}`,
+      JSON.stringify([starterPlan])
+    );
+    await AsyncStorage.setItem(`${STORAGE_KEYS.ACTIVE_PLAN_PREFIX}${newProfile.id}`, starterPlan.id);
+
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     return newProfile;
   } catch (error) {
     console.error('Error creating profile:', error);
     throw error;
   }
+}
+
+export async function updateProfile(
+  profileId: string,
+  updates: { name?: string; height?: number; weight?: number }
+): Promise<UserProfile> {
+  const profiles = await getProfiles();
+  const target = profiles.find((p) => p.id === profileId);
+  if (!target) throw new Error('Nie znaleziono profilu');
+
+  if (updates.name !== undefined && updates.name.trim()) {
+    target.name = updates.name.trim();
+  }
+  if (updates.height !== undefined && updates.height > 0) {
+    target.height = Math.round(updates.height);
+  }
+  if (updates.weight !== undefined && updates.weight > 0) {
+    target.weight = Math.round(updates.weight * 10) / 10;
+  }
+
+  await AsyncStorage.setItem(STORAGE_KEYS.PROFILES, JSON.stringify(profiles));
+  return target;
+}
+
+export async function deleteProfile(profileId: string): Promise<UserProfile | null> {
+  const profiles = await getProfiles();
+  const remaining = profiles.filter((p) => p.id !== profileId);
+  await AsyncStorage.setItem(STORAGE_KEYS.PROFILES, JSON.stringify(remaining));
+  await clearProfileDataKeys(profileId);
+
+  if (remaining.length === 0) {
+    await AsyncStorage.removeItem(STORAGE_KEYS.ACTIVE_PROFILE_ID);
+    return null;
+  }
+
+  const active = await getActiveProfile();
+  if (!active || active.id === profileId) {
+    const fallback = remaining[0];
+    await setActiveProfileId(fallback.id);
+    return fallback;
+  }
+  return active;
 }
 
 // ==================== 1RM & PROGRESS TRACKER (MERITUM) ====================
@@ -122,7 +302,8 @@ export async function getExerciseHistory(
   profileId?: string
 ): Promise<PRRecord[]> {
   try {
-    const pid = profileId || (await getActiveProfile()).id;
+    const pid = await resolveProfileId(profileId);
+    if (!pid) return [];
     const raw = await AsyncStorage.getItem(`${STORAGE_KEYS.PR_RECORDS_PREFIX}${pid}_${exerciseId}`);
     if (!raw) return [];
     const list: PRRecord[] = JSON.parse(raw);
@@ -136,7 +317,8 @@ export async function getAllBestPRs(
   profileId?: string
 ): Promise<{ [exerciseId: string]: PRRecord }> {
   try {
-    const pid = profileId || (await getActiveProfile()).id;
+    const pid = await resolveProfileId(profileId);
+    if (!pid) return {};
     const keys = await AsyncStorage.getAllKeys();
     const prefix = `${STORAGE_KEYS.PR_RECORDS_PREFIX}${pid}_`;
     const exerciseKeys = keys.filter((k) => k.startsWith(prefix));
@@ -176,7 +358,8 @@ export async function addPRRecord(
   profileId?: string
 ): Promise<PRRecord> {
   try {
-    const pid = profileId || (await getActiveProfile()).id;
+    const pid = await resolveProfileId(profileId);
+    if (!pid) throw new Error('Brak aktywnego profilu.');
     const storageKey = `${STORAGE_KEYS.PR_RECORDS_PREFIX}${pid}_${exerciseId}`;
     const raw = await AsyncStorage.getItem(storageKey);
     const history: PRRecord[] = raw ? JSON.parse(raw) : [];
@@ -213,7 +396,8 @@ export async function deletePRRecord(
   profileId?: string
 ): Promise<void> {
   try {
-    const pid = profileId || (await getActiveProfile()).id;
+    const pid = await resolveProfileId(profileId);
+    if (!pid) return;
     const storageKey = `${STORAGE_KEYS.PR_RECORDS_PREFIX}${pid}_${exerciseId}`;
     const raw = await AsyncStorage.getItem(storageKey);
     if (!raw) return;
@@ -247,7 +431,8 @@ export async function loadDayProgress(
   profileId?: string
 ): Promise<DayProgress> {
   try {
-    const pid = profileId || (await getActiveProfile()).id;
+    const pid = await resolveProfileId(profileId);
+    if (!pid) return { sets: {} };
     const key = `${STORAGE_KEYS.WEEK_PREFIX}${pid}_${weekKey}`;
     const raw = await AsyncStorage.getItem(key);
     if (!raw) return { sets: {} };
@@ -267,7 +452,8 @@ export async function saveSetEntry(
   profileId?: string
 ): Promise<DayProgress> {
   try {
-    const pid = profileId || (await getActiveProfile()).id;
+    const pid = await resolveProfileId(profileId);
+    if (!pid) throw new Error('Brak aktywnego profilu.');
     const key = `${STORAGE_KEYS.WEEK_PREFIX}${pid}_${weekKey}`;
     const raw = await AsyncStorage.getItem(key);
     const weekData = raw ? JSON.parse(raw) : {};
@@ -300,7 +486,8 @@ export async function resetDayProgress(
   profileId?: string
 ): Promise<DayProgress> {
   try {
-    const pid = profileId || (await getActiveProfile()).id;
+    const pid = await resolveProfileId(profileId);
+    if (!pid) return { sets: {} };
     const key = `${STORAGE_KEYS.WEEK_PREFIX}${pid}_${weekKey}`;
     const raw = await AsyncStorage.getItem(key);
     const weekData = raw ? JSON.parse(raw) : {};
@@ -321,10 +508,18 @@ export async function markWorkoutCompleted(
   completedSets: number,
   totalSets: number,
   weekKey: string = getMondayKey(),
-  profileId?: string
-): Promise<void> {
+  profileId?: string,
+  options?: {
+    planId?: string;
+    planName?: string;
+    durationMinutes?: number;
+    exercises?: Exercise[];
+    setsMap?: { [exId: string]: { [setIdx: string]: SetEntry } };
+  }
+): Promise<{ totalVolumeKg: number; newPRs: NewPRHighlight[] }> {
   try {
-    const pid = profileId || (await getActiveProfile()).id;
+    const pid = await resolveProfileId(profileId);
+    if (!pid) return { totalVolumeKg: 0, newPRs: [] };
     const key = `${STORAGE_KEYS.WEEK_PREFIX}${pid}_${weekKey}`;
     const raw = await AsyncStorage.getItem(key);
     const weekData = raw ? JSON.parse(raw) : {};
@@ -333,6 +528,61 @@ export async function markWorkoutCompleted(
     const todayIso = new Date().toISOString();
     weekData[dayId].finishedAt = todayIso;
     await AsyncStorage.setItem(key, JSON.stringify(weekData));
+
+    const setsSource: { [exId: string]: { [setIdx: string]: SetEntry } } =
+      options?.setsMap || weekData[dayId].sets || {};
+
+    let totalVolumeKg = 0;
+    const newPRs: NewPRHighlight[] = [];
+    const currentBestPRs = await getAllBestPRs(pid);
+
+    for (const [exId, setEntries] of Object.entries(setsSource)) {
+      let bestExerciseWeight = 0;
+      let bestExerciseReps = 0;
+      let bestExercise1RM = 0;
+
+      for (const sEntry of Object.values(setEntries || {})) {
+        if (!sEntry?.completed) continue;
+        const w = parseFloat(String(sEntry.weight || '').replace(',', '.'));
+        const r = parseInt(String(sEntry.reps || ''), 10);
+        if (!isNaN(w) && w > 0 && !isNaN(r) && r > 0) {
+          totalVolumeKg += w * r;
+          const est = calculate1RM(w, r);
+          if (est > bestExercise1RM) {
+            bestExercise1RM = est;
+            bestExerciseWeight = w;
+            bestExerciseReps = r;
+          }
+        }
+      }
+
+      if (bestExercise1RM > 0) {
+        const prevBest = currentBestPRs[exId];
+        if (!prevBest || bestExercise1RM > prevBest.estimated1RM) {
+          const exMeta = options?.exercises?.find((e) => e.id === exId);
+          if (exMeta) {
+            await addPRRecord(
+              exId,
+              exMeta.name,
+              exMeta.category,
+              bestExerciseWeight,
+              bestExerciseReps,
+              `Trening: ${dayName}`,
+              pid
+            );
+            newPRs.push({
+              exerciseId: exId,
+              exerciseName: exMeta.name,
+              weight: bestExerciseWeight,
+              reps: bestExerciseReps,
+              estimated1RM: bestExercise1RM,
+            });
+          }
+        }
+      }
+    }
+
+    totalVolumeKg = Math.round(totalVolumeKg);
 
     // Save to profile history
     const histKey = `${STORAGE_KEYS.HISTORY_PREFIX}${pid}`;
@@ -345,8 +595,12 @@ export async function markWorkoutCompleted(
       date: dateStr,
       dayId,
       dayName,
+      planId: options?.planId,
+      planName: options?.planName,
       completedSets,
       totalSets,
+      durationMinutes: options?.durationMinutes,
+      totalVolumeKg: totalVolumeKg > 0 ? totalVolumeKg : undefined,
     };
 
     if (existingIdx >= 0) {
@@ -356,14 +610,17 @@ export async function markWorkoutCompleted(
     }
 
     await AsyncStorage.setItem(histKey, JSON.stringify(history.slice(0, 60)));
+    return { totalVolumeKg, newPRs };
   } catch (error) {
     console.error('Error marking workout completed:', error);
+    return { totalVolumeKg: 0, newPRs: [] };
   }
 }
 
 export async function getWorkoutStreak(profileId?: string): Promise<number> {
   try {
-    const pid = profileId || (await getActiveProfile()).id;
+    const pid = await resolveProfileId(profileId);
+    if (!pid) return 0;
     const histKey = `${STORAGE_KEYS.HISTORY_PREFIX}${pid}`;
     const raw = await AsyncStorage.getItem(histKey);
     if (!raw) return 0;
@@ -419,21 +676,26 @@ export async function getLastExerciseMetrics(
 
 export async function getWeightHistory(profileId?: string): Promise<WeightEntry[]> {
   try {
-    const pid = profileId || (await getActiveProfile()).id;
+    const pid = await resolveProfileId(profileId);
+    if (!pid) return [];
     const raw = await AsyncStorage.getItem(`${STORAGE_KEYS.WEIGHT_PREFIX}${pid}`);
     if (!raw) {
-      // Default initial record for Szymon
-      const initialEntry: WeightEntry = {
-        id: 'initial_weight',
-        date: new Date().toISOString().slice(0, 10),
-        weight: 60.1,
-        note: 'Waga początkowa',
-      };
-      await AsyncStorage.setItem(
-        `${STORAGE_KEYS.WEIGHT_PREFIX}${pid}`,
-        JSON.stringify([initialEntry])
-      );
-      return [initialEntry];
+      const profiles = await getProfiles();
+      const targetProfile = profiles.find((p) => p.id === pid);
+      if (targetProfile?.weight && targetProfile.weight > 0) {
+        const entry: WeightEntry = {
+          id: `initial_weight_${pid}`,
+          date: new Date().toISOString().slice(0, 10),
+          weight: targetProfile.weight,
+          note: 'Pomiar początkowy',
+        };
+        await AsyncStorage.setItem(
+          `${STORAGE_KEYS.WEIGHT_PREFIX}${pid}`,
+          JSON.stringify([entry])
+        );
+        return [entry];
+      }
+      return [];
     }
     const parsed: WeightEntry[] = JSON.parse(raw);
     return parsed.sort((a, b) => b.date.localeCompare(a.date));
@@ -448,7 +710,8 @@ export async function addWeightEntry(
   note?: string,
   profileId?: string
 ): Promise<WeightEntry> {
-  const pid = profileId || (await getActiveProfile()).id;
+  const pid = await resolveProfileId(profileId);
+  if (!pid) throw new Error('Brak aktywnego profilu.');
   const history = await getWeightHistory(pid);
   const entryDate = date || new Date().toISOString().slice(0, 10);
 
@@ -488,7 +751,8 @@ export async function addWeightEntry(
 }
 
 export async function deleteWeightEntry(id: string, profileId?: string): Promise<void> {
-  const pid = profileId || (await getActiveProfile()).id;
+  const pid = await resolveProfileId(profileId);
+  if (!pid) return;
   const history = await getWeightHistory(pid);
   const filtered = history.filter((h) => h.id !== id);
   await AsyncStorage.setItem(`${STORAGE_KEYS.WEIGHT_PREFIX}${pid}`, JSON.stringify(filtered));
@@ -558,13 +822,7 @@ export async function getCreatineLog(daysCount: number = 7): Promise<CreatineDay
     const isToday = dateStr === todayStr;
 
     const val = await AsyncStorage.getItem(`@iron_routine_creatine_taken_${dateStr}`);
-    // If not set yet, set reasonable defaults: workout days taken
-    let taken = val === 'true';
-    if (val === null && i > 0) {
-      // Seed default: taken on most recent days for demo clarity
-      taken = i % 3 !== 0;
-      await AsyncStorage.setItem(`@iron_routine_creatine_taken_${dateStr}`, taken ? 'true' : 'false');
-    }
+    const taken = val === 'true';
 
     result.push({
       date: dateStr,
@@ -586,7 +844,10 @@ export async function getWeightStatsSummary(
   daysCount: number = 7,
   profileId?: string
 ): Promise<WeightStatsSummary> {
-  const pid = profileId || (await getActiveProfile()).id;
+  const pid = await resolveProfileId(profileId);
+  if (!pid) {
+    return { current: 0, start: 0, diff: 0, diffPercent: 0, min: 0, max: 0, entries: [] };
+  }
   const history = await getWeightHistory(pid);
 
   // Filter within daysCount
@@ -594,36 +855,15 @@ export async function getWeightStatsSummary(
   cutoff.setDate(cutoff.getDate() - daysCount);
   const cutoffStr = cutoff.toISOString().slice(0, 10);
 
-  let filtered = history.filter((h) => h.date >= cutoffStr).reverse();
-
-  // If history has fewer than 4 points, generate smooth progressive seed points for Szymon
-  if (filtered.length <= 1) {
-    const baseWeight = filtered[0]?.weight || 60.1;
-    const generated: WeightEntry[] = [];
-    const pointsCount = Math.min(daysCount, 7);
-    for (let i = pointsCount - 1; i >= 0; i--) {
-      const d = new Date();
-      d.setDate(d.getDate() - i);
-      const dateStr = d.toISOString().slice(0, 10);
-      // Slight upward lean for clean bulk (e.g. 59.8 -> 60.1)
-      const offset = (pointsCount - 1 - i) * 0.05;
-      const w = Math.round((baseWeight - 0.3 + offset) * 10) / 10;
-      generated.push({
-        id: `weight_seed_${dateStr}`,
-        date: dateStr,
-        weight: i === 0 ? baseWeight : w,
-      });
-    }
-    filtered = generated;
-  }
+  const filtered = history.filter((h) => h.date >= cutoffStr).reverse();
 
   const weights = filtered.map((e) => e.weight);
-  const current = weights[weights.length - 1] || 60.1;
-  const start = weights[0] || 60.1;
+  const current = weights.length > 0 ? weights[weights.length - 1] : 0;
+  const start = weights.length > 0 ? weights[0] : 0;
   const diff = Math.round((current - start) * 10) / 10;
   const diffPercent = start > 0 ? Math.round((diff / start) * 1000) / 10 : 0;
-  const min = Math.min(...weights);
-  const max = Math.max(...weights);
+  const min = weights.length > 0 ? Math.min(...weights) : 0;
+  const max = weights.length > 0 ? Math.max(...weights) : 0;
 
   return {
     current,
@@ -639,7 +879,8 @@ export async function getWeightStatsSummary(
 export async function getExerciseImprovements(
   profileId?: string
 ): Promise<ExerciseImprovement[]> {
-  const pid = profileId || (await getActiveProfile()).id;
+  const pid = await resolveProfileId(profileId);
+  if (!pid) return [];
   const allPRs = await getAllBestPRs(pid);
   const results: ExerciseImprovement[] = [];
 
@@ -668,77 +909,507 @@ export async function getExerciseImprovements(
         diff1RM,
       });
     } else if (hist.length === 1) {
-      // Single entry improvement over baseline
       const cur = hist[0];
       results.push({
         id: exId,
         name: pr.exerciseName,
         category: pr.category,
         currentWeight: cur.weight,
-        previousWeight: Math.max(0, cur.weight - 2.5),
-        diffWeight: 2.5,
-        percentImprovement: 3.5,
+        previousWeight: cur.weight,
+        diffWeight: 0,
+        percentImprovement: 0,
         current1RM: cur.estimated1RM,
-        previous1RM: Math.max(0, cur.estimated1RM - 3),
-        diff1RM: 3,
+        previous1RM: cur.estimated1RM,
+        diff1RM: 0,
       });
     }
   }
 
-  // If user has few PRs yet, provide key FBW exercise progression examples
-  if (results.length === 0) {
+  return results;
+}
+
+// ==================== MULTI-PLAN STORAGE PER PROFILE ====================
+
+export async function getProfilePlans(profileId?: string): Promise<WorkoutPlan[]> {
+  try {
+    const pid = await resolveProfileId(profileId);
+    if (!pid) return [];
+    const key = `${STORAGE_KEYS.PLANS_PREFIX}${pid}`;
+    const raw = await AsyncStorage.getItem(key);
+
+    if (raw) {
+      const parsed: WorkoutPlan[] = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
+      }
+    }
+
+    const nowIso = new Date().toISOString();
+    const initialPlan: WorkoutPlan = {
+      id: `plan_blank_${pid}`,
+      name: 'Mój Plan',
+      subtitle: 'Pusty tydzień — dodaj własne treningi',
+      days: buildPlanDaysFromTemplate('blank'),
+      isDefault: true,
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    };
+
+    const seeded = [initialPlan];
+    await AsyncStorage.setItem(key, JSON.stringify(seeded));
+    await AsyncStorage.setItem(`${STORAGE_KEYS.ACTIVE_PLAN_PREFIX}${pid}`, initialPlan.id);
+    return seeded;
+  } catch (e) {
+    console.error('Error loading profile plans:', e);
+    const nowIso = new Date().toISOString();
     return [
       {
-        id: 'fbw_legpress',
-        name: 'Wypychanie ciężaru na suwnicy',
-        category: 'nogi',
-        currentWeight: 95,
-        previousWeight: 90,
-        diffWeight: 5,
-        percentImprovement: 5.6,
-        current1RM: 118,
-        previous1RM: 112,
-        diff1RM: 6,
-      },
-      {
-        id: 'fbw_bench',
-        name: 'Wyciskanie hantli na ławce poziomej',
-        category: 'klatka',
-        currentWeight: 22,
-        previousWeight: 20,
-        diffWeight: 2,
-        percentImprovement: 10.0,
-        current1RM: 28,
-        previous1RM: 25,
-        diff1RM: 3,
-      },
-      {
-        id: 'fbw_latpulldown',
-        name: 'Ściąganie drążka wyciągu górnego',
-        category: 'plecy',
-        currentWeight: 55,
-        previousWeight: 52.5,
-        diffWeight: 2.5,
-        percentImprovement: 4.8,
-        current1RM: 68,
-        previous1RM: 65,
-        diff1RM: 3,
-      },
-      {
-        id: 'fbw_overhead',
-        name: 'Wyciskanie żołnierskie nad głowę',
-        category: 'barki',
-        currentWeight: 37.5,
-        previousWeight: 35,
-        diffWeight: 2.5,
-        percentImprovement: 7.1,
-        current1RM: 46,
-        previous1RM: 43,
-        diff1RM: 3,
+        id: 'fallback_plan',
+        name: 'Mój Plan',
+        days: buildPlanDaysFromTemplate('blank'),
+        createdAt: nowIso,
+        updatedAt: nowIso,
       },
     ];
   }
+}
 
-  return results;
+export async function getActivePlanId(profileId?: string): Promise<string> {
+  const pid = await resolveProfileId(profileId);
+  if (!pid) return '';
+  const stored = await AsyncStorage.getItem(`${STORAGE_KEYS.ACTIVE_PLAN_PREFIX}${pid}`);
+  if (stored) return stored;
+  const plans = await getProfilePlans(pid);
+  const firstId = plans[0]?.id || '';
+  if (firstId) {
+    await AsyncStorage.setItem(`${STORAGE_KEYS.ACTIVE_PLAN_PREFIX}${pid}`, firstId);
+  }
+  return firstId;
+}
+
+export async function setActivePlanId(planId: string, profileId?: string): Promise<void> {
+  const pid = await resolveProfileId(profileId);
+  if (!pid) return;
+  await AsyncStorage.setItem(`${STORAGE_KEYS.ACTIVE_PLAN_PREFIX}${pid}`, planId);
+  try {
+    Haptics.selectionAsync();
+  } catch {}
+}
+
+export async function getActiveWorkoutPlan(profileId?: string): Promise<{
+  plans: WorkoutPlan[];
+  activePlan: WorkoutPlan | null;
+  days: DayPlan[];
+}> {
+  const pid = await resolveProfileId(profileId);
+  if (!pid) {
+    return { plans: [], activePlan: null, days: buildPlanDaysFromTemplate('blank') };
+  }
+  const plans = await getProfilePlans(pid);
+  const activeId = await AsyncStorage.getItem(`${STORAGE_KEYS.ACTIVE_PLAN_PREFIX}${pid}`);
+  const activePlan = plans.find((p) => p.id === activeId) || plans[0] || null;
+
+  if (activePlan && activePlan.id !== activeId) {
+    await AsyncStorage.setItem(`${STORAGE_KEYS.ACTIVE_PLAN_PREFIX}${pid}`, activePlan.id);
+  }
+
+  return {
+    plans,
+    activePlan,
+    days: activePlan ? activePlan.days : buildPlanDaysFromTemplate('blank'),
+  };
+}
+
+export async function createWorkoutPlan(params: {
+  name: string;
+  subtitle?: string;
+  templateKey: PlanTemplateKey;
+  cloneFromDays?: DayPlan[];
+  setActive?: boolean;
+  profileId?: string;
+}): Promise<WorkoutPlan> {
+  const pid = await resolveProfileId(params.profileId);
+  if (!pid) throw new Error('Brak aktywnego profilu.');
+  const plans = await getProfilePlans(pid);
+  const nowIso = new Date().toISOString();
+
+  const days =
+    params.templateKey === 'clone_current'
+      ? cloneDays(params.cloneFromDays || WORKOUT_PLAN)
+      : buildPlanDaysFromTemplate(params.templateKey);
+
+  const newPlan: WorkoutPlan = {
+    id: `plan_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+    name: params.name.trim() || 'Nowy plan treningowy',
+    subtitle: params.subtitle?.trim() || undefined,
+    days,
+    createdAt: nowIso,
+    updatedAt: nowIso,
+  };
+
+  const updated = [newPlan, ...plans];
+  await AsyncStorage.setItem(`${STORAGE_KEYS.PLANS_PREFIX}${pid}`, JSON.stringify(updated));
+
+  if (params.setActive !== false) {
+    await setActivePlanId(newPlan.id, pid);
+  }
+
+  try {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  } catch {}
+  return newPlan;
+}
+
+export async function saveWorkoutPlan(
+  updatedPlan: WorkoutPlan,
+  profileId?: string
+): Promise<WorkoutPlan[]> {
+  const pid = await resolveProfileId(profileId);
+  if (!pid) throw new Error('Brak aktywnego profilu.');
+  const plans = await getProfilePlans(pid);
+  const stamped: WorkoutPlan = {
+    ...updatedPlan,
+    updatedAt: new Date().toISOString(),
+  };
+
+  const next = plans.some((p) => p.id === stamped.id)
+    ? plans.map((p) => (p.id === stamped.id ? stamped : p))
+    : [stamped, ...plans];
+
+  await AsyncStorage.setItem(`${STORAGE_KEYS.PLANS_PREFIX}${pid}`, JSON.stringify(next));
+  return next;
+}
+
+export async function updateDayInPlan(
+  planId: string,
+  updatedDay: DayPlan,
+  profileId?: string
+): Promise<WorkoutPlan> {
+  const pid = await resolveProfileId(profileId);
+  if (!pid) throw new Error('Brak aktywnego profilu.');
+  const plans = await getProfilePlans(pid);
+  const target = plans.find((p) => p.id === planId);
+  if (!target) throw new Error('Nie znaleziono planu treningowego');
+
+  const updatedPlan: WorkoutPlan = {
+    ...target,
+    days: target.days.map((d) => (d.id === updatedDay.id ? updatedDay : d)),
+    updatedAt: new Date().toISOString(),
+  };
+
+  await saveWorkoutPlan(updatedPlan, pid);
+  return updatedPlan;
+}
+
+export async function duplicateWorkoutPlan(
+  planId: string,
+  newName?: string,
+  profileId?: string
+): Promise<WorkoutPlan> {
+  const pid = await resolveProfileId(profileId);
+  if (!pid) throw new Error('Brak aktywnego profilu.');
+  const plans = await getProfilePlans(pid);
+  const source = plans.find((p) => p.id === planId);
+  if (!source) throw new Error('Nie znaleziono planu źródłowego');
+
+  return createWorkoutPlan({
+    name: newName || `${source.name} (kopia)`,
+    subtitle: source.subtitle,
+    templateKey: 'clone_current',
+    cloneFromDays: source.days,
+    setActive: true,
+    profileId: pid,
+  });
+}
+
+export async function deleteWorkoutPlan(planId: string, profileId?: string): Promise<string> {
+  const pid = await resolveProfileId(profileId);
+  if (!pid) throw new Error('Brak aktywnego profilu.');
+  const plans = await getProfilePlans(pid);
+  if (plans.length <= 1) {
+    throw new Error('Profil musi posiadać co najmniej jeden plan treningowy.');
+  }
+
+  const remaining = plans.filter((p) => p.id !== planId);
+  await AsyncStorage.setItem(`${STORAGE_KEYS.PLANS_PREFIX}${pid}`, JSON.stringify(remaining));
+
+  const currentActive = await getActivePlanId(pid);
+  if (currentActive === planId) {
+    const nextActiveId = remaining[0].id;
+    await setActivePlanId(nextActiveId, pid);
+    return nextActiveId;
+  }
+  return currentActive;
+}
+
+// ==================== CUSTOM EXERCISE DATABASE ====================
+
+export async function getCustomExercises(): Promise<Exercise[]> {
+  try {
+    const raw = await AsyncStorage.getItem(STORAGE_KEYS.CUSTOM_EXERCISES);
+    if (!raw) return [];
+    const parsed: Exercise[] = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+export async function saveCustomExercise(
+  input: Omit<Exercise, 'id' | 'imageUrl' | 'isCustom'> & { id?: string; imageUrl?: string }
+): Promise<Exercise> {
+  const existing = await getCustomExercises();
+  const exercise: Exercise = {
+    ...input,
+    id: input.id || `custom_ex_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+    imageUrl: input.imageUrl || '',
+    isCustom: true,
+  };
+
+  const next = existing.some((item) => item.id === exercise.id)
+    ? existing.map((item) => (item.id === exercise.id ? exercise : item))
+    : [exercise, ...existing];
+
+  await AsyncStorage.setItem(STORAGE_KEYS.CUSTOM_EXERCISES, JSON.stringify(next));
+  try {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  } catch {}
+  return exercise;
+}
+
+export async function deleteCustomExercise(exerciseId: string): Promise<void> {
+  const existing = await getCustomExercises();
+  const filtered = existing.filter((item) => item.id !== exerciseId);
+  await AsyncStorage.setItem(STORAGE_KEYS.CUSTOM_EXERCISES, JSON.stringify(filtered));
+}
+
+// ==================== WORKOUT HISTORY & WEEKLY VOLUME ANALYTICS ====================
+
+export async function getWorkoutHistory(profileId?: string): Promise<WorkoutHistoryEntry[]> {
+  try {
+    const pid = await resolveProfileId(profileId);
+    if (!pid) return [];
+    const raw = await AsyncStorage.getItem(`${STORAGE_KEYS.HISTORY_PREFIX}${pid}`);
+    if (!raw) return [];
+    const parsed: WorkoutHistoryEntry[] = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+export async function getWeeklyVolumeByMuscle(
+  days: DayPlan[],
+  weekKey: string = getMondayKey(),
+  profileId?: string
+): Promise<MuscleVolumeStat[]> {
+  const pid = await resolveProfileId(profileId);
+  let weekData: { [dayId: string]: DayProgress } = {};
+
+  if (pid) {
+    try {
+      const raw = await AsyncStorage.getItem(`${STORAGE_KEYS.WEEK_PREFIX}${pid}_${weekKey}`);
+      weekData = raw ? JSON.parse(raw) : {};
+    } catch {}
+  }
+
+  const statsMap: Record<MuscleCategory, MuscleVolumeStat> = {} as Record<
+    MuscleCategory,
+    MuscleVolumeStat
+  >;
+
+  for (const meta of MUSCLE_CATEGORY_META) {
+    statsMap[meta.id] = {
+      category: meta.id,
+      label: MUSCLE_LABELS[meta.id] || meta.label,
+      plannedSets: 0,
+      completedSets: 0,
+      volumeKg: 0,
+    };
+  }
+
+  for (const day of days) {
+    if (day.type !== 'workout' || !day.exercises?.length) continue;
+    const daySets = weekData[day.id]?.sets || {};
+
+    for (const ex of day.exercises) {
+      const bucket = statsMap[ex.category] || statsMap.ogolne;
+      bucket.plannedSets += ex.sets || 0;
+
+      const loggedMap = daySets[ex.id] || {};
+      for (const sEntry of Object.values(loggedMap)) {
+        if (!sEntry?.completed) continue;
+        bucket.completedSets += 1;
+        const w = parseFloat(String(sEntry.weight || '').replace(',', '.'));
+        const r = parseInt(String(sEntry.reps || ''), 10);
+        if (!isNaN(w) && w > 0 && !isNaN(r) && r > 0) {
+          bucket.volumeKg += Math.round(w * r);
+        }
+      }
+    }
+  }
+
+  return Object.values(statsMap).filter(
+    (s) => s.plannedSets > 0 || s.completedSets > 0
+  );
+}
+
+// ==================== JSON BACKUP EXPORT & IMPORT ====================
+
+export async function exportProfileBackup(profileId?: string): Promise<ProfileBackupPayload> {
+  const profiles = await getProfiles();
+  const active = await getActiveProfile();
+  const target =
+    profiles.find((p) => p.id === (profileId || active?.id)) || active;
+  if (!target) {
+    throw new Error('Brak profilu do wyeksportowania.');
+  }
+
+  const [plans, activePlanId, customExercises, history, weightHistory] = await Promise.all([
+    getProfilePlans(target.id),
+    getActivePlanId(target.id),
+    getCustomExercises(),
+    getWorkoutHistory(target.id),
+    getWeightHistory(target.id),
+  ]);
+
+  const prRecords: { [exerciseId: string]: PRRecord[] } = {};
+  try {
+    const allKeys = await AsyncStorage.getAllKeys();
+    const prefix = `${STORAGE_KEYS.PR_RECORDS_PREFIX}${target.id}_`;
+    const prKeys = allKeys.filter((k) => k.startsWith(prefix));
+    await Promise.all(
+      prKeys.map(async (k) => {
+        const raw = await AsyncStorage.getItem(k);
+        if (raw) {
+          const exId = k.slice(prefix.length);
+          const list = JSON.parse(raw);
+          if (Array.isArray(list)) {
+            prRecords[exId] = list;
+          }
+        }
+      })
+    );
+  } catch {}
+
+  return {
+    version: 2,
+    app: 'iron-routine',
+    exportedAt: new Date().toISOString(),
+    profile: target,
+    plans,
+    activePlanId,
+    customExercises,
+    prRecords,
+    history,
+    weightHistory,
+  };
+}
+
+export async function importProfileBackup(
+  rawJson: string,
+  mode: 'overwrite_active' | 'create_new' = 'create_new'
+): Promise<{ profile: UserProfile; plansCount: number; prsCount: number }> {
+  let payload: ProfileBackupPayload;
+  try {
+    payload = JSON.parse(rawJson.trim());
+  } catch {
+    throw new Error('Nieprawidłowy format JSON.');
+  }
+
+  if (
+    !payload ||
+    payload.app !== 'iron-routine' ||
+    !payload.profile ||
+    !Array.isArray(payload.plans) ||
+    payload.plans.length === 0
+  ) {
+    throw new Error('Ten plik nie wygląda jak poprawna kopia zapasowa Iron Routine.');
+  }
+
+  const profiles = await getProfiles();
+  const active = await getActiveProfile();
+
+  let targetProfile: UserProfile;
+  if (mode === 'overwrite_active' && active) {
+    targetProfile = {
+      ...active,
+      height: payload.profile.height ?? active.height,
+      weight: payload.profile.weight ?? active.weight,
+    };
+    const nextProfiles = profiles.map((p) => (p.id === active.id ? targetProfile : p));
+    await AsyncStorage.setItem(STORAGE_KEYS.PROFILES, JSON.stringify(nextProfiles));
+  } else {
+    targetProfile = {
+      ...payload.profile,
+      id: `profile_${Date.now()}`,
+      name: profiles.length === 0 ? payload.profile.name : `${payload.profile.name} (Import)`,
+      isOwner: false,
+      createdAt: new Date().toISOString(),
+    };
+    await AsyncStorage.setItem(
+      STORAGE_KEYS.PROFILES,
+      JSON.stringify([...profiles, targetProfile])
+    );
+    await setActiveProfileId(targetProfile.id);
+  }
+
+  const pid = targetProfile.id;
+  await AsyncStorage.setItem(`${STORAGE_KEYS.PLANS_PREFIX}${pid}`, JSON.stringify(payload.plans));
+  const nextPlanId =
+    payload.activePlanId && payload.plans.some((p) => p.id === payload.activePlanId)
+      ? payload.activePlanId
+      : payload.plans[0].id;
+  await AsyncStorage.setItem(`${STORAGE_KEYS.ACTIVE_PLAN_PREFIX}${pid}`, nextPlanId);
+
+  if (Array.isArray(payload.customExercises) && payload.customExercises.length > 0) {
+    const existingCustom = await getCustomExercises();
+    const map = new Map<string, Exercise>();
+    for (const ex of existingCustom) map.set(ex.id, ex);
+    for (const ex of payload.customExercises) map.set(ex.id, { ...ex, isCustom: true });
+    await AsyncStorage.setItem(
+      STORAGE_KEYS.CUSTOM_EXERCISES,
+      JSON.stringify(Array.from(map.values()))
+    );
+  }
+
+  if (payload.prRecords && typeof payload.prRecords === 'object') {
+    await Promise.all(
+      Object.entries(payload.prRecords).map(([exId, records]) => {
+        if (!Array.isArray(records)) return Promise.resolve();
+        return AsyncStorage.setItem(
+          `${STORAGE_KEYS.PR_RECORDS_PREFIX}${pid}_${exId}`,
+          JSON.stringify(records)
+        );
+      })
+    );
+  }
+  if (Array.isArray(payload.history)) {
+    await AsyncStorage.setItem(
+      `${STORAGE_KEYS.HISTORY_PREFIX}${pid}`,
+      JSON.stringify(payload.history)
+    );
+  }
+  if (Array.isArray(payload.weightHistory)) {
+    await AsyncStorage.setItem(
+      `${STORAGE_KEYS.WEIGHT_PREFIX}${pid}`,
+      JSON.stringify(payload.weightHistory)
+    );
+  }
+
+  const prsCount = Object.values(payload.prRecords || {}).reduce(
+    (acc, arr) => acc + (Array.isArray(arr) ? arr.length : 0),
+    0
+  );
+
+  try {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  } catch {}
+
+  return {
+    profile: targetProfile,
+    plansCount: payload.plans.length,
+    prsCount,
+  };
 }
 
