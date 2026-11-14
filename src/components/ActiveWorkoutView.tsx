@@ -23,15 +23,17 @@ import { ExerciseLibraryContent } from './ExerciseLibraryContent';
 import { SessionExercisePickerModal } from './SessionExercisePickerModal';
 import { calculate1RM, getLastExerciseMetrics } from '../services/storage';
 import { cloneExercise } from '../data/exerciseLibrary';
+import { resolveOrderedSessionExercises } from '../utils/sessionExercises';
 import { updateWorkoutLiveActivity } from '../services/liveActivity';
 import {
   cancelRestFinishedNotification,
+  ensureNotificationPermissions,
   scheduleRestFinishedNotification,
 } from '../services/notifications';
+import { getAppSettings } from '../services/settings';
 import {
   triggerImpactHaptic,
   triggerNotificationHaptic,
-  triggerRestFinishedHapticSequence,
   triggerSelectionHaptic,
 } from '../services/haptics';
 
@@ -85,21 +87,6 @@ const getSetRows = (totalSets: number): number[][] => {
   return rows;
 };
 
-const buildOrderedExercises = (raw: Exercise[], savedOrder?: string[]): Exercise[] => {
-  const base = (raw || []).map(cloneExercise);
-  if (!savedOrder?.length) return base;
-  const byId = new Map(base.map((e) => [e.id, e]));
-  const ordered: Exercise[] = [];
-  for (const id of savedOrder) {
-    const found = byId.get(id);
-    if (found) ordered.push(found);
-  }
-  for (const ex of base) {
-    if (!ordered.some((o) => o.id === ex.id)) ordered.push(ex);
-  }
-  return ordered;
-};
-
 export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
   dayPlan,
   profileId,
@@ -113,7 +100,7 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
 }) => {
   const { theme, isDark } = useAppTheme();
   const [allSessionExercises, setAllSessionExercises] = useState<Exercise[]>(() =>
-    buildOrderedExercises(dayPlan.exercises || [], dayProgress.sessionConfig?.orderedIds)
+    resolveOrderedSessionExercises(dayPlan.exercises || [], dayProgress.sessionConfig)
   );
   const [skippedIds, setSkippedIds] = useState<string[]>(
     () => dayProgress.sessionConfig?.skippedIds || []
@@ -141,10 +128,8 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
 
   const prevDayPlanIdRef = useRef(dayPlan.id);
   useEffect(() => {
-    if (prevDayPlanIdRef.current === dayPlan.id) return;
-    prevDayPlanIdRef.current = dayPlan.id;
     setAllSessionExercises(
-      buildOrderedExercises(dayPlan.exercises || [], dayProgress.sessionConfig?.orderedIds)
+      resolveOrderedSessionExercises(dayPlan.exercises || [], dayProgress.sessionConfig)
     );
     setSkippedIds(dayProgress.sessionConfig?.skippedIds || []);
     setExtraSetsMap({});
@@ -153,6 +138,11 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
   }, [dayPlan.id]);
 
   useEffect(() => {
+    getAppSettings().then((s) => {
+      if (s.restNotificationsEnabled) {
+        ensureNotificationPermissions(true);
+      }
+    });
     return () => {
       cancelRestFinishedNotification();
     };
@@ -170,7 +160,7 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
   const restEndTimeRef = useRef<number>(0);
   const restFinishNotifiedRef = useRef(false);
 
-  // Background-persistent tick for rest timer
+  // Background-persistent tick for rest timer (no in-app haptic; background alarm handles outside-app alert)
   useEffect(() => {
     if (!isResting) return;
 
@@ -182,7 +172,9 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
         setIsRestFinished(true);
         if (!restFinishNotifiedRef.current) {
           restFinishNotifiedRef.current = true;
-          triggerRestFinishedHapticSequence();
+          if (AppState.currentState === 'active') {
+            cancelRestFinishedNotification();
+          }
         }
       }
     };
@@ -715,19 +707,19 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
   };
 
   const handleApplySessionConfig = (config: SessionExerciseConfig) => {
-    const byId = new Map(allSessionExercises.map((e) => [e.id, e]));
-    const reordered: Exercise[] = [];
-    for (const id of config.orderedIds) {
-      const found = byId.get(id);
-      if (found) reordered.push(found);
-    }
-    for (const ex of allSessionExercises) {
-      if (!reordered.some((r) => r.id === ex.id)) reordered.push(ex);
-    }
+    const reordered = resolveOrderedSessionExercises(allSessionExercises, config);
+    const persistedAdded = reordered.filter(
+      (ex) => !(dayPlan.exercises || []).some((base) => base.id === ex.id)
+    );
+    const mergedConfig: SessionExerciseConfig = {
+      orderedIds: reordered.map((e) => e.id),
+      skippedIds: config.skippedIds,
+      addedExercises: persistedAdded.length > 0 ? persistedAdded : undefined,
+    };
 
     setAllSessionExercises(reordered);
     setSkippedIds(config.skippedIds);
-    onSaveSessionConfig?.(config);
+    onSaveSessionConfig?.(mergedConfig);
 
     const skippedSet = new Set(config.skippedIds);
     const activeAfter = reordered.filter((e) => !skippedSet.has(e.id));
@@ -743,12 +735,14 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
   const handlePickSessionExercise = (picked: Exercise) => {
     triggerNotificationHaptic('success');
     const fresh = cloneExercise(picked);
+    let nextAllList: Exercise[];
 
     if (swapExerciseIdx !== null) {
       const targetEx = exercises[swapExerciseIdx];
-      setAllSessionExercises((prev) =>
-        prev.map((item) => (targetEx && item.id === targetEx.id ? fresh : item))
+      nextAllList = allSessionExercises.map((item) =>
+        targetEx && item.id === targetEx.id ? fresh : item
       );
+      setAllSessionExercises(nextAllList);
       setCurrentExerciseIndex(swapExerciseIdx);
       setCurrentSetIndex(0);
     } else {
@@ -756,13 +750,22 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
       const nextItem = alreadyExists
         ? { ...fresh, id: `${fresh.id}_session_${Date.now()}` }
         : fresh;
-      const nextList = [...allSessionExercises, nextItem];
-      setAllSessionExercises(nextList);
+      nextAllList = [...allSessionExercises, nextItem];
+      setAllSessionExercises(nextAllList);
       const skippedSet = new Set(skippedIds);
-      const nextActiveCount = nextList.filter((e) => !skippedSet.has(e.id)).length;
+      const nextActiveCount = nextAllList.filter((e) => !skippedSet.has(e.id)).length;
       setCurrentExerciseIndex(Math.max(0, nextActiveCount - 1));
       setCurrentSetIndex(0);
     }
+
+    const persistedAdded = nextAllList.filter(
+      (ex) => !(dayPlan.exercises || []).some((b) => b.id === ex.id)
+    );
+    onSaveSessionConfig?.({
+      orderedIds: nextAllList.map((e) => e.id),
+      skippedIds,
+      addedExercises: persistedAdded.length > 0 ? persistedAdded : undefined,
+    });
 
     setSwapExerciseIdx(null);
     setOverviewMode('list');
@@ -1475,18 +1478,17 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
         visible={showSessionPicker}
         onClose={() => setShowSessionPicker(false)}
         exercises={allSessionExercises}
+        extraLibraryExercises={extraLibraryExercises}
         dayProgress={dayProgress}
         initialConfig={{
           orderedIds: allSessionExercises.map((e) => e.id),
           skippedIds,
+          addedExercises: allSessionExercises.filter(
+            (ex) => !(dayPlan.exercises || []).some((b) => b.id === ex.id)
+          ),
         }}
         mode={sessionPickerMode}
         onConfirm={handleApplySessionConfig}
-        onOpenAddExercise={() => {
-          setSwapExerciseIdx(null);
-          setOverviewMode('library');
-          setShowOverviewSheet(true);
-        }}
       />
     </View>
   );

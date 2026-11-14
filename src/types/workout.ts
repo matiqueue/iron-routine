@@ -50,6 +50,8 @@ export interface DayPlan {
 export interface SessionExerciseConfig {
   orderedIds: string[];
   skippedIds: string[];
+  /** Extra ad-hoc exercises picked from the library for this day's session only */
+  addedExercises?: Exercise[];
 }
 
 export type SupplementDosingMode = 'recommended' | 'per_kg' | 'fixed';

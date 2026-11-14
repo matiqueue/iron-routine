@@ -9,7 +9,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   hapticsIntensity: 'strong',
   restEndMultiBuzz: true,
   restNotificationsEnabled: true,
-  restTimeSensitive: true,
+  restTimeSensitive: false,
   creatineRemindersEnabled: true,
   creatineMorningHour: 9,
   creatineEveningHour: 22,

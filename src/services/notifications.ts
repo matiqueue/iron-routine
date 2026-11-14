@@ -1,5 +1,5 @@
 import * as Notifications from 'expo-notifications';
-import { Platform } from 'react-native';
+import { AppState, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AppSettings } from '../types/workout';
 import { buildActiveSupplementsSummary, formatSupplementDose } from '../data/supplements';
@@ -10,6 +10,13 @@ import { getActiveProfile } from './storage';
 const WEIGHT_NOTIF_STORAGE_KEY = '@iron_routine_daily_weight_notif_enabled';
 const CREATINE_NOTIF_STORAGE_KEY = '@iron_routine_creatine_notif_enabled';
 const CREATINE_TAKEN_KEY_PREFIX = '@iron_routine_creatine_taken_';
+
+const REST_TIMER_CHANNEL_ID = 'rest_timer_alarm_v2';
+const REST_TIMER_NOTIF_IDS = [
+  'iron_routine_rest_alarm_1',
+  'iron_routine_rest_alarm_2',
+  'iron_routine_rest_alarm_3',
+];
 
 // Notification categories
 export const CREATINE_CATEGORIES = {
@@ -31,15 +38,96 @@ export const NOTIF_IDS = {
   CREATINE_EVENING: 'iron_routine_creatine_evening',
 } as const;
 
-// Global notification handler for when app is in foreground
+export interface NotificationPermissionSummary {
+  granted: boolean;
+  status: Notifications.PermissionStatus;
+  canAskAgain: boolean;
+  allowsAlert: boolean;
+  allowsSound: boolean;
+}
+
+export async function getNotificationPermissionSummary(): Promise<NotificationPermissionSummary> {
+  try {
+    const perms = await Notifications.getPermissionsAsync();
+    const allowsAlert = Platform.OS !== 'ios' || perms.ios?.allowsAlert !== false;
+    const allowsSound = Platform.OS !== 'ios' || perms.ios?.allowsSound !== false;
+    return {
+      granted: perms.status === 'granted',
+      status: perms.status,
+      canAskAgain: perms.canAskAgain ?? true,
+      allowsAlert,
+      allowsSound,
+    };
+  } catch {
+    return {
+      granted: false,
+      status: Notifications.PermissionStatus.UNDETERMINED,
+      canAskAgain: true,
+      allowsAlert: false,
+      allowsSound: false,
+    };
+  }
+}
+
+export async function ensureNotificationPermissions(
+  promptIfNeeded = true
+): Promise<NotificationPermissionSummary> {
+  const current = await getNotificationPermissionSummary();
+  if (current.granted && current.allowsAlert && current.allowsSound) {
+    return current;
+  }
+
+  const shouldPrompt =
+    current.status === Notifications.PermissionStatus.UNDETERMINED ||
+    (promptIfNeeded && current.canAskAgain);
+
+  if (!shouldPrompt) {
+    return current;
+  }
+
+  try {
+    const requested = await Notifications.requestPermissionsAsync({
+      ios: {
+        allowAlert: true,
+        allowBadge: true,
+        allowSound: true,
+      },
+    });
+    const allowsAlert = Platform.OS !== 'ios' || requested.ios?.allowsAlert !== false;
+    const allowsSound = Platform.OS !== 'ios' || requested.ios?.allowsSound !== false;
+    return {
+      granted: requested.status === 'granted',
+      status: requested.status,
+      canAskAgain: requested.canAskAgain ?? false,
+      allowsAlert,
+      allowsSound,
+    };
+  } catch {
+    return current;
+  }
+}
+
+// Suppress foreground banner/sound for rest timer alarms (user wants haptics/alerts ONLY outside app)
 Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-    shouldShowBanner: true,
-    shouldShowList: true,
-  }),
+  handleNotification: async (notification) => {
+    const isRestAlarm = REST_TIMER_NOTIF_IDS.includes(notification.request.identifier);
+    if (isRestAlarm && AppState.currentState === 'active') {
+      return {
+        shouldShowAlert: false,
+        shouldPlaySound: false,
+        shouldSetBadge: false,
+        shouldShowBanner: false,
+        shouldShowList: false,
+      };
+    }
+    return {
+      shouldShowAlert: true,
+      shouldPlaySound: true,
+      shouldSetBadge: false,
+      shouldShowBanner: true,
+      shouldShowList: true,
+    };
+  },
 });
 
 /**
@@ -121,7 +209,7 @@ async function getDynamicSupplementCopy(settings?: AppSettings): Promise<{
   const summary = buildActiveSupplementsSummary(activeSupps, weightKg);
   return {
     title: `Dzisiejsze suplementy (${activeSupps.length}) 💧`,
-    body: `${summary} — czy dzisiejszy zestaw już wzięty?`,
+    body: `${summary} - czy dzisiejszy zestaw już wzięty?`,
     eveningBody: `Przed snem sprawdź zestaw: ${summary}.`,
   };
 }
@@ -237,8 +325,8 @@ export async function scheduleCreatineReminders(
 export async function setCreatineReminderEnabled(enabled: boolean): Promise<boolean> {
   try {
     if (enabled) {
-      const { status } = await Notifications.requestPermissionsAsync();
-      if (status !== 'granted') {
+      const perm = await ensureNotificationPermissions(true);
+      if (!perm.granted) {
         await AsyncStorage.setItem(CREATINE_NOTIF_STORAGE_KEY, 'false');
         return false;
       }
@@ -308,8 +396,8 @@ export async function isDailyWeightReminderEnabled(): Promise<boolean> {
 export async function setDailyWeightReminder(enabled: boolean, hour?: number): Promise<boolean> {
   try {
     if (enabled) {
-      const { status } = await Notifications.requestPermissionsAsync();
-      if (status !== 'granted') {
+      const perm = await ensureNotificationPermissions(true);
+      if (!perm.granted) {
         await AsyncStorage.setItem(WEIGHT_NOTIF_STORAGE_KEY, 'false');
         return false;
       }
@@ -363,13 +451,6 @@ export async function syncRemindersWithSettings(settings: AppSettings): Promise<
 
 // ==================== WORKOUT REST TIMER ALARM-STYLE NOTIFICATIONS ====================
 
-const REST_TIMER_CHANNEL_ID = 'rest_timer_alarm_v2';
-const REST_TIMER_NOTIF_IDS = [
-  'iron_routine_rest_alarm_1',
-  'iron_routine_rest_alarm_2',
-  'iron_routine_rest_alarm_3',
-];
-
 async function ensureRestTimerChannel(): Promise<void> {
   if (Platform.OS !== 'android') return;
   try {
@@ -397,10 +478,58 @@ export async function cancelRestFinishedNotification(): Promise<void> {
   );
 }
 
+async function dispatchRestWave(
+  seconds: number,
+  exerciseName: string,
+  nextInfo: string | undefined,
+  multiBuzz: boolean
+): Promise<boolean> {
+  const baseSeconds = Math.max(2, Math.round(seconds));
+  const offsets = multiBuzz ? [0, 2, 4] : [0];
+  const bodyText = nextInfo ? `${exerciseName} • ${nextInfo}` : exerciseName;
+
+  const scheduleWithSound = async (soundName: 'rest_alarm.wav' | 'default') => {
+    await Promise.all(
+      offsets.map((offset, idx) =>
+        Notifications.scheduleNotificationAsync({
+          identifier: REST_TIMER_NOTIF_IDS[idx],
+          content: {
+            title: idx === 0 ? '⏰ KONIEC PRZERWY! WRACAJ DO SERII!' : '⏰ CZAS NA KOLEJNĄ SERIĘ!',
+            body: bodyText,
+            sound: soundName,
+            // Always use standard 'active' interruptionLevel: Personal Team iOS builds lack
+            // com.apple.developer.usernotifications.time-sensitive and may drop timeSensitive alerts.
+            interruptionLevel: 'active',
+          },
+          trigger: {
+            type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+            seconds: baseSeconds + offset,
+            repeats: false,
+            ...(Platform.OS === 'android' ? { channelId: REST_TIMER_CHANNEL_ID } : {}),
+          },
+        })
+      )
+    );
+  };
+
+  try {
+    await scheduleWithSound('rest_alarm.wav');
+    return true;
+  } catch (err) {
+    console.warn('Custom rest sound failed, retrying with system default sound:', err);
+    try {
+      await scheduleWithSound('default');
+      return true;
+    } catch (fallbackErr) {
+      console.warn('Error scheduling rest alarm notifications:', fallbackErr);
+      return false;
+    }
+  }
+}
+
 /**
- * Schedules alarm-like multi-wave background alerts (with custom bundled alarm chime
- * + Time Sensitive interruption + Android max vibration pattern) so the user hears
- * and feels the end of rest even when screen is locked or app is backgrounded/closed.
+ * Schedules alarm-style multi-wave background notifications (bundled WAV sound + native iOS
+ * notification vibration / Android max vibration) so the alert fires outside the app.
  */
 export async function scheduleRestFinishedNotification(
   seconds: number,
@@ -414,35 +543,33 @@ export async function scheduleRestFinishedNotification(
     const settings = await getAppSettings();
     if (!settings.restNotificationsEnabled) return;
 
-    const { status } = await Notifications.getPermissionsAsync();
-    if (status !== 'granted') return;
+    const perm = await ensureNotificationPermissions(false);
+    if (!perm.granted) return;
 
     await ensureRestTimerChannel();
-
-    const baseSeconds = Math.max(2, Math.round(seconds));
-    const offsets = settings.restEndMultiBuzz ? [0, 2, 4] : [0];
-    const bodyText = nextInfo ? `${exerciseName} • ${nextInfo}` : exerciseName;
-
-    await Promise.all(
-      offsets.map((offset, idx) =>
-        Notifications.scheduleNotificationAsync({
-          identifier: REST_TIMER_NOTIF_IDS[idx],
-          content: {
-            title: idx === 0 ? '⏰ KONIEC PRZERWY — WRACAJ DO SERII!' : '⏰ CZAS NA SERIĘ!',
-            body: bodyText,
-            sound: 'rest_alarm.wav',
-            interruptionLevel: settings.restTimeSensitive ? 'timeSensitive' : 'active',
-          },
-          trigger: {
-            type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
-            seconds: baseSeconds + offset,
-            repeats: false,
-            ...(Platform.OS === 'android' ? { channelId: REST_TIMER_CHANNEL_ID } : {}),
-          },
-        })
-      )
-    );
+    await dispatchRestWave(seconds, exerciseName, nextInfo, settings.restEndMultiBuzz);
   } catch (e) {
     console.warn('Error scheduling rest alarm notifications:', e);
   }
+}
+
+/**
+ * Schedules a 5-second background alarm test so the user can lock the screen or switch apps
+ * and verify native OS lockscreen vibration + alarm delivery.
+ */
+export async function scheduleTestRestNotification(): Promise<NotificationPermissionSummary & { scheduled: boolean }> {
+  const perm = await ensureNotificationPermissions(true);
+  if (!perm.granted) {
+    return { ...perm, scheduled: false };
+  }
+  const settings = await getAppSettings();
+  await cancelRestFinishedNotification();
+  await ensureRestTimerChannel();
+  const scheduled = await dispatchRestWave(
+    5,
+    'Test alarmu końca przerwy',
+    'Jeśli ekran jest zablokowany lub jesteś poza aplikacją, poczujesz serię wibracji',
+    settings.restEndMultiBuzz
+  );
+  return { ...perm, scheduled };
 }

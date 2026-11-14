@@ -1,143 +1,128 @@
 import { useState } from 'react';
+import { Award, Sliders } from 'lucide-react';
 import { calculate1RM, TRAINING_ZONES } from '../data/websiteContent';
 
-const PRESETS = [
-  { label: 'Ławka 85×6', weight: 85, reps: 6 },
-  { label: 'Przysiad 110×5', weight: 110, reps: 5 },
-  { label: 'Martwy ciąg 140×4', weight: 140, reps: 4 },
-  { label: 'OHP 60×8', weight: 60, reps: 8 },
-] as const;
-
 export function EpleyLabSection() {
-  const [weight, setWeight] = useState(90);
-  const [reps, setReps] = useState(6);
+  const [weight, setWeight] = useState(100);
+  const [reps, setReps] = useState(5);
 
   const estimated1RM = calculate1RM(weight, reps);
+  const activeZoneIndex = reps <= 5 ? 0 : reps <= 12 ? 1 : 2;
+  const weightPercentages = [100, 92, 85, 78, 70] as const;
 
   return (
-    <section id="kalkulator" className="border-b border-white/[0.06] py-20">
-      <div className="mx-auto max-w-6xl px-4 sm:px-6">
-        <div className="grid gap-10 rounded-3xl border border-white/[0.08] bg-[#0B0B0E] p-6 shadow-glass-card sm:p-10 lg:grid-cols-12 lg:items-center">
-          <div className="lg:col-span-6">
-            <div className="font-mono text-[11px] tracking-[0.18em] text-zinc-500 uppercase">
-              02 // KALKULATOR 1RM EPLEYA
+    <section id="epley" className="border-b border-hairline bg-black py-20 sm:py-24">
+      <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
+        <div className="grid grid-cols-1 items-start gap-10 lg:grid-cols-12">
+          <div className="lg:col-span-5">
+            <div className="inline-flex items-center gap-2 font-mono text-[11px] font-bold uppercase tracking-[0.16em] text-amber-300">
+              <Sliders className="h-3.5 w-3.5" aria-hidden="true" />
+              <span>SILNIK EPLEY 1RM</span>
             </div>
-            <h2 className="mt-2.5 font-display text-3xl font-bold tracking-[-0.03em] text-white">
-              Przetestuj silnik progresu
+            <h2 className="mt-3 font-display text-3xl font-extrabold tracking-tight text-white sm:text-4xl">
+              Kazda seria przeliczana automatycznie w czasie rzeczywistym.
             </h2>
-            <p className="mt-3 text-sm leading-relaxed text-zinc-400">
-              Dokładnie ten sam algorytm <code className="font-mono text-zinc-200">w × (1 + r / 30)</code>{' '}
-              automatycznie wylicza rekordy w aplikacji po każdej zapisanej serii.
+            <p className="mt-4 text-sm leading-relaxed text-zinc-400 sm:text-base">
+              Nie musisz robic maxow co tydzien, zeby wiedziec, czy stajesz sie silniejszy.
+              Kalkulator Epley wyznacza szacowany 1RM po kazdym zalogowanym cwiczeniu i laczy go ze wspolna historia konta.
             </p>
 
-            {/* Quick Presets */}
-            <div className="mt-5 flex flex-wrap gap-2">
-              {PRESETS.map((preset) => {
-                const isActive = weight === preset.weight && reps === preset.reps;
+            <div className="mt-8 space-y-2.5">
+              {TRAINING_ZONES.map((zone, idx) => {
+                const isActive = idx === activeZoneIndex;
                 return (
-                  <button
-                    key={preset.label}
-                    type="button"
-                    onClick={() => {
-                      setWeight(preset.weight);
-                      setReps(preset.reps);
-                    }}
-                    className={`rounded-full border px-3 py-1 font-mono text-[11px] transition ${
+                  <div
+                    key={zone.label}
+                    className={`flex items-center justify-between rounded-2xl border px-4 py-3 text-xs transition-colors ${
                       isActive
-                        ? 'border-white bg-white font-bold text-black'
-                        : 'border-white/10 bg-white/[0.03] text-zinc-400 hover:border-white/25 hover:text-white'
+                        ? 'border-white bg-elevated text-white'
+                        : 'border-hairline bg-surface text-zinc-400'
                     }`}
                   >
-                    {preset.label}
-                  </button>
+                    <div>
+                      <span className="font-bold text-white">{zone.label}</span>
+                      <span className="ml-2 font-mono text-[11px] text-zinc-500">
+                        ({zone.range})
+                      </span>
+                    </div>
+                    <span className="font-mono text-[11px] text-amber-300">{zone.formula}</span>
+                  </div>
                 );
               })}
             </div>
+          </div>
 
-            {/* Sliders */}
-            <div className="mt-7 space-y-6">
+          <div className="mobile-card rounded-[24px] p-6 sm:p-8 lg:col-span-7">
+            <div className="flex flex-wrap items-center justify-between gap-4 border-b border-hairline pb-6">
               <div>
-                <div className="mb-2.5 flex items-center justify-between">
-                  <label htmlFor="weight-range" className="font-mono text-xs text-zinc-400">
-                    CIĘŻAR ROBOCZY
-                  </label>
-                  <span className="font-mono text-sm font-bold tabular-nums text-white">
-                    {weight} kg
+                <span className="font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-zinc-500">
+                  SZACOWANY MAKS (1RM)
+                </span>
+                <div className="mt-1 flex items-baseline gap-2">
+                  <span className="font-display text-5xl font-extrabold tabular-nums text-white">
+                    {estimated1RM}
                   </span>
+                  <span className="font-mono text-lg font-bold text-amberforge">kg</span>
+                </div>
+              </div>
+
+              <div className="inline-flex items-center gap-2 rounded-xl border border-hairline bg-black px-3.5 py-2 text-xs font-semibold text-white">
+                <Award className="h-4 w-4 text-amberforge" aria-hidden="true" />
+                <span>Strefa: {TRAINING_ZONES[activeZoneIndex].label}</span>
+              </div>
+            </div>
+
+            <div className="mt-6 grid grid-cols-1 gap-6 sm:grid-cols-2">
+              <div>
+                <div className="mb-2 flex items-center justify-between text-xs">
+                  <span className="font-semibold text-zinc-300">Ciezar serii</span>
+                  <span className="font-mono font-bold tabular-nums text-white">{weight} kg</span>
                 </div>
                 <input
-                  id="weight-range"
                   type="range"
                   min={20}
-                  max={220}
+                  max={240}
                   step={2.5}
                   value={weight}
                   onChange={(e) => setWeight(Number(e.target.value))}
-                  className="mono-slider w-full"
+                  aria-label="Ciezar serii w kg"
+                  className="h-2 w-full cursor-pointer appearance-none rounded-lg bg-tertiary accent-white"
                 />
               </div>
 
               <div>
-                <div className="mb-2.5 flex items-center justify-between">
-                  <label htmlFor="reps-range" className="font-mono text-xs text-zinc-400">
-                    LICZBA POWTÓRZEŃ
-                  </label>
-                  <span className="font-mono text-sm font-bold tabular-nums text-white">
-                    {reps} {reps === 1 ? 'powt.' : 'powt.'}
-                  </span>
+                <div className="mb-2 flex items-center justify-between text-xs">
+                  <span className="font-semibold text-zinc-300">Powtorzenia</span>
+                  <span className="font-mono font-bold tabular-nums text-white">{reps} powt.</span>
                 </div>
                 <input
-                  id="reps-range"
                   type="range"
                   min={1}
-                  max={15}
+                  max={20}
                   step={1}
                   value={reps}
                   onChange={(e) => setReps(Number(e.target.value))}
-                  className="mono-slider w-full"
+                  aria-label="Liczba powtorzen"
+                  className="h-2 w-full cursor-pointer appearance-none rounded-lg bg-tertiary accent-white"
                 />
               </div>
             </div>
-          </div>
 
-          <div className="lg:col-span-6">
-            <div className="rounded-2xl border border-white/[0.08] bg-[#050506] p-6">
-              <div className="flex items-baseline justify-between border-b border-white/[0.08] pb-5">
-                <div>
-                  <div className="font-mono text-[10px] tracking-[0.16em] text-zinc-500 uppercase">
-                    SZACOWANY REKORD 1RM
-                  </div>
-                  <div className="mt-1.5 font-display text-5xl font-extrabold tracking-tight tabular-nums text-white sm:text-6xl">
-                    {estimated1RM.toFixed(1)}
-                    <span className="ml-2 font-mono text-xl font-medium text-zinc-500">kg</span>
-                  </div>
-                </div>
-                <div className="text-right font-mono text-xs text-zinc-500">
-                  <div>{weight} kg</div>
-                  <div>× {reps} reps</div>
-                </div>
-              </div>
-
-              <div className="mt-5 grid grid-cols-2 gap-3">
-                {TRAINING_ZONES.map((zone) => {
-                  const zoneKg = (Math.round(estimated1RM * zone.pct * 2) / 2).toFixed(1);
-                  return (
-                    <div
-                      key={zone.label}
-                      className="rounded-xl border border-white/[0.06] bg-[#0B0B0E] p-3.5"
-                    >
-                      <div className="flex items-center justify-between font-mono text-[10px] text-zinc-500">
-                        <span>{Math.round(zone.pct * 100)}% 1RM</span>
-                        <span>{zone.reps}</span>
-                      </div>
-                      <div className="mt-1.5 font-mono text-lg font-bold tabular-nums text-white">
-                        {zoneKg} kg
-                      </div>
-                      <div className="text-[11px] text-zinc-500">{zone.label}</div>
+            <div className="mt-7 grid grid-cols-5 gap-2">
+              {weightPercentages.map((pct) => {
+                const load = Math.round((estimated1RM * pct) / 100 / 2.5) * 2.5;
+                return (
+                  <div
+                    key={pct}
+                    className="rounded-xl border border-hairline bg-black p-2.5 text-center"
+                  >
+                    <div className="font-mono text-[10px] text-zinc-500">{pct}%</div>
+                    <div className="mt-1 font-mono text-xs font-bold tabular-nums text-white">
+                      {load} kg
                     </div>
-                  );
-                })}
-              </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>

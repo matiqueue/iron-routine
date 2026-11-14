@@ -43,6 +43,7 @@ import {
   startWorkoutLiveActivity,
   stopWorkoutLiveActivity,
 } from './src/services/liveActivity';
+import { resolveActiveSessionExercises } from './src/utils/sessionExercises';
 
 import { SplashScreen } from './src/components/SplashScreen';
 import { OnboardingScreen } from './src/components/OnboardingScreen';
@@ -349,22 +350,7 @@ function MainApp() {
 
   const launchActiveWorkout = (plan: DayPlan, prog: DayProgress) => {
     const raw = plan.exercises || [];
-    const orderedIds = prog.sessionConfig?.orderedIds;
-    let ordered = raw;
-    if (orderedIds?.length) {
-      const byId = new Map(raw.map((e) => [e.id, e]));
-      ordered = [];
-      for (const id of orderedIds) {
-        const found = byId.get(id);
-        if (found) ordered.push(found);
-      }
-      for (const ex of raw) {
-        if (!ordered.some((o) => o.id === ex.id)) ordered.push(ex);
-      }
-    }
-    const skippedSet = new Set(prog.sessionConfig?.skippedIds || []);
-    const activeList = ordered.filter((e) => !skippedSet.has(e.id));
-    const effectiveList = activeList.length > 0 ? activeList : ordered;
+    const { active: effectiveList } = resolveActiveSessionExercises(raw, prog.sessionConfig);
 
     let completedInSession = 0;
     for (const setsMap of Object.values(prog.sets || {})) {
@@ -683,14 +669,12 @@ function MainApp() {
             visible={true}
             onClose={() => setSessionPickerTarget(null)}
             exercises={sessionPickerTarget.dayPlan.exercises || []}
+            extraLibraryExercises={extraLibraryExercises}
             dayProgress={sessionPickerTarget.progress}
             initialConfig={sessionPickerTarget.progress.sessionConfig}
             mode={sessionPickerTarget.mode}
             onConfirm={handleConfirmPreWorkoutPicker}
-            onOpenAddExercise={() => {
-              setSessionPickerTarget(null);
-              handleSwitchTab('plan');
-            }}
+            onLibraryChanged={() => setProgressRefreshKey((k) => k + 1)}
           />
         )}
 

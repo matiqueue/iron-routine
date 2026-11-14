@@ -16,7 +16,6 @@ import { AnimatedIcon } from './AnimatedIcon';
 import {
   triggerImpactHaptic,
   triggerNotificationHaptic,
-  triggerRestFinishedHapticSequence,
   triggerSelectionHaptic,
 } from '../services/haptics';
 
@@ -199,7 +198,7 @@ export const RestTimerBar: React.FC<RestTimerBarProps> = ({
       if (diff <= 0) {
         setIsFinished(true);
         setIsRunning(false);
-        triggerCompletionFeedback();
+        didNotifyFinishRef.current = true;
       }
     };
 
@@ -223,19 +222,13 @@ export const RestTimerBar: React.FC<RestTimerBarProps> = ({
         if (diff <= 0) {
           setIsFinished(true);
           setIsRunning(false);
-          triggerCompletionFeedback();
+          didNotifyFinishRef.current = true;
         }
       }
     });
 
     return () => subscription.remove();
   }, [isRunning]);
-
-  const triggerCompletionFeedback = async () => {
-    if (didNotifyFinishRef.current) return;
-    didNotifyFinishRef.current = true;
-    await triggerRestFinishedHapticSequence();
-  };
 
   const handleTogglePause = () => {
     triggerSelectionHaptic();
@@ -343,7 +336,7 @@ export const RestTimerBar: React.FC<RestTimerBarProps> = ({
                     active={isFinished}
                   />
                   <Text style={[styles.kicker, { color: isFinished ? theme.text : theme.textMuted, marginBottom: 0 }]}>
-                    {isFinished ? 'KONIEC PRZERWY — CZAS NA SERIĘ!' : 'ODLICZANIE PRZERWY'}
+                    {isFinished ? 'KONIEC PRZERWY! CZAS NA SERIĘ!' : 'ODLICZANIE PRZERWY'}
                   </Text>
                 </View>
                 <Text numberOfLines={1} style={[styles.exerciseTitle, { color: theme.text }]}>
@@ -378,7 +371,7 @@ export const RestTimerBar: React.FC<RestTimerBarProps> = ({
                 {isFinished ? 'KONIEC PRZERWY' : formatTime(secondsLeft)}
               </Text>
               <Text style={[styles.digitsSub, { color: isFinished ? theme.text : theme.textMuted }]}>
-                {isFinished ? 'Wracaj pod ciężar — kolejna seria czeka!' : 'Złap oddech, napij się wody'}
+                {isFinished ? 'Wracaj pod ciężar! Kolejna seria czeka!' : 'Złap oddech, napij się wody'}
               </Text>
             </View>
 

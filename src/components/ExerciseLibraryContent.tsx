@@ -25,6 +25,7 @@ import {
   getCustomExercises,
   saveCustomExercise,
 } from '../services/storage';
+import { useBottomSheetContext } from './InteractiveBottomSheet';
 
 export type LibraryCategoryFilter = MuscleCategory | 'wszystkie' | 'wlasne';
 
@@ -44,6 +45,7 @@ export const ExerciseLibraryContent: React.FC<ExerciseLibraryContentProps> = ({
   onLibraryChanged,
 }) => {
   const { theme } = useAppTheme();
+  const { setScrollOffsetY } = useBottomSheetContext();
 
   const [customExercises, setCustomExercises] = useState<Exercise[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -289,6 +291,8 @@ export const ExerciseLibraryContent: React.FC<ExerciseLibraryContentProps> = ({
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
+        scrollEventThrottle={16}
+        onScroll={(e) => setScrollOffsetY(e.nativeEvent.contentOffset.y)}
       >
         {/* Inline Custom Exercise Form */}
         {showCreateForm ? (
@@ -482,111 +486,171 @@ export const ExerciseLibraryContent: React.FC<ExerciseLibraryContentProps> = ({
           filteredExercises.map((ex) => {
             const isAdded = alreadyInDayIds.includes(ex.id);
             const isExpanded = expandedId === ex.id;
+            const catLabel =
+              MUSCLE_CATEGORY_META.find((m) => m.id === ex.category)?.label || ex.category;
 
             return (
               <View
                 key={ex.id}
-                style={[styles.exRowWrap, { borderBottomColor: theme.hairline }]}
+                style={[
+                  styles.exCard,
+                  {
+                    backgroundColor: theme.bgSecondary,
+                    borderColor: isAdded
+                      ? theme.borderDark
+                      : isExpanded
+                      ? theme.text
+                      : theme.border,
+                  },
+                ]}
               >
                 <TouchableOpacity
-                  style={styles.exRow}
+                  style={styles.exCardMain}
                   onPress={() => handleRowPress(ex)}
-                  activeOpacity={0.7}
+                  activeOpacity={0.78}
                 >
-                  <View style={styles.exInfo}>
-                    <View style={styles.exTitleLine}>
-                      <Text style={[styles.exName, { color: theme.text }]}>{ex.name}</Text>
-                      {ex.isCustom && (
-                        <View style={[styles.customBadge, { backgroundColor: theme.primary }]}>
-                          <Text style={[styles.customBadgeText, { color: theme.primaryText }]}>
-                            WŁASNE
+                  {/* Card Top Tag Row + Action */}
+                  <View style={styles.exCardTopRow}>
+                    <View style={styles.exTagsGroup}>
+                      <View
+                        style={[
+                          styles.catTag,
+                          { backgroundColor: theme.card, borderColor: theme.border },
+                        ]}
+                      >
+                        <Text style={[styles.catTagText, { color: theme.text }]}>
+                          {catLabel.toUpperCase()}
+                        </Text>
+                      </View>
+
+                      {ex.equipment && (
+                        <View
+                          style={[
+                            styles.equipTag,
+                            { backgroundColor: theme.card, borderColor: theme.border },
+                          ]}
+                        >
+                          <Ionicons name="barbell-outline" size={11} color={theme.textMuted} />
+                          <Text style={[styles.equipTagText, { color: theme.textSecondary }]}>
+                            {ex.equipment}
                           </Text>
+                        </View>
+                      )}
+
+                      {ex.isCustom && (
+                        <View style={[styles.customBadge, { backgroundColor: '#F59E0B' }]}>
+                          <Text style={styles.customBadgeText}>WŁASNE</Text>
                         </View>
                       )}
                     </View>
 
-                    <View style={styles.exMetaRow}>
-                      <View
+                    <View style={styles.exActions}>
+                      <TouchableOpacity
                         style={[
-                          styles.catTag,
-                          { backgroundColor: theme.bgSecondary, borderColor: theme.border },
+                          styles.infoIconBtn,
+                          { backgroundColor: theme.card, borderColor: theme.border },
                         ]}
+                        onPress={() => {
+                          LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                          setExpandedId((prev) => (prev === ex.id ? null : ex.id));
+                        }}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                       >
-                        <Text style={[styles.catTagText, { color: theme.textSecondary }]}>
-                          {ex.category.toUpperCase()}
-                        </Text>
-                      </View>
-                      {ex.equipment && (
-                        <Text style={[styles.metaText, { color: theme.textMuted }]}>
-                          {ex.equipment}
-                        </Text>
-                      )}
-                      <Text style={[styles.metaText, { color: theme.textMuted }]}>
-                        • {ex.sets} × {ex.reps} • {ex.rest}s
-                      </Text>
+                        <Ionicons
+                          name={isExpanded ? 'chevron-up' : 'information-outline'}
+                          size={15}
+                          color={theme.text}
+                        />
+                      </TouchableOpacity>
+
+                      {mode === 'pick' || mode === 'swap' ? (
+                        <View
+                          style={[
+                            styles.addPill,
+                            {
+                              backgroundColor: isAdded ? theme.card : theme.primary,
+                              borderColor: isAdded ? theme.border : theme.primary,
+                            },
+                          ]}
+                        >
+                          <Ionicons
+                            name={isAdded ? 'checkmark' : mode === 'swap' ? 'swap-horizontal' : 'add'}
+                            size={14}
+                            color={isAdded ? theme.textMuted : theme.primaryText}
+                          />
+                          <Text
+                            style={[
+                              styles.addPillText,
+                              { color: isAdded ? theme.textMuted : theme.primaryText },
+                            ]}
+                          >
+                            {mode === 'swap' ? 'Zamień' : isAdded ? 'Dodano' : 'Dodaj'}
+                          </Text>
+                        </View>
+                      ) : ex.isCustom ? (
+                        <TouchableOpacity
+                          style={[
+                            styles.infoIconBtn,
+                            { backgroundColor: theme.card, borderColor: theme.border },
+                          ]}
+                          onPress={() => handleDeleteCustom(ex)}
+                        >
+                          <Ionicons name="trash-outline" size={15} color="#EF4444" />
+                        </TouchableOpacity>
+                      ) : null}
                     </View>
                   </View>
 
-                  <View style={styles.exActions}>
-                    <TouchableOpacity
-                      style={[styles.infoIconBtn, { backgroundColor: theme.bgSecondary }]}
-                      onPress={() => {
-                        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-                        setExpandedId((prev) => (prev === ex.id ? null : ex.id));
-                      }}
-                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                    >
-                      <Ionicons
-                        name={isExpanded ? 'chevron-up' : 'information-outline'}
-                        size={16}
-                        color={theme.text}
-                      />
-                    </TouchableOpacity>
+                  {/* Title */}
+                  <Text style={[styles.exName, { color: theme.text }]}>{ex.name}</Text>
 
-                    {mode === 'pick' || mode === 'swap' ? (
-                      <View
-                        style={[
-                          styles.addPill,
-                          {
-                            backgroundColor: isAdded ? theme.bgSecondary : theme.primary,
-                            borderColor: isAdded ? theme.border : theme.primary,
-                          },
-                        ]}
-                      >
-                        <Ionicons
-                          name={isAdded ? 'checkmark' : 'add'}
-                          size={15}
-                          color={isAdded ? theme.textMuted : theme.primaryText}
-                        />
-                        <Text
-                          style={[
-                            styles.addPillText,
-                            { color: isAdded ? theme.textMuted : theme.primaryText },
-                          ]}
-                        >
-                          {mode === 'swap' ? 'Zamień' : isAdded ? 'Dodano' : 'Dodaj'}
-                        </Text>
-                      </View>
-                    ) : ex.isCustom ? (
-                      <TouchableOpacity
-                        style={styles.deleteIconBtn}
-                        onPress={() => handleDeleteCustom(ex)}
-                      >
-                        <Ionicons name="trash-outline" size={16} color={theme.textMuted} />
-                      </TouchableOpacity>
-                    ) : null}
+                  {/* Structured Stats Bar */}
+                  <View style={styles.exStatsStrip}>
+                    <View
+                      style={[
+                        styles.exStatChip,
+                        { backgroundColor: theme.card, borderColor: theme.border },
+                      ]}
+                    >
+                      <Ionicons name="repeat-outline" size={12} color={theme.textMuted} />
+                      <Text style={[styles.exStatText, { color: theme.textSecondary }]}>
+                        {ex.sets} × {ex.reps} powt.
+                      </Text>
+                    </View>
+                    <View
+                      style={[
+                        styles.exStatChip,
+                        { backgroundColor: theme.card, borderColor: theme.border },
+                      ]}
+                    >
+                      <Ionicons name="timer-outline" size={12} color={theme.textMuted} />
+                      <Text style={[styles.exStatText, { color: theme.textSecondary }]}>
+                        Przerwa {ex.rest}s
+                      </Text>
+                    </View>
                   </View>
                 </TouchableOpacity>
 
                 {isExpanded && (
-                  <View style={[styles.expandedBox, { backgroundColor: theme.bgSecondary }]}>
+                  <View
+                    style={[
+                      styles.expandedBox,
+                      { backgroundColor: theme.card, borderColor: theme.border },
+                    ]}
+                  >
+                    <Text style={[styles.expandedLabel, { color: theme.textMuted }]}>
+                      TECHNIKA WYKONANIA
+                    </Text>
                     <Text style={[styles.expandedDesc, { color: theme.textSecondary }]}>
                       {ex.description}
                     </Text>
                     {ex.note ? (
-                      <Text style={[styles.expandedNote, { color: theme.textMuted }]}>
-                        Wskazówka: {ex.note}
-                      </Text>
+                      <View style={[styles.expandedNoteRow, { borderTopColor: theme.hairline }]}>
+                        <Ionicons name="bulb-outline" size={13} color="#F59E0B" />
+                        <Text style={[styles.expandedNote, { color: theme.text }]}>
+                          {ex.note}
+                        </Text>
+                      </View>
                     ) : null}
                   </View>
                 )}
@@ -607,6 +671,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+    paddingHorizontal: 18,
+    paddingTop: 12,
     marginBottom: 10,
   },
   searchBox: {
@@ -637,11 +703,12 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   filterWrap: {
-    marginBottom: 8,
+    marginBottom: 10,
   },
   filterScroll: {
     gap: 6,
-    paddingRight: 10,
+    paddingHorizontal: 18,
+    paddingRight: 24,
   },
   filterPill: {
     paddingHorizontal: 12,
@@ -657,7 +724,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   listContent: {
-    paddingBottom: 32,
+    paddingHorizontal: 18,
+    paddingBottom: 34,
   },
   createCard: {
     padding: 14,
@@ -755,76 +823,106 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     paddingHorizontal: 20,
   },
-  exRowWrap: {
-    borderBottomWidth: StyleSheet.hairlineWidth,
+  exCard: {
+    borderRadius: 16,
+    borderWidth: 1,
+    marginBottom: 10,
+    overflow: 'hidden',
   },
-  exRow: {
+  exCardMain: {
+    padding: 13,
+    gap: 8,
+  },
+  exCardTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 13,
-    gap: 10,
+    gap: 8,
   },
-  exInfo: {
+  exTagsGroup: {
     flex: 1,
-  },
-  exTitleLine: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
     flexWrap: 'wrap',
-    marginBottom: 4,
   },
   exName: {
     fontSize: 15,
-    fontWeight: '700',
+    fontWeight: '800',
+    lineHeight: 20,
   },
   customBadge: {
-    paddingHorizontal: 5,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  customBadgeText: {
-    fontSize: 9,
-    fontWeight: '800',
-    letterSpacing: 0.4,
-  },
-  exMetaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    flexWrap: 'wrap',
-  },
-  catTag: {
     paddingHorizontal: 6,
     paddingVertical: 2,
-    borderRadius: 4,
+    borderRadius: 5,
+  },
+  customBadgeText: {
+    color: '#09090B',
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  catTag: {
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 6,
     borderWidth: StyleSheet.hairlineWidth,
   },
   catTagText: {
     fontSize: 10,
     fontWeight: '800',
+    letterSpacing: 0.4,
   },
-  metaText: {
+  equipTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  equipTagText: {
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  exStatsStrip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flexWrap: 'wrap',
+  },
+  exStatChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  exStatText: {
     fontSize: 12,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   exActions: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+    flexShrink: 0,
   },
   infoIconBtn: {
     width: 30,
     height: 30,
-    borderRadius: 15,
+    borderRadius: 10,
+    borderWidth: StyleSheet.hairlineWidth,
     justifyContent: 'center',
     alignItems: 'center',
   },
   addPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 3,
+    gap: 4,
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 10,
@@ -834,21 +932,34 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '800',
   },
-  deleteIconBtn: {
-    padding: 6,
-  },
   expandedBox: {
+    marginHorizontal: 12,
+    marginBottom: 12,
     padding: 12,
-    borderRadius: 10,
-    marginBottom: 10,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  expandedLabel: {
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+    marginBottom: 4,
   },
   expandedDesc: {
     fontSize: 13,
     lineHeight: 19,
   },
+  expandedNoteRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
   expandedNote: {
+    flex: 1,
     fontSize: 12,
-    marginTop: 6,
     fontWeight: '600',
   },
 });

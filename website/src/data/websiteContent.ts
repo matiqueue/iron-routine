@@ -1,110 +1,138 @@
 export const GITHUB_REPO = 'https://github.com/matiqueue/iron-routine';
+export const CONTRIBUTOR_URL = 'https://github.com/matiqueue';
+export const BUY_ME_COFFEE_URL = 'https://matiqueue-portfolio.vercel.app';
 export const APK_DOWNLOAD_URL =
   'https://github.com/matiqueue/iron-routine/releases/latest/download/IronRoutine.apk';
 export const RELEASES_URL = 'https://github.com/matiqueue/iron-routine/releases';
 export const APP_VERSION = 'v1.0.1';
+export const EXPO_VERSION_LABEL = 'Expo SDK 58';
+export const RN_VERSION_LABEL = 'React Native 0.88';
 
 export type PlatformTab = 'android' | 'ios';
-export type ShowcaseScreen = 'workout' | 'progress' | 'creatine';
+export type ShowcaseScreen = 'workout' | 'progress' | 'health';
 export type ChartTimeframe = '7d' | '30d' | 'all';
 
 export interface SplinePointData {
   label: string;
   value: number;
+  weight: number;
+  reps: number;
 }
 
 export const HERO_SPECS = [
-  { label: 'PRYWATNOŚĆ', value: '0 B w chmurze', sub: '100% AsyncStorage' },
-  { label: 'KALKULACJA', value: '1RM Epley', sub: 'W czasie rzeczywistym' },
-  { label: 'LICENCJA', value: 'Open Source', sub: 'MIT / Brak reklam' },
+  '100% Offline (AsyncStorage + JSON)',
+  'Jeden Profil i Wiele Planow (Wspolne PR)',
+  'Apple Health i Health Connect',
+  'Alarm Przerw + Live Activities',
 ] as const;
 
 export const SPLINE_SERIES: Record<ChartTimeframe, SplinePointData[]> = {
   '7d': [
-    { label: 'Pn', value: 102.5 },
-    { label: 'Śr', value: 105.0 },
-    { label: 'Pt', value: 106.5 },
-    { label: 'Nd', value: 108.5 },
+    { label: '08.11', value: 111, weight: 95, reps: 5 },
+    { label: '10.11', value: 114, weight: 97.5, reps: 5 },
+    { label: '12.11', value: 117, weight: 100, reps: 5 },
+    { label: '14.11', value: 116, weight: 102.5, reps: 4 },
   ],
   '30d': [
-    { label: 'T1', value: 96.0 },
-    { label: 'T2', value: 99.5 },
-    { label: 'T3', value: 102.5 },
-    { label: 'T4', value: 105.0 },
-    { label: 'T5', value: 108.5 },
+    { label: '16.10', value: 105, weight: 87.5, reps: 6 },
+    { label: '22.10', value: 108, weight: 90, reps: 6 },
+    { label: '29.10', value: 108, weight: 92.5, reps: 5 },
+    { label: '05.11', value: 111, weight: 95, reps: 5 },
+    { label: '10.11', value: 114, weight: 97.5, reps: 5 },
+    { label: '14.11', value: 120, weight: 102.5, reps: 5 },
   ],
   all: [
-    { label: 'M1', value: 84.0 },
-    { label: 'M2', value: 90.0 },
-    { label: 'M3', value: 96.5 },
-    { label: 'M4', value: 101.0 },
-    { label: 'M5', value: 105.5 },
-    { label: 'M6', value: 108.5 },
+    { label: 'Sie', value: 93, weight: 77.5, reps: 6 },
+    { label: 'Wrz', value: 99, weight: 82.5, reps: 6 },
+    { label: 'Paz', value: 105, weight: 90, reps: 5 },
+    { label: 'Lis', value: 120, weight: 102.5, reps: 5 },
   ],
 };
 
 export interface WorkoutSetPreview {
-  id: number;
-  label: string;
-  reps: string;
+  exercise: string;
+  series: number;
+  target: string;
+  restSeconds: number;
   done: boolean;
-  active?: boolean;
 }
 
 export const WORKOUT_SETS: readonly WorkoutSetPreview[] = [
-  { id: 1, label: 'S1', reps: '8×85kg', done: true },
-  { id: 2, label: 'S2', reps: '8×85kg', done: true },
-  { id: 3, label: 'S3', reps: '7×87.5kg', done: false, active: true },
-  { id: 4, label: 'S4', reps: '6×90kg', done: false },
+  { exercise: 'Wyciskanie Sztangi Plasko', series: 1, target: '102.5 kg x 5', restSeconds: 180, done: true },
+  { exercise: 'Wyciskanie Sztangi Plasko', series: 2, target: '102.5 kg x 5', restSeconds: 180, done: false },
+  { exercise: 'Podciaganie Szeroko', series: 1, target: '+20 kg x 6', restSeconds: 120, done: false },
+  { exercise: 'Wyciskanie Hantli Skos', series: 1, target: '36 kg x 8', restSeconds: 120, done: false },
 ];
 
-export const PROFILE_PREVIEW = [
-  { name: 'Szymon', prs: '14 PR', weight: '74.2 kg', active: true },
-  { name: 'Gość // Push-Pull', prs: '9 PR', weight: '81.5 kg', active: false },
-  { name: 'Blok Siłowy', prs: '22 PR', weight: '75.0 kg', active: false },
+export const PLAN_PREVIEW = [
+  { name: 'FBEOD Klatka / Plecy / Nogi', tag: 'FBEOD • 3-4 dni/tyg.', active: true },
+  { name: 'Upper / Lower Sila 4D', tag: '4 dni • Aktywuj jednym kliknieciem', active: false },
+  { name: 'Push / Pull / Legs Hypertrophy', tag: '6 dni • Wspolna historia 1RM', active: false },
+] as const;
+
+export const SUPPLEMENTS_PREVIEW = [
+  { name: 'Kreatyna Monohydrat', dose: '0.07 g / kg (~6.0 g)', active: true },
+  { name: 'Cytrulina + Beta-Alanina', dose: 'Pre-workout', active: false },
+  { name: 'Witamina D3 + Omega-3', dose: 'Rano po posilku', active: true },
 ] as const;
 
 export const TRAINING_ZONES = [
-  { pct: 0.9, label: 'Siła maksymalna', reps: '2–4 powt.' },
-  { pct: 0.8, label: 'Siła & Hipertrofia', reps: '6–8 powt.' },
-  { pct: 0.7, label: 'Objętość robocza', reps: '10–12 powt.' },
-  { pct: 0.6, label: 'Technika / Rozgrzewka', reps: '12–15 powt.' },
+  { label: 'Strefa Sily', range: '1-5 powt.', formula: 'W x (1 + R / 30)', active: true },
+  { label: 'Hipertrofia', range: '6-12 powt.', formula: 'W x (1 + R / 30)', active: false },
+  { label: 'Wytrzymalosc', range: '13+ powt.', formula: 'Obj. + czas pracy', active: false },
+] as const;
+
+export const IOS_PREREQUISITES = [
+  {
+    title: 'Komputer Mac + Xcode (wymagane)',
+    detail:
+      'Apple nie zezwala na kompilacje aplikacji z Live Activities (WidgetKit) i Apple HealthKit spod Windowsa ani Linuksa. Potrzebujesz dowolnego Maca z aktualnym Xcode z Mac App Store.',
+  },
+  {
+    title: 'Tryb Dewelopera na iPhone',
+    detail:
+      'Na telefonie wejdz w Ustawienia > Prywatnosc i ochrona > Tryb dewelopera, wlacz go i zrestartuj iPhonea. Podlacz go kablem USB-C / Lightning do Maca i kliknij "Zaufaj".',
+  },
+  {
+    title: 'Darmowe konto Apple ID (7-dniowy podpis)',
+    detail:
+      'Nie potrzebujesz platnego konta Developer ($99). W Xcode > Settings > Accounts zaloguj darmowe Apple ID (Personal Team). Po wgraniu zaufaj certyfikatowi w Ustawienia > Ogolne > VPN i zarzadzanie urzadzeniami (co 7 dni wystarczy kliknac Rebuild).',
+  },
 ] as const;
 
 export const IOS_COMMANDS = [
   'git clone https://github.com/matiqueue/iron-routine.git && cd iron-routine',
-  'npm install',
-  'npm run deploy',
+  'npm install && open ios/IronRoutine.xcworkspace # ustaw swoj Personal Team w Signing & Capabilities',
+  'npm run deploy # buduje Release prosto na podpiety po USB iPhone',
 ] as const;
 
 export const ANDROID_STEPS = [
   {
     step: '01',
-    title: 'Pobierz paczkę APK',
-    desc: 'Pobierz najnowszą kompilację bezpośrednio z oficjalnego wydania GitHub Releases.',
+    title: 'Pobierz plik instalacyjny .apk',
+    detail: 'Kliknij przycisk "Pobierz APK (Android)" i zapisz najnowsze wydanie bezposrednio z GitHub Releases.',
   },
   {
     step: '02',
-    title: 'Zainstaluj lokalnie',
-    desc: 'Otwórz IronRoutine.apk w folderze Pobrane i zezwól na instalację zaufanego pliku.',
+    title: 'Zezwol na instalacje z przegladarki',
+    detail: 'Android poprosi o jednorazowa zgode "Instaluj nieznane aplikacje" dla Chrome lub Plikow.',
   },
   {
     step: '03',
-    title: 'Trenuj w 100% offline',
-    desc: 'Skonfiguruj własny profil bez logowania, konta w chmurze i śledzenia.',
+    title: 'Polacz Health Connect i odpal trening',
+    detail: 'Skonfiguruj profil startowy, suplementy i zezwol na powiadomienia przerw na ekranie blokady.',
   },
 ] as const;
 
-/** Epley 1RM formula matching src/services/storage.ts */
 export function calculate1RM(weight: number, reps: number): number {
-  if (reps <= 0 || weight <= 0) return 0;
-  if (reps === 1) return Math.round(weight * 10) / 10;
-  return Math.round(weight * (1 + reps / 30) * 10) / 10;
+  if (!Number.isFinite(weight) || weight <= 0) return 0;
+  if (!Number.isFinite(reps) || reps <= 1) return Math.round(weight);
+  return Math.round(weight * (1 + reps / 30));
 }
 
 export function formatRestTimer(seconds: number): string {
   const safe = Math.max(0, Math.floor(seconds));
-  const mins = Math.floor(safe / 60);
-  const secs = safe % 60;
-  return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  const m = Math.floor(safe / 60);
+  const s = safe % 60;
+  return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
 }

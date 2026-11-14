@@ -201,7 +201,7 @@ export const ModernSplineChart: React.FC<ModernSplineChartProps> = ({
               </View>
             </View>
           ) : (
-            <Text style={[styles.mainVal, { color: theme.text }]}>— kg</Text>
+            <Text style={[styles.mainVal, { color: theme.text }]}>- kg</Text>
           )}
         </View>
 

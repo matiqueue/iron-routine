@@ -197,7 +197,7 @@ export const EXERCISE_LIBRARY: Exercise[] = [
   ),
   ex(
     'lib_dips_chest',
-    'Pompki na poręczach (Dipsy) — klatka',
+    'Pompki na poręczach (Dipsy) - klatka',
     'klatka',
     'Masa ciała',
     3,
@@ -656,7 +656,7 @@ export const EXERCISE_LIBRARY: Exercise[] = [
   ),
   ex(
     'lib_dips_triceps',
-    'Pompki na poręczach (Dipsy) — triceps',
+    'Pompki na poręczach (Dipsy) - triceps',
     'ramiona',
     'Masa ciała',
     3,
@@ -691,7 +691,7 @@ export const EXERCISE_LIBRARY: Exercise[] = [
   // ==================== BRZUCH ====================
   ex(
     'lib_cable_crunch',
-    'Allachy — skłony tułowia na wyciągu górnym',
+    'Allachy (skłony tułowia na wyciągu górnym)',
     'brzuch',
     'Wyciąg',
     3,
@@ -799,7 +799,7 @@ export const EXERCISE_LIBRARY: Exercise[] = [
   ),
   ex(
     'lib_treadmill_incline',
-    'Bieżnia — marsz pod górę (nachylenie 10–12%)',
+    'Bieżnia - marsz pod górę (nachylenie 10-12%)',
     'ogolne',
     'Maszyna',
     1,
@@ -838,7 +838,7 @@ export const EXERCISE_LIBRARY: Exercise[] = [
     2,
     '6-8',
     150,
-    'Stabilne wyciskanie na maszynie pod kątem dodatnim — maksymalna izolacja i praca do bliskiego upadku górnej części klatki.',
+    'Stabilne wyciskanie na maszynie pod kątem dodatnim: maksymalna izolacja i praca do bliskiego upadku górnej części klatki.',
     'Ściągnij łopatki, kontroluj fazę ekscentryczną przez 2-3 sekundy.'
   ),
   ex(
@@ -871,7 +871,7 @@ export const EXERCISE_LIBRARY: Exercise[] = [
     2,
     '5-8',
     120,
-    'Hybryda wyciskania wąsko i wyciskania francuskiego — potężne przeciążenie tricepsów bez nadmiernego bólu łokci.',
+    'Hybryda wyciskania wąsko i wyciskania francuskiego: potężne przeciążenie tricepsów bez nadmiernego bólu łokci.',
     'Opuszczaj ciężar pod kontrolą w okolicę brody/szyi, utrzymując przedramiona blisko pionu.'
   ),
   ex(
@@ -1055,7 +1055,7 @@ export function buildPlanDaysFromTemplate(
   if (templateKey === 'fbw3') {
     const dayA: DayPlan = {
       id: 'mon',
-      name: 'FBW A — Siła bazowa',
+      name: 'FBW A · Siła bazowa',
       subtitle: 'Nogi • Klatka • Plecy • Barki • Brzuch',
       iconName: 'barbell-outline',
       bannerTag: 'fbw',
@@ -1072,7 +1072,7 @@ export function buildPlanDaysFromTemplate(
     };
     const dayB: DayPlan = {
       id: 'wed',
-      name: 'FBW B — Hipertrofia',
+      name: 'FBW B · Hipertrofia',
       subtitle: 'Dwugłowe • Góra klatki • Drążek • Barki',
       iconName: 'fitness-outline',
       bannerTag: 'fbw',
@@ -1089,7 +1089,7 @@ export function buildPlanDaysFromTemplate(
     };
     const dayC: DayPlan = {
       id: 'fri',
-      name: 'FBW C — Akcesoria & Wyciągi',
+      name: 'FBW C · Akcesoria i Wyciągi',
       subtitle: 'Suwnica • Rozpiętki • Wiosło • Ramiona',
       iconName: 'flash-outline',
       bannerTag: 'fbw',
@@ -1119,7 +1119,7 @@ export function buildPlanDaysFromTemplate(
   if (templateKey === 'upper_lower') {
     const upperA: DayPlan = {
       id: 'mon',
-      name: 'Upper A — Siła Góry',
+      name: 'Upper A · Siła Góry',
       subtitle: 'Klatka • Plecy • Barki • Ramiona',
       iconName: 'barbell-outline',
       bannerTag: 'upper',
@@ -1137,7 +1137,7 @@ export function buildPlanDaysFromTemplate(
     };
     const lowerA: DayPlan = {
       id: 'tue',
-      name: 'Lower A — Przysiad & Przód uda',
+      name: 'Lower A · Przysiad i Przód uda',
       subtitle: 'Czworogłowe • Dwugłowe • Łydki • Brzuch',
       iconName: 'walk-outline',
       bannerTag: 'lower',
@@ -1154,7 +1154,7 @@ export function buildPlanDaysFromTemplate(
     };
     const upperB: DayPlan = {
       id: 'thu',
-      name: 'Upper B — Hipertrofia Góry',
+      name: 'Upper B · Hipertrofia Góry',
       subtitle: 'Skos dodatni • Wiosłowanie • Barki bok • Tył',
       iconName: 'fitness-outline',
       bannerTag: 'upper',
@@ -1172,7 +1172,7 @@ export function buildPlanDaysFromTemplate(
     };
     const lowerB: DayPlan = {
       id: 'fri',
-      name: 'Lower B — Tył uda & Pośladek',
+      name: 'Lower B · Tył uda i Pośladek',
       subtitle: 'Dwugłowe • Pośladki • Suwnica • Brzuch',
       iconName: 'flame-outline',
       bannerTag: 'lower',
@@ -1256,12 +1256,12 @@ export function buildPlanDaysFromTemplate(
     });
 
     return [
-      pushDay('mon', 'Push A — Wypychanie'),
-      pullDay('tue', 'Pull A — Przyciąganie'),
-      legsDay('wed', 'Legs A — Nogi'),
-      pushDay('thu', 'Push B — Wypychanie'),
-      pullDay('fri', 'Pull B — Przyciąganie'),
-      legsDay('sat', 'Legs B — Nogi'),
+      pushDay('mon', 'Push A · Wypychanie'),
+      pullDay('tue', 'Pull A · Przyciąganie'),
+      legsDay('wed', 'Legs A · Nogi'),
+      pushDay('thu', 'Push B · Wypychanie'),
+      pullDay('fri', 'Pull B · Przyciąganie'),
+      legsDay('sat', 'Legs B · Nogi'),
       makeRestDay('sun', 'Regeneracja', 'Odpoczynek po 6 dniach treningu', 'rest'),
     ];
   }

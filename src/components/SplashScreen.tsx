@@ -6,7 +6,7 @@ import {
   Animated,
   Easing,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import Svg, { Circle, Path } from 'react-native-svg';
 import { useAppTheme } from '../context/ThemeContext';
 
 interface SplashScreenProps {
@@ -59,7 +59,30 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onFinish }) => {
     <Animated.View style={[styles.container, { backgroundColor: theme.bg, opacity: fadeAnim }]}>
       <View style={styles.centerContent}>
         <View style={[styles.iconBox, { borderColor: theme.borderDark, backgroundColor: theme.bgSecondary }]}>
-          <Ionicons name="barbell-outline" size={38} color={theme.text} />
+          <Svg width={42} height={42} viewBox="0 0 64 64">
+            <Path
+              fillRule="evenodd"
+              fill={theme.text}
+              d="M32 7 A25 25 0 1 0 31.99 7 Z M13.25 24.5 C12 24.5 11 25.5 11 26.75 V37.25 C11 38.5 12 39.5 13.25 39.5 C14.5 39.5 15.5 38.5 15.5 37.25 V26.75 C15.5 25.5 14.5 24.5 13.25 24.5 Z M50.75 24.5 C49.5 24.5 48.5 25.5 48.5 26.75 V37.25 C48.5 38.5 49.5 39.5 50.75 39.5 C52 39.5 53 38.5 53 37.25 V26.75 C53 25.5 52 24.5 50.75 24.5 Z M32 24.5 A7.5 7.5 0 1 0 31.99 24.5 Z"
+            />
+            <Circle
+              cx="32"
+              cy="32"
+              r="21.5"
+              stroke={theme.bgSecondary}
+              strokeOpacity={0.35}
+              strokeWidth="1.2"
+              fill="none"
+            />
+            <Circle
+              cx="32"
+              cy="32"
+              r="10.5"
+              stroke="#F59E0B"
+              strokeWidth="2.4"
+              fill="none"
+            />
+          </Svg>
         </View>
 
         <Text style={[styles.title, { color: theme.text }]}>IRON ROUTINE</Text>

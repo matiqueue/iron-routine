@@ -1,11 +1,13 @@
-import { Apple, ArrowRight, Download } from 'lucide-react';
+import { Apple, ArrowRight, Coffee, Download, GitBranch } from 'lucide-react';
 import {
   APK_DOWNLOAD_URL,
   APP_VERSION,
+  BUY_ME_COFFEE_URL,
+  CONTRIBUTOR_URL,
   HERO_SPECS,
-  type PlatformTab,
+  PlatformTab,
 } from '../data/websiteContent';
-import { PhoneShowcase } from './PhoneShowcase';
+import { PlateMark } from './PlateMark';
 
 interface HeroSectionProps {
   onSelectPlatform: (platform: PlatformTab) => void;
@@ -13,71 +15,97 @@ interface HeroSectionProps {
 
 export function HeroSection({ onSelectPlatform }: HeroSectionProps) {
   return (
-    <section className="relative overflow-hidden border-b border-white/[0.06]">
-      {/* Architectural backdrop layers */}
-      <div aria-hidden="true" className="hero-spotlight pointer-events-none absolute inset-0" />
-      <div aria-hidden="true" className="architectural-grid pointer-events-none absolute inset-0" />
+    <section
+      id="top"
+      className="relative overflow-hidden border-b border-hairline bg-black pb-20 pt-14 sm:pb-24 sm:pt-20"
+    >
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute left-1/2 top-0 h-[360px] w-[640px] -translate-x-1/2 rounded-full bg-amberforge/[0.045] blur-[120px]"
+      />
 
-      <div className="relative mx-auto grid max-w-6xl gap-14 px-4 py-16 sm:px-6 lg:grid-cols-12 lg:items-center lg:gap-10 lg:py-24">
-        <div className="lg:col-span-7">
-          <div className="inline-flex items-center gap-2.5 rounded-full border border-white/10 bg-white/[0.03] px-3.5 py-1.5 backdrop-blur-md">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-            <span className="font-mono text-[11px] tracking-[0.14em] text-zinc-300 uppercase">
-              Expo SDK 58 • 100% Offline • {APP_VERSION}
+      <div className="relative mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
+        <div className="flex flex-col items-center text-center">
+          <div className="inline-flex items-center gap-2.5 rounded-full border border-hairline bg-surface px-3.5 py-1.5 shadow-sm">
+            <PlateMark size={16} className="text-white" />
+            <span className="font-mono text-[11px] font-bold tracking-[0.14em] text-zinc-200">
+              IRON ROUTINE {APP_VERSION}
+            </span>
+            <span className="h-1 w-1 rounded-full bg-zinc-600" />
+            <span className="font-mono text-[11px] text-amber-300">
+              100% OFFLINE
             </span>
           </div>
 
-          <h1 className="mt-7 font-display text-4xl font-extrabold tracking-[-0.04em] text-white sm:text-6xl lg:text-[4.25rem] lg:leading-[1.02]">
-            Trening siłowy.
-            <br />
-            <span className="bg-gradient-to-b from-white via-zinc-200 to-zinc-500 bg-clip-text text-transparent">
-              Zero szumu.
+          <h1 className="mt-8 max-w-4xl font-display text-4xl font-extrabold leading-[1.06] tracking-tight text-white sm:text-6xl lg:text-[66px]">
+            Trenuj ciezko.
+            <span className="mt-1 block text-zinc-400">
+              Reszte oddaj rutynowi.
             </span>
           </h1>
 
-          <p className="mt-6 max-w-xl text-base leading-relaxed text-zinc-400 sm:text-lg">
-            Monochromatyczny dziennik treningowy na iOS i Androida stworzony do pracy na siłowni bez
-            internetu. Dynamic Island Live Activities, estymacja 1RM Epleya, wykresy SVG i
-            przypomnienia o kreatynie — bez kont, reklam i chmury.
+          <p className="mt-6 max-w-2xl text-base leading-relaxed text-zinc-400 sm:text-lg">
+            Dziennik silowy na iOS i Androida w stylu czystego AMOLED. Jeden profil z
+            wieloma planami i wspolnymi rekordami PR, integracja z Apple Health,
+            Live Activities oraz niezawodny alarm konca przerwy poza aplikacja.
           </p>
 
-          <div className="mt-9 flex flex-wrap items-center gap-3.5">
+          <div className="mt-9 flex flex-wrap items-center justify-center gap-3">
             <a
               href={APK_DOWNLOAD_URL}
-              className="group inline-flex items-center gap-2.5 rounded-full bg-white px-6 py-3.5 font-mono text-xs font-bold tracking-wide text-black transition hover:bg-zinc-200"
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={() => onSelectPlatform('android')}
+              className="inline-flex h-12 items-center gap-2.5 rounded-2xl bg-white px-6 text-sm font-bold tracking-tight text-black transition-all hover:bg-zinc-200 active:scale-[0.98]"
             >
-              <Download className="h-4 w-4 stroke-[2.25]" />
-              <span>POBIERZ ANDROID (.APK)</span>
-              <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
+              <Download className="h-4 w-4" aria-hidden="true" />
+              <span>Pobierz APK (Android)</span>
             </a>
 
             <a
               href="#install"
               onClick={() => onSelectPlatform('ios')}
-              className="inline-flex items-center gap-2.5 rounded-full border border-white/15 bg-white/[0.03] px-6 py-3.5 font-mono text-xs font-bold tracking-wide text-white backdrop-blur-md transition hover:border-white/35 hover:bg-white/[0.07]"
+              className="inline-flex h-12 items-center gap-2.5 rounded-2xl border border-hairline bg-surface px-6 text-sm font-semibold text-white transition-all hover:border-zinc-500 hover:bg-elevated active:scale-[0.98]"
             >
-              <Apple className="h-4 w-4" />
-              <span>INSTALACJA IPHONE</span>
+              <Apple className="h-4 w-4" aria-hidden="true" />
+              <span>Wgraj na iPhone (Xcode)</span>
+              <ArrowRight className="h-3.5 w-3.5 text-zinc-400" aria-hidden="true" />
             </a>
           </div>
 
-          <div className="mt-12 grid grid-cols-1 divide-y divide-white/[0.08] overflow-hidden rounded-2xl border border-white/[0.08] bg-[#0B0B0E]/80 backdrop-blur-md sm:grid-cols-3 sm:divide-x sm:divide-y-0">
+          <div className="mt-5 flex flex-wrap items-center justify-center gap-4 text-xs text-zinc-500">
+            <a
+              href={CONTRIBUTOR_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 transition-colors hover:text-white"
+            >
+              <GitBranch className="h-3.5 w-3.5" aria-hidden="true" />
+              <span>Main Contributor: @matiqueue</span>
+            </a>
+            <span className="text-zinc-700">|</span>
+            <a
+              href={BUY_ME_COFFEE_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 text-amber-300/90 transition-colors hover:text-amber-200"
+            >
+              <Coffee className="h-3.5 w-3.5" aria-hidden="true" />
+              <span>Buy Me a Coffee</span>
+            </a>
+          </div>
+
+          <div className="mt-11 grid w-full max-w-4xl grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
             {HERO_SPECS.map((spec) => (
-              <div key={spec.label} className="px-5 py-4">
-                <div className="font-mono text-[10px] tracking-[0.16em] text-zinc-500 uppercase">
-                  {spec.label}
-                </div>
-                <div className="mt-1 font-display text-base font-bold tracking-tight text-white">
-                  {spec.value}
-                </div>
-                <div className="mt-0.5 text-xs text-zinc-500">{spec.sub}</div>
+              <div
+                key={spec}
+                className="mobile-card flex items-center justify-center gap-2 rounded-2xl px-3.5 py-2.5 text-center"
+              >
+                <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-amberforge" aria-hidden="true" />
+                <span className="font-mono text-[11px] font-medium text-zinc-300">{spec}</span>
               </div>
             ))}
           </div>
-        </div>
-
-        <div className="lg:col-span-5">
-          <PhoneShowcase />
         </div>
       </div>
     </section>
