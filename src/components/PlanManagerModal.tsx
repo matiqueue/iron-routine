@@ -5,7 +5,6 @@ import {
   StyleSheet,
   TouchableOpacity,
   TextInput,
-  ScrollView,
   Alert,
   KeyboardAvoidingView,
   Platform,
@@ -22,7 +21,7 @@ import {
   setActivePlanId,
 } from '../services/storage';
 import { triggerImpactHaptic, triggerNotificationHaptic, triggerSelectionHaptic } from '../services/haptics';
-import { InteractiveBottomSheet } from './InteractiveBottomSheet';
+import { BottomSheetScrollView, InteractiveBottomSheet } from './InteractiveBottomSheet';
 
 const SHORT_DAY_LABELS: Record<string, string> = {
   mon: 'Pn',
@@ -208,7 +207,7 @@ export const PlanManagerModal: React.FC<PlanManagerModalProps> = ({
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={{ flex: 1 }}
       >
-        <ScrollView
+        <BottomSheetScrollView
           style={styles.scroll}
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
@@ -273,7 +272,7 @@ export const PlanManagerModal: React.FC<PlanManagerModalProps> = ({
                   styles.input,
                   { backgroundColor: theme.card, borderColor: theme.border, color: theme.text },
                 ]}
-                placeholder="Nazwa planu (np. Masa — Push Pull Legs)"
+                placeholder="Nazwa planu (np. Masa - Push Pull Legs)"
                 placeholderTextColor={theme.textMuted}
                 value={newName}
                 onChangeText={setNewName}
@@ -585,7 +584,7 @@ export const PlanManagerModal: React.FC<PlanManagerModalProps> = ({
               </View>
             );
           })}
-        </ScrollView>
+        </BottomSheetScrollView>
       </KeyboardAvoidingView>
     </InteractiveBottomSheet>
   );

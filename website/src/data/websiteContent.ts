@@ -1,110 +1,238 @@
 export const GITHUB_REPO = 'https://github.com/matiqueue/iron-routine';
+export const CONTRIBUTOR_URL = 'https://github.com/matiqueue';
+export const BUY_ME_COFFEE_URL = 'https://matiqueue-portfolio.vercel.app';
 export const APK_DOWNLOAD_URL =
   'https://github.com/matiqueue/iron-routine/releases/latest/download/IronRoutine.apk';
 export const RELEASES_URL = 'https://github.com/matiqueue/iron-routine/releases';
-export const APP_VERSION = 'v1.0.1';
+export const APP_VERSION = 'v2.0.0';
+export const EXPO_VERSION_LABEL = 'Expo SDK 58';
+export const RN_VERSION_LABEL = 'React Native 0.88';
 
+export type AppRoute = '/' | '/funkcje' | '/analityka' | '/instalacja';
 export type PlatformTab = 'android' | 'ios';
-export type ShowcaseScreen = 'workout' | 'progress' | 'creatine';
+export type ShowcaseScreen = 'workout' | 'plans' | 'health';
 export type ChartTimeframe = '7d' | '30d' | 'all';
+export type DayArtTag = 'fbw' | 'pull' | 'legs' | 'shoulders' | 'cardio' | 'rest';
+
+export interface NavItem {
+  path: AppRoute;
+  label: string;
+  pageTitle: string;
+}
+
+export const NAV_ITEMS: readonly NavItem[] = [
+  { path: '/', label: 'Przegląd', pageTitle: 'Iron Routine v2.0.0 | Monochromatyczny Dziennik Treningowy' },
+  { path: '/funkcje', label: 'Funkcje i UI', pageTitle: 'Funkcje i Interfejs | Iron Routine' },
+  { path: '/analityka', label: 'Analityka 1RM', pageTitle: 'Analityka 1RM i Zdrowie | Iron Routine' },
+  { path: '/instalacja', label: 'Instalacja', pageTitle: 'Instalacja iOS i Android | Iron Routine' },
+] as const;
 
 export interface SplinePointData {
   label: string;
   value: number;
+  weight: number;
+  reps: number;
 }
 
-export const HERO_SPECS = [
-  { label: 'PRYWATNOŚĆ', value: '0 B w chmurze', sub: '100% AsyncStorage' },
-  { label: 'KALKULACJA', value: '1RM Epley', sub: 'W czasie rzeczywistym' },
-  { label: 'LICENCJA', value: 'Open Source', sub: 'MIT / Brak reklam' },
+export const HERO_METRICS = [
+  { value: '100%', label: 'Offline (AsyncStorage + JSON)' },
+  { value: '0 PLN', label: 'Zero kont, reklam i chmury' },
+  { value: '1:N', label: 'Jeden profil, wiele planów PR' },
+  { value: '0.1s', label: 'Pauza Dynamic Island i alarm' },
+] as const;
+
+export const PILLAR_LINKS = [
+  {
+    route: '/funkcje' as AppRoute,
+    kicker: '01 / ERGONOMIA I SESJA',
+    title: 'Konfigurator sesji, Live Activity i wspólne PR',
+    desc: 'Przeciągaj ćwiczenia przed startem, zatrzymuj przerwę z pełną synchronizacją Dynamic Island i rotuj plany bez utraty historii.',
+    cta: 'Zobacz symulator UI',
+  },
+  {
+    route: '/analityka' as AppRoute,
+    kicker: '02 / TELEMETRIA SIŁY',
+    title: 'Silnik Epley 1RM, objętość i Apple Health',
+    desc: 'Wykresy progresu 7d/30d/All, monitorowanie snu i kroków oraz elastyczne dawkowanie suplementów wg masy ciała g/kg.',
+    cta: 'Testuj kalkulator 1RM',
+  },
+  {
+    route: '/instalacja' as AppRoute,
+    kicker: '03 / WDROŻENIE NA TELEFON',
+    title: 'Sideload .APK lub bezpośredni build Xcode na iPhone',
+    desc: 'Pełny poradnik włączenia Trybu Dewelopera na iOS, konfiguracji darmowego Apple ID Personal Team i szybkiego startu z terminala.',
+    cta: 'Otwórz poradnik',
+  },
+] as const;
+
+export const DAY_ART_OPTIONS: ReadonlyArray<{
+  tag: DayArtTag;
+  label: string;
+  subtitle: string;
+  setsNote: string;
+}> = [
+  {
+    tag: 'fbw',
+    label: 'FBW / Klatka',
+    subtitle: 'Koncentryczne krążki olimpijskie i oś sztangi',
+    setsNote: 'Tłoczenie płaskie, podciąganie, przysiady',
+  },
+  {
+    tag: 'pull',
+    label: 'Plecy / Pull',
+    subtitle: 'Wektory V-taper i szczytowe spięcie grzbietu',
+    setsNote: 'Ściąganie drążka, wiosłowanie T-Bar, RDL',
+  },
+  {
+    tag: 'legs',
+    label: 'Nogi / Squat',
+    subtitle: 'Łuki siły dolnej połowy ciała i kąt przysiadu',
+    setsNote: 'Wyprosty, uginania, prasa 45°, przywodziciele',
+  },
+  {
+    tag: 'shoulders',
+    label: 'Barki / Ramię',
+    subtitle: 'Łuki napięcia naramiennych i izolacja ramion',
+    setsNote: 'Wznosy na wyciągu, JM Press, modlitewnik',
+  },
+  {
+    tag: 'cardio',
+    label: 'Cardio / Interwał',
+    subtitle: 'Linie toru wydolnościowego i wykres tętna',
+    setsNote: 'Bieg tempowy, ergometr, kroki Apple Health',
+  },
+  {
+    tag: 'rest',
+    label: 'Regeneracja',
+    subtitle: 'Spokojny horyzont snu, mobilności i odbudowy OUN',
+    setsNote: 'Sen 8h+, spacer strefy 2, białko i kreatyna',
+  },
 ] as const;
 
 export const SPLINE_SERIES: Record<ChartTimeframe, SplinePointData[]> = {
   '7d': [
-    { label: 'Pn', value: 102.5 },
-    { label: 'Śr', value: 105.0 },
-    { label: 'Pt', value: 106.5 },
-    { label: 'Nd', value: 108.5 },
+    { label: '08.11', value: 111, weight: 95, reps: 5 },
+    { label: '10.11', value: 114, weight: 97.5, reps: 5 },
+    { label: '12.11', value: 117, weight: 100, reps: 5 },
+    { label: '14.11', value: 116, weight: 102.5, reps: 4 },
   ],
   '30d': [
-    { label: 'T1', value: 96.0 },
-    { label: 'T2', value: 99.5 },
-    { label: 'T3', value: 102.5 },
-    { label: 'T4', value: 105.0 },
-    { label: 'T5', value: 108.5 },
+    { label: '16.10', value: 105, weight: 87.5, reps: 6 },
+    { label: '22.10', value: 108, weight: 90, reps: 6 },
+    { label: '29.10', value: 108, weight: 92.5, reps: 5 },
+    { label: '05.11', value: 111, weight: 95, reps: 5 },
+    { label: '10.11', value: 114, weight: 97.5, reps: 5 },
+    { label: '14.11', value: 120, weight: 102.5, reps: 5 },
   ],
   all: [
-    { label: 'M1', value: 84.0 },
-    { label: 'M2', value: 90.0 },
-    { label: 'M3', value: 96.5 },
-    { label: 'M4', value: 101.0 },
-    { label: 'M5', value: 105.5 },
-    { label: 'M6', value: 108.5 },
+    { label: 'Sie', value: 93, weight: 77.5, reps: 6 },
+    { label: 'Wrz', value: 99, weight: 82.5, reps: 6 },
+    { label: 'Paź', value: 105, weight: 90, reps: 5 },
+    { label: 'Lis', value: 120, weight: 102.5, reps: 5 },
   ],
 };
 
 export interface WorkoutSetPreview {
-  id: number;
-  label: string;
-  reps: string;
+  exercise: string;
+  series: number;
+  target: string;
+  restSeconds: number;
   done: boolean;
-  active?: boolean;
 }
 
 export const WORKOUT_SETS: readonly WorkoutSetPreview[] = [
-  { id: 1, label: 'S1', reps: '8×85kg', done: true },
-  { id: 2, label: 'S2', reps: '8×85kg', done: true },
-  { id: 3, label: 'S3', reps: '7×87.5kg', done: false, active: true },
-  { id: 4, label: 'S4', reps: '6×90kg', done: false },
+  { exercise: 'Pec Deck (Maszyna)', series: 1, target: '134 kg x 8', restSeconds: 180, done: true },
+  { exercise: 'Incline Chest Press (Maszyna)', series: 1, target: '75 kg x 4', restSeconds: 150, done: false },
+  { exercise: 'Wide Grip Lat Pulldown', series: 1, target: '101 kg x 6', restSeconds: 120, done: false },
+  { exercise: 'JM Press', series: 1, target: '52 kg x 4', restSeconds: 120, done: false },
 ];
 
-export const PROFILE_PREVIEW = [
-  { name: 'Szymon', prs: '14 PR', weight: '74.2 kg', active: true },
-  { name: 'Gość // Push-Pull', prs: '9 PR', weight: '81.5 kg', active: false },
-  { name: 'Blok Siłowy', prs: '22 PR', weight: '75.0 kg', active: false },
+export const PLAN_PREVIEW = [
+  { name: 'FBEOD Klatka / Plecy / Nogi', tag: 'FBEOD • 3-4 dni/tyg.', active: true },
+  { name: 'Upper / Lower Siła 4D', tag: '4 dni • Wspólna historia PR', active: false },
+  { name: 'Push / Pull / Legs 6D', tag: '6 dni • Kanoniczna baza', active: false },
+] as const;
+
+export const SUPPLEMENTS_PREVIEW = [
+  { name: 'Kreatyna Monohydrat', perKg: 0.07, mode: 'perkg' as const, fixed: '6.0 g' },
+  { name: 'Cytrulina + Beta-Alanina', perKg: 0, mode: 'fixed' as const, fixed: 'Pre-workout' },
+  { name: 'Witamina D3 + Omega-3', perKg: 0, mode: 'fixed' as const, fixed: 'Rano po posiłku' },
+] as const;
+
+export const MUSCLE_VOLUME_SAMPLE = [
+  { group: 'Klatka', sets: 14, target: 16 },
+  { group: 'Plecy', sets: 16, target: 16 },
+  { group: 'Nogi', sets: 12, target: 14 },
+  { group: 'Barki', sets: 11, target: 12 },
+  { group: 'Ramiona', sets: 10, target: 12 },
 ] as const;
 
 export const TRAINING_ZONES = [
-  { pct: 0.9, label: 'Siła maksymalna', reps: '2–4 powt.' },
-  { pct: 0.8, label: 'Siła & Hipertrofia', reps: '6–8 powt.' },
-  { pct: 0.7, label: 'Objętość robocza', reps: '10–12 powt.' },
-  { pct: 0.6, label: 'Technika / Rozgrzewka', reps: '12–15 powt.' },
+  { label: 'Strefa Siły', range: '1-5 powt.', formula: 'W x (1 + R / 30)' },
+  { label: 'Hipertrofia', range: '6-12 powt.', formula: 'W x (1 + R / 30)' },
+  { label: 'Wytrzymałość', range: '13+ powt.', formula: 'Obj. + czas pracy' },
+] as const;
+
+export const IOS_CHECKLIST = [
+  {
+    id: 'mac',
+    title: '1. Przygotuj Maca z Xcode (App Store)',
+    detail:
+      'Apple wymaga kompilacji macOS dla Live Activities (WidgetKit) oraz Apple HealthKit. Windows ani Linux nie zbudują binarki iOS z natywnymi uprawnieniami.',
+  },
+  {
+    id: 'devmode',
+    title: '2. Włącz Tryb Dewelopera na iPhone',
+    detail:
+      'Otwórz Ustawienia > Prywatność i ochrona > Tryb dewelopera, włącz przełącznik, zrestartuj telefon, podepnij kablem USB i kliknij "Zaufaj komputerowi".',
+  },
+  {
+    id: 'appleid',
+    title: '3. Podpisz aplikację darmowym Apple ID',
+    detail:
+      'Nie potrzebujesz płatnego konta Developer ($99/rok). W Xcode > Settings > Accounts dodaj swoje darmowe Apple ID (Personal Team) i wybierz je dla targetów IronRoutine oraz LiveActivity.',
+  },
+  {
+    id: 'trust',
+    title: '4. Zaufaj certyfikatowi po pierwszym wgraniu',
+    detail:
+      'Po instalacji z terminala wejdź w Ustawienia > Ogólne > VPN i zarządzanie urządzeniami, wybierz swoje Apple ID i kliknij Zaufaj. Co 7 dni odświeżysz podpis jednym poleceniem npm run deploy.',
+  },
 ] as const;
 
 export const IOS_COMMANDS = [
   'git clone https://github.com/matiqueue/iron-routine.git && cd iron-routine',
-  'npm install',
+  'npm install && open ios/IronRoutine.xcworkspace',
   'npm run deploy',
 ] as const;
 
 export const ANDROID_STEPS = [
   {
     step: '01',
-    title: 'Pobierz paczkę APK',
-    desc: 'Pobierz najnowszą kompilację bezpośrednio z oficjalnego wydania GitHub Releases.',
+    title: 'Pobierz paczkę IronRoutine.apk',
+    detail: 'Pobierz najnowszego gotowego klienta Release prosto z GitHub Releases (bez sklepu Google Play).',
   },
   {
     step: '02',
-    title: 'Zainstaluj lokalnie',
-    desc: 'Otwórz IronRoutine.apk w folderze Pobrane i zezwól na instalację zaufanego pliku.',
+    title: 'Zezwól na instalację z przeglądarki',
+    detail: 'Android poprosi o jednorazowe zaufanie dla Chrome lub menedżera plików przy pierwszym uruchomieniu instalatora.',
   },
   {
     step: '03',
-    title: 'Trenuj w 100% offline',
-    desc: 'Skonfiguruj własny profil bez logowania, konta w chmurze i śledzenia.',
+    title: 'Połącz Health Connect i odpal trening',
+    detail: 'Przejdź 4-krokowy animowany onboarding, skonfiguruj suplementy i zezwól na alarm końca przerwy na ekranie blokady.',
   },
 ] as const;
 
-/** Epley 1RM formula matching src/services/storage.ts */
 export function calculate1RM(weight: number, reps: number): number {
-  if (reps <= 0 || weight <= 0) return 0;
-  if (reps === 1) return Math.round(weight * 10) / 10;
-  return Math.round(weight * (1 + reps / 30) * 10) / 10;
+  if (!Number.isFinite(weight) || weight <= 0) return 0;
+  if (!Number.isFinite(reps) || reps <= 1) return Math.round(weight);
+  return Math.round(weight * (1 + reps / 30));
 }
 
 export function formatRestTimer(seconds: number): string {
   const safe = Math.max(0, Math.floor(seconds));
-  const mins = Math.floor(safe / 60);
-  const secs = safe % 60;
-  return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  const m = Math.floor(safe / 60);
+  const s = safe % 60;
+  return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
 }

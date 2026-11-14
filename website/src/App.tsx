@@ -1,25 +1,32 @@
-import { useState } from 'react';
-import { BentoArchitecture } from './components/BentoArchitecture';
-import { EpleyLabSection } from './components/EpleyLabSection';
 import { Footer } from './components/Footer';
-import { HeroSection } from './components/HeroSection';
-import { InstallSection } from './components/InstallSection';
 import { Navbar } from './components/Navbar';
-import type { PlatformTab } from './data/websiteContent';
+import { AnalyticsPage } from './pages/AnalyticsPage';
+import { FeaturesPage } from './pages/FeaturesPage';
+import { HomePage } from './pages/HomePage';
+import { InstallPage } from './pages/InstallPage';
+import { RouterProvider, useRouter } from './utils/router';
 
-export default function App() {
-  const [platform, setPlatform] = useState<PlatformTab>('android');
+function AppShell() {
+  const { route } = useRouter();
 
   return (
-    <div className="min-h-screen bg-[#050506] text-zinc-100">
+    <div className="flex min-h-screen flex-col bg-black text-zinc-100">
       <Navbar />
-      <main>
-        <HeroSection onSelectPlatform={setPlatform} />
-        <BentoArchitecture />
-        <EpleyLabSection />
-        <InstallSection platform={platform} onSelectPlatform={setPlatform} />
+      <main className="flex-1">
+        {route === '/' && <HomePage />}
+        {route === '/funkcje' && <FeaturesPage />}
+        {route === '/analityka' && <AnalyticsPage />}
+        {route === '/instalacja' && <InstallPage />}
       </main>
       <Footer />
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <RouterProvider>
+      <AppShell />
+    </RouterProvider>
   );
 }

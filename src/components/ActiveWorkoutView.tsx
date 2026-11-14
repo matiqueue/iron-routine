@@ -18,20 +18,22 @@ import { DayPlan, DayProgress, Exercise, SessionExerciseConfig, SetEntry } from 
 import { RestTimerBar } from './RestTimerBar';
 import { AnimatedIcon } from './AnimatedIcon';
 import { ExerciseDetailModal } from './ExerciseDetailModal';
-import { InteractiveBottomSheet } from './InteractiveBottomSheet';
+import { BottomSheetScrollView, InteractiveBottomSheet } from './InteractiveBottomSheet';
 import { ExerciseLibraryContent } from './ExerciseLibraryContent';
 import { SessionExercisePickerModal } from './SessionExercisePickerModal';
 import { calculate1RM, getLastExerciseMetrics } from '../services/storage';
 import { cloneExercise } from '../data/exerciseLibrary';
+import { resolveOrderedSessionExercises } from '../utils/sessionExercises';
 import { updateWorkoutLiveActivity } from '../services/liveActivity';
 import {
   cancelRestFinishedNotification,
+  ensureNotificationPermissions,
   scheduleRestFinishedNotification,
 } from '../services/notifications';
+import { getAppSettings } from '../services/settings';
 import {
   triggerImpactHaptic,
   triggerNotificationHaptic,
-  triggerRestFinishedHapticSequence,
   triggerSelectionHaptic,
 } from '../services/haptics';
 
@@ -85,21 +87,6 @@ const getSetRows = (totalSets: number): number[][] => {
   return rows;
 };
 
-const buildOrderedExercises = (raw: Exercise[], savedOrder?: string[]): Exercise[] => {
-  const base = (raw || []).map(cloneExercise);
-  if (!savedOrder?.length) return base;
-  const byId = new Map(base.map((e) => [e.id, e]));
-  const ordered: Exercise[] = [];
-  for (const id of savedOrder) {
-    const found = byId.get(id);
-    if (found) ordered.push(found);
-  }
-  for (const ex of base) {
-    if (!ordered.some((o) => o.id === ex.id)) ordered.push(ex);
-  }
-  return ordered;
-};
-
 export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
   dayPlan,
   profileId,
@@ -113,7 +100,7 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
 }) => {
   const { theme, isDark } = useAppTheme();
   const [allSessionExercises, setAllSessionExercises] = useState<Exercise[]>(() =>
-    buildOrderedExercises(dayPlan.exercises || [], dayProgress.sessionConfig?.orderedIds)
+    resolveOrderedSessionExercises(dayPlan.exercises || [], dayProgress.sessionConfig)
   );
   const [skippedIds, setSkippedIds] = useState<string[]>(
     () => dayProgress.sessionConfig?.skippedIds || []
@@ -141,10 +128,8 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
 
   const prevDayPlanIdRef = useRef(dayPlan.id);
   useEffect(() => {
-    if (prevDayPlanIdRef.current === dayPlan.id) return;
-    prevDayPlanIdRef.current = dayPlan.id;
     setAllSessionExercises(
-      buildOrderedExercises(dayPlan.exercises || [], dayProgress.sessionConfig?.orderedIds)
+      resolveOrderedSessionExercises(dayPlan.exercises || [], dayProgress.sessionConfig)
     );
     setSkippedIds(dayProgress.sessionConfig?.skippedIds || []);
     setExtraSetsMap({});
@@ -153,6 +138,11 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
   }, [dayPlan.id]);
 
   useEffect(() => {
+    getAppSettings().then((s) => {
+      if (s.restNotificationsEnabled) {
+        ensureNotificationPermissions(true);
+      }
+    });
     return () => {
       cancelRestFinishedNotification();
     };
@@ -160,6 +150,7 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
 
   // Rest Timer State
   const [isResting, setIsResting] = useState(false);
+  const [isRestPaused, setIsRestPaused] = useState(false);
   const [isRestFinished, setIsRestFinished] = useState(false);
   const [isRestModalVisible, setIsRestModalVisible] = useState(false);
   const [restSecondsLeft, setRestSecondsLeft] = useState(90);
@@ -170,19 +161,22 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
   const restEndTimeRef = useRef<number>(0);
   const restFinishNotifiedRef = useRef(false);
 
-  // Background-persistent tick for rest timer
+  // Background-persistent tick for rest timer (no in-app haptic; background alarm handles outside-app alert)
   useEffect(() => {
-    if (!isResting) return;
+    if (!isResting || isRestPaused) return;
 
     const tick = () => {
       const diff = Math.max(0, Math.ceil((restEndTimeRef.current - Date.now()) / 1000));
       setRestSecondsLeft(diff);
       if (diff <= 0) {
         setIsResting(false);
+        setIsRestPaused(false);
         setIsRestFinished(true);
         if (!restFinishNotifiedRef.current) {
           restFinishNotifiedRef.current = true;
-          triggerRestFinishedHapticSequence();
+          if (AppState.currentState === 'active') {
+            cancelRestFinishedNotification();
+          }
         }
       }
     };
@@ -200,7 +194,7 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
       clearInterval(interval);
       sub.remove();
     };
-  }, [isResting]);
+  }, [isResting, isRestPaused]);
 
   // Elapsed
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
@@ -423,7 +417,22 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
   useEffect(() => {
     if (!currentExerciseId || !currentExerciseName) return;
 
-    if (isResting && restEndTimeRef.current > Date.now()) {
+    if (isRestPaused && isResting) {
+      updateWorkoutLiveActivity({
+        workoutName: dayPlan.name,
+        exerciseName: currentExerciseName,
+        currentSet: currentSetIndex + 1,
+        totalSets: currentTotalSets,
+        completedSets: completedSetsCount,
+        totalWorkoutSets: totalSets,
+        isRest: true,
+        isRestPaused: true,
+        isRestFinished: false,
+        pausedRestSeconds: restModalSeedSecs,
+        restSeconds: restModalSeedSecs,
+        nextExerciseName: timerNextInfo,
+      });
+    } else if (isResting && !isRestPaused && restEndTimeRef.current > Date.now()) {
       const secsRemaining = Math.max(1, Math.ceil((restEndTimeRef.current - Date.now()) / 1000));
       updateWorkoutLiveActivity({
         workoutName: dayPlan.name,
@@ -433,6 +442,7 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
         completedSets: completedSetsCount,
         totalWorkoutSets: totalSets,
         isRest: true,
+        isRestPaused: false,
         isRestFinished: false,
         restSeconds: secsRemaining,
         nextExerciseName: timerNextInfo,
@@ -446,6 +456,7 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
         completedSets: completedSetsCount,
         totalWorkoutSets: totalSets,
         isRest: true,
+        isRestPaused: false,
         isRestFinished: true,
         restSeconds: 0,
         nextExerciseName: timerNextInfo,
@@ -459,6 +470,7 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
         completedSets: completedSetsCount,
         totalWorkoutSets: totalSets,
         isRest: false,
+        isRestPaused: false,
         isRestFinished: false,
       });
     }
@@ -470,8 +482,10 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
     completedSetsCount,
     totalSets,
     isResting,
+    isRestPaused,
     isRestFinished,
     restModalTargetMs,
+    restModalSeedSecs,
     dayPlan.name,
     timerNextInfo,
   ]);
@@ -618,6 +632,7 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
     const targetEndMs = Date.now() + restDur * 1000;
     restEndTimeRef.current = targetEndMs;
     restFinishNotifiedRef.current = false;
+    setIsRestPaused(false);
     setIsRestFinished(false);
     setRestSecondsLeft(restDur);
     setRestModalSeedSecs(restDur);
@@ -642,11 +657,85 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
   const handleFinishRestExplicitly = () => {
     triggerNotificationHaptic('success');
     cancelRestFinishedNotification();
+    restEndTimeRef.current = 0;
     restFinishNotifiedRef.current = false;
+    setIsRestPaused(false);
     setIsResting(false);
     setIsRestFinished(false);
     setRestModalTargetMs(undefined);
     setIsRestModalVisible(false);
+  };
+
+  const handleStopRestSyncImmediate = () => {
+    cancelRestFinishedNotification();
+    restEndTimeRef.current = 0;
+    restFinishNotifiedRef.current = false;
+    setIsRestPaused(false);
+    setIsResting(false);
+    setIsRestFinished(false);
+    setRestModalTargetMs(undefined);
+  };
+
+  const handlePauseRest = (remainingSeconds: number) => {
+    const safeRem = Math.max(0, Math.round(remainingSeconds));
+    restEndTimeRef.current = 0;
+    restFinishNotifiedRef.current = false;
+    cancelRestFinishedNotification();
+    setIsRestPaused(true);
+    setIsResting(safeRem > 0);
+    setIsRestFinished(safeRem <= 0);
+    setRestSecondsLeft(safeRem);
+    setRestModalSeedSecs(safeRem);
+    setRestModalTargetMs(undefined);
+  };
+
+  const handleResumeRest = (remainingSeconds: number) => {
+    const safeRem = Math.max(0, Math.round(remainingSeconds));
+    if (safeRem <= 0) {
+      handleFinishRestExplicitly();
+      return;
+    }
+    const newEnd = Date.now() + safeRem * 1000;
+    restEndTimeRef.current = newEnd;
+    restFinishNotifiedRef.current = false;
+    setIsRestPaused(false);
+    setIsRestFinished(false);
+    setIsResting(true);
+    setRestSecondsLeft(safeRem);
+    setRestModalSeedSecs(safeRem);
+    setRestModalTargetMs(newEnd);
+    scheduleRestFinishedNotification(safeRem, timerLabel || currentExerciseName, timerNextInfo);
+  };
+
+  const handleAdjustRestSeconds = (newSecs: number, paused: boolean) => {
+    const safe = Math.max(0, Math.round(newSecs));
+    if (paused) {
+      restEndTimeRef.current = 0;
+      restFinishNotifiedRef.current = false;
+      cancelRestFinishedNotification();
+      setIsRestPaused(true);
+      setIsResting(safe > 0);
+      setIsRestFinished(false);
+      setRestSecondsLeft(safe);
+      setRestModalSeedSecs(safe);
+      setRestModalTargetMs(undefined);
+      return;
+    }
+
+    const newEnd = Date.now() + safe * 1000;
+    restEndTimeRef.current = newEnd;
+    restFinishNotifiedRef.current = safe <= 0;
+    setIsRestPaused(false);
+    setIsRestFinished(safe <= 0);
+    setIsResting(safe > 0);
+    setRestSecondsLeft(safe);
+    setRestModalSeedSecs(safe);
+    setRestModalTargetMs(newEnd);
+    if (safe > 0) {
+      scheduleRestFinishedNotification(safe, timerLabel || currentExerciseName, timerNextInfo);
+    } else {
+      cancelRestFinishedNotification();
+    }
   };
 
   const handleHideRestModal = () => {
@@ -691,7 +780,7 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
   };
 
   const handleTriggerFinish = () => {
-    cancelRestFinishedNotification();
+    handleStopRestSyncImmediate();
     let totalVolumeKg = 0;
     for (const ex of exercises) {
       const setsMap = dayProgress.sets[ex.id] || {};
@@ -715,19 +804,19 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
   };
 
   const handleApplySessionConfig = (config: SessionExerciseConfig) => {
-    const byId = new Map(allSessionExercises.map((e) => [e.id, e]));
-    const reordered: Exercise[] = [];
-    for (const id of config.orderedIds) {
-      const found = byId.get(id);
-      if (found) reordered.push(found);
-    }
-    for (const ex of allSessionExercises) {
-      if (!reordered.some((r) => r.id === ex.id)) reordered.push(ex);
-    }
+    const reordered = resolveOrderedSessionExercises(allSessionExercises, config);
+    const persistedAdded = reordered.filter(
+      (ex) => !(dayPlan.exercises || []).some((base) => base.id === ex.id)
+    );
+    const mergedConfig: SessionExerciseConfig = {
+      orderedIds: reordered.map((e) => e.id),
+      skippedIds: config.skippedIds,
+      addedExercises: persistedAdded.length > 0 ? persistedAdded : undefined,
+    };
 
     setAllSessionExercises(reordered);
     setSkippedIds(config.skippedIds);
-    onSaveSessionConfig?.(config);
+    onSaveSessionConfig?.(mergedConfig);
 
     const skippedSet = new Set(config.skippedIds);
     const activeAfter = reordered.filter((e) => !skippedSet.has(e.id));
@@ -743,12 +832,14 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
   const handlePickSessionExercise = (picked: Exercise) => {
     triggerNotificationHaptic('success');
     const fresh = cloneExercise(picked);
+    let nextAllList: Exercise[];
 
     if (swapExerciseIdx !== null) {
       const targetEx = exercises[swapExerciseIdx];
-      setAllSessionExercises((prev) =>
-        prev.map((item) => (targetEx && item.id === targetEx.id ? fresh : item))
+      nextAllList = allSessionExercises.map((item) =>
+        targetEx && item.id === targetEx.id ? fresh : item
       );
+      setAllSessionExercises(nextAllList);
       setCurrentExerciseIndex(swapExerciseIdx);
       setCurrentSetIndex(0);
     } else {
@@ -756,13 +847,22 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
       const nextItem = alreadyExists
         ? { ...fresh, id: `${fresh.id}_session_${Date.now()}` }
         : fresh;
-      const nextList = [...allSessionExercises, nextItem];
-      setAllSessionExercises(nextList);
+      nextAllList = [...allSessionExercises, nextItem];
+      setAllSessionExercises(nextAllList);
       const skippedSet = new Set(skippedIds);
-      const nextActiveCount = nextList.filter((e) => !skippedSet.has(e.id)).length;
+      const nextActiveCount = nextAllList.filter((e) => !skippedSet.has(e.id)).length;
       setCurrentExerciseIndex(Math.max(0, nextActiveCount - 1));
       setCurrentSetIndex(0);
     }
+
+    const persistedAdded = nextAllList.filter(
+      (ex) => !(dayPlan.exercises || []).some((b) => b.id === ex.id)
+    );
+    onSaveSessionConfig?.({
+      orderedIds: nextAllList.map((e) => e.id),
+      skippedIds,
+      addedExercises: persistedAdded.length > 0 ? persistedAdded : undefined,
+    });
 
     setSwapExerciseIdx(null);
     setOverviewMode('list');
@@ -779,7 +879,7 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
           text: 'Wyjdź',
           style: 'destructive',
           onPress: () => {
-            cancelRestFinishedNotification();
+            handleStopRestSyncImmediate();
             onExitWorkout();
           },
         },
@@ -1201,12 +1301,14 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
               styles.floatingRestBar,
               {
                 backgroundColor: isRestFinished ? theme.primary : theme.card,
-                borderColor: isRestFinished ? theme.primary : theme.border,
+                borderColor: isRestFinished ? theme.primary : isRestPaused ? '#F59E0B' : theme.border,
               },
             ]}
             onPress={() => {
               setRestModalSeedSecs(restSecondsLeft);
-              setRestModalTargetMs(isRestFinished ? Date.now() : restEndTimeRef.current);
+              setRestModalTargetMs(
+                isRestPaused ? undefined : isRestFinished ? Date.now() : restEndTimeRef.current
+              );
               setIsRestModalVisible(true);
             }}
             activeOpacity={0.85}
@@ -1215,7 +1317,13 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
               <View
                 style={[
                   styles.floatingTimerBadge,
-                  { backgroundColor: isRestFinished ? theme.primaryText : theme.primary },
+                  {
+                    backgroundColor: isRestFinished
+                      ? theme.primaryText
+                      : isRestPaused
+                      ? '#F59E0B'
+                      : theme.primary,
+                  },
                 ]}
               >
                 {isRestFinished ? (
@@ -1227,7 +1335,11 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
                     active={true}
                   />
                 ) : (
-                  <Ionicons name="timer" size={16} color={theme.primaryText} />
+                  <Ionicons
+                    name={isRestPaused ? 'pause' : 'timer'}
+                    size={16}
+                    color={isRestPaused ? '#000000' : theme.primaryText}
+                  />
                 )}
               </View>
               <View style={{ flex: 1, paddingRight: 8 }}>
@@ -1235,11 +1347,21 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
                   <Text
                     style={[
                       styles.floatingTimerTime,
-                      { color: isRestFinished ? theme.primaryText : theme.text },
+                      {
+                        color: isRestFinished
+                          ? theme.primaryText
+                          : isRestPaused
+                          ? '#F59E0B'
+                          : theme.text,
+                      },
                     ]}
                     numberOfLines={1}
                   >
-                    {isRestFinished ? 'KONIEC PRZERWY!' : formatTime(restSecondsLeft)}
+                    {isRestFinished
+                      ? 'KONIEC PRZERWY!'
+                      : isRestPaused
+                      ? `PAUZA • ${formatTime(restSecondsLeft)}`
+                      : formatTime(restSecondsLeft)}
                   </Text>
                   {!isRestFinished && (
                     <Text style={[styles.floatingTapHint, { color: theme.textMuted }]} numberOfLines={1}>
@@ -1256,6 +1378,8 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
                 >
                   {isRestFinished
                     ? 'Czas na kolejną serię!'
+                    : isRestPaused
+                    ? 'Wstrzymana • Powiadomienie zatrzymane'
                     : timerNextInfo || 'Odpoczynek przed kolejną serią'}
                 </Text>
               </View>
@@ -1299,35 +1423,18 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
         <RestTimerBar
           initialSeconds={restModalSeedSecs}
           targetEndTimeMs={restModalTargetMs}
+          isPaused={isRestPaused}
           exerciseName={timerLabel}
           nextSetInfo={timerNextInfo}
-          onSecondsChanged={(newSecs) => {
-            const newEnd = Date.now() + newSecs * 1000;
-            restEndTimeRef.current = newEnd;
-            restFinishNotifiedRef.current = newSecs <= 0;
-            setRestSecondsLeft(newSecs);
-            setRestModalTargetMs(newEnd);
-            if (newSecs > 0) {
-              setIsRestFinished(false);
-              setIsResting(true);
+          onPauseToggle={(paused, remainingSecs) => {
+            if (paused) {
+              handlePauseRest(remainingSecs);
+            } else {
+              handleResumeRest(remainingSecs);
             }
-            scheduleRestFinishedNotification(
-              newSecs,
-              timerLabel || currentExercise.name,
-              timerNextInfo
-            );
-            updateWorkoutLiveActivity({
-              workoutName: dayPlan.name,
-              exerciseName: currentExercise.name,
-              currentSet: currentSetIndex + 1,
-              totalSets: currentTotalSets,
-              completedSets: completedSetsCount,
-              totalWorkoutSets: totalSets,
-              isRest: true,
-              restSeconds: newSecs,
-              nextExerciseName: timerNextInfo,
-            });
           }}
+          onSecondsChanged={handleAdjustRestSeconds}
+          onStopImmediate={handleStopRestSyncImmediate}
           onFinishRest={handleFinishRestExplicitly}
           onClose={handleHideRestModal}
         />
@@ -1380,7 +1487,7 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
             onSelectExercise={handlePickSessionExercise}
           />
         ) : (
-          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 32 }}>
+          <BottomSheetScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 32 }}>
             {exercises.map((ex, idx) => {
               const effTotal = getEffectiveSets(ex);
               const exSets = dayProgress.sets[ex.id] || {};
@@ -1459,7 +1566,7 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
                 ZAKOŃCZ TRENING ({completedSetsCount}/{totalSets})
               </Text>
             </TouchableOpacity>
-          </ScrollView>
+          </BottomSheetScrollView>
         )}
       </InteractiveBottomSheet>
 
@@ -1475,18 +1582,17 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
         visible={showSessionPicker}
         onClose={() => setShowSessionPicker(false)}
         exercises={allSessionExercises}
+        extraLibraryExercises={extraLibraryExercises}
         dayProgress={dayProgress}
         initialConfig={{
           orderedIds: allSessionExercises.map((e) => e.id),
           skippedIds,
+          addedExercises: allSessionExercises.filter(
+            (ex) => !(dayPlan.exercises || []).some((b) => b.id === ex.id)
+          ),
         }}
         mode={sessionPickerMode}
         onConfirm={handleApplySessionConfig}
-        onOpenAddExercise={() => {
-          setSwapExerciseIdx(null);
-          setOverviewMode('library');
-          setShowOverviewSheet(true);
-        }}
       />
     </View>
   );

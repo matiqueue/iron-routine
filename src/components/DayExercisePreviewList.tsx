@@ -17,7 +17,7 @@ interface DayExercisePreviewListProps {
 }
 
 const formatRestShort = (seconds: number): string => {
-  if (!seconds || seconds <= 0) return '—';
+  if (!seconds || seconds <= 0) return '-';
   const mins = Math.floor(seconds / 60);
   const secs = seconds % 60;
   if (mins === 0) return `${secs}s`;

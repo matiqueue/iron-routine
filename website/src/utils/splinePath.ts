@@ -5,6 +5,8 @@ export interface PlottedPoint {
   y: number;
   label: string;
   value: number;
+  weight?: number;
+  reps?: number;
 }
 
 const round1 = (n: number): number => Math.round(n * 10) / 10;
@@ -52,6 +54,8 @@ export function buildSplineGeometry(
       y: round1(y),
       label: item.label,
       value: item.value,
+      weight: item.weight,
+      reps: item.reps,
     };
   });
 

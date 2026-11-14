@@ -254,7 +254,7 @@ export async function createProfile(
 
     const templateKey = options?.templateKey || 'blank';
     const templateLabelMap: Record<Exclude<PlanTemplateKey, 'clone_current'>, { name: string; subtitle: string }> = {
-      blank: { name: 'Mój Plan', subtitle: 'Pusty tydzień — dodaj własne treningi' },
+      blank: { name: 'Mój Plan', subtitle: 'Pusty tydzień - dodaj własne treningi' },
       fbw3: { name: 'FBW 3 dni', subtitle: 'Full Body Workout (Pn / Śr / Pt)' },
       upper_lower: { name: 'Upper / Lower', subtitle: 'Split 4-dniowy Góra / Dół' },
       ppl: { name: 'Push / Pull / Legs', subtitle: 'Split 6-dniowy PPL' },
@@ -1043,7 +1043,7 @@ export async function getProfilePlans(profileId?: string): Promise<WorkoutPlan[]
     const initialPlan: WorkoutPlan = {
       id: `plan_blank_${pid}`,
       name: 'Mój Plan',
-      subtitle: 'Pusty tydzień — dodaj własne treningi',
+      subtitle: 'Pusty tydzień - dodaj własne treningi',
       days: buildPlanDaysFromTemplate('blank'),
       isDefault: true,
       createdAt: nowIso,

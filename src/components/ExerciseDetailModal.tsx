@@ -4,14 +4,13 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  ScrollView,
   Image,
   ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAppTheme } from '../context/ThemeContext';
 import { Exercise } from '../types/workout';
-import { InteractiveBottomSheet } from './InteractiveBottomSheet';
+import { BottomSheetScrollView, InteractiveBottomSheet } from './InteractiveBottomSheet';
 
 interface ExerciseDetailModalProps {
   visible: boolean;
@@ -40,12 +39,9 @@ export const ExerciseDetailModal: React.FC<ExerciseDetailModalProps> = ({
       subtitle={`${exercise.category.toUpperCase()} • ${exercise.sets} serie × ${exercise.reps} • ${exercise.rest}s odpoczynku`}
       initialHeightPercent={0.88}
     >
-      <ScrollView
+      <BottomSheetScrollView
         style={styles.content}
         showsVerticalScrollIndicator={false}
-        bounces={false}
-        alwaysBounceVertical={false}
-        overScrollMode="never"
         contentContainerStyle={{ paddingBottom: 40 }}
       >
         {/* Exercise Image / Minimal Header */}
@@ -166,7 +162,7 @@ export const ExerciseDetailModal: React.FC<ExerciseDetailModalProps> = ({
             </TouchableOpacity>
           </View>
         </View>
-      </ScrollView>
+      </BottomSheetScrollView>
     </InteractiveBottomSheet>
   );
 };

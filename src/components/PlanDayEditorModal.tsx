@@ -12,12 +12,13 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAppTheme } from '../context/ThemeContext';
 import { DayBannerTag, DayPlan, DayType, Exercise } from '../types/workout';
 import { cloneExercise } from '../data/exerciseLibrary';
 import { DAY_BANNER_TAG_OPTIONS, resolveDayBannerTag } from '../data/dayTags';
 import { DayBannerArtwork } from './DayBannerArtwork';
-import { InteractiveBottomSheet } from './InteractiveBottomSheet';
+import { BottomSheetScrollView, InteractiveBottomSheet } from './InteractiveBottomSheet';
 import { ExerciseLibraryContent } from './ExerciseLibraryContent';
 
 interface PlanDayEditorModalProps {
@@ -46,6 +47,7 @@ export const PlanDayEditorModal: React.FC<PlanDayEditorModalProps> = ({
   onLibraryChanged,
 }) => {
   const { theme } = useAppTheme();
+  const insets = useSafeAreaInsets();
 
   const [viewMode, setViewMode] = useState<'day' | 'library'>('day');
   const [swapIndex, setSwapIndex] = useState<number | null>(null);
@@ -234,13 +236,19 @@ export const PlanDayEditorModal: React.FC<PlanDayEditorModalProps> = ({
             onLibraryChanged={onLibraryChanged}
           />
         ) : (
-          <View style={{ flex: 1 }}>
-            <ScrollView
-              style={styles.scroll}
-              contentContainerStyle={styles.scrollContent}
-              showsVerticalScrollIndicator={false}
-              keyboardShouldPersistTaps="handled"
-            >
+          <PlanDayEditorBody
+            scrollContentStyle={styles.scrollContent}
+            footerStyle={[
+              styles.footer,
+              {
+                borderTopColor: theme.hairline,
+                backgroundColor: theme.card,
+                paddingBottom: Math.max(insets.bottom, 14) + 6,
+              },
+            ]}
+            theme={theme}
+            onSave={handleSave}
+          >
               {/* Day Type Selector */}
               <Text style={[styles.kicker, { color: theme.textMuted }]}>CHARAKTER DNIA</Text>
               <View
@@ -351,7 +359,7 @@ export const PlanDayEditorModal: React.FC<PlanDayEditorModalProps> = ({
                   ]}
                   value={name}
                   onChangeText={setName}
-                  placeholder="np. Push — Klatka & Barki"
+                  placeholder="np. Push - Klatka i Barki"
                   placeholderTextColor={theme.textMuted}
                 />
 
@@ -607,25 +615,44 @@ export const PlanDayEditorModal: React.FC<PlanDayEditorModalProps> = ({
                   )}
                 </View>
               )}
-            </ScrollView>
-
-            {/* Footer Save Button */}
-            <View style={[styles.footer, { borderTopColor: theme.hairline }]}>
-              <TouchableOpacity
-                style={[styles.saveBtn, { backgroundColor: theme.primary }]}
-                onPress={handleSave}
-                activeOpacity={0.85}
-              >
-                <Ionicons name="checkmark" size={18} color={theme.primaryText} />
-                <Text style={[styles.saveBtnText, { color: theme.primaryText }]}>
-                  Zapisz dzień w planie
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
+          </PlanDayEditorBody>
         )}
       </KeyboardAvoidingView>
     </InteractiveBottomSheet>
+  );
+};
+
+const PlanDayEditorBody: React.FC<{
+  scrollContentStyle: any;
+  footerStyle: any;
+  theme: ReturnType<typeof useAppTheme>['theme'];
+  onSave: () => void;
+  children: React.ReactNode;
+}> = ({ scrollContentStyle, footerStyle, theme, onSave, children }) => {
+  return (
+    <View style={{ flex: 1 }}>
+      <BottomSheetScrollView
+        style={styles.scroll}
+        contentContainerStyle={scrollContentStyle}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
+        {children}
+      </BottomSheetScrollView>
+
+      <View style={footerStyle}>
+        <TouchableOpacity
+          style={[styles.saveBtn, { backgroundColor: theme.primary }]}
+          onPress={onSave}
+          activeOpacity={0.85}
+        >
+          <Ionicons name="checkmark" size={18} color={theme.primaryText} />
+          <Text style={[styles.saveBtnText, { color: theme.primaryText }]}>
+            Zapisz dzień w planie
+          </Text>
+        </TouchableOpacity>
+      </View>
+    </View>
   );
 };
 
@@ -647,7 +674,9 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingBottom: 24,
+    paddingHorizontal: 18,
+    paddingTop: 14,
+    paddingBottom: 28,
   },
   kicker: {
     fontSize: 10,
@@ -863,8 +892,9 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   footer: {
-    paddingTop: 10,
-    paddingBottom: Platform.OS === 'ios' ? 20 : 12,
+    paddingHorizontal: 18,
+    paddingTop: 12,
+    paddingBottom: 18,
     borderTopWidth: StyleSheet.hairlineWidth,
   },
   saveBtn: {

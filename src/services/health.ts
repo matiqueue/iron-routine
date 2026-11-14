@@ -313,7 +313,7 @@ export function generateHealthCoachingInsight(
     return {
       id: 'low-sleep',
       icon: 'moon-outline',
-      headline: `Krótki sen (${summary.sleepHours} h) — pamiętaj, ilość snu się liczy!`,
+      headline: `Krótki sen (${summary.sleepHours} h) · pamiętaj, ilość snu się liczy!`,
       tip: isWorkoutDay
         ? 'Po krótkiej nocy wydłuż rozgrzewkę o 5 minut i kontroluj RPE w seriach roboczych.'
         : 'Dzisiaj postaw na spokojny spacer, nawodnienie i wcześniejszy sen na regenerację układu nerwowego.',
@@ -326,7 +326,7 @@ export function generateHealthCoachingInsight(
       id: 'low-steps',
       icon: 'footsteps-outline',
       headline: `Mało ruchu poza treningiem (${summary.steps.toLocaleString('pl-PL')} kroków)`,
-      tip: 'Dorzuć krótki marsz po posiłku albo po treningu — NEAT poprawia regenerację i metabolizm.',
+      tip: 'Dorzuć krótki marsz po posiłku albo po treningu. NEAT poprawia regenerację i metabolizm.',
       tone: 'neutral',
     };
   }
@@ -336,7 +336,7 @@ export function generateHealthCoachingInsight(
       id: 'optimal-recovery',
       icon: 'battery-charging-outline',
       headline: `Świetna regeneracja (${summary.sleepHours} h snu)`,
-      tip: 'Wysoka gotowość fizyczna — dobry dzień na dołożenie ciężaru lub walkę o nowy rekord PR.',
+      tip: 'Wysoka gotowość fizyczna! Dobry dzień na dołożenie ciężaru lub walkę o nowy rekord PR.',
       tone: 'good',
     };
   }
@@ -344,7 +344,7 @@ export function generateHealthCoachingInsight(
   return {
     id: 'steady-recovery',
     icon: 'flame-outline',
-    headline: 'Stały rytm regeneracji — trzymaj sen, kroki i nawodnienie',
+    headline: 'Stały rytm regeneracji · trzymaj sen, kroki i nawodnienie',
     tip: 'Pamiętaj, że jakość snu i systematyczne kroki w tygodniu budują formę równie mocno jak ciężary.',
     tone: 'good',
   };

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Linking,
   Platform,
   ScrollView,
   Share,
@@ -23,10 +24,15 @@ import {
 import {
   triggerImpactHaptic,
   triggerNotificationHaptic,
-  triggerRestFinishedHapticSequence,
   triggerSelectionHaptic,
 } from '../services/haptics';
-import { syncRemindersWithSettings } from '../services/notifications';
+import {
+  ensureNotificationPermissions,
+  getNotificationPermissionSummary,
+  NotificationPermissionSummary,
+  scheduleTestRestNotification,
+  syncRemindersWithSettings,
+} from '../services/notifications';
 import { fetchTodayHealthSummary, requestHealthPermissions } from '../services/health';
 import { buildActiveSupplementsSummary } from '../data/supplements';
 import {
@@ -88,6 +94,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 
   const [healthSummary, setHealthSummary] = useState<HealthDailySummary | null>(null);
   const [isSyncingHealth, setIsSyncingHealth] = useState(false);
+  const [notifPerm, setNotifPerm] = useState<NotificationPermissionSummary | null>(null);
 
   const [showImportSheet, setShowImportSheet] = useState(false);
   const [importJsonText, setImportJsonText] = useState('');
@@ -100,12 +107,14 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   }, [activeProfile.id, activeProfile.name, activeProfile.height, activeProfile.weight]);
 
   const loadMeta = async () => {
-    const [loadedSettings, custom] = await Promise.all([
+    const [loadedSettings, custom, permSummary] = await Promise.all([
       getAppSettings(),
       getCustomExercises(),
+      getNotificationPermissionSummary(),
     ]);
     setSettings(loadedSettings);
     setCustomCount(custom.length);
+    setNotifPerm(permSummary);
     if (loadedSettings.healthSyncEnabled) {
       const h = await fetchTodayHealthSummary();
       setHealthSummary(h);
@@ -301,7 +310,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           <Text style={[styles.headerEyebrow, { color: theme.textMuted }]}>SYSTEM I PREFERENCJE</Text>
           <Text style={[styles.headerTitle, { color: theme.text }]}>USTAWIENIA</Text>
           <Text style={[styles.headerSub, { color: theme.textSecondary }]}>
-            Jeden profil na urządzenie — wszystkie rekordy i postępy są wspólne dla każdego planu.
+            Jeden profil na urządzenie. Wszystkie rekordy i postępy są automatycznie przypisane do konta.
           </Text>
         </View>
 
@@ -385,7 +394,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             </View>
             <TouchableOpacity
               style={[styles.testPillBtn, { borderColor: theme.border }]}
-              onPress={() => triggerRestFinishedHapticSequence()}
+              onPress={() => triggerImpactHaptic('heavy')}
               activeOpacity={0.75}
             >
               <Ionicons name="radio-outline" size={12} color={theme.text} />
@@ -455,14 +464,14 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 
           <View style={styles.switchRow}>
             <View style={styles.switchLabelWrap}>
-              <Text style={[styles.rowTitle, { color: theme.text }]}>Potrójny sygnał końca przerwy</Text>
+              <Text style={[styles.rowTitle, { color: theme.text }]}>Potrójny sygnał w tle</Text>
               <Text style={[styles.rowSub, { color: theme.textSecondary }]}>
-                Telefon zabrzęczy 3× kiedy minie czas przerwy
+                Seria 3 powiadomień co 2s po skończonej przerwie poza aplikacją
               </Text>
             </View>
             <Switch
               value={settings.restEndMultiBuzz}
-              disabled={!settings.hapticsEnabled}
+              disabled={!settings.restNotificationsEnabled}
               onValueChange={(v) => handlePatchSettings({ restEndMultiBuzz: v })}
               trackColor={switchTrack}
               thumbColor={switchThumb}
@@ -514,40 +523,68 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               <Ionicons name="notifications-outline" size={16} color={theme.text} />
               <Text style={[styles.cardTitle, { color: theme.text }]}>POWIADOMIENIA I PRZYPOMNIENIA</Text>
             </View>
+            <TouchableOpacity
+              style={[styles.testPillBtn, { borderColor: theme.border }]}
+              onPress={async () => {
+                triggerSelectionHaptic();
+                const res = await scheduleTestRestNotification();
+                setNotifPerm(res);
+                if (!res.granted) {
+                  Alert.alert(
+                    'Powiadomienia zablokowane w systemie',
+                    'Włącz Alerty i Dźwięki dla Iron Routine w ustawieniach iOS, aby alarm wibrował na zablokowanym ekranie.',
+                    [
+                      { text: 'Anuluj', style: 'cancel' },
+                      { text: 'Ustawienia', onPress: () => Linking.openSettings() },
+                    ]
+                  );
+                  return;
+                }
+                Alert.alert(
+                  'Alarm testowy ustawiony na za 5s',
+                  'Wyjdź z aplikacji lub zablokuj ekran teraz, aby sprawdzić alarm i wibrację po 5 sekundach.'
+                );
+              }}
+              activeOpacity={0.75}
+            >
+              <Ionicons name="notifications" size={12} color={theme.text} />
+              <Text style={[styles.testPillText, { color: theme.text }]}>Test w tle (5s)</Text>
+            </TouchableOpacity>
           </View>
 
           <View style={styles.switchRow}>
             <View style={styles.switchLabelWrap}>
-              <Text style={[styles.rowTitle, { color: theme.text }]}>Powiadomienie o końcu przerwy</Text>
+              <Text style={[styles.rowTitle, { color: theme.text }]}>Alarm końca przerwy poza aplikacją</Text>
               <Text style={[styles.rowSub, { color: theme.textSecondary }]}>
-                Alert lokalny w tle z dźwiękiem i wibracją
+                Wysyła lokalny alarm z dźwiękiem i systemową wibracją gdy wyjdziesz z apki
               </Text>
             </View>
             <Switch
               value={settings.restNotificationsEnabled}
-              onValueChange={(v) => handlePatchSettings({ restNotificationsEnabled: v })}
+              onValueChange={async (v) => {
+                if (v) {
+                  const perm = await ensureNotificationPermissions(true);
+                  setNotifPerm(perm);
+                }
+                await handlePatchSettings({ restNotificationsEnabled: v });
+              }}
               trackColor={switchTrack}
               thumbColor={switchThumb}
             />
           </View>
 
-          <View style={[styles.divider, { backgroundColor: theme.hairline }]} />
-
-          <View style={styles.switchRow}>
-            <View style={styles.switchLabelWrap}>
-              <Text style={[styles.rowTitle, { color: theme.text }]}>Tryb pilny (Time Sensitive)</Text>
-              <Text style={[styles.rowSub, { color: theme.textSecondary }]}>
-                Przebija tryb skupienia i blokadę ekranu na iOS
+          {notifPerm && (!notifPerm.granted || !notifPerm.allowsSound) && (
+            <TouchableOpacity
+              style={[styles.permWarnBox, { backgroundColor: theme.bg, borderColor: '#F59E0B' }]}
+              onPress={() => Linking.openSettings()}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="warning-outline" size={16} color="#F59E0B" />
+              <Text style={[styles.permWarnText, { color: theme.text }]}>
+                System blokuje dźwięk lub alerty powiadomień. Dotknij tutaj, aby włączyć uprawnienia w Ustawieniach systemu.
               </Text>
-            </View>
-            <Switch
-              value={settings.restTimeSensitive}
-              disabled={!settings.restNotificationsEnabled}
-              onValueChange={(v) => handlePatchSettings({ restTimeSensitive: v })}
-              trackColor={switchTrack}
-              thumbColor={switchThumb}
-            />
-          </View>
+            </TouchableOpacity>
+          )}
 
           <View style={[styles.divider, { backgroundColor: theme.hairline }]} />
 
@@ -759,13 +796,13 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                 <Text style={[styles.healthChipText, { color: theme.text }]}>
                   {healthSummary.steps !== null
                     ? `${healthSummary.steps.toLocaleString('pl-PL')} kroków`
-                    : '— kroków'}
+                    : '- kroków'}
                 </Text>
               </View>
               <View style={[styles.healthChip, { backgroundColor: theme.bg, borderColor: theme.border }]}>
                 <Ionicons name="moon-outline" size={13} color={theme.text} />
                 <Text style={[styles.healthChipText, { color: theme.text }]}>
-                  {healthSummary.sleepHours !== null ? `${healthSummary.sleepHours} h snu` : '— h snu'}
+                  {healthSummary.sleepHours !== null ? `${healthSummary.sleepHours} h snu` : '- h snu'}
                 </Text>
               </View>
             </View>
@@ -862,6 +899,54 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           >
             <Ionicons name="trash-outline" size={16} color="#EF4444" />
             <Text style={styles.dangerBtnText}>WYZERUJ APLIKACJĘ (NOWY PROFIL)</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* SECTION 6: MAIN CONTRIBUTOR & SUPPORT */}
+        <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
+          <View style={styles.cardHeaderRow}>
+            <View style={styles.cardTitleGroup}>
+              <Ionicons name="code-slash-outline" size={16} color={theme.text} />
+              <Text style={[styles.cardTitle, { color: theme.text }]}>TWÓRCA I WSPARCIE</Text>
+            </View>
+            <View style={[styles.badgeChip, { backgroundColor: theme.bgSecondary, borderWidth: 1, borderColor: theme.border }]}>
+              <Text style={[styles.badgeChipText, { color: theme.text }]}>MAIN CONTRIBUTOR</Text>
+            </View>
+          </View>
+
+          <TouchableOpacity
+            style={styles.actionRow}
+            onPress={() => {
+              triggerSelectionHaptic();
+              Linking.openURL('https://github.com/matiqueue').catch(() => {});
+            }}
+            activeOpacity={0.75}
+          >
+            <View style={styles.switchLabelWrap}>
+              <Text style={[styles.rowTitle, { color: theme.text }]}>Matique (@matiqueue)</Text>
+              <Text style={[styles.rowSub, { color: theme.textSecondary }]}>
+                Kod źródłowy, nowe wydania i feedback na GitHub
+              </Text>
+            </View>
+            <View style={[styles.actionPill, { backgroundColor: theme.bgSecondary, borderWidth: 1, borderColor: theme.border }]}>
+              <Ionicons name="logo-github" size={14} color={theme.text} />
+              <Text style={[styles.actionPillText, { color: theme.text }]}>GitHub</Text>
+            </View>
+          </TouchableOpacity>
+
+          <View style={[styles.divider, { backgroundColor: theme.hairline }]} />
+
+          <TouchableOpacity
+            style={[styles.coffeeBtn, { backgroundColor: '#F59E0B' }]}
+            onPress={() => {
+              triggerImpactHaptic('medium');
+              Linking.openURL('https://matiqueue-portfolio.vercel.app').catch(() => {});
+            }}
+            activeOpacity={0.85}
+          >
+            <Ionicons name="cafe-outline" size={18} color="#09090B" />
+            <Text style={styles.coffeeBtnText}>Buy Me a Coffee · Wesprzyj autora</Text>
+            <Ionicons name="open-outline" size={15} color="#09090B" />
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -1222,5 +1307,36 @@ const styles = StyleSheet.create({
   healthChipText: {
     fontSize: 12,
     fontWeight: '700',
+  },
+  permWarnBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 10,
+    marginTop: 10,
+  },
+  permWarnText: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '600',
+    lineHeight: 16,
+  },
+  coffeeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderRadius: 14,
+    paddingVertical: 13,
+    paddingHorizontal: 14,
+    marginTop: 2,
+  },
+  coffeeBtnText: {
+    color: '#09090B',
+    fontSize: 13,
+    fontWeight: '900',
+    letterSpacing: 0.2,
   },
 });

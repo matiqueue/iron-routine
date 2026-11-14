@@ -4,9 +4,13 @@ export default {
   theme: {
     extend: {
       colors: {
-        obsidian: '#050506',
-        surface: '#0B0B0E',
-        elevated: '#121216',
+        obsidian: '#000000',
+        surface: '#121214',
+        elevated: '#18181A',
+        tertiary: '#1C1C1E',
+        hairline: '#27272A',
+        steel: '#A1A1AA',
+        chrome: '#E4E4E7',
       },
       fontFamily: {
         sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'],
@@ -14,8 +18,8 @@ export default {
         mono: ['"JetBrains Mono"', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace'],
       },
       boxShadow: {
-        'glass-card': '0 1px 0 0 rgba(255, 255, 255, 0.06) inset, 0 24px 64px -24px rgba(0, 0, 0, 0.9)',
-        'device-frame': '0 0 0 1px rgba(255, 255, 255, 0.14), 0 40px 100px -20px rgba(0, 0, 0, 0.95)',
+        'glass-card': '0 1px 0 0 rgba(255, 255, 255, 0.05) inset, 0 24px 60px -28px rgba(0, 0, 0, 0.96)',
+        'device-frame': '0 0 0 1px #27272A, 0 40px 100px -20px rgba(0, 0, 0, 0.98)',
       },
     },
   },

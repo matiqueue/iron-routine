@@ -20,6 +20,7 @@ import {
   WorkoutPlan,
 } from '../types/workout';
 import { getDayBannerTagMeta, resolveDayBannerTag } from '../data/dayTags';
+import { resolveActiveSessionExercises } from '../utils/sessionExercises';
 import { triggerSelectionHaptic } from '../services/haptics';
 import { generateHealthCoachingInsight } from '../services/health';
 import { AnimatedIcon } from '../components/AnimatedIcon';
@@ -70,34 +71,19 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
   const bannerTag = resolveDayBannerTag(currentPlan);
   const tagMeta = getDayBannerTagMeta(bannerTag);
   const firstName = activeProfile?.name?.trim().split(' ')[0] || 'Zawodniku';
-  const totalExercises = currentPlan.exercises?.length || 0;
   const skippedIds = dayProgress.sessionConfig?.skippedIds || [];
 
-  const sessionPreviewExercises = useMemo(() => {
-    const raw = currentPlan.exercises || [];
-    const savedOrder = dayProgress.sessionConfig?.orderedIds;
-    if (!savedOrder?.length) return raw;
-    const byId = new Map(raw.map((e) => [e.id, e]));
-    const ordered: Exercise[] = [];
-    for (const id of savedOrder) {
-      const found = byId.get(id);
-      if (found) ordered.push(found);
-    }
-    for (const ex of raw) {
-      if (!ordered.some((o) => o.id === ex.id)) ordered.push(ex);
-    }
-    return ordered;
-  }, [currentPlan.exercises, dayProgress.sessionConfig?.orderedIds]);
+  const { ordered: sessionPreviewExercises, active: activePreviewList } = useMemo(
+    () => resolveActiveSessionExercises(currentPlan.exercises || [], dayProgress.sessionConfig),
+    [currentPlan.exercises, dayProgress.sessionConfig]
+  );
 
-  const { activeExercisesCount, totalSets } = useMemo(() => {
-    const skippedSet = new Set(skippedIds);
-    const activeList = sessionPreviewExercises.filter((ex) => !skippedSet.has(ex.id));
-    const effectiveList = activeList.length > 0 ? activeList : sessionPreviewExercises;
-    return {
-      activeExercisesCount: effectiveList.length,
-      totalSets: effectiveList.reduce((acc, e) => acc + e.sets, 0),
-    };
-  }, [sessionPreviewExercises, skippedIds]);
+  const totalExercises = sessionPreviewExercises.length;
+  const activeExercisesCount = activePreviewList.length;
+  const totalSets = useMemo(
+    () => activePreviewList.reduce((acc, e) => acc + e.sets, 0),
+    [activePreviewList]
+  );
 
   const isRestOrWalk = currentPlan.type === 'rest' || currentPlan.type === 'walk';
 
@@ -193,7 +179,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
             </Text>
             <Text style={[styles.streakSub, { color: theme.textMuted }]} numberOfLines={1}>
               {activePlan?.name
-                ? `Plan: ${activePlan.name} · Rekordy wspólne dla konta`
+                ? `Plan: ${activePlan.name}`
                 : 'Czysta dyscyplina, utrzymaj rytm'}
             </Text>
           </View>
@@ -367,7 +353,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
                 subtitle={
                   dayProgress.sessionConfig
                     ? `Gotowe (${activeExercisesCount} ćwiczeń, ${totalSets} serii) · przytrzymaj`
-                    : 'Przytrzymaj — przed startem potwierdzisz ćwiczenia i kolejność'
+                    : 'Przytrzymaj, przed startem potwierdzisz ćwiczenia i kolejność'
                 }
               />
             </View>
@@ -404,7 +390,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
           />
 
           {/* Upgraded Modern Card List of Today's Exercises (No thumbnails, high clarity) */}
-          {totalExercises > 0 && currentPlan.exercises && (
+          {totalExercises > 0 && (
             <View style={styles.todayExercises}>
               <View style={[styles.sectionDivider, { borderTopColor: theme.hairline }]}>
                 <Text style={[styles.sectionTitle, { color: theme.textMuted }]}>
@@ -575,7 +561,7 @@ const HealthRecoveryCard: React.FC<HealthRecoveryCardProps> = ({
           <View style={[styles.healthMetricBox, { backgroundColor: theme.card, borderColor: theme.border }]}>
             <AnimatedIcon name="footsteps-outline" preset="footsteps" size={14} color={theme.text} active />
             <Text style={[styles.healthMetricVal, { color: theme.text }]} numberOfLines={1}>
-              {summary.steps !== null ? summary.steps.toLocaleString('pl-PL') : '—'}
+              {summary.steps !== null ? summary.steps.toLocaleString('pl-PL') : '-'}
             </Text>
             <Text style={[styles.healthMetricLbl, { color: theme.textMuted }]}>Kroki</Text>
           </View>
@@ -583,7 +569,7 @@ const HealthRecoveryCard: React.FC<HealthRecoveryCardProps> = ({
           <View style={[styles.healthMetricBox, { backgroundColor: theme.card, borderColor: theme.border }]}>
             <AnimatedIcon name="moon-outline" preset="moon" size={14} color={theme.text} active />
             <Text style={[styles.healthMetricVal, { color: theme.text }]} numberOfLines={1}>
-              {summary.sleepHours !== null ? `${summary.sleepHours} h` : '—'}
+              {summary.sleepHours !== null ? `${summary.sleepHours} h` : '-'}
             </Text>
             <Text style={[styles.healthMetricLbl, { color: theme.textMuted }]}>Sen</Text>
           </View>
@@ -595,7 +581,7 @@ const HealthRecoveryCard: React.FC<HealthRecoveryCardProps> = ({
                 ? `${summary.activeCalories}`
                 : summary.distanceKm !== null
                 ? `${summary.distanceKm} km`
-                : '—'}
+                : '-'}
             </Text>
             <Text style={[styles.healthMetricLbl, { color: theme.textMuted }]}>
               {summary.activeCalories !== null ? 'Kcal' : 'Dystans'}

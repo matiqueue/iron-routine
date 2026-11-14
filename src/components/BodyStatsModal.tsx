@@ -5,7 +5,6 @@ import {
   StyleSheet,
   TouchableOpacity,
   TextInput,
-  ScrollView,
   Switch,
   Alert,
   KeyboardAvoidingView,
@@ -30,7 +29,7 @@ import {
 } from '../services/notifications';
 import { getAppSettings } from '../services/settings';
 import { buildActiveSupplementsSummary } from '../data/supplements';
-import { InteractiveBottomSheet } from './InteractiveBottomSheet';
+import { BottomSheetScrollView, InteractiveBottomSheet } from './InteractiveBottomSheet';
 
 interface BodyStatsModalProps {
   visible: boolean;
@@ -234,12 +233,9 @@ export const BodyStatsModal: React.FC<BodyStatsModalProps> = ({
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={{ flex: 1 }}
       >
-        <ScrollView
+        <BottomSheetScrollView
           style={styles.scroll}
           showsVerticalScrollIndicator={false}
-          bounces={false}
-          alwaysBounceVertical={false}
-          overScrollMode="never"
           contentContainerStyle={{ paddingBottom: 40 }}
         >
           {/* KPI Cards Strip */}
@@ -247,7 +243,7 @@ export const BodyStatsModal: React.FC<BodyStatsModalProps> = ({
               <View style={[styles.kpiCard, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
                 <Ionicons name="scale-outline" size={20} color={theme.text} />
                 <Text style={[styles.kpiVal, { color: theme.text }]}>
-                  {currentWeight > 0 ? `${currentWeight} kg` : '—'}
+                  {currentWeight > 0 ? `${currentWeight} kg` : '-'}
                 </Text>
                 <Text style={[styles.kpiLbl, { color: theme.textMuted }]}>Aktualna waga</Text>
               </View>
@@ -259,7 +255,7 @@ export const BodyStatsModal: React.FC<BodyStatsModalProps> = ({
               >
                 <Ionicons name="resize-outline" size={20} color={theme.text} />
                 <Text style={[styles.kpiVal, { color: theme.text }]}>
-                  {currentHeight > 0 ? `${currentHeight} cm` : '—'}
+                  {currentHeight > 0 ? `${currentHeight} cm` : '-'}
                 </Text>
                 <Text style={[styles.kpiLbl, { color: theme.textMuted }]}>Wzrost (edytuj)</Text>
               </TouchableOpacity>
@@ -267,7 +263,7 @@ export const BodyStatsModal: React.FC<BodyStatsModalProps> = ({
               <View style={[styles.kpiCard, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
                 <Ionicons name="fitness-outline" size={20} color={theme.text} />
                 <Text style={[styles.kpiVal, { color: theme.text }]}>
-                  {bmi > 0 ? bmi : '—'}
+                  {bmi > 0 ? bmi : '-'}
                 </Text>
                 <Text style={[styles.kpiLbl, { color: theme.textMuted }]}>Wskaźnik BMI</Text>
               </View>
@@ -475,7 +471,7 @@ export const BodyStatsModal: React.FC<BodyStatsModalProps> = ({
                 })
               )}
             </View>
-          </ScrollView>
+          </BottomSheetScrollView>
         </KeyboardAvoidingView>
     </InteractiveBottomSheet>
   );

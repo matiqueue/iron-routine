@@ -497,21 +497,21 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                 <View style={styles.metricItem}>
                   <Text style={[styles.metricLabel, { color: theme.textMuted }]}>Aktualna</Text>
                   <Text style={[styles.metricVal, { color: theme.text }]}>
-                    {weightStats.current > 0 ? `${weightStats.current} kg` : '—'}
+                    {weightStats.current > 0 ? `${weightStats.current} kg` : '-'}
                   </Text>
                 </View>
                 <View style={styles.metricDivider} />
                 <View style={styles.metricItem}>
                   <Text style={[styles.metricLabel, { color: theme.textMuted }]}>Początkowa</Text>
                   <Text style={[styles.metricVal, { color: theme.text }]}>
-                    {weightStats.start > 0 ? `${weightStats.start} kg` : '—'}
+                    {weightStats.start > 0 ? `${weightStats.start} kg` : '-'}
                   </Text>
                 </View>
                 <View style={styles.metricDivider} />
                 <View style={styles.metricItem}>
                   <Text style={[styles.metricLabel, { color: theme.textMuted }]}>Wzrost</Text>
                   <Text style={[styles.metricVal, { color: theme.text }]}>
-                    {activeProfile.height ? `${activeProfile.height} cm` : '—'}
+                    {activeProfile.height ? `${activeProfile.height} cm` : '-'}
                   </Text>
                 </View>
               </View>
@@ -625,7 +625,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                       {item.taken ? (
                         <Ionicons name="checkmark" size={14} color={theme.bg} />
                       ) : (
-                        <Text style={[styles.emptyX, { color: theme.textMuted }]}>—</Text>
+                        <Text style={[styles.emptyX, { color: theme.textMuted }]}>-</Text>
                       )}
                     </View>
                     <Text style={[styles.dayNumText, { color: theme.textMuted }]}>
@@ -890,7 +890,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
               <View style={[styles.kpiCard, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
                 <Ionicons name="barbell-outline" size={20} color={theme.text} />
                 <Text style={[styles.kpiVal, { color: theme.text }]}>
-                  {statsSummary.maxWeight > 0 ? `${statsSummary.maxWeight} kg` : '—'}
+                  {statsSummary.maxWeight > 0 ? `${statsSummary.maxWeight} kg` : '-'}
                 </Text>
                 <Text style={[styles.kpiLbl, { color: theme.textMuted }]}>Maks. Ciężar</Text>
               </View>
@@ -898,7 +898,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
               <View style={[styles.kpiCard, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
                 <Ionicons name="flash-outline" size={20} color={theme.text} />
                 <Text style={[styles.kpiVal, { color: theme.text }]}>
-                  {statsSummary.max1RM > 0 ? `${statsSummary.max1RM} kg` : '—'}
+                  {statsSummary.max1RM > 0 ? `${statsSummary.max1RM} kg` : '-'}
                 </Text>
                 <Text style={[styles.kpiLbl, { color: theme.textMuted }]}>Top 1RM</Text>
               </View>

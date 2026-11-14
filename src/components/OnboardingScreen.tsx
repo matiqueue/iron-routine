@@ -14,7 +14,6 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import * as Notifications from 'expo-notifications';
 import { useAppTheme } from '../context/ThemeContext';
 import {
   PlanTemplateKey,
@@ -26,7 +25,10 @@ import { DEFAULT_SUPPLEMENTS } from '../data/supplements';
 import { createProfile, importProfileBackup } from '../services/storage';
 import { updateAppSettings } from '../services/settings';
 import { requestHealthPermissions } from '../services/health';
-import { setCreatineReminderEnabled } from '../services/notifications';
+import {
+  ensureNotificationPermissions,
+  setCreatineReminderEnabled,
+} from '../services/notifications';
 import { triggerNotificationHaptic, triggerSelectionHaptic } from '../services/haptics';
 import { AnimatedIcon } from './AnimatedIcon';
 import { SupplementConfigurator } from './SupplementConfigurator';
@@ -50,7 +52,7 @@ const STEP_META = [
   {
     kicker: 'KROK 2 Z 4 · SUPLEMENTACJA',
     title: 'Dobierz suplementy i dawki',
-    subtitle: 'Wybierz z listy lub dodaj własne — dawkę możemy wyliczać automatycznie wg masy ciała.',
+    subtitle: 'Wybierz z listy lub dodaj własne. Dawkę możemy wyliczać automatycznie wg masy ciała.',
     icon: 'flame' as const,
     preset: 'flame' as const,
     accent: '#F59E0B',
@@ -66,7 +68,7 @@ const STEP_META = [
   {
     kicker: 'KROK 4 Z 4 · PLAN STARTOWY',
     title: 'Wybierz bazę treningową',
-    subtitle: 'Zacznij od gotowego schematu lub pustego szkieletu — w każdej chwili dodasz kolejne plany.',
+    subtitle: 'Zacznij od gotowego schematu lub pustego szkieletu. W każdej chwili dodasz kolejne plany.',
     icon: 'trophy' as const,
     preset: 'trophy' as const,
     accent: '#F59E0B',
@@ -207,9 +209,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
     const next = !hapticsEnabled;
     setHapticsEnabled(next);
     if (next) {
-      try {
-        await Notifications.requestPermissionsAsync();
-      } catch {}
+      await ensureNotificationPermissions(true);
     }
   };
 
@@ -219,11 +219,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
 
     setIsSubmitting(true);
     try {
-      if (hapticsEnabled) {
-        try {
-          await Notifications.requestPermissionsAsync();
-        } catch {}
-      }
+      await ensureNotificationPermissions(true);
 
       if (suppReminderEnabled) {
         await setCreatineReminderEnabled(true);
@@ -257,6 +253,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
     if (isSubmitting) return;
     setIsSubmitting(true);
     try {
+      await ensureNotificationPermissions(true);
       await updateAppSettings({
         defaultRestSeconds,
         hapticsEnabled,
@@ -283,6 +280,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
 
     setIsSubmitting(true);
     try {
+      await ensureNotificationPermissions(true);
       const result = await importProfileBackup(importText, 'create_new');
       triggerNotificationHaptic('success');
       await onCompleted(result.profile);
