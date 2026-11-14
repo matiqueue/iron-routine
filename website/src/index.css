@@ -18,7 +18,7 @@
 .mobile-card {
   background-color: #121214;
   border: 1px solid #27272a;
-  box-shadow: 0 1px 0 0 rgba(255, 255, 255, 0.04) inset, 0 20px 44px -24px rgba(0, 0, 0, 0.9);
+  box-shadow: 0 1px 0 0 rgba(255, 255, 255, 0.04) inset, 0 20px 44px -24px rgba(0, 0, 0, 0.92);
 }
 
 .mobile-card-elevated {
@@ -30,33 +30,99 @@
   font-variant-numeric: tabular-nums;
 }
 
-@keyframes flame-pulse {
+@keyframes page-enter {
+  0% {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-page-enter {
+  animation: page-enter 0.36s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes pulse-mono {
   0%, 100% {
     transform: scale(1);
-    opacity: 0.92;
+    opacity: 0.78;
   }
   50% {
-    transform: scale(1.09);
+    transform: scale(1.12);
     opacity: 1;
   }
 }
 
-.animate-flame {
-  animation: flame-pulse 2.1s ease-in-out infinite;
+.animate-pulse-mono {
+  animation: pulse-mono 2.2s ease-in-out infinite;
 }
 
-@keyframes rest-countdown {
+@keyframes float-subtle {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+.animate-float-subtle {
+  animation: float-subtle 6.5s ease-in-out infinite;
+}
+
+@keyframes stroke-draw {
+  0% {
+    stroke-dashoffset: 620;
+    opacity: 0.2;
+  }
+  100% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+}
+
+.animate-stroke-draw {
+  stroke-dasharray: 620;
+  animation: stroke-draw 0.95s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@keyframes bar-sweep {
   0% {
     transform: scaleX(1);
   }
   100% {
-    transform: scaleX(0.32);
+    transform: scaleX(0.28);
   }
 }
 
 .animate-rest-bar {
   transform-origin: left center;
-  animation: rest-countdown 10s linear infinite alternate;
+  animation: bar-sweep 9s linear infinite alternate;
+}
+
+@keyframes ring-ripple {
+  0% {
+    transform: scale(0.95);
+    opacity: 0.55;
+  }
+  100% {
+    transform: scale(1.22);
+    opacity: 0;
+  }
+}
+
+.animate-ring-ripple {
+  animation: ring-ripple 2.4s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+}
+
+.bg-grid-mono {
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+  background-size: 48px 48px;
 }
 
 .no-scrollbar::-webkit-scrollbar {

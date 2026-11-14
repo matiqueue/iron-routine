@@ -9,7 +9,8 @@ export default {
         elevated: '#18181A',
         tertiary: '#1C1C1E',
         hairline: '#27272A',
-        amberforge: '#F59E0B',
+        steel: '#A1A1AA',
+        chrome: '#E4E4E7',
       },
       fontFamily: {
         sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'],
@@ -17,7 +18,7 @@ export default {
         mono: ['"JetBrains Mono"', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace'],
       },
       boxShadow: {
-        'glass-card': '0 1px 0 0 rgba(255, 255, 255, 0.04) inset, 0 20px 50px -24px rgba(0, 0, 0, 0.95)',
+        'glass-card': '0 1px 0 0 rgba(255, 255, 255, 0.05) inset, 0 24px 60px -28px rgba(0, 0, 0, 0.96)',
         'device-frame': '0 0 0 1px #27272A, 0 40px 100px -20px rgba(0, 0, 0, 0.98)',
       },
     },
