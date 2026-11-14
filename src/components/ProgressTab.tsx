@@ -50,7 +50,7 @@ interface ProgressTabProps {
   activePlan?: WorkoutPlan | null;
   profilePlans?: WorkoutPlan[];
   refreshKey?: number;
-  onOpenProfileModal: () => void;
+  onOpenProfileModal?: () => void;
 }
 
 type ViewMode = 'stats' | 'exercises';
@@ -436,7 +436,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
             <View style={styles.timeframeRow}>
               {(['7d', '30d', '90d'] as Timeframe[]).map((tf) => {
                 const isSelected = timeframe === tf;
-                const label = tf === '7d' ? 'Ostatnie 7 dni' : tf === '30d' ? '30 dni' : '90 dni';
+                const label = tf === '7d' ? '7 dni' : tf === '30d' ? '30 dni' : '90 dni';
                 return (
                   <TouchableOpacity
                     key={tf}
@@ -1169,7 +1169,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: 20,
-    paddingBottom: 90,
+    paddingBottom: 118,
   },
   timeframeRow: {
     flexDirection: 'row',
@@ -1462,7 +1462,7 @@ const styles = StyleSheet.create({
   },
   listInner: {
     paddingHorizontal: 20,
-    paddingBottom: 85,
+    paddingBottom: 118,
   },
   kpiRow: {
     flexDirection: 'row',

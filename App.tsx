@@ -1,48 +1,40 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import {
-  StyleSheet,
-  View,
-  Text,
-  TouchableOpacity,
-  ScrollView,
-  Platform,
-  Animated,
-  Image,
-} from 'react-native';
+import { StyleSheet, View, Animated } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
-import { Ionicons } from '@expo/vector-icons';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
-import * as Haptics from 'expo-haptics';
 import * as Notifications from 'expo-notifications';
 
 import { ThemeProvider, useAppTheme } from './src/context/ThemeContext';
 import { WORKOUT_PLAN } from './src/data/planData';
 import {
   DayPlan,
+  DayProgress,
   Exercise,
   NewPRHighlight,
+  PRRecord,
+  SessionExerciseConfig,
   SetEntry,
   UserProfile,
   WorkoutPlan,
 } from './src/types/workout';
 import {
-  getProfiles,
   getActiveProfile,
-  setActiveProfileId,
-  createProfile,
   getActiveWorkoutPlan,
-  loadDayProgress,
-  saveSetEntry,
-  markWorkoutCompleted,
+  getAllBestPRs,
   getTodayDayId,
   getWorkoutStreak,
+  loadDayProgress,
+  markWorkoutCompleted,
+  saveSessionExerciseConfig,
+  saveSetEntry,
 } from './src/services/storage';
+import { getAppSettings } from './src/services/settings';
+import { triggerNotificationHaptic, triggerSelectionHaptic } from './src/services/haptics';
 import {
-  setupCreatineNotificationCategories,
-  isCreatineReminderEnabled,
-  scheduleCreatineReminders,
   handleNotificationResponse,
+  setupCreatineNotificationCategories,
+  syncRemindersWithSettings,
 } from './src/services/notifications';
 import {
   startWorkoutLiveActivity,
@@ -52,48 +44,37 @@ import {
 import { SplashScreen } from './src/components/SplashScreen';
 import { OnboardingScreen } from './src/components/OnboardingScreen';
 import {
-  ProfileSelectorModal,
-  CreateProfileOptions,
-} from './src/components/ProfileSelectorModal';
-import { HoldToStartButton } from './src/components/HoldToStartButton';
-import {
-  ActiveWorkoutView,
   ActiveWorkoutFinishSummary,
+  ActiveWorkoutView,
 } from './src/components/ActiveWorkoutView';
+import { AppTabKey, BottomTabBar } from './src/components/BottomTabBar';
+import { TodayScreen } from './src/screens/TodayScreen';
 import { PlanTab } from './src/components/PlanTab';
 import { ProgressTab } from './src/components/ProgressTab';
-import { RestDayView } from './src/components/RestDayView';
+import { SettingsScreen } from './src/screens/SettingsScreen';
 import { WorkoutSummaryModal } from './src/components/WorkoutSummaryModal';
 import { ExerciseDetailModal } from './src/components/ExerciseDetailModal';
 import { BodyStatsModal } from './src/components/BodyStatsModal';
 import { PlanManagerModal } from './src/components/PlanManagerModal';
 
-type TabType = 'today' | 'plan' | 'progress';
-
 function MainApp() {
-  const { theme, isDark, toggleTheme } = useAppTheme();
+  const { theme, isDark } = useAppTheme();
 
   // Startup splash
   const [showSplash, setShowSplash] = useState(true);
 
   // Active Tab
-  const [activeTab, setActiveTab] = useState<TabType>('today');
+  const [activeTab, setActiveTab] = useState<AppTabKey>('today');
 
   // Tab Transition Animations
   const tabFadeAnim = useRef(new Animated.Value(1)).current;
   const tabSlideAnim = useRef(new Animated.Value(0)).current;
 
-  // Bottom tab icon bounce animations
-  const todayScale = useRef(new Animated.Value(1)).current;
-  const planScale = useRef(new Animated.Value(1)).current;
-  const progressScale = useRef(new Animated.Value(1)).current;
-
-  // Profiles & Plans
-  const [profiles, setProfiles] = useState<UserProfile[]>([]);
+  // Single Device Profile, Plans & Shared Canonical Best PRs
   const [activeProfile, setActiveProfile] = useState<UserProfile | null>(null);
   const [profilePlans, setProfilePlans] = useState<WorkoutPlan[]>([]);
   const [activePlan, setActivePlan] = useState<WorkoutPlan | null>(null);
-  const [showProfileModal, setShowProfileModal] = useState(false);
+  const [bestPRs, setBestPRs] = useState<{ [exerciseId: string]: PRRecord }>({});
   const [showBodyStatsModal, setShowBodyStatsModal] = useState(false);
   const [showPlanManagerModal, setShowPlanManagerModal] = useState(false);
   const [progressRefreshKey, setProgressRefreshKey] = useState(0);
@@ -101,15 +82,17 @@ function MainApp() {
   // Active workout mode
   const [isActiveWorkout, setIsActiveWorkout] = useState(false);
   const [activeWorkoutDayId, setActiveWorkoutDayId] = useState<string>(getTodayDayId());
+  const [autoOpenSessionPicker, setAutoOpenSessionPicker] = useState(false);
 
-  // Today Progress Data
+  // Today / Active Workout Progress Data
   const [todayDayId] = useState<string>(getTodayDayId());
-  const [dayProgress, setDayProgress] = useState<{
-    sets: { [exerciseId: string]: { [setIndex: number]: SetEntry } };
-  }>({ sets: {} });
+  const [dayProgress, setDayProgress] = useState<DayProgress>({ sets: {} });
   const [streak, setStreak] = useState<number>(0);
 
-  // Exercise Detail Modal from Today Tab
+  // Monotonic write sequence guard prevents out-of-order AsyncStorage state reverts on typing
+  const setWriteSeqRef = useRef(0);
+
+  // Exercise Detail Modal
   const [previewExercise, setPreviewExercise] = useState<Exercise | null>(null);
 
   // Summary Modal
@@ -123,14 +106,7 @@ function MainApp() {
 
   useEffect(() => {
     activateKeepAwakeAsync();
-
-    // Setup interactive notification categories and responses (09:00 & 22:00 Creatine, 08:00 Weight)
     setupCreatineNotificationCategories();
-    isCreatineReminderEnabled().then((enabled) => {
-      if (enabled) {
-        scheduleCreatineReminders();
-      }
-    });
 
     const responseSubscription = Notifications.addNotificationResponseReceivedListener((response) => {
       handleNotificationResponse(response);
@@ -142,158 +118,132 @@ function MainApp() {
     };
   }, []);
 
-  const loadPlansForProfile = useCallback(async (profileId: string) => {
-    const { plans, activePlan: ap } = await getActiveWorkoutPlan(profileId);
-    setProfilePlans(plans);
-    setActivePlan(ap);
-  }, []);
+  const loadUserWorkspace = useCallback(
+    async (profile: UserProfile | null) => {
+      if (!profile) {
+        setProfilePlans([]);
+        setActivePlan(null);
+        setBestPRs({});
+        setStreak(0);
+        setDayProgress({ sets: {} });
+        return;
+      }
+
+      const [{ plans, activePlan: ap }, curStreak, prog, prs] = await Promise.all([
+        getActiveWorkoutPlan(profile.id),
+        getWorkoutStreak(profile.id),
+        loadDayProgress(todayDayId, undefined, profile.id),
+        getAllBestPRs(profile.id),
+      ]);
+
+      setProfilePlans(plans);
+      setActivePlan(ap);
+      setStreak(curStreak);
+      setDayProgress(prog);
+      setBestPRs(prs);
+    },
+    [todayDayId]
+  );
 
   const initApp = useCallback(async () => {
     try {
-      const allProfiles = await getProfiles();
-      const current = await getActiveProfile();
-      setProfiles(allProfiles);
+      const [settings, current] = await Promise.all([
+        getAppSettings(),
+        getActiveProfile(),
+      ]);
+      syncRemindersWithSettings(settings);
       setActiveProfile(current);
-
-      if (current) {
-        await loadPlansForProfile(current.id);
-        const curStreak = await getWorkoutStreak(current.id);
-        setStreak(curStreak);
-        const prog = await loadDayProgress(todayDayId, undefined, current.id);
-        setDayProgress(prog);
-      } else {
-        setProfilePlans([]);
-        setActivePlan(null);
-        setStreak(0);
-        setDayProgress({ sets: {} });
-      }
+      await loadUserWorkspace(current);
     } catch (e) {
       console.warn('Initialization error', e);
     }
-  }, [todayDayId, loadPlansForProfile]);
+  }, [loadUserWorkspace]);
 
   useEffect(() => {
     initApp();
   }, [initApp]);
 
-  // Tab Switching with smooth fade & slide animation
-  const handleSwitchTab = (targetTab: TabType) => {
+  const handleSwitchTab = (targetTab: AppTabKey) => {
     if (targetTab === activeTab) return;
-    Haptics.selectionAsync();
+    triggerSelectionHaptic();
 
-    // Trigger icon bounce
-    const scaleRef =
-      targetTab === 'today'
-        ? todayScale
-        : targetTab === 'plan'
-        ? planScale
-        : progressScale;
-
-    Animated.sequence([
-      Animated.timing(scaleRef, { toValue: 1.25, duration: 120, useNativeDriver: true }),
-      Animated.spring(scaleRef, { toValue: 1, friction: 4, useNativeDriver: true }),
-    ]).start();
-
-    // Fade out and in
     tabFadeAnim.setValue(0);
-    tabSlideAnim.setValue(12);
+    tabSlideAnim.setValue(10);
     setActiveTab(targetTab);
 
     Animated.parallel([
       Animated.timing(tabFadeAnim, {
         toValue: 1,
-        duration: 200,
+        duration: 180,
         useNativeDriver: true,
       }),
       Animated.spring(tabSlideAnim, {
         toValue: 0,
         friction: 8,
-        tension: 50,
+        tension: 55,
         useNativeDriver: true,
       }),
     ]).start();
   };
 
-  const handleSelectProfile = async (profile: UserProfile) => {
-    await setActiveProfileId(profile.id);
-    setActiveProfile(profile);
-    await loadPlansForProfile(profile.id);
-    const curStreak = await getWorkoutStreak(profile.id);
-    setStreak(curStreak);
-    const prog = await loadDayProgress(activeWorkoutDayId, undefined, profile.id);
-    setDayProgress(prog);
-    setProgressRefreshKey((k) => k + 1);
-  };
-
-  const handleCreateProfile = async (name: string, options?: CreateProfileOptions) => {
-    const newProfile = await createProfile(name, options);
-    const updatedProfiles = await getProfiles();
-    setProfiles(updatedProfiles);
-    setActiveProfile(newProfile);
-    await loadPlansForProfile(newProfile.id);
-    setStreak(0);
-    const prog = await loadDayProgress(activeWorkoutDayId, undefined, newProfile.id);
-    setDayProgress(prog);
-    setProgressRefreshKey((k) => k + 1);
-  };
-
-  const handleProfilesChanged = async (nextActive?: UserProfile | null) => {
-    const updatedProfiles = await getProfiles();
-    setProfiles(updatedProfiles);
-    const current = nextActive === undefined ? await getActiveProfile() : nextActive;
-    setActiveProfile(current);
-    if (current) {
-      await loadPlansForProfile(current.id);
-      const curStreak = await getWorkoutStreak(current.id);
-      setStreak(curStreak);
-      const prog = await loadDayProgress(todayDayId, undefined, current.id);
-      setDayProgress(prog);
-    } else {
-      setShowProfileModal(false);
-      setShowPlanManagerModal(false);
-      setShowBodyStatsModal(false);
-      setProfilePlans([]);
-      setActivePlan(null);
-      setStreak(0);
-      setDayProgress({ sets: {} });
-    }
-    setProgressRefreshKey((k) => k + 1);
-  };
-
   const handleOnboardingComplete = async (profile: UserProfile) => {
-    const updatedProfiles = await getProfiles();
-    setProfiles(updatedProfiles);
     setActiveProfile(profile);
-    await loadPlansForProfile(profile.id);
-    const curStreak = await getWorkoutStreak(profile.id);
-    setStreak(curStreak);
-    const prog = await loadDayProgress(todayDayId, undefined, profile.id);
-    setDayProgress(prog);
+    await loadUserWorkspace(profile);
+    const settings = await getAppSettings();
+    syncRemindersWithSettings(settings);
     setProgressRefreshKey((k) => k + 1);
   };
 
   const handlePlansUpdated = async () => {
     if (!activeProfile) return;
-    await loadPlansForProfile(activeProfile.id);
+    const { plans, activePlan: ap } = await getActiveWorkoutPlan(activeProfile.id);
+    setProfilePlans(plans);
+    setActivePlan(ap);
     setProgressRefreshKey((k) => k + 1);
   };
 
-  const refreshDayProgress = useCallback(
-    async (dayId: string) => {
-      if (!activeProfile) return;
-      const prog = await loadDayProgress(dayId, undefined, activeProfile.id);
-      setDayProgress(prog);
-    },
-    [activeProfile]
-  );
+  const handleFullDataRefresh = async () => {
+    const current = await getActiveProfile();
+    setActiveProfile(current);
+    await loadUserWorkspace(current);
+    setProgressRefreshKey((k) => k + 1);
+  };
+
+  const handleAppReset = () => {
+    setIsActiveWorkout(false);
+    setShowBodyStatsModal(false);
+    setShowPlanManagerModal(false);
+    setShowSummaryModal(false);
+    setPreviewExercise(null);
+    setActiveTab('today');
+    setActiveProfile(null);
+    setProfilePlans([]);
+    setActivePlan(null);
+    setBestPRs({});
+    setStreak(0);
+    setDayProgress({ sets: {} });
+  };
 
   const handleUpdateSet = async (
     exerciseId: string,
     setIndex: number,
     data: Partial<SetEntry>,
-    restSeconds: number
+    _restSeconds: number
   ) => {
     if (!activeProfile) return;
+
+    const seq = ++setWriteSeqRef.current;
+
+    // Immediate synchronous UI state update prevents text input bounce/reset while typing
+    setDayProgress((prev) => {
+      const nextSets = { ...prev.sets };
+      const exSets = { ...(nextSets[exerciseId] || {}) };
+      const existing = exSets[setIndex] || { completed: false };
+      exSets[setIndex] = { ...existing, ...data };
+      nextSets[exerciseId] = exSets;
+      return { ...prev, sets: nextSets };
+    });
+
     try {
       const updated = await saveSetEntry(
         activeWorkoutDayId,
@@ -303,21 +253,46 @@ function MainApp() {
         undefined,
         activeProfile.id
       );
-      setDayProgress(updated);
+      if (seq === setWriteSeqRef.current) {
+        setDayProgress(updated);
+      }
     } catch (e) {
       console.error('Error saving set', e);
     }
   };
 
+  const handleSaveSessionConfig = async (config: SessionExerciseConfig) => {
+    if (!activeProfile) return;
+    setDayProgress((prev) => ({ ...prev, sessionConfig: config }));
+    try {
+      await saveSessionExerciseConfig(activeWorkoutDayId, config, undefined, activeProfile.id);
+    } catch (e) {
+      console.error('Error saving session config', e);
+    }
+  };
+
   const planDays: DayPlan[] = activePlan?.days?.length ? activePlan.days : WORKOUT_PLAN;
 
-  const handleStartWorkout = (dayId?: string) => {
+  const handleStartWorkout = async (dayId?: string) => {
     const targetDay = dayId || todayDayId;
     const plan = planDays.find((p) => p.id === targetDay);
     if (!plan || !plan.exercises || plan.exercises.length === 0) return;
 
+    let prog: DayProgress = dayProgress;
+    if (activeProfile) {
+      prog = await loadDayProgress(targetDay, undefined, activeProfile.id);
+      setDayProgress(prog);
+    }
+
+    let completedInSession = 0;
+    for (const setsMap of Object.values(prog.sets || {})) {
+      for (const entry of Object.values(setsMap)) {
+        if (entry?.completed) completedInSession++;
+      }
+    }
+
     setActiveWorkoutDayId(targetDay);
-    refreshDayProgress(targetDay);
+    setAutoOpenSessionPicker(!prog.sessionConfig && completedInSession === 0);
     setIsActiveWorkout(true);
 
     const firstEx = plan.exercises[0];
@@ -327,9 +302,21 @@ function MainApp() {
       exerciseName: firstEx.name,
       currentSet: 1,
       totalSets: firstEx.sets,
-      completedSets: 0,
+      completedSets: completedInSession,
       totalWorkoutSets: total,
     });
+  };
+
+  const handleExitWorkout = async () => {
+    await stopWorkoutLiveActivity({
+      summaryTitle: 'Trening przerwany',
+      summarySubtitle: 'Sesja została zakończona',
+    });
+    setIsActiveWorkout(false);
+    if (activeProfile && activeWorkoutDayId !== todayDayId) {
+      const todayProg = await loadDayProgress(todayDayId, undefined, activeProfile.id);
+      setDayProgress(todayProg);
+    }
   };
 
   const handleFinishWorkout = async (summary?: ActiveWorkoutFinishSummary) => {
@@ -337,8 +324,7 @@ function MainApp() {
     if (!workoutDayPlan) return;
 
     const exercises = summary?.exercises || workoutDayPlan.exercises || [];
-    const total =
-      summary?.totalSets ?? exercises.reduce((sum, e) => sum + e.sets, 0);
+    const total = summary?.totalSets ?? exercises.reduce((sum, e) => sum + e.sets, 0);
     let done = summary?.completedSets ?? 0;
     if (summary?.completedSets === undefined) {
       for (const e of exercises) {
@@ -369,13 +355,22 @@ function MainApp() {
       totalVolumeKg = completedMeta.totalVolumeKg || totalVolumeKg;
       newPRs = completedMeta.newPRs || [];
 
-      const curStreak = await getWorkoutStreak(activeProfile.id);
+      const [curStreak, updatedPRs] = await Promise.all([
+        getWorkoutStreak(activeProfile.id),
+        getAllBestPRs(activeProfile.id),
+      ]);
       setStreak(curStreak);
+      setBestPRs(updatedPRs);
       setProgressRefreshKey((k) => k + 1);
+
+      if (activeWorkoutDayId !== todayDayId) {
+        const todayProg = await loadDayProgress(todayDayId, undefined, activeProfile.id);
+        setDayProgress(todayProg);
+      }
     }
 
     await stopWorkoutLiveActivity({
-      summaryTitle: 'Trening ukończony! 🏆',
+      summaryTitle: 'Trening ukończony!',
       summarySubtitle: `${done} z ${total} serii zaliczonych`,
     });
 
@@ -388,51 +383,13 @@ function MainApp() {
     setIsActiveWorkout(false);
     setShowSummaryModal(true);
 
-    try {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    } catch {}
+    triggerNotificationHaptic('success');
   };
 
   const currentPlan = planDays.find((p) => p.id === todayDayId) || planDays[0];
-  const activeWorkoutPlan =
-    planDays.find((p) => p.id === activeWorkoutDayId) || planDays[0];
+  const activeWorkoutPlan = planDays.find((p) => p.id === activeWorkoutDayId) || planDays[0];
   const extraLibraryExercises = profilePlans.flatMap((p) =>
     p.days.flatMap((d) => d.exercises || [])
-  );
-
-  const renderBodyStatsCard = (marginTop = 0) => (
-    <TouchableOpacity
-      style={[
-        styles.bodyStatsRow,
-        { backgroundColor: theme.bgSecondary, borderColor: theme.border, marginTop },
-      ]}
-      onPress={() => setShowBodyStatsModal(true)}
-      activeOpacity={0.7}
-    >
-      <View style={styles.bodyStatsLeft}>
-        <View style={[styles.bodyStatsIconWrap, { backgroundColor: theme.card, borderColor: theme.border }]}>
-          <Ionicons name="scale-outline" size={19} color={theme.text} />
-        </View>
-        <View>
-          <View style={styles.bodyStatsTitleRow}>
-            <Text style={[styles.bodyStatsTitle, { color: theme.text }]}>
-              {activeProfile?.weight ? `${activeProfile.weight} kg` : 'Dodaj wagę'}
-            </Text>
-            <Text style={[styles.bodyStatsDot, { color: theme.textMuted }]}>•</Text>
-            <Text style={[styles.bodyStatsHeight, { color: theme.textSecondary }]}>
-              {activeProfile?.height ? `${activeProfile.height} cm` : 'Wzrost'}
-            </Text>
-          </View>
-          <Text style={[styles.bodyStatsSub, { color: theme.textMuted }]}>
-            Codzienne ważenie i parametry ciała
-          </Text>
-        </View>
-      </View>
-      <View style={styles.bodyStatsActionWrap}>
-        <Text style={[styles.bodyStatsActionText, { color: theme.text }]}>Waga</Text>
-        <Ionicons name="chevron-forward" size={16} color={theme.textMuted} />
-      </View>
-    </TouchableOpacity>
   );
 
   if (showSplash) {
@@ -461,22 +418,21 @@ function MainApp() {
   if (isActiveWorkout) {
     return (
       <SafeAreaProvider>
-        <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.bg }]} edges={['top', 'left', 'right']}>
+        <SafeAreaView
+          style={[styles.safeArea, { backgroundColor: theme.bg }]}
+          edges={['top', 'left', 'right']}
+        >
           <StatusBar style={isDark ? 'light' : 'dark'} />
           <ActiveWorkoutView
             dayPlan={activeWorkoutPlan}
-            profileId={activeProfile?.id}
+            profileId={activeProfile.id}
             extraLibraryExercises={extraLibraryExercises}
             dayProgress={dayProgress}
+            autoOpenSessionPicker={autoOpenSessionPicker}
             onUpdateSet={handleUpdateSet}
+            onSaveSessionConfig={handleSaveSessionConfig}
             onFinishWorkout={handleFinishWorkout}
-            onExitWorkout={() => {
-              stopWorkoutLiveActivity({
-                summaryTitle: 'Trening przerwany',
-                summarySubtitle: 'Sesja została zakończona',
-              });
-              setIsActiveWorkout(false);
-            }}
+            onExitWorkout={handleExitWorkout}
           />
         </SafeAreaView>
       </SafeAreaProvider>
@@ -485,7 +441,10 @@ function MainApp() {
 
   return (
     <SafeAreaProvider>
-      <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.bg }]} edges={['top', 'left', 'right']}>
+      <SafeAreaView
+        style={[styles.safeArea, { backgroundColor: theme.bg }]}
+        edges={['top', 'left', 'right']}
+      >
         <StatusBar style={isDark ? 'light' : 'dark'} />
 
         {/* Animated Tab View Container */}
@@ -498,274 +457,29 @@ function MainApp() {
             },
           ]}
         >
-          {/* TAB 1: TODAY / TRENING */}
           {activeTab === 'today' && (
-            <ScrollView
-              style={styles.tabScroll}
-              contentContainerStyle={styles.tabContent}
-              showsVerticalScrollIndicator={false}
-            >
-              {/* Top Header Bar - EXCLUSIVELY in Trening Tab */}
-              <View style={styles.topHeader}>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.dateLabel, { color: theme.textMuted }]}>
-                    {new Date().toLocaleDateString('pl-PL', {
-                      weekday: 'long',
-                      day: 'numeric',
-                      month: 'long',
-                    }).toUpperCase()}
-                  </Text>
-                  <Text style={[styles.greeting, { color: theme.text }]}>
-                    Cześć, {activeProfile?.name?.split(' ')[0] || 'Zawodniku'}
-                  </Text>
-                </View>
-
-                {/* Header Action Buttons: Dark Mode & Profile Selector */}
-                <View style={styles.headerActions}>
-                  <TouchableOpacity
-                    style={[styles.actionIconBtn, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}
-                    onPress={toggleTheme}
-                    activeOpacity={0.7}
-                    accessibilityLabel="Przełącz motyw"
-                  >
-                    <Ionicons
-                      name={isDark ? 'sunny-outline' : 'moon-outline'}
-                      size={18}
-                      color={theme.text}
-                    />
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={[styles.profilePill, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}
-                    onPress={() => setShowProfileModal(true)}
-                    activeOpacity={0.7}
-                  >
-                    <Ionicons name="person-circle-outline" size={17} color={theme.text} />
-                    <Text style={[styles.profilePillText, { color: theme.text }]} numberOfLines={1}>
-                      {activeProfile?.name?.split(' ')[0] || 'Profil'}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-              {/* Streak Ribbon */}
-              <View style={[styles.streakRibbon, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
-                <View style={styles.streakLeft}>
-                  <View style={[styles.streakIconWrap, { backgroundColor: theme.card, borderColor: theme.border }]}>
-                    <Ionicons name="flame" size={20} color={theme.text} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.streakTitle, { color: theme.text }]}>
-                      {streak} dni serii treningowej
-                    </Text>
-                    <Text style={[styles.streakSub, { color: theme.textMuted }]} numberOfLines={1}>
-                      {activePlan?.name ? `Plan: ${activePlan.name} · Utrzymaj rytm` : 'Czysta dyscyplina, utrzymaj rytm'}
-                    </Text>
-                  </View>
-                </View>
-              </View>
-
-              {/* Rest / Active Recovery Day View or Workout Day */}
-              {currentPlan.type === 'rest' || currentPlan.type === 'walk' ? (
-                <>
-                  <RestDayView dayPlan={currentPlan} />
-                  {renderBodyStatsCard(14)}
-                </>
-              ) : (
-                <>
-                  {/* Hero Workout Banner */}
-                  {currentPlan.bannerUrl ? (
-                    <View style={styles.heroBanner}>
-                      <Image
-                        source={{ uri: currentPlan.bannerUrl }}
-                        style={styles.heroBannerImage}
-                        resizeMode="cover"
-                      />
-
-                      <View
-                        style={[
-                          styles.heroBannerOverlay,
-                          { backgroundColor: isDark ? 'rgba(0,0,0,0.72)' : 'rgba(0,0,0,0.52)' },
-                        ]}
-                      >
-                        <View style={styles.heroTagRow}>
-                          <View style={styles.heroTag}>
-                            <Text style={styles.heroTagText}>DZISIEJSZY TRENING</Text>
-                          </View>
-                          {currentPlan.time ? (
-                            <View style={styles.heroTimeWrap}>
-                              <Ionicons name="time-outline" size={13} color="#FFFFFF" />
-                              <Text style={styles.heroTimeText}>{currentPlan.time}</Text>
-                            </View>
-                          ) : null}
-                        </View>
-
-                        <Text style={styles.heroTitle}>{currentPlan.name}</Text>
-                        <Text style={styles.heroSubtitle}>{currentPlan.subtitle}</Text>
-
-                        {currentPlan.exercises && currentPlan.exercises.length > 0 && (
-                          <View style={styles.heroMetaLine}>
-                            <Text style={styles.heroMetaItem}>
-                              {currentPlan.exercises.length} ćwiczeń
-                            </Text>
-                            <Text style={styles.heroMetaDot}>•</Text>
-                            <Text style={styles.heroMetaItem}>
-                              {currentPlan.exercises.reduce((acc, e) => acc + e.sets, 0)} serii
-                            </Text>
-                            {currentPlan.time ? (
-                              <>
-                                <Text style={styles.heroMetaDot}>•</Text>
-                                <Text style={styles.heroMetaItem}>{currentPlan.time}</Text>
-                              </>
-                            ) : null}
-                          </View>
-                        )}
-                      </View>
-                    </View>
-                  ) : (
-                    <View style={[styles.monoHeroBanner, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
-                      <View style={styles.heroTagRow}>
-                        <View style={[styles.monoHeroTag, { backgroundColor: theme.primary }]}>
-                          <Text style={[styles.monoHeroTagText, { color: theme.primaryText }]}>
-                            DZISIEJSZY TRENING
-                          </Text>
-                        </View>
-                        {currentPlan.time ? (
-                          <View style={styles.heroTimeWrap}>
-                            <Ionicons name="time-outline" size={13} color={theme.textMuted} />
-                            <Text style={[styles.heroTimeText, { color: theme.textMuted }]}>
-                              {currentPlan.time}
-                            </Text>
-                          </View>
-                        ) : null}
-                      </View>
-
-                      <Text style={[styles.monoHeroTitle, { color: theme.text }]}>
-                        {currentPlan.name}
-                      </Text>
-                      {currentPlan.subtitle ? (
-                        <Text style={[styles.monoHeroSubtitle, { color: theme.textSecondary }]}>
-                          {currentPlan.subtitle}
-                        </Text>
-                      ) : null}
-
-                      {currentPlan.exercises && currentPlan.exercises.length > 0 && (
-                        <View style={styles.heroMetaLine}>
-                          <Text style={[styles.monoHeroMetaText, { color: theme.textSecondary }]}>
-                            {currentPlan.exercises.length} ćwiczeń
-                          </Text>
-                          <Text style={[styles.monoHeroMetaDot, { color: theme.textMuted }]}>•</Text>
-                          <Text style={[styles.monoHeroMetaText, { color: theme.textSecondary }]}>
-                            {currentPlan.exercises.reduce((acc, e) => acc + e.sets, 0)} serii
-                          </Text>
-                        </View>
-                      )}
-                    </View>
-                  )}
-
-                  {/* Warmup tip if available */}
-                  {currentPlan.warmup ? (
-                    <View style={[styles.warmupCard, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
-                      <Ionicons name="information-circle-outline" size={20} color={theme.text} style={{ marginTop: 1 }} />
-                      <View style={{ flex: 1 }}>
-                        <Text style={[styles.warmupHeader, { color: theme.text }]}>
-                          Rozgrzewka i mobilizacja
-                        </Text>
-                        <Text style={[styles.warmupBody, { color: theme.textSecondary }]}>
-                          {currentPlan.warmup}
-                        </Text>
-                      </View>
-                    </View>
-                  ) : null}
-
-                  {/* HOLD TO START BUTTON or Empty Setup CTA */}
-                  {currentPlan.exercises && currentPlan.exercises.length > 0 ? (
-                    <HoldToStartButton
-                      onComplete={() => handleStartWorkout(todayDayId)}
-                      title="PRZYTRZYMAJ, ABY ZACZĄĆ"
-                      subtitle="Dotknij i przytrzymaj, aby uruchomić tryb treningu"
-                    />
-                  ) : (
-                    <TouchableOpacity
-                      style={[
-                        styles.emptySetupBtn,
-                        { backgroundColor: theme.bgSecondary, borderColor: theme.border },
-                      ]}
-                      onPress={() => handleSwitchTab('plan')}
-                      activeOpacity={0.75}
-                    >
-                      <Ionicons name="add-circle-outline" size={18} color={theme.text} />
-                      <Text style={[styles.emptySetupBtnText, { color: theme.text }]}>
-                        Dodaj ćwiczenia w zakładce Plan
-                      </Text>
-                    </TouchableOpacity>
-                  )}
-
-                  {/* Body Stats Quick Card (placed under Hold button for clean hero visibility) */}
-                  {renderBodyStatsCard()}
-
-                  {/* Clean Visual Flat List of Today's Exercises (NO THUMBNAILS - spacious and airy) */}
-                  {currentPlan.exercises && currentPlan.exercises.length > 0 && (
-                    <View style={styles.todayExercises}>
-                      <View style={[styles.sectionDivider, { borderTopColor: theme.hairline }]}>
-                        <Text style={[styles.sectionTitle, { color: theme.textMuted }]}>
-                          ĆWICZENIA W DZISIEJSZYM BLOKU ({currentPlan.exercises.length})
-                        </Text>
-                        <TouchableOpacity onPress={() => handleSwitchTab('plan')}>
-                          <Text style={[styles.sectionAction, { color: theme.text }]}>
-                            Tydzień →
-                          </Text>
-                        </TouchableOpacity>
-                      </View>
-
-                      {currentPlan.exercises.map((ex) => (
-                        <TouchableOpacity
-                          key={ex.id}
-                          style={[styles.flatExRow, { borderBottomColor: theme.hairline }]}
-                          onPress={() => setPreviewExercise(ex)}
-                          activeOpacity={0.7}
-                        >
-                          <View style={styles.flatExMain}>
-                            <Text style={[styles.flatExTitle, { color: theme.text }]}>
-                              {ex.name}
-                            </Text>
-                            <View style={styles.exSubRow}>
-                              <View style={[styles.catBadge, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
-                                <Text style={[styles.catBadgeText, { color: theme.textSecondary }]}>
-                                  {ex.category.toUpperCase()}
-                                </Text>
-                              </View>
-                              <Text style={[styles.flatExSub, { color: theme.textSecondary }]}>
-                                {ex.sets} serie × {ex.reps}
-                              </Text>
-                            </View>
-                          </View>
-
-                          <View style={styles.exRowRight}>
-                            <View style={styles.restTagWrap}>
-                              <Ionicons name="time-outline" size={13} color={theme.textMuted} />
-                              <Text style={[styles.restTag, { color: theme.textMuted }]}>
-                                {ex.rest}s
-                              </Text>
-                            </View>
-                            <Ionicons name="chevron-forward" size={17} color={theme.textMuted} />
-                          </View>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  )}
-                </>
-              )}
-            </ScrollView>
+            <TodayScreen
+              activeProfile={activeProfile}
+              activePlan={activePlan}
+              currentPlan={currentPlan}
+              dayProgress={dayProgress}
+              streak={streak}
+              bestPRs={bestPRs}
+              onOpenPlanManager={() => setShowPlanManagerModal(true)}
+              onOpenBodyStats={() => setShowBodyStatsModal(true)}
+              onStartWorkout={(dayId) => handleStartWorkout(dayId)}
+              onOpenExerciseDetail={(ex) => setPreviewExercise(ex)}
+              onSwitchToPlanTab={() => handleSwitchTab('plan')}
+            />
           )}
 
-          {/* TAB 2: PLAN TYGODNIOWY */}
           {activeTab === 'plan' && (
             <PlanTab
-              profileId={activeProfile?.id}
+              profileId={activeProfile.id}
               activePlan={activePlan}
               allPlansCount={profilePlans.length}
               extraLibraryExercises={extraLibraryExercises}
+              bestPRs={bestPRs}
               onOpenPlanManager={() => setShowPlanManagerModal(true)}
               onPlanUpdated={handlePlansUpdated}
               onLibraryChanged={() => setProgressRefreshKey((k) => k + 1)}
@@ -774,105 +488,34 @@ function MainApp() {
             />
           )}
 
-          {/* TAB 3: OSIĄGI (MERITUM) */}
-          {activeTab === 'progress' && activeProfile && (
+          {activeTab === 'progress' && (
             <ProgressTab
               activeProfile={activeProfile}
               activePlan={activePlan}
               profilePlans={profilePlans}
               refreshKey={progressRefreshKey}
-              onOpenProfileModal={() => setShowProfileModal(true)}
+            />
+          )}
+
+          {activeTab === 'settings' && (
+            <SettingsScreen
+              activeProfile={activeProfile}
+              onProfileUpdated={(updated) => {
+                setActiveProfile(updated);
+                setProgressRefreshKey((k) => k + 1);
+              }}
+              onDataImported={handleFullDataRefresh}
+              onLibraryChanged={() => setProgressRefreshKey((k) => k + 1)}
+              onAppReset={handleAppReset}
             />
           )}
         </Animated.View>
 
-        {/* BOTTOM NAVIGATION BAR WITH ANIMATED ICONS */}
-        <View style={[styles.bottomBar, { backgroundColor: theme.bg, borderTopColor: theme.hairline }]}>
-          <TouchableOpacity
-            style={styles.navItem}
-            onPress={() => handleSwitchTab('today')}
-            activeOpacity={0.7}
-          >
-            <Animated.View style={{ transform: [{ scale: todayScale }] }}>
-              <Ionicons
-                name={activeTab === 'today' ? 'barbell' : 'barbell-outline'}
-                size={23}
-                color={activeTab === 'today' ? theme.text : theme.textMuted}
-              />
-            </Animated.View>
-            <Text
-              style={[
-                styles.navLabel,
-                { color: activeTab === 'today' ? theme.text : theme.textMuted },
-                activeTab === 'today' && { fontWeight: '900' },
-              ]}
-            >
-              Trening
-            </Text>
-          </TouchableOpacity>
+        {/* Extracted 4-Tab Bottom Navigation Bar */}
+        <BottomTabBar activeTab={activeTab} onSelectTab={handleSwitchTab} />
 
-          <TouchableOpacity
-            style={styles.navItem}
-            onPress={() => handleSwitchTab('plan')}
-            activeOpacity={0.7}
-          >
-            <Animated.View style={{ transform: [{ scale: planScale }] }}>
-              <Ionicons
-                name={activeTab === 'plan' ? 'calendar' : 'calendar-outline'}
-                size={23}
-                color={activeTab === 'plan' ? theme.text : theme.textMuted}
-              />
-            </Animated.View>
-            <Text
-              style={[
-                styles.navLabel,
-                { color: activeTab === 'plan' ? theme.text : theme.textMuted },
-                activeTab === 'plan' && { fontWeight: '900' },
-              ]}
-            >
-              Plan
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.navItem}
-            onPress={() => handleSwitchTab('progress')}
-            activeOpacity={0.7}
-          >
-            <Animated.View style={{ transform: [{ scale: progressScale }] }}>
-              <Ionicons
-                name={activeTab === 'progress' ? 'trophy' : 'trophy-outline'}
-                size={23}
-                color={activeTab === 'progress' ? theme.text : theme.textMuted}
-              />
-            </Animated.View>
-            <Text
-              style={[
-                styles.navLabel,
-                { color: activeTab === 'progress' ? theme.text : theme.textMuted },
-                activeTab === 'progress' && { fontWeight: '900' },
-              ]}
-            >
-              Osiągi
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Profile Modal */}
-        {activeProfile && (
-          <ProfileSelectorModal
-            visible={showProfileModal}
-            profiles={profiles}
-            activeProfile={activeProfile}
-            onSelectProfile={handleSelectProfile}
-            onCreateProfile={handleCreateProfile}
-            onProfilesChanged={handleProfilesChanged}
-            onClose={() => setShowProfileModal(false)}
-          />
-        )}
-
-        {/* Plan Manager Modal (Multi-plan switcher & templates) */}
-        {activeProfile && activePlan && (
+        {/* Plan Manager Modal (replaces old Profile Switcher) */}
+        {activePlan && (
           <PlanManagerModal
             visible={showPlanManagerModal}
             onClose={() => setShowPlanManagerModal(false)}
@@ -884,17 +527,15 @@ function MainApp() {
         )}
 
         {/* Body Stats & Weigh-in Reminder Modal */}
-        {activeProfile && (
-          <BodyStatsModal
-            visible={showBodyStatsModal}
-            profile={activeProfile}
-            onClose={() => setShowBodyStatsModal(false)}
-            onProfileUpdated={(updated: UserProfile) => {
-              setActiveProfile(updated);
-              setProgressRefreshKey((k) => k + 1);
-            }}
-          />
-        )}
+        <BodyStatsModal
+          visible={showBodyStatsModal}
+          profile={activeProfile}
+          onClose={() => setShowBodyStatsModal(false)}
+          onProfileUpdated={(updated: UserProfile) => {
+            setActiveProfile(updated);
+            setProgressRefreshKey((k) => k + 1);
+          }}
+        />
 
         {/* Exercise Preview Modal from Today */}
         <ExerciseDetailModal
@@ -937,372 +578,5 @@ const styles = StyleSheet.create({
   },
   animatedTabContainer: {
     flex: 1,
-  },
-  tabScroll: {
-    flex: 1,
-  },
-  tabContent: {
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 95,
-  },
-  topHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingBottom: 18,
-    marginBottom: 6,
-  },
-  dateLabel: {
-    fontSize: 12,
-    fontWeight: '800',
-    letterSpacing: 1.2,
-  },
-  greeting: {
-    fontSize: 32,
-    fontWeight: '900',
-    letterSpacing: -0.6,
-    marginTop: 2,
-  },
-  headerActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  actionIconBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    borderWidth: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  profilePill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 7,
-    paddingHorizontal: 15,
-    paddingVertical: 10,
-    borderRadius: 21,
-    borderWidth: 1,
-    maxWidth: 150,
-  },
-  profilePillText: {
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  streakRibbon: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 16,
-    paddingHorizontal: 16,
-    borderRadius: 16,
-    borderWidth: 1,
-    marginBottom: 10,
-  },
-  streakLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  streakIconWrap: {
-    width: 42,
-    height: 42,
-    borderRadius: 12,
-    borderWidth: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  streakTitle: {
-    fontSize: 16,
-    fontWeight: '800',
-  },
-  streakSub: {
-    fontSize: 13,
-    marginTop: 3,
-  },
-  bodyStatsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    borderRadius: 16,
-    borderWidth: 1,
-    marginBottom: 20,
-  },
-  bodyStatsLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  bodyStatsIconWrap: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    borderWidth: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  bodyStatsTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  bodyStatsTitle: {
-    fontSize: 16,
-    fontWeight: '800',
-  },
-  bodyStatsDot: {
-    fontSize: 14,
-  },
-  bodyStatsHeight: {
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  bodyStatsSub: {
-    fontSize: 12,
-    marginTop: 2,
-  },
-  bodyStatsActionWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  bodyStatsActionText: {
-    fontSize: 12,
-    fontWeight: '800',
-  },
-  heroBanner: {
-    width: '100%',
-    height: 200,
-    borderRadius: 20,
-    overflow: 'hidden',
-    position: 'relative',
-    marginBottom: 20,
-  },
-  heroBannerImage: {
-    width: '100%',
-    height: '100%',
-  },
-  heroBannerOverlay: {
-    ...StyleSheet.absoluteFill,
-    padding: 20,
-    justifyContent: 'flex-end',
-  },
-  heroTagRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  heroTag: {
-    backgroundColor: 'rgba(255, 255, 255, 0.22)',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  heroTagText: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#FFFFFF',
-    letterSpacing: 0.6,
-  },
-  heroTimeWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  heroTimeText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  heroTitle: {
-    fontSize: 32,
-    fontWeight: '900',
-    color: '#FFFFFF',
-    letterSpacing: -0.5,
-    lineHeight: 38,
-  },
-  heroSubtitle: {
-    fontSize: 15,
-    color: 'rgba(255, 255, 255, 0.85)',
-    marginTop: 4,
-  },
-  heroMetaLine: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginTop: 10,
-  },
-  heroMetaItem: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  heroMetaDot: {
-    fontSize: 11,
-    color: 'rgba(255, 255, 255, 0.6)',
-  },
-  warmupCard: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 12,
-    padding: 16,
-    borderRadius: 16,
-    borderWidth: 1,
-    marginBottom: 20,
-  },
-  warmupHeader: {
-    fontSize: 16,
-    fontWeight: '800',
-    marginBottom: 4,
-  },
-  warmupBody: {
-    fontSize: 14,
-    lineHeight: 21,
-  },
-  todayExercises: {
-    marginTop: 22,
-  },
-  sectionDivider: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    borderTopWidth: StyleSheet.hairlineWidth,
-    paddingTop: 18,
-    paddingBottom: 12,
-  },
-  sectionTitle: {
-    fontSize: 13,
-    fontWeight: '800',
-    letterSpacing: 1,
-  },
-  sectionAction: {
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  flatExRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 20,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    gap: 14,
-    minHeight: 80,
-  },
-  flatExMain: {
-    flex: 1,
-  },
-  flatExTitle: {
-    fontSize: 17,
-    fontWeight: '700',
-    letterSpacing: -0.2,
-    lineHeight: 22,
-    marginBottom: 6,
-  },
-  exSubRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  catBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 5,
-    borderWidth: StyleSheet.hairlineWidth,
-  },
-  catBadgeText: {
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 0.4,
-  },
-  flatExSub: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  exRowRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  restTagWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  restTag: {
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  bottomBar: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: Platform.OS === 'ios' ? 82 : 64,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-around',
-    borderTopWidth: StyleSheet.hairlineWidth,
-    paddingBottom: Platform.OS === 'ios' ? 22 : 6,
-  },
-  navItem: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 3,
-  },
-  navLabel: {
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  monoHeroBanner: {
-    borderRadius: 20,
-    borderWidth: 1,
-    padding: 20,
-    marginBottom: 20,
-  },
-  monoHeroTag: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  monoHeroTagText: {
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 0.6,
-  },
-  monoHeroTitle: {
-    fontSize: 28,
-    fontWeight: '900',
-    letterSpacing: -0.5,
-    lineHeight: 34,
-  },
-  monoHeroSubtitle: {
-    fontSize: 15,
-    marginTop: 4,
-  },
-  monoHeroMetaText: {
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  monoHeroMetaDot: {
-    fontSize: 11,
-  },
-  emptySetupBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 16,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderStyle: 'dashed',
-    marginBottom: 20,
-  },
-  emptySetupBtnText: {
-    fontSize: 14,
-    fontWeight: '700',
   },
 });

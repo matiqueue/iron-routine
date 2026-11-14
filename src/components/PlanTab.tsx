@@ -5,31 +5,27 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Image,
-  LayoutAnimation,
-  Platform,
-  UIManager,
   Animated,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import * as Haptics from 'expo-haptics';
 import { useAppTheme } from '../context/ThemeContext';
 import { DAYS_OF_WEEK, WORKOUT_PLAN } from '../data/planData';
-import { Exercise, DayPlan, WorkoutPlan } from '../types/workout';
+import { getDayBannerTagMeta, resolveDayBannerTag } from '../data/dayTags';
+import { Exercise, DayPlan, PRRecord, WorkoutPlan } from '../types/workout';
 import { ExerciseDetailModal } from './ExerciseDetailModal';
 import { PlanDayEditorModal } from './PlanDayEditorModal';
 import { ExerciseLibraryModal } from './ExerciseLibraryModal';
+import { DayBannerArtwork } from './DayBannerArtwork';
+import { DayExercisePreviewList } from './DayExercisePreviewList';
 import { updateDayInPlan } from '../services/storage';
-
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
+import { triggerSelectionHaptic } from '../services/haptics';
 
 interface PlanTabProps {
   profileId?: string;
   activePlan?: WorkoutPlan | null;
   allPlansCount?: number;
   extraLibraryExercises?: Exercise[];
+  bestPRs?: { [exerciseId: string]: PRRecord };
   onOpenPlanManager?: () => void;
   onPlanUpdated?: () => Promise<void> | void;
   onLibraryChanged?: () => void;
@@ -42,15 +38,15 @@ export const PlanTab: React.FC<PlanTabProps> = ({
   activePlan,
   allPlansCount = 1,
   extraLibraryExercises = [],
+  bestPRs = {},
   onOpenPlanManager,
   onPlanUpdated,
   onLibraryChanged,
   onSelectExerciseForPR,
   onStartWorkoutForDay,
 }) => {
-  const { theme, isDark } = useAppTheme();
+  const { theme } = useAppTheme();
   const [selectedDayId, setSelectedDayId] = useState<string>('mon');
-  const [expandedExerciseId, setExpandedExerciseId] = useState<string | null>(null);
   const [modalExercise, setModalExercise] = useState<Exercise | null>(null);
   const [editingDay, setEditingDay] = useState(false);
   const [showLibrary, setShowLibrary] = useState(false);
@@ -63,14 +59,11 @@ export const PlanTab: React.FC<PlanTabProps> = ({
 
   const handleSelectDay = (dayId: string) => {
     if (dayId === selectedDayId) return;
-    try {
-      Haptics.selectionAsync();
-    } catch {}
+    triggerSelectionHaptic();
 
     contentFadeAnim.setValue(0);
     contentSlideAnim.setValue(10);
     setSelectedDayId(dayId);
-    setExpandedExerciseId(null);
 
     Animated.parallel([
       Animated.timing(contentFadeAnim, {
@@ -91,6 +84,8 @@ export const PlanTab: React.FC<PlanTabProps> = ({
     planDays.find((d) => d.id === selectedDayId) || planDays[0];
   const currentDayMeta =
     DAYS_OF_WEEK.find((d) => d.id === currentPlan.id) || DAYS_OF_WEEK[0];
+  const resolvedBannerTag = resolveDayBannerTag(currentPlan);
+  const tagMeta = getDayBannerTagMeta(resolvedBannerTag);
 
   const handleSaveEditedDay = async (updatedDay: DayPlan) => {
     if (!activePlan) return;
@@ -98,20 +93,14 @@ export const PlanTab: React.FC<PlanTabProps> = ({
     await onPlanUpdated?.();
   };
 
-  const toggleExpand = (id: string) => {
-    Haptics.selectionAsync();
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setExpandedExerciseId((prev) => (prev === id ? null : id));
-  };
-
   return (
     <View style={[styles.container, { backgroundColor: theme.bg }]}>
       {/* Editorial Title + Plan Switcher */}
       <View style={styles.header}>
         <View style={styles.headerTopRow}>
-          <View style={{ flex: 1 }}>
+          <View style={{ flex: 1, minWidth: 0 }}>
             <Text style={[styles.title, { color: theme.text }]}>Plan treningowy</Text>
-            <Text style={[styles.subtitle, { color: theme.textMuted }]}>
+            <Text style={[styles.subtitle, { color: theme.textMuted }]} numberOfLines={1}>
               Rozkład tygodnia • Technika • Konfigurator
             </Text>
           </View>
@@ -122,9 +111,7 @@ export const PlanTab: React.FC<PlanTabProps> = ({
               { backgroundColor: theme.bgSecondary, borderColor: theme.border },
             ]}
             onPress={() => {
-              try {
-                Haptics.selectionAsync();
-              } catch {}
+              triggerSelectionHaptic();
               setShowLibrary(true);
             }}
             activeOpacity={0.75}
@@ -141,9 +128,7 @@ export const PlanTab: React.FC<PlanTabProps> = ({
               { backgroundColor: theme.bgSecondary, borderColor: theme.border },
             ]}
             onPress={() => {
-              try {
-                Haptics.selectionAsync();
-              } catch {}
+              triggerSelectionHaptic();
               onOpenPlanManager?.();
             }}
             activeOpacity={0.75}
@@ -164,9 +149,7 @@ export const PlanTab: React.FC<PlanTabProps> = ({
               { backgroundColor: theme.bgSecondary, borderColor: theme.border },
             ]}
             onPress={() => {
-              try {
-                Haptics.selectionAsync();
-              } catch {}
+              triggerSelectionHaptic();
               setEditingDay(true);
             }}
             activeOpacity={0.75}
@@ -236,106 +219,58 @@ export const PlanTab: React.FC<PlanTabProps> = ({
             transform: [{ translateY: contentSlideAnim }],
           }}
         >
-        {/* Banner with image */}
-        {currentPlan.bannerUrl ? (
-          <View style={styles.bannerWrapper}>
-            <Image
-              source={{ uri: currentPlan.bannerUrl }}
-              style={styles.bannerImage}
-              resizeMode="cover"
-            />
-            <View
-              style={[
-                styles.bannerOverlay,
-                { backgroundColor: isDark ? 'rgba(0,0,0,0.72)' : 'rgba(0,0,0,0.52)' },
-              ]}
-            >
-              <View style={styles.bannerBadge}>
-                <Text style={styles.bannerBadgeText}>
-                  {currentPlan.type === 'rest'
-                    ? 'REGENERACJA'
-                    : currentPlan.type === 'walk'
-                    ? 'AKTYWNOŚĆ'
-                    : 'TRENING SIŁOWY'}
-                </Text>
-              </View>
-              <Text style={styles.bannerTitle}>{currentPlan.name}</Text>
-              {currentPlan.subtitle ? (
-                <Text style={styles.bannerSubtitle}>{currentPlan.subtitle}</Text>
-              ) : null}
-              <View style={styles.bannerMetaRow}>
-                <View style={styles.metaTimeWrap}>
-                  <Ionicons name="time-outline" size={13} color="#FFFFFF" />
-                  <Text style={styles.bannerMetaText}>{currentPlan.time}</Text>
-                </View>
-                {currentPlan.exercises && currentPlan.exercises.length > 0 && (
-                  <>
-                    <Text style={styles.bannerMetaDot}>•</Text>
-                    <Text style={styles.bannerMetaText}>{currentPlan.exercises.length} ćwiczeń</Text>
-                    <Text style={styles.bannerMetaDot}>•</Text>
-                    <Text style={styles.bannerMetaText}>
-                      {currentPlan.exercises.reduce((acc, e) => acc + e.sets, 0)} serii
-                    </Text>
-                  </>
-                )}
-              </View>
-            </View>
-          </View>
-        ) : (
-          <View
-            style={[
-              styles.monoBannerCard,
-              { backgroundColor: theme.bgSecondary, borderColor: theme.border },
-            ]}
-          >
-            <View style={styles.monoBannerTop}>
-              <View style={[styles.monoBannerBadge, { backgroundColor: theme.primary }]}>
-                <Text style={[styles.monoBannerBadgeText, { color: theme.primaryText }]}>
-                  {currentPlan.type === 'rest'
-                    ? 'REGENERACJA'
-                    : currentPlan.type === 'walk'
-                    ? 'AKTYWNOŚĆ'
-                    : 'TRENING SIŁOWY'}
-                </Text>
-              </View>
-              <Ionicons
-                name={(currentPlan.iconName as any) || 'barbell-outline'}
-                size={22}
-                color={theme.text}
-              />
-            </View>
+        {/* Universal Tagged Monochrome Graphic Banner */}
+        <View
+          style={[
+            styles.monoBannerCard,
+            { backgroundColor: theme.bgSecondary, borderColor: theme.border },
+          ]}
+        >
+          <DayBannerArtwork tag={resolvedBannerTag} />
 
-            <Text style={[styles.monoBannerTitle, { color: theme.text }]}>
-              {currentPlan.name}
-            </Text>
-            {currentPlan.subtitle ? (
-              <Text style={[styles.monoBannerSubtitle, { color: theme.textSecondary }]}>
-                {currentPlan.subtitle}
+          <View style={styles.monoBannerTop}>
+            <View style={[styles.monoBannerBadge, { backgroundColor: theme.primary }]}>
+              <Text style={[styles.monoBannerBadgeText, { color: theme.primaryText }]}>
+                {tagMeta.badge}
               </Text>
-            ) : null}
-
-            <View style={styles.bannerMetaRow}>
-              <View style={styles.metaTimeWrap}>
-                <Ionicons name="time-outline" size={13} color={theme.textMuted} />
-                <Text style={[styles.monoMetaText, { color: theme.textSecondary }]}>
-                  {currentPlan.time}
-                </Text>
-              </View>
-              {currentPlan.type === 'workout' && (
-                <>
-                  <Text style={[styles.monoMetaDot, { color: theme.textMuted }]}>•</Text>
-                  <Text style={[styles.monoMetaText, { color: theme.textSecondary }]}>
-                    {currentPlan.exercises?.length || 0} ćwiczeń
-                  </Text>
-                  <Text style={[styles.monoMetaDot, { color: theme.textMuted }]}>•</Text>
-                  <Text style={[styles.monoMetaText, { color: theme.textSecondary }]}>
-                    {(currentPlan.exercises || []).reduce((acc, e) => acc + e.sets, 0)} serii
-                  </Text>
-                </>
-              )}
             </View>
+            <Ionicons
+              name={(tagMeta.icon as any) || (currentPlan.iconName as any) || 'barbell-outline'}
+              size={22}
+              color={theme.text}
+            />
           </View>
-        )}
+
+          <Text style={[styles.monoBannerTitle, { color: theme.text }]}>
+            {currentPlan.name}
+          </Text>
+          {currentPlan.subtitle ? (
+            <Text style={[styles.monoBannerSubtitle, { color: theme.textSecondary }]}>
+              {currentPlan.subtitle}
+            </Text>
+          ) : null}
+
+          <View style={styles.bannerMetaRow}>
+            <View style={styles.metaTimeWrap}>
+              <Ionicons name="time-outline" size={13} color={theme.textMuted} />
+              <Text style={[styles.monoMetaText, { color: theme.textSecondary }]}>
+                {currentPlan.time}
+              </Text>
+            </View>
+            {currentPlan.type === 'workout' && (
+              <>
+                <Text style={[styles.monoMetaDot, { color: theme.textMuted }]}>•</Text>
+                <Text style={[styles.monoMetaText, { color: theme.textSecondary }]}>
+                  {currentPlan.exercises?.length || 0} ćwiczeń
+                </Text>
+                <Text style={[styles.monoMetaDot, { color: theme.textMuted }]}>•</Text>
+                <Text style={[styles.monoMetaText, { color: theme.textSecondary }]}>
+                  {(currentPlan.exercises || []).reduce((acc, e) => acc + e.sets, 0)} serii
+                </Text>
+              </>
+            )}
+          </View>
+        </View>
 
         {/* Warmup advice */}
         {currentPlan.warmup ? (
@@ -388,116 +323,23 @@ export const PlanTab: React.FC<PlanTabProps> = ({
             </TouchableOpacity>
           )}
 
-        {/* Exercise List */}
+        {/* Upgraded Athletic Exercise List */}
         {currentPlan.exercises && currentPlan.exercises.length > 0 && (
           <View style={styles.exerciseSection}>
             <View style={[styles.sectionDivider, { borderTopColor: theme.hairline }]}>
               <Text style={[styles.sectionTitle, { color: theme.textMuted }]}>
-                ĆWICZENIA ({currentPlan.exercises.length})
+                ĆWICZENIA W DNIU ({currentPlan.exercises.length})
               </Text>
               <Text style={[styles.sectionHint, { color: theme.textMuted }]}>
-                Dotknij, aby rozwinąć
+                Dotknij po technikę i PR
               </Text>
             </View>
 
-            {currentPlan.exercises.map((exercise) => {
-              const isExpanded = expandedExerciseId === exercise.id;
-
-              return (
-                <View
-                  key={exercise.id}
-                  style={[
-                    styles.exerciseItem,
-                    { borderBottomColor: theme.hairline },
-                    isExpanded && { backgroundColor: theme.bgSecondary, borderRadius: 16, marginVertical: 8, paddingHorizontal: 16 },
-                  ]}
-                >
-                  <TouchableOpacity
-                    style={styles.exerciseHeaderRow}
-                    onPress={() => toggleExpand(exercise.id)}
-                    activeOpacity={0.7}
-                  >
-                    <View style={styles.exerciseInfo}>
-                      <Text style={[styles.exerciseName, { color: theme.text }]}>
-                        {exercise.name}
-                      </Text>
-                      <View style={styles.metaRow}>
-                        <View style={[styles.categoryTag, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
-                          <Text style={[styles.categoryTagText, { color: theme.textSecondary }]}>
-                            {exercise.category.toUpperCase()}
-                          </Text>
-                        </View>
-                        <Text style={[styles.repsInfo, { color: theme.textSecondary }]}>
-                          {exercise.sets} serie × {exercise.reps}
-                        </Text>
-                        <View style={styles.restTagWrap}>
-                          <Ionicons name="time-outline" size={13} color={theme.textMuted} />
-                          <Text style={[styles.restPill, { color: theme.textMuted }]}>
-                            {exercise.rest}s
-                          </Text>
-                        </View>
-                      </View>
-                    </View>
-
-                    <Ionicons
-                      name={isExpanded ? 'chevron-up' : 'chevron-down'}
-                      size={20}
-                      color={isExpanded ? theme.text : theme.textMuted}
-                    />
-                  </TouchableOpacity>
-
-                  {/* Expanded detail - ONLY SHOW IMAGE WHEN EXPANDED */}
-                  {isExpanded && (
-                    <View style={styles.expandedContent}>
-                      {/* Full preview image */}
-                      {exercise.imageUrl ? (
-                        <View style={styles.largeImgWrap}>
-                          <Image
-                            source={{ uri: exercise.imageUrl }}
-                            style={styles.largeImg}
-                            resizeMode="cover"
-                          />
-                          <TouchableOpacity
-                            style={[styles.fullImgBtn, { backgroundColor: isDark ? '#000000' : '#FFFFFF' }]}
-                            onPress={() => setModalExercise(exercise)}
-                          >
-                            <Ionicons name="expand" size={13} color={theme.text} />
-                            <Text style={[styles.fullImgBtnText, { color: theme.text }]}>
-                              Pełny opis
-                            </Text>
-                          </TouchableOpacity>
-                        </View>
-                      ) : null}
-
-                      <Text style={[styles.expandedDesc, { color: theme.textSecondary }]}>
-                        {exercise.description}
-                      </Text>
-
-                      {exercise.note ? (
-                        <View style={[styles.expandedTip, { borderLeftColor: theme.text }]}>
-                          <Text style={[styles.expandedTipText, { color: theme.textMuted }]}>
-                            {exercise.note}
-                          </Text>
-                        </View>
-                      ) : null}
-
-                      {onSelectExerciseForPR && (
-                        <TouchableOpacity
-                          style={[styles.prActionBtn, { backgroundColor: theme.primary }]}
-                          onPress={() => onSelectExerciseForPR(exercise)}
-                          activeOpacity={0.8}
-                        >
-                          <Ionicons name="trophy-outline" size={16} color={theme.primaryText} />
-                          <Text style={[styles.prActionBtnText, { color: theme.primaryText }]}>
-                            Zapisz lub zobacz rekord w Osiągach
-                          </Text>
-                        </TouchableOpacity>
-                      )}
-                    </View>
-                  )}
-                </View>
-              );
-            })}
+            <DayExercisePreviewList
+              exercises={currentPlan.exercises}
+              bestPRs={bestPRs}
+              onPressExercise={(exercise) => setModalExercise(exercise)}
+            />
           </View>
         )}
         </Animated.View>
@@ -579,9 +421,9 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   contentInner: {
-    paddingHorizontal: 20,
-    paddingTop: 18,
-    paddingBottom: 85,
+    paddingHorizontal: 18,
+    paddingTop: 16,
+    paddingBottom: 112,
   },
   bannerWrapper: {
     width: '100%',
@@ -870,6 +712,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     padding: 18,
     marginBottom: 20,
+    overflow: 'hidden',
+    position: 'relative',
   },
   monoBannerTop: {
     flexDirection: 'row',

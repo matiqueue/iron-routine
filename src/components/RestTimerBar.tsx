@@ -11,11 +11,17 @@ import {
   AppState,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import * as Haptics from 'expo-haptics';
 import { useAppTheme } from '../context/ThemeContext';
+import {
+  triggerImpactHaptic,
+  triggerNotificationHaptic,
+  triggerRestFinishedHapticSequence,
+  triggerSelectionHaptic,
+} from '../services/haptics';
 
 interface RestTimerBarProps {
   initialSeconds: number;
+  targetEndTimeMs?: number;
   exerciseName?: string;
   nextSetInfo?: string;
   onSecondsChanged?: (seconds: number) => void;
@@ -25,6 +31,7 @@ interface RestTimerBarProps {
 
 export const RestTimerBar: React.FC<RestTimerBarProps> = ({
   initialSeconds,
+  targetEndTimeMs,
   exerciseName,
   nextSetInfo,
   onSecondsChanged,
@@ -33,8 +40,9 @@ export const RestTimerBar: React.FC<RestTimerBarProps> = ({
 }) => {
   const { theme, isDark } = useAppTheme();
   const [secondsLeft, setSecondsLeft] = useState(initialSeconds);
-  const [isRunning, setIsRunning] = useState(true);
-  const [isFinished, setIsFinished] = useState(false);
+  const [isRunning, setIsRunning] = useState(initialSeconds > 0);
+  const [isFinished, setIsFinished] = useState(initialSeconds <= 0);
+  const didNotifyFinishRef = useRef(false);
 
   // Animations for slide & fade
   const slideAnim = useRef(new Animated.Value(350)).current;
@@ -62,9 +70,7 @@ export const RestTimerBar: React.FC<RestTimerBarProps> = ({
       onPanResponderRelease: (_, gestureState) => {
         // If swiped down enough or with high downward velocity, dismiss
         if (gestureState.dy > 50 || gestureState.vy > 0.35) {
-          try {
-            Haptics.selectionAsync();
-          } catch {}
+          triggerSelectionHaptic();
           Animated.parallel([
             Animated.timing(slideAnim, {
               toValue: 400,
@@ -149,9 +155,7 @@ export const RestTimerBar: React.FC<RestTimerBarProps> = ({
   };
 
   const handleExplicitFinish = () => {
-    try {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    } catch {}
+    triggerNotificationHaptic('success');
     Animated.parallel([
       Animated.timing(slideAnim, {
         toValue: 400,
@@ -168,16 +172,19 @@ export const RestTimerBar: React.FC<RestTimerBarProps> = ({
     });
   };
 
-  const endTimeRef = useRef<number>(Date.now() + initialSeconds * 1000);
+  const endTimeRef = useRef<number>(targetEndTimeMs ?? Date.now() + initialSeconds * 1000);
   const pausedRemainingRef = useRef<number | null>(null);
 
   useEffect(() => {
-    endTimeRef.current = Date.now() + initialSeconds * 1000;
+    const resolvedEnd = targetEndTimeMs ?? Date.now() + initialSeconds * 1000;
+    endTimeRef.current = resolvedEnd;
     pausedRemainingRef.current = null;
-    setSecondsLeft(initialSeconds);
-    setIsRunning(true);
-    setIsFinished(false);
-  }, [initialSeconds]);
+    const rem = Math.max(0, Math.ceil((resolvedEnd - Date.now()) / 1000));
+    didNotifyFinishRef.current = rem <= 0;
+    setSecondsLeft(rem);
+    setIsRunning(rem > 0);
+    setIsFinished(rem <= 0);
+  }, [initialSeconds, targetEndTimeMs]);
 
   // Synchronize timer with real wall-clock time
   useEffect(() => {
@@ -197,7 +204,7 @@ export const RestTimerBar: React.FC<RestTimerBarProps> = ({
 
     if (isRunning) {
       tick();
-      interval = setInterval(tick, 500); // 500ms check for razor-sharp accuracy
+      interval = setInterval(tick, 500);
     }
 
     return () => {
@@ -224,15 +231,13 @@ export const RestTimerBar: React.FC<RestTimerBarProps> = ({
   }, [isRunning]);
 
   const triggerCompletionFeedback = async () => {
-    try {
-      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    } catch {}
+    if (didNotifyFinishRef.current) return;
+    didNotifyFinishRef.current = true;
+    await triggerRestFinishedHapticSequence();
   };
 
   const handleTogglePause = () => {
-    try {
-      Haptics.selectionAsync();
-    } catch {}
+    triggerSelectionHaptic();
 
     if (isRunning) {
       // Pause
@@ -247,6 +252,7 @@ export const RestTimerBar: React.FC<RestTimerBarProps> = ({
       if (remaining <= 0) return;
       endTimeRef.current = Date.now() + remaining * 1000;
       pausedRemainingRef.current = null;
+      didNotifyFinishRef.current = false;
       setIsRunning(true);
       setIsFinished(false);
       onSecondsChanged?.(remaining);
@@ -254,9 +260,7 @@ export const RestTimerBar: React.FC<RestTimerBarProps> = ({
   };
 
   const adjustTime = (delta: number) => {
-    try {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    } catch {}
+    triggerImpactHaptic('light');
 
     if (isRunning) {
       const now = Date.now();
@@ -264,14 +268,20 @@ export const RestTimerBar: React.FC<RestTimerBarProps> = ({
       const next = Math.max(0, currentRemaining + delta);
       endTimeRef.current = Date.now() + next * 1000;
       setSecondsLeft(next);
-      if (next > 0) setIsFinished(false);
+      if (next > 0) {
+        didNotifyFinishRef.current = false;
+        setIsFinished(false);
+      }
       onSecondsChanged?.(next);
     } else {
       const prev = pausedRemainingRef.current ?? secondsLeft;
       const next = Math.max(0, prev + delta);
       pausedRemainingRef.current = next;
       setSecondsLeft(next);
-      if (next > 0) setIsFinished(false);
+      if (next > 0) {
+        didNotifyFinishRef.current = false;
+        setIsFinished(false);
+      }
     }
   };
 
@@ -324,7 +334,7 @@ export const RestTimerBar: React.FC<RestTimerBarProps> = ({
             <View style={styles.headerRow}>
               <View style={{ flex: 1 }}>
                 <Text style={[styles.kicker, { color: isFinished ? theme.text : theme.textMuted }]}>
-                  {isFinished ? 'CZAS NA KOLEJNĄ SERIĘ!' : 'ODLICZANIE PRZERWY'}
+                  {isFinished ? 'KONIEC PRZERWY — CZAS NA SERIĘ!' : 'ODLICZANIE PRZERWY'}
                 </Text>
                 <Text numberOfLines={1} style={[styles.exerciseTitle, { color: theme.text }]}>
                   {exerciseName || 'Odpoczynek'}
@@ -351,14 +361,14 @@ export const RestTimerBar: React.FC<RestTimerBarProps> = ({
                 style={[
                   styles.digits,
                   {
-                    color: isFinished ? theme.textMuted : theme.text,
+                    color: theme.text,
                   },
                 ]}
               >
-                {formatTime(secondsLeft)}
+                {isFinished ? 'KONIEC PRZERWY' : formatTime(secondsLeft)}
               </Text>
-              <Text style={[styles.digitsSub, { color: theme.textMuted }]}>
-                {isFinished ? 'Gotowy do działania?' : 'Złap oddech, napij się wody'}
+              <Text style={[styles.digitsSub, { color: isFinished ? theme.text : theme.textMuted }]}>
+                {isFinished ? 'Wracaj pod ciężar — kolejna seria czeka!' : 'Złap oddech, napij się wody'}
               </Text>
             </View>
 
@@ -399,8 +409,8 @@ export const RestTimerBar: React.FC<RestTimerBarProps> = ({
               style={[
                 styles.primaryActionBtn,
                 {
-                  backgroundColor: isDark ? '#27272A' : '#E5E5EA',
-                  borderColor: isDark ? '#3F3F46' : '#D1D1D6',
+                  backgroundColor: isFinished ? theme.primary : isDark ? '#27272A' : '#E5E5EA',
+                  borderColor: isFinished ? theme.primary : isDark ? '#3F3F46' : '#D1D1D6',
                   borderWidth: 1,
                 },
               ]}
@@ -409,10 +419,15 @@ export const RestTimerBar: React.FC<RestTimerBarProps> = ({
               <Ionicons
                 name={isFinished ? 'play' : 'checkmark-done'}
                 size={18}
-                color={theme.text}
+                color={isFinished ? theme.primaryText : theme.text}
               />
-              <Text style={[styles.primaryActionBtnText, { color: theme.text }]}>
-                {isFinished ? 'ROZPOCZNIJ SERIĘ' : 'ZAKOŃCZ PRZERWĘ (ZACZNIJ SERIĘ)'}
+              <Text
+                style={[
+                  styles.primaryActionBtnText,
+                  { color: isFinished ? theme.primaryText : theme.text },
+                ]}
+              >
+                {isFinished ? 'ROZPOCZNIJ KOLEJNĄ SERIĘ' : 'ZAKOŃCZ PRZERWĘ (ZACZNIJ SERIĘ)'}
               </Text>
             </TouchableOpacity>
           </View>

@@ -240,10 +240,12 @@ import WidgetKit
 
         if !effectiveStretch {
           if let date = contentState.timerEndDateInMilliseconds {
+            let targetDate = Date(timeIntervalSince1970: date / 1000)
+            let isTimerActive = targetDate > Date.now
             VStack(spacing: 5) {
               ProgressView(
                 timerInterval: Date.toTimerInterval(miliseconds: date),
-                countsDown: false,
+                countsDown: true,
                 label: { EmptyView() },
                 currentValueLabel: { EmptyView() }
               )
@@ -252,18 +254,29 @@ import WidgetKit
 
               HStack {
                 HStack(spacing: 5) {
-                  Image(systemName: "timer")
+                  Image(systemName: isTimerActive ? "timer" : "bell.badge.fill")
                     .font(.system(size: 12, weight: .bold))
                     .foregroundColor(.white.opacity(0.85))
-                  Text(Date(timeIntervalSince1970: date / 1000), style: .timer)
+                  if isTimerActive {
+                    Text(
+                      timerInterval: Date.toTimerInterval(miliseconds: date),
+                      pauseTime: targetDate,
+                      countsDown: true,
+                      showsHours: false
+                    )
                     .font(.system(size: 13, weight: .heavy))
                     .monospacedDigit()
                     .foregroundColor(.white)
+                  } else {
+                    Text("Koniec przerwy!")
+                      .font(.system(size: 13, weight: .heavy))
+                      .foregroundColor(.white)
+                  }
                 }
                 Spacer()
-                Text("REGENERACJA")
+                Text(isTimerActive ? "REGENERACJA" : "CZAS NA SERIĘ")
                   .font(.system(size: 10, weight: .bold))
-                  .foregroundColor(.white.opacity(0.45))
+                  .foregroundColor(.white.opacity(isTimerActive ? 0.45 : 0.85))
               }
             }
           } else if let progress = contentState.progress {

@@ -13,8 +13,10 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useAppTheme } from '../context/ThemeContext';
-import { DayPlan, DayType, Exercise } from '../types/workout';
+import { DayBannerTag, DayPlan, DayType, Exercise } from '../types/workout';
 import { cloneExercise } from '../data/exerciseLibrary';
+import { DAY_BANNER_TAG_OPTIONS, resolveDayBannerTag } from '../data/dayTags';
+import { DayBannerArtwork } from './DayBannerArtwork';
 import { InteractiveBottomSheet } from './InteractiveBottomSheet';
 import { ExerciseLibraryContent } from './ExerciseLibraryContent';
 
@@ -49,6 +51,7 @@ export const PlanDayEditorModal: React.FC<PlanDayEditorModalProps> = ({
   const [swapIndex, setSwapIndex] = useState<number | null>(null);
 
   const [dayType, setDayType] = useState<DayType>('workout');
+  const [bannerTag, setBannerTag] = useState<DayBannerTag>('fbw');
   const [name, setName] = useState('');
   const [subtitle, setSubtitle] = useState('');
   const [time, setTime] = useState('');
@@ -60,6 +63,7 @@ export const PlanDayEditorModal: React.FC<PlanDayEditorModalProps> = ({
       setViewMode('day');
       setSwapIndex(null);
       setDayType(dayPlan.type);
+      setBannerTag(resolveDayBannerTag(dayPlan));
       setName(dayPlan.name);
       setSubtitle(dayPlan.subtitle || '');
       setTime(dayPlan.time || '');
@@ -82,14 +86,19 @@ export const PlanDayEditorModal: React.FC<PlanDayEditorModalProps> = ({
         setSubtitle('Odpoczynek, sen i nawodnienie');
         setTime('Regeneracja');
       }
-    } else if (nextType === 'walk' && dayPlan.type === 'workout') {
-      setName('Aktywna regeneracja');
-      setSubtitle('Spacer 8 000 kroków & mobilność');
-      setTime('35-45 min');
+      setBannerTag('rest');
+    } else if (nextType === 'walk') {
+      if (dayPlan.type === 'workout') {
+        setName('Aktywna regeneracja');
+        setSubtitle('Spacer 8 000 kroków & mobilność');
+        setTime('35-45 min');
+      }
+      setBannerTag('cardio');
     } else if (nextType === 'workout' && dayPlan.type !== 'workout') {
       setName('Nowy trening');
       setSubtitle('Skonfiguruj partie i ćwiczenia');
       setTime('60 min');
+      if (bannerTag === 'rest') setBannerTag('fbw');
     }
   };
 
@@ -164,6 +173,7 @@ export const PlanDayEditorModal: React.FC<PlanDayEditorModalProps> = ({
       ...dayPlan,
       type: dayType,
       iconName,
+      bannerTag,
       name: name.trim() || (dayType === 'workout' ? 'Trening' : 'Dzień regeneracji'),
       subtitle: subtitle.trim(),
       time: time.trim() || (dayType === 'workout' ? '60 min' : 'Regeneracja'),
@@ -268,6 +278,68 @@ export const PlanDayEditorModal: React.FC<PlanDayEditorModalProps> = ({
                   );
                 })}
               </View>
+
+              {/* Banner Tag & Artwork Selector */}
+              <Text style={[styles.kicker, { color: theme.textMuted }]}>TAG I GRAFIKA BANERA</Text>
+              <View
+                style={[
+                  styles.bannerPreviewBox,
+                  { backgroundColor: theme.bgSecondary, borderColor: theme.border },
+                ]}
+              >
+                <DayBannerArtwork tag={bannerTag} compact />
+                <View style={styles.bannerPreviewOverlay}>
+                  <Text style={[styles.bannerPreviewTitle, { color: theme.text }]} numberOfLines={1}>
+                    {DAY_BANNER_TAG_OPTIONS.find((t) => t.id === bannerTag)?.badge || 'FULL BODY'}
+                  </Text>
+                  <Text style={[styles.bannerPreviewSub, { color: theme.textSecondary }]} numberOfLines={1}>
+                    {DAY_BANNER_TAG_OPTIONS.find((t) => t.id === bannerTag)?.label || ''}
+                  </Text>
+                </View>
+              </View>
+
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.tagScroll}
+              >
+                {DAY_BANNER_TAG_OPTIONS.map((tagOpt) => {
+                  const selected = bannerTag === tagOpt.id;
+                  return (
+                    <TouchableOpacity
+                      key={tagOpt.id}
+                      style={[
+                        styles.tagChip,
+                        {
+                          backgroundColor: selected ? theme.primary : theme.bgSecondary,
+                          borderColor: selected ? theme.primary : theme.border,
+                        },
+                      ]}
+                      onPress={() => {
+                        try {
+                          Haptics.selectionAsync();
+                        } catch {}
+                        setBannerTag(tagOpt.id);
+                      }}
+                      activeOpacity={0.75}
+                    >
+                      <Ionicons
+                        name={tagOpt.icon as any}
+                        size={14}
+                        color={selected ? theme.primaryText : theme.text}
+                      />
+                      <Text
+                        style={[
+                          styles.tagChipText,
+                          { color: selected ? theme.primaryText : theme.text },
+                        ]}
+                      >
+                        {tagOpt.shortLabel}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
 
               {/* Metadata Inputs */}
               <View style={styles.metaCard}>
@@ -609,6 +681,45 @@ const styles = StyleSheet.create({
   twoCol: {
     flexDirection: 'row',
     gap: 8,
+  },
+  bannerPreviewBox: {
+    height: 66,
+    borderRadius: 14,
+    borderWidth: 1,
+    overflow: 'hidden',
+    position: 'relative',
+    justifyContent: 'center',
+    marginBottom: 10,
+  },
+  bannerPreviewOverlay: {
+    paddingHorizontal: 14,
+    gap: 2,
+  },
+  bannerPreviewTitle: {
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: 0.8,
+  },
+  bannerPreviewSub: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  tagScroll: {
+    gap: 7,
+    paddingBottom: 14,
+  },
+  tagChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 11,
+    paddingVertical: 7,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  tagChipText: {
+    fontSize: 12,
+    fontWeight: '700',
   },
   input: {
     height: 42,
