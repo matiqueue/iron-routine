@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -22,9 +22,12 @@ import {
 interface RestTimerBarProps {
   initialSeconds: number;
   targetEndTimeMs?: number;
+  isPaused?: boolean;
   exerciseName?: string;
   nextSetInfo?: string;
-  onSecondsChanged?: (seconds: number) => void;
+  onSecondsChanged?: (seconds: number, paused: boolean) => void;
+  onPauseToggle?: (paused: boolean, remainingSeconds: number) => void;
+  onStopImmediate?: () => void;
   onFinishRest: () => void;
   onClose: () => void;
 }
@@ -32,197 +35,153 @@ interface RestTimerBarProps {
 export const RestTimerBar: React.FC<RestTimerBarProps> = ({
   initialSeconds,
   targetEndTimeMs,
+  isPaused = false,
   exerciseName,
   nextSetInfo,
   onSecondsChanged,
+  onPauseToggle,
+  onStopImmediate,
   onFinishRest,
   onClose,
 }) => {
   const { theme, isDark } = useAppTheme();
   const [secondsLeft, setSecondsLeft] = useState(initialSeconds);
-  const [isRunning, setIsRunning] = useState(initialSeconds > 0);
-  const [isFinished, setIsFinished] = useState(initialSeconds <= 0);
-  const didNotifyFinishRef = useRef(false);
+  const [isRunning, setIsRunning] = useState(!isPaused && initialSeconds > 0);
+  const [isFinished, setIsFinished] = useState(!isPaused && initialSeconds <= 0);
 
-  // Animations for slide & fade
-  const slideAnim = useRef(new Animated.Value(350)).current;
-  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(360)).current;
+  const isDismissingRef = useRef(false);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
-  // Real gesture-driven PanResponder for interactive swipe-down to dismiss
+  const backdropOpacity = useMemo(
+    () =>
+      slideAnim.interpolate({
+        inputRange: [0, 320],
+        outputRange: [1, 0],
+        extrapolate: 'clamp',
+      }),
+    [slideAnim]
+  );
+
+  const animateHide = useCallback(() => {
+    if (isDismissingRef.current) return;
+    isDismissingRef.current = true;
+    Animated.timing(slideAnim, {
+      toValue: 420,
+      duration: 185,
+      useNativeDriver: true,
+    }).start(() => {
+      onCloseRef.current();
+    });
+  }, [slideAnim]);
+
+  const snapBack = useCallback(() => {
+    Animated.spring(slideAnim, {
+      toValue: 0,
+      damping: 26,
+      stiffness: 300,
+      useNativeDriver: true,
+    }).start();
+  }, [slideAnim]);
+
+  // Claims non-button touches immediately on touch-down; captures downward drags even over buttons
   const panResponder = useRef(
     PanResponder.create({
-      onStartShouldSetPanResponder: () => false,
+      onStartShouldSetPanResponder: () => !isDismissingRef.current,
       onStartShouldSetPanResponderCapture: () => false,
-      onMoveShouldSetPanResponder: (_, gestureState) =>
-        gestureState.dy > 5 && Math.abs(gestureState.dy) > Math.abs(gestureState.dx) * 1.1,
-      onMoveShouldSetPanResponderCapture: (_, gestureState) =>
-        gestureState.dy > 5 && Math.abs(gestureState.dy) > Math.abs(gestureState.dx) * 1.1,
-      onPanResponderGrant: () => {
-        slideAnim.stopAnimation();
+      onMoveShouldSetPanResponder: (_, g) =>
+        !isDismissingRef.current && g.dy > 4 && Math.abs(g.dy) > Math.abs(g.dx) * 1.05,
+      onMoveShouldSetPanResponderCapture: (_, g) =>
+        !isDismissingRef.current && g.dy > 5 && Math.abs(g.dy) > Math.abs(g.dx) * 1.1,
+      onPanResponderMove: (_, g) => {
+        slideAnim.setValue(Math.max(0, g.dy));
       },
-      onPanResponderMove: (_, gestureState) => {
-        if (gestureState.dy > 0) {
-          slideAnim.setValue(gestureState.dy);
-          const ratio = Math.max(0, 1 - gestureState.dy / 300);
-          fadeAnim.setValue(ratio);
-        }
-      },
-      onPanResponderRelease: (_, gestureState) => {
-        // If swiped down enough or with high downward velocity, dismiss
-        if (gestureState.dy > 50 || gestureState.vy > 0.35) {
+      onPanResponderRelease: (_, g) => {
+        if (g.dy > 55 || g.vy > 0.35) {
           triggerSelectionHaptic();
-          Animated.parallel([
-            Animated.timing(slideAnim, {
-              toValue: 400,
-              duration: 180,
-              useNativeDriver: true,
-            }),
-            Animated.timing(fadeAnim, {
-              toValue: 0,
-              duration: 160,
-              useNativeDriver: true,
-            }),
-          ]).start(() => {
-            onClose();
-          });
-        } else {
-          // Snap back up smoothly
-          Animated.parallel([
-            Animated.spring(slideAnim, {
-              toValue: 0,
-              friction: 7,
-              tension: 50,
-              useNativeDriver: true,
-            }),
-            Animated.timing(fadeAnim, {
-              toValue: 1,
-              duration: 140,
-              useNativeDriver: true,
-            }),
-          ]).start();
+          animateHide();
+          return;
         }
+        snapBack();
       },
       onPanResponderTerminationRequest: () => false,
-      onPanResponderTerminate: () => {
-        Animated.parallel([
-          Animated.spring(slideAnim, {
-            toValue: 0,
-            friction: 7,
-            tension: 50,
-            useNativeDriver: true,
-          }),
-          Animated.timing(fadeAnim, {
-            toValue: 1,
-            duration: 140,
-            useNativeDriver: true,
-          }),
-        ]).start();
-      },
+      onPanResponderTerminate: snapBack,
     })
   ).current;
 
   useEffect(() => {
-    Animated.parallel([
-      Animated.spring(slideAnim, {
-        toValue: 0,
-        friction: 8,
-        tension: 60,
-        useNativeDriver: true,
-      }),
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 200,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  }, [slideAnim, fadeAnim]);
-
-  const handleDismiss = () => {
-    Animated.parallel([
-      Animated.timing(slideAnim, {
-        toValue: 400,
-        duration: 180,
-        useNativeDriver: true,
-      }),
-      Animated.timing(fadeAnim, {
-        toValue: 0,
-        duration: 160,
-        useNativeDriver: true,
-      }),
-    ]).start(() => {
-      onClose();
-    });
-  };
+    Animated.spring(slideAnim, {
+      toValue: 0,
+      damping: 24,
+      stiffness: 280,
+      useNativeDriver: true,
+    }).start();
+  }, [slideAnim]);
 
   const handleExplicitFinish = () => {
+    if (isDismissingRef.current) return;
+    isDismissingRef.current = true;
+    setIsRunning(false);
+    setIsFinished(false);
+    onStopImmediate?.();
     triggerNotificationHaptic('success');
-    Animated.parallel([
-      Animated.timing(slideAnim, {
-        toValue: 400,
-        duration: 160,
-        useNativeDriver: true,
-      }),
-      Animated.timing(fadeAnim, {
-        toValue: 0,
-        duration: 140,
-        useNativeDriver: true,
-      }),
-    ]).start(() => {
+    Animated.timing(slideAnim, {
+      toValue: 420,
+      duration: 165,
+      useNativeDriver: true,
+    }).start(() => {
       onFinishRest();
     });
   };
 
   const endTimeRef = useRef<number>(targetEndTimeMs ?? Date.now() + initialSeconds * 1000);
-  const pausedRemainingRef = useRef<number | null>(null);
+  const pausedRemainingRef = useRef<number | null>(isPaused ? initialSeconds : null);
 
   useEffect(() => {
+    if (isPaused) {
+      pausedRemainingRef.current = initialSeconds;
+      endTimeRef.current = 0;
+      setSecondsLeft(initialSeconds);
+      setIsRunning(false);
+      setIsFinished(false);
+      return;
+    }
+
     const resolvedEnd = targetEndTimeMs ?? Date.now() + initialSeconds * 1000;
     endTimeRef.current = resolvedEnd;
     pausedRemainingRef.current = null;
     const rem = Math.max(0, Math.ceil((resolvedEnd - Date.now()) / 1000));
-    didNotifyFinishRef.current = rem <= 0;
     setSecondsLeft(rem);
     setIsRunning(rem > 0);
     setIsFinished(rem <= 0);
-  }, [initialSeconds, targetEndTimeMs]);
+  }, [initialSeconds, targetEndTimeMs, isPaused]);
 
-  // Synchronize timer with real wall-clock time
   useEffect(() => {
-    let interval: ReturnType<typeof setInterval> | null = null;
+    if (!isRunning) return;
 
     const tick = () => {
-      if (!isRunning) return;
-      const now = Date.now();
-      const diff = Math.max(0, Math.ceil((endTimeRef.current - now) / 1000));
+      const diff = Math.max(0, Math.ceil((endTimeRef.current - Date.now()) / 1000));
       setSecondsLeft(diff);
       if (diff <= 0) {
         setIsFinished(true);
         setIsRunning(false);
-        didNotifyFinishRef.current = true;
       }
     };
 
-    if (isRunning) {
-      tick();
-      interval = setInterval(tick, 500);
-    }
-
-    return () => {
-      if (interval) clearInterval(interval);
-    };
+    tick();
+    const interval = setInterval(tick, 500);
+    return () => clearInterval(interval);
   }, [isRunning]);
 
-  // Re-sync immediately when returning from background / unlocking device!
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextState) => {
-      if (nextState === 'active' && isRunning) {
-        const now = Date.now();
-        const diff = Math.max(0, Math.ceil((endTimeRef.current - now) / 1000));
+      if (nextState === 'active' && isRunning && endTimeRef.current > 0) {
+        const diff = Math.max(0, Math.ceil((endTimeRef.current - Date.now()) / 1000));
         setSecondsLeft(diff);
         if (diff <= 0) {
           setIsFinished(true);
           setIsRunning(false);
-          didNotifyFinishRef.current = true;
         }
       }
     });
@@ -234,22 +193,20 @@ export const RestTimerBar: React.FC<RestTimerBarProps> = ({
     triggerSelectionHaptic();
 
     if (isRunning) {
-      // Pause
-      const now = Date.now();
-      const remaining = Math.max(0, Math.ceil((endTimeRef.current - now) / 1000));
+      const remaining = Math.max(0, Math.ceil((endTimeRef.current - Date.now()) / 1000));
       pausedRemainingRef.current = remaining;
+      endTimeRef.current = 0;
       setSecondsLeft(remaining);
       setIsRunning(false);
+      onPauseToggle?.(true, remaining);
     } else {
-      // Resume
       const remaining = pausedRemainingRef.current ?? secondsLeft;
       if (remaining <= 0) return;
       endTimeRef.current = Date.now() + remaining * 1000;
       pausedRemainingRef.current = null;
-      didNotifyFinishRef.current = false;
       setIsRunning(true);
       setIsFinished(false);
-      onSecondsChanged?.(remaining);
+      onPauseToggle?.(false, remaining);
     }
   };
 
@@ -257,25 +214,20 @@ export const RestTimerBar: React.FC<RestTimerBarProps> = ({
     triggerImpactHaptic('light');
 
     if (isRunning) {
-      const now = Date.now();
-      const currentRemaining = Math.max(0, Math.ceil((endTimeRef.current - now) / 1000));
+      const currentRemaining = Math.max(0, Math.ceil((endTimeRef.current - Date.now()) / 1000));
       const next = Math.max(0, currentRemaining + delta);
       endTimeRef.current = Date.now() + next * 1000;
       setSecondsLeft(next);
-      if (next > 0) {
-        didNotifyFinishRef.current = false;
-        setIsFinished(false);
-      }
-      onSecondsChanged?.(next);
+      setIsFinished(next <= 0);
+      if (next <= 0) setIsRunning(false);
+      onSecondsChanged?.(next, false);
     } else {
       const prev = pausedRemainingRef.current ?? secondsLeft;
       const next = Math.max(0, prev + delta);
       pausedRemainingRef.current = next;
       setSecondsLeft(next);
-      if (next > 0) {
-        didNotifyFinishRef.current = false;
-        setIsFinished(false);
-      }
+      setIsFinished(false);
+      onSecondsChanged?.(next, true);
     }
   };
 
@@ -286,26 +238,24 @@ export const RestTimerBar: React.FC<RestTimerBarProps> = ({
   };
 
   return (
-    <Modal visible transparent animationType="none" onRequestClose={handleDismiss}>
+    <Modal visible transparent animationType="none" onRequestClose={animateHide}>
       <View style={styles.overlay}>
-        {/* Dim Backdrop */}
         <Animated.View
           style={[
-            styles.backdrop,
+            StyleSheet.absoluteFill,
             {
               backgroundColor: isDark ? 'rgba(0, 0, 0, 0.75)' : 'rgba(0, 0, 0, 0.45)',
-              opacity: fadeAnim,
+              opacity: backdropOpacity,
             },
           ]}
         >
           <TouchableOpacity
             style={StyleSheet.absoluteFill}
             activeOpacity={1}
-            onPress={handleDismiss}
+            onPress={animateHide}
           />
         </Animated.View>
 
-        {/* Animated Bottom Sheet with PanResponder swipe-down gesture */}
         <Animated.View
           style={[
             styles.sheet,
@@ -317,26 +267,32 @@ export const RestTimerBar: React.FC<RestTimerBarProps> = ({
           ]}
           {...panResponder.panHandlers}
         >
-          {/* Grab handle */}
           <View style={styles.handleWrap}>
             <View style={[styles.handleBar, { backgroundColor: isDark ? '#444444' : '#D1D5DB' }]} />
-            <Text style={[styles.dragHint, { color: theme.textMuted }]}>Przesuń w dół, aby schować (przerwa trwa w tle)</Text>
           </View>
 
           <View style={styles.content}>
-            {/* Header row */}
             <View style={styles.headerRow}>
               <View style={{ flex: 1 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 4 }}>
                   <AnimatedIcon
-                    name={isFinished ? 'notifications' : 'timer-outline'}
+                    name={isFinished ? 'notifications' : isRunning ? 'timer-outline' : 'pause-circle-outline'}
                     preset="bell"
                     size={13}
-                    color={isFinished ? '#F59E0B' : theme.textMuted}
+                    color={isFinished ? '#F59E0B' : !isRunning ? '#F59E0B' : theme.textMuted}
                     active={isFinished}
                   />
-                  <Text style={[styles.kicker, { color: isFinished ? theme.text : theme.textMuted, marginBottom: 0 }]}>
-                    {isFinished ? 'KONIEC PRZERWY! CZAS NA SERIĘ!' : 'ODLICZANIE PRZERWY'}
+                  <Text
+                    style={[
+                      styles.kicker,
+                      { color: isFinished || !isRunning ? theme.text : theme.textMuted },
+                    ]}
+                  >
+                    {isFinished
+                      ? 'KONIEC PRZERWY! CZAS NA SERIĘ!'
+                      : isRunning
+                      ? 'ODLICZANIE PRZERWY'
+                      : 'PRZERWA WSTRZYMANA'}
                   </Text>
                 </View>
                 <Text numberOfLines={1} style={[styles.exerciseTitle, { color: theme.text }]}>
@@ -350,7 +306,7 @@ export const RestTimerBar: React.FC<RestTimerBarProps> = ({
               </View>
 
               <TouchableOpacity
-                onPress={handleDismiss}
+                onPress={animateHide}
                 style={[styles.closeBtn, { backgroundColor: theme.bgSecondary }]}
                 activeOpacity={0.7}
               >
@@ -358,24 +314,26 @@ export const RestTimerBar: React.FC<RestTimerBarProps> = ({
               </TouchableOpacity>
             </View>
 
-            {/* Giant Digits */}
             <View style={styles.digitsWrapper}>
               <Text
                 style={[
                   styles.digits,
                   {
-                    color: theme.text,
+                    color: !isRunning && !isFinished ? '#F59E0B' : theme.text,
                   },
                 ]}
               >
                 {isFinished ? 'KONIEC PRZERWY' : formatTime(secondsLeft)}
               </Text>
               <Text style={[styles.digitsSub, { color: isFinished ? theme.text : theme.textMuted }]}>
-                {isFinished ? 'Wracaj pod ciężar! Kolejna seria czeka!' : 'Złap oddech, napij się wody'}
+                {isFinished
+                  ? 'Wracaj pod ciężar! Kolejna seria czeka!'
+                  : isRunning
+                  ? 'Złap oddech, napij się wody'
+                  : 'Stoper zatrzymany (powiadomienie i Dynamic Island wstrzymane)'}
               </Text>
             </View>
 
-            {/* Time Adjusters Row: -15s | Pauza | +15s */}
             <View style={styles.adjustRow}>
               <TouchableOpacity
                 onPress={() => adjustTime(-15)}
@@ -387,13 +345,19 @@ export const RestTimerBar: React.FC<RestTimerBarProps> = ({
 
               <TouchableOpacity
                 onPress={handleTogglePause}
-                style={[styles.playBtn, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}
+                style={[
+                  styles.playBtn,
+                  {
+                    backgroundColor: !isRunning && !isFinished ? theme.primary : theme.bgSecondary,
+                    borderColor: !isRunning && !isFinished ? theme.primary : theme.border,
+                  },
+                ]}
                 activeOpacity={0.7}
               >
                 <Ionicons
                   name={isRunning ? 'pause' : 'play'}
                   size={20}
-                  color={theme.text}
+                  color={!isRunning && !isFinished ? theme.primaryText : theme.text}
                 />
               </TouchableOpacity>
 
@@ -406,7 +370,6 @@ export const RestTimerBar: React.FC<RestTimerBarProps> = ({
               </TouchableOpacity>
             </View>
 
-            {/* Main Action Button - Sleek neutral gray instead of black */}
             <TouchableOpacity
               onPress={handleExplicitFinish}
               style={[
@@ -445,9 +408,6 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'flex-end',
   },
-  backdrop: {
-    ...StyleSheet.absoluteFill,
-  },
   sheet: {
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
@@ -462,23 +422,17 @@ const styles = StyleSheet.create({
   },
   handleWrap: {
     alignItems: 'center',
-    paddingTop: 12,
-    paddingBottom: 6,
+    paddingTop: 14,
+    paddingBottom: 10,
   },
   handleBar: {
-    width: 44,
+    width: 46,
     height: 5,
     borderRadius: 2.5,
   },
-  dragHint: {
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 0.4,
-    marginTop: 6,
-  },
   content: {
     paddingHorizontal: 22,
-    paddingTop: 8,
+    paddingTop: 4,
   },
   headerRow: {
     flexDirection: 'row',
@@ -521,9 +475,10 @@ const styles = StyleSheet.create({
     letterSpacing: -1.5,
   },
   digitsSub: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '600',
     marginTop: 4,
+    textAlign: 'center',
   },
   adjustRow: {
     flexDirection: 'row',

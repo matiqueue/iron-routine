@@ -18,7 +18,7 @@ import { DayBannerTag, DayPlan, DayType, Exercise } from '../types/workout';
 import { cloneExercise } from '../data/exerciseLibrary';
 import { DAY_BANNER_TAG_OPTIONS, resolveDayBannerTag } from '../data/dayTags';
 import { DayBannerArtwork } from './DayBannerArtwork';
-import { InteractiveBottomSheet, useBottomSheetContext } from './InteractiveBottomSheet';
+import { BottomSheetScrollView, InteractiveBottomSheet } from './InteractiveBottomSheet';
 import { ExerciseLibraryContent } from './ExerciseLibraryContent';
 
 interface PlanDayEditorModalProps {
@@ -629,20 +629,16 @@ const PlanDayEditorBody: React.FC<{
   onSave: () => void;
   children: React.ReactNode;
 }> = ({ scrollContentStyle, footerStyle, theme, onSave, children }) => {
-  const { setScrollOffsetY } = useBottomSheetContext();
-
   return (
     <View style={{ flex: 1 }}>
-      <ScrollView
+      <BottomSheetScrollView
         style={styles.scroll}
         contentContainerStyle={scrollContentStyle}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
-        scrollEventThrottle={16}
-        onScroll={(e) => setScrollOffsetY(e.nativeEvent.contentOffset.y)}
       >
         {children}
-      </ScrollView>
+      </BottomSheetScrollView>
 
       <View style={footerStyle}>
         <TouchableOpacity

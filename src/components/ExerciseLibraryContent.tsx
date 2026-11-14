@@ -25,7 +25,7 @@ import {
   getCustomExercises,
   saveCustomExercise,
 } from '../services/storage';
-import { useBottomSheetContext } from './InteractiveBottomSheet';
+import { BottomSheetScrollView } from './InteractiveBottomSheet';
 
 export type LibraryCategoryFilter = MuscleCategory | 'wszystkie' | 'wlasne';
 
@@ -45,7 +45,6 @@ export const ExerciseLibraryContent: React.FC<ExerciseLibraryContentProps> = ({
   onLibraryChanged,
 }) => {
   const { theme } = useAppTheme();
-  const { setScrollOffsetY } = useBottomSheetContext();
 
   const [customExercises, setCustomExercises] = useState<Exercise[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -286,13 +285,11 @@ export const ExerciseLibraryContent: React.FC<ExerciseLibraryContentProps> = ({
         </View>
       )}
 
-      <ScrollView
+      <BottomSheetScrollView
         style={styles.listScroll}
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
-        scrollEventThrottle={16}
-        onScroll={(e) => setScrollOffsetY(e.nativeEvent.contentOffset.y)}
       >
         {/* Inline Custom Exercise Form */}
         {showCreateForm ? (
@@ -658,7 +655,7 @@ export const ExerciseLibraryContent: React.FC<ExerciseLibraryContentProps> = ({
             );
           })
         )}
-      </ScrollView>
+      </BottomSheetScrollView>
     </View>
   );
 };

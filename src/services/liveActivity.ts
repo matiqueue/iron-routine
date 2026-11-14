@@ -2,6 +2,7 @@ import { Platform } from 'react-native';
 import * as LiveActivity from 'expo-live-activity';
 
 let currentActivityId: string | null = null;
+let startPromise: Promise<string | null> | null = null;
 
 export interface WorkoutLiveActivityParams {
   workoutName: string;
@@ -11,9 +12,18 @@ export interface WorkoutLiveActivityParams {
   completedSets: number;
   totalWorkoutSets: number;
   isRest?: boolean;
+  isRestPaused?: boolean;
   isRestFinished?: boolean;
   restSeconds?: number;
+  pausedRestSeconds?: number;
   nextExerciseName?: string;
+}
+
+function formatLiveRestSeconds(totalSeconds: number): string {
+  const safe = Math.max(0, Math.round(totalSeconds));
+  const mins = Math.floor(safe / 60);
+  const secs = safe % 60;
+  return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 }
 
 const DEFAULT_CONFIG: LiveActivity.LiveActivityConfig = {
@@ -30,39 +40,46 @@ const DEFAULT_CONFIG: LiveActivity.LiveActivityConfig = {
  */
 export async function startWorkoutLiveActivity(params: WorkoutLiveActivityParams): Promise<string | null> {
   if (Platform.OS !== 'ios') return null;
+  if (startPromise) return startPromise;
 
-  try {
-    // If an activity is already running, stop it first to prevent duplicates
-    if (currentActivityId) {
-      await stopWorkoutLiveActivity({
-        summaryTitle: 'Nowy trening',
-        summarySubtitle: 'Rozpoczęto nową sesję',
-      });
+  startPromise = (async () => {
+    try {
+      // Stop any prior tracked activity first to prevent duplicate Dynamic Island pills
+      if (currentActivityId) {
+        await stopWorkoutLiveActivity({
+          summaryTitle: 'Nowy trening',
+          summarySubtitle: 'Rozpoczęto nową sesję',
+        });
+      }
+
+      const progress =
+        params.totalWorkoutSets > 0
+          ? Math.min(1, Math.max(0, params.completedSets / params.totalWorkoutSets))
+          : 0;
+
+      const activityId = LiveActivity.startActivity(
+        {
+          title: params.exerciseName,
+          subtitle: `Seria ${params.currentSet} z ${params.totalSets} • ${params.workoutName}`,
+          progressBar: { progress },
+        },
+        DEFAULT_CONFIG
+      );
+
+      if (activityId) {
+        currentActivityId = activityId;
+        return activityId;
+      }
+    } catch (error) {
+      console.warn('[LiveActivity] Failed to start live activity:', error);
+    } finally {
+      startPromise = null;
     }
 
-    const progress =
-      params.totalWorkoutSets > 0
-        ? Math.min(1, Math.max(0, params.completedSets / params.totalWorkoutSets))
-        : 0;
+    return null;
+  })();
 
-    const activityId = LiveActivity.startActivity(
-      {
-        title: params.exerciseName,
-        subtitle: `Seria ${params.currentSet} z ${params.totalSets} • ${params.workoutName}`,
-        progressBar: { progress },
-      },
-      DEFAULT_CONFIG
-    );
-
-    if (activityId) {
-      currentActivityId = activityId;
-      return activityId;
-    }
-  } catch (error) {
-    console.warn('[LiveActivity] Failed to start live activity:', error);
-  }
-
-  return null;
+  return startPromise;
 }
 
 /**
@@ -72,7 +89,9 @@ export async function updateWorkoutLiveActivity(params: WorkoutLiveActivityParam
   if (Platform.OS !== 'ios') return;
 
   try {
-    // If no activity is active, try to start one
+    if (startPromise) {
+      await startPromise;
+    }
     if (!currentActivityId) {
       await startWorkoutLiveActivity(params);
       return;
@@ -83,7 +102,14 @@ export async function updateWorkoutLiveActivity(params: WorkoutLiveActivityParam
         ? Math.min(1, Math.max(0, params.completedSets / params.totalWorkoutSets))
         : 0;
 
-    if (params.isRestFinished) {
+    if (params.isRestPaused) {
+      const pausedTime = formatLiveRestSeconds(params.pausedRestSeconds ?? params.restSeconds ?? 0);
+      LiveActivity.updateActivity(currentActivityId, {
+        title: `Przerwa wstrzymana • ${pausedTime}`,
+        subtitle: `${params.exerciseName} • Seria ${params.currentSet} z ${params.totalSets}`,
+        progressBar: { progress },
+      });
+    } else if (params.isRestFinished) {
       LiveActivity.updateActivity(currentActivityId, {
         title: 'Koniec przerwy!',
         subtitle: `${params.exerciseName} • Seria ${params.currentSet} z ${params.totalSets}`,

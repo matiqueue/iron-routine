@@ -5,7 +5,6 @@ import {
   LayoutChangeEvent,
   PanResponder,
   PanResponderInstance,
-  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -13,7 +12,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAppTheme } from '../context/ThemeContext';
-import { InteractiveBottomSheet, useBottomSheetContext } from './InteractiveBottomSheet';
+import { BottomSheetScrollView, InteractiveBottomSheet, useBottomSheetContext } from './InteractiveBottomSheet';
 import { ExerciseLibraryContent } from './ExerciseLibraryContent';
 import { DayProgress, Exercise, SessionExerciseConfig } from '../types/workout';
 import { cloneExercise } from '../data/exerciseLibrary';
@@ -68,7 +67,6 @@ const SessionChecklistView: React.FC<{
   onConfirm,
 }) => {
   const { theme } = useAppTheme();
-  const { setScrollOffsetY } = useBottomSheetContext();
   const activeCount = orderedExercises.filter((e) => !skippedSet.has(e.id)).length;
 
   return (
@@ -96,12 +94,10 @@ const SessionChecklistView: React.FC<{
         </View>
       </View>
 
-      <ScrollView
+      <BottomSheetScrollView
         style={styles.list}
         showsVerticalScrollIndicator={false}
         scrollEnabled={!draggingId}
-        scrollEventThrottle={16}
-        onScroll={(e) => setScrollOffsetY(e.nativeEvent.contentOffset.y)}
       >
         {orderedExercises.map((ex, idx) => {
           const isSkipped = skippedSet.has(ex.id);
@@ -212,7 +208,7 @@ const SessionChecklistView: React.FC<{
           );
         })}
         <View style={{ height: 18 }} />
-      </ScrollView>
+      </BottomSheetScrollView>
 
       <View style={[styles.footer, { borderTopColor: theme.border, backgroundColor: theme.card }]}>
         <TouchableOpacity

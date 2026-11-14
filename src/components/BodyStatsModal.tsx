@@ -236,9 +236,6 @@ export const BodyStatsModal: React.FC<BodyStatsModalProps> = ({
         <BottomSheetScrollView
           style={styles.scroll}
           showsVerticalScrollIndicator={false}
-          bounces={false}
-          alwaysBounceVertical={false}
-          overScrollMode="never"
           contentContainerStyle={{ paddingBottom: 40 }}
         >
           {/* KPI Cards Strip */}

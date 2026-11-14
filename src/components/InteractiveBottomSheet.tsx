@@ -28,35 +28,67 @@ import { triggerSelectionHaptic } from '../services/haptics';
 const SCREEN_HEIGHT = Dimensions.get('window').height;
 
 interface BottomSheetContextValue {
-  /** Updates vertical scroll position of the inner scroll container so downward swipe only triggers at top */
+  /** Updates vertical scroll position of the inner scroll container */
   setScrollOffsetY: (y: number) => void;
   /** Temporarily disables swipe-to-dismiss while dragging reorderable rows inside the sheet */
   setDragLock: (locked: boolean) => void;
+  /** Mirrors native iOS ScrollView top overscroll pull onto sheet translateY */
+  onOverscrollPull: (offsetY: number) => void;
+  /** Closes or snaps back the sheet when releasing a pull-down on inner ScrollView */
+  onOverscrollRelease: (offsetY: number, velocityY?: number) => void;
 }
 
 export const BottomSheetContext = createContext<BottomSheetContextValue>({
   setScrollOffsetY: () => {},
   setDragLock: () => {},
+  onOverscrollPull: () => {},
+  onOverscrollRelease: () => {},
 });
 
 export function useBottomSheetContext(): BottomSheetContextValue {
   return useContext(BottomSheetContext);
 }
 
-/** ScrollView bound to BottomSheetContext so downward pull-to-dismiss only engages when scrolled to top. */
+/**
+ * ScrollView bound to BottomSheetContext so pulling down at the top edge
+ * smoothly drags and dismisses the sheet natively on iOS and Android.
+ */
 export const BottomSheetScrollView: React.FC<ScrollViewProps> = ({
   onScroll,
+  onScrollBeginDrag,
+  onScrollEndDrag,
   scrollEventThrottle = 16,
+  bounces,
+  alwaysBounceVertical,
   ...rest
 }) => {
-  const { setScrollOffsetY } = useBottomSheetContext();
+  const { setScrollOffsetY, onOverscrollPull, onOverscrollRelease } = useBottomSheetContext();
+  const isDraggingRef = useRef(false);
 
   return (
     <ScrollView
       {...rest}
+      bounces={Platform.OS === 'ios' ? true : bounces}
+      alwaysBounceVertical={Platform.OS === 'ios' ? true : alwaysBounceVertical}
       scrollEventThrottle={scrollEventThrottle}
+      onScrollBeginDrag={(e) => {
+        isDraggingRef.current = true;
+        onScrollBeginDrag?.(e);
+      }}
+      onScrollEndDrag={(e) => {
+        const wasDragging = isDraggingRef.current;
+        isDraggingRef.current = false;
+        if (Platform.OS === 'ios' && wasDragging) {
+          onOverscrollRelease(e.nativeEvent.contentOffset.y, e.nativeEvent.velocity?.y);
+        }
+        onScrollEndDrag?.(e);
+      }}
       onScroll={(e) => {
-        setScrollOffsetY(e.nativeEvent.contentOffset.y);
+        const y = e.nativeEvent.contentOffset.y;
+        setScrollOffsetY(y);
+        if (Platform.OS === 'ios' && isDraggingRef.current) {
+          onOverscrollPull(y);
+        }
         onScroll?.(e);
       }}
     />
@@ -86,11 +118,11 @@ export const InteractiveBottomSheet: React.FC<InteractiveBottomSheetProps> = ({
   const baseHeight = Math.round(SCREEN_HEIGHT * initialHeightPercent);
 
   const [renderModal, setRenderModal] = useState(visible);
+  const renderModalRef = useRef(visible);
 
-  const translateY = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
+  const translateY = useRef(new Animated.Value(visible ? 0 : SCREEN_HEIGHT)).current;
   const scrollOffsetYRef = useRef(0);
   const dragLockRef = useRef(false);
-  const headerTouchRef = useRef(false);
   const isClosingRef = useRef(false);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
@@ -105,6 +137,15 @@ export const InteractiveBottomSheet: React.FC<InteractiveBottomSheetProps> = ({
     [translateY, baseHeight]
   );
 
+  const snapBack = useCallback(() => {
+    Animated.spring(translateY, {
+      toValue: 0,
+      damping: 26,
+      stiffness: 300,
+      useNativeDriver: true,
+    }).start();
+  }, [translateY]);
+
   const animateClose = useCallback(() => {
     if (isClosingRef.current) return;
     isClosingRef.current = true;
@@ -113,6 +154,7 @@ export const InteractiveBottomSheet: React.FC<InteractiveBottomSheetProps> = ({
       duration: 210,
       useNativeDriver: true,
     }).start(() => {
+      renderModalRef.current = false;
       setRenderModal(false);
       isClosingRef.current = false;
       onCloseRef.current();
@@ -124,10 +166,11 @@ export const InteractiveBottomSheet: React.FC<InteractiveBottomSheetProps> = ({
       isClosingRef.current = false;
       scrollOffsetYRef.current = 0;
       dragLockRef.current = false;
-      headerTouchRef.current = false;
-      setRenderModal(true);
+      if (!renderModalRef.current) {
+        renderModalRef.current = true;
+        setRenderModal(true);
+      }
       translateY.setValue(SCREEN_HEIGHT);
-
       Animated.spring(translateY, {
         toValue: 0,
         damping: 26,
@@ -135,63 +178,76 @@ export const InteractiveBottomSheet: React.FC<InteractiveBottomSheetProps> = ({
         mass: 0.9,
         useNativeDriver: true,
       }).start();
-    } else if (renderModal && !isClosingRef.current) {
+    } else if (renderModalRef.current && !isClosingRef.current) {
+      isClosingRef.current = true;
       Animated.timing(translateY, {
         toValue: SCREEN_HEIGHT,
         duration: 190,
         useNativeDriver: true,
       }).start(() => {
+        renderModalRef.current = false;
+        isClosingRef.current = false;
         setRenderModal(false);
       });
     }
-  }, [visible, renderModal, translateY]);
+  }, [visible, translateY]);
 
-  // Unified swipe-down responder across the whole popup (handle, header, and scrolled-to-top content)
-  const panResponder = useRef(
+  // Dedicated PanResponder for the top grabber & header: starts immediately on touch down (buttons still win taps via bubbling)
+  const headerPanResponder = useRef(
     PanResponder.create({
-      onStartShouldSetPanResponder: () => false,
+      onStartShouldSetPanResponder: () => !dragLockRef.current && !isClosingRef.current,
       onStartShouldSetPanResponderCapture: () => false,
-      onMoveShouldSetPanResponder: (_, gesture) => {
-        if (dragLockRef.current || isClosingRef.current) return false;
-        const isVertical = Math.abs(gesture.dy) > Math.abs(gesture.dx) * 1.15;
-        if (!isVertical) return false;
-        if (headerTouchRef.current && gesture.dy > 4) return true;
-        return scrollOffsetYRef.current <= 2 && gesture.dy > 9;
-      },
-      onMoveShouldSetPanResponderCapture: (_, gesture) => {
-        if (dragLockRef.current || isClosingRef.current) return false;
-        const isVertical = Math.abs(gesture.dy) > Math.abs(gesture.dx) * 1.15;
-        if (!isVertical) return false;
-        if (headerTouchRef.current && gesture.dy > 4) return true;
-        return scrollOffsetYRef.current <= 2 && gesture.dy > 10;
-      },
+      onMoveShouldSetPanResponder: (_, gesture) =>
+        !dragLockRef.current &&
+        !isClosingRef.current &&
+        gesture.dy > 3 &&
+        Math.abs(gesture.dy) > Math.abs(gesture.dx),
+      onMoveShouldSetPanResponderCapture: (_, gesture) =>
+        !dragLockRef.current &&
+        !isClosingRef.current &&
+        gesture.dy > 5 &&
+        Math.abs(gesture.dy) > Math.abs(gesture.dx) * 1.1,
       onPanResponderMove: (_, gesture) => {
         translateY.setValue(Math.max(0, gesture.dy));
       },
       onPanResponderTerminationRequest: () => false,
       onPanResponderRelease: (_, gesture) => {
-        headerTouchRef.current = false;
-        if (gesture.dy > 95 || gesture.vy > 0.65) {
+        if (gesture.dy > 65 || gesture.vy > 0.35) {
           triggerSelectionHaptic();
           animateClose();
           return;
         }
-        Animated.spring(translateY, {
-          toValue: 0,
-          damping: 24,
-          stiffness: 280,
-          useNativeDriver: true,
-        }).start();
+        snapBack();
       },
-      onPanResponderTerminate: () => {
-        headerTouchRef.current = false;
-        Animated.spring(translateY, {
-          toValue: 0,
-          damping: 24,
-          stiffness: 280,
-          useNativeDriver: true,
-        }).start();
+      onPanResponderTerminate: snapBack,
+    })
+  ).current;
+
+  // Fallback PanResponder for non-scrollable sheet body zones (e.g. footers / tabs)
+  const bodyPanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onStartShouldSetPanResponderCapture: () => false,
+      onMoveShouldSetPanResponder: (_, gesture) =>
+        !dragLockRef.current &&
+        !isClosingRef.current &&
+        scrollOffsetYRef.current <= 1 &&
+        gesture.dy > 6 &&
+        Math.abs(gesture.dy) > Math.abs(gesture.dx) * 1.15,
+      onMoveShouldSetPanResponderCapture: () => false,
+      onPanResponderMove: (_, gesture) => {
+        translateY.setValue(Math.max(0, gesture.dy));
       },
+      onPanResponderTerminationRequest: () => false,
+      onPanResponderRelease: (_, gesture) => {
+        if (gesture.dy > 65 || gesture.vy > 0.35) {
+          triggerSelectionHaptic();
+          animateClose();
+          return;
+        }
+        snapBack();
+      },
+      onPanResponderTerminate: snapBack,
     })
   ).current;
 
@@ -203,8 +259,28 @@ export const InteractiveBottomSheet: React.FC<InteractiveBottomSheetProps> = ({
       setDragLock: (locked: boolean) => {
         dragLockRef.current = locked;
       },
+      onOverscrollPull: (offsetY: number) => {
+        if (dragLockRef.current || isClosingRef.current) return;
+        if (offsetY < 0) {
+          translateY.setValue(Math.min(baseHeight * 0.85, Math.abs(offsetY) * 1.55));
+        } else {
+          translateY.setValue(0);
+        }
+      },
+      onOverscrollRelease: (offsetY: number, velocityY?: number) => {
+        if (dragLockRef.current || isClosingRef.current) return;
+        const isFlickDown = offsetY <= -8 && (velocityY ?? 0) <= -0.35;
+        if (offsetY <= -38 || isFlickDown) {
+          triggerSelectionHaptic();
+          animateClose();
+          return;
+        }
+        if (offsetY < 0) {
+          snapBack();
+        }
+      },
     }),
-    []
+    [animateClose, snapBack, translateY, baseHeight]
   );
 
   if (!renderModal) return null;
@@ -234,7 +310,7 @@ export const InteractiveBottomSheet: React.FC<InteractiveBottomSheetProps> = ({
         </Animated.View>
 
         <Animated.View
-          {...panResponder.panHandlers}
+          {...bodyPanResponder.panHandlers}
           style={[
             styles.sheet,
             {
@@ -245,18 +321,8 @@ export const InteractiveBottomSheet: React.FC<InteractiveBottomSheetProps> = ({
             },
           ]}
         >
-          {/* Generous Grabber + Header Zone: swipe down anywhere here closes the sheet */}
-          <View
-            onTouchStart={() => {
-              headerTouchRef.current = true;
-            }}
-            onTouchEnd={() => {
-              headerTouchRef.current = false;
-            }}
-            onTouchCancel={() => {
-              headerTouchRef.current = false;
-            }}
-          >
+          {/* Dedicated Grabber + Header Drag Zone */}
+          <View {...headerPanResponder.panHandlers}>
             <View style={styles.grabArea}>
               <View style={[styles.grabHandle, { backgroundColor: theme.borderDark }]} />
             </View>
@@ -327,11 +393,11 @@ const styles = StyleSheet.create({
   grabArea: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingTop: 12,
-    paddingBottom: 8,
+    paddingTop: 14,
+    paddingBottom: 10,
   },
   grabHandle: {
-    width: 44,
+    width: 46,
     height: 5,
     borderRadius: 3,
   },
@@ -341,7 +407,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: 10,
     paddingHorizontal: 18,
-    paddingTop: 4,
+    paddingTop: 2,
     paddingBottom: 14,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
