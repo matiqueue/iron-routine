@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Platform,
   ScrollView,
   Share,
   StyleSheet,
@@ -13,7 +14,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAppTheme } from '../context/ThemeContext';
-import { AppSettings, UserProfile } from '../types/workout';
+import { AppSettings, HealthDailySummary, SupplementItem, UserProfile } from '../types/workout';
 import {
   DEFAULT_APP_SETTINGS,
   getAppSettings,
@@ -26,6 +27,8 @@ import {
   triggerSelectionHaptic,
 } from '../services/haptics';
 import { syncRemindersWithSettings } from '../services/notifications';
+import { fetchTodayHealthSummary, requestHealthPermissions } from '../services/health';
+import { buildActiveSupplementsSummary } from '../data/supplements';
 import {
   exportProfileBackup,
   getCustomExercises,
@@ -37,6 +40,8 @@ import {
 import { EXERCISE_LIBRARY } from '../data/exerciseLibrary';
 import { ExerciseLibraryModal } from '../components/ExerciseLibraryModal';
 import { InteractiveBottomSheet } from '../components/InteractiveBottomSheet';
+import { SupplementConfigurator } from '../components/SupplementConfigurator';
+import { AnimatedIcon } from '../components/AnimatedIcon';
 
 interface SettingsScreenProps {
   activeProfile: UserProfile;
@@ -44,6 +49,7 @@ interface SettingsScreenProps {
   onSettingsUpdated?: (next: AppSettings) => void;
   onDataImported: () => Promise<void> | void;
   onLibraryChanged?: () => Promise<void> | void;
+  onHealthSynced?: (summary: HealthDailySummary | null) => void;
   onAppReset: () => void;
 }
 
@@ -61,6 +67,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   onSettingsUpdated,
   onDataImported,
   onLibraryChanged,
+  onHealthSynced,
   onAppReset,
 }) => {
   const { theme, isDark, toggleTheme } = useAppTheme();
@@ -77,6 +84,10 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 
   const [customCount, setCustomCount] = useState(0);
   const [showExerciseLibrary, setShowExerciseLibrary] = useState(false);
+  const [showSuppEditor, setShowSuppEditor] = useState(false);
+
+  const [healthSummary, setHealthSummary] = useState<HealthDailySummary | null>(null);
+  const [isSyncingHealth, setIsSyncingHealth] = useState(false);
 
   const [showImportSheet, setShowImportSheet] = useState(false);
   const [importJsonText, setImportJsonText] = useState('');
@@ -95,6 +106,11 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
     ]);
     setSettings(loadedSettings);
     setCustomCount(custom.length);
+    if (loadedSettings.healthSyncEnabled) {
+      const h = await fetchTodayHealthSummary();
+      setHealthSummary(h);
+      onHealthSynced?.(h);
+    }
   };
 
   useEffect(() => {
@@ -110,6 +126,55 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
     onSettingsUpdated?.(next);
     if (resyncNotifications) {
       await syncRemindersWithSettings(next);
+    }
+  };
+
+  const handleSupplementsChange = async (nextSupps: SupplementItem[]) => {
+    await handlePatchSettings({ supplements: nextSupps }, true);
+  };
+
+  const handleToggleHealthSync = async (enabled: boolean) => {
+    triggerSelectionHaptic();
+    if (!enabled) {
+      await handlePatchSettings({ healthSyncEnabled: false });
+      setHealthSummary(null);
+      onHealthSynced?.(null);
+      return;
+    }
+
+    setIsSyncingHealth(true);
+    try {
+      const granted = await requestHealthPermissions();
+      if (!granted) {
+        Alert.alert(
+          'Brak dostępu',
+          Platform.OS === 'ios'
+            ? 'Włącz uprawnienia dla Iron Routine w aplikacji Zdrowie (Apple Health) -> Udostępnianie.'
+            : 'Zezwól Iron Routine na odczyt danych w Health Connect.'
+        );
+        await handlePatchSettings({ healthSyncEnabled: false });
+        return;
+      }
+
+      await handlePatchSettings({ healthSyncEnabled: true });
+      const summary = await fetchTodayHealthSummary();
+      setHealthSummary(summary);
+      onHealthSynced?.(summary);
+      triggerNotificationHaptic('success');
+    } finally {
+      setIsSyncingHealth(false);
+    }
+  };
+
+  const handleRefreshHealth = async () => {
+    triggerSelectionHaptic();
+    setIsSyncingHealth(true);
+    try {
+      const summary = await fetchTodayHealthSummary();
+      setHealthSummary(summary);
+      onHealthSynced?.(summary);
+    } finally {
+      setIsSyncingHealth(false);
     }
   };
 
@@ -488,9 +553,9 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 
           <View style={styles.switchRow}>
             <View style={styles.switchLabelWrap}>
-              <Text style={[styles.rowTitle, { color: theme.text }]}>Przypomnienia o kreatynie</Text>
+              <Text style={[styles.rowTitle, { color: theme.text }]}>Przypomnienia o suplementach</Text>
               <Text style={[styles.rowSub, { color: theme.textSecondary }]}>
-                Poranne oraz awaryjne wieczorne przypomnienie
+                Poranne oraz awaryjne wieczorne przypomnienie wg Twojego zestawu
               </Text>
             </View>
             <Switch
@@ -606,6 +671,107 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           )}
         </View>
 
+        {/* SECTION 3B: SUPPLEMENTS & DOSING */}
+        <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
+          <View style={styles.cardHeaderRow}>
+            <View style={styles.cardTitleGroup}>
+              <Ionicons name="flask-outline" size={16} color={theme.text} />
+              <Text style={[styles.cardTitle, { color: theme.text }]}>SUPLEMENTACJA I DAWKI</Text>
+            </View>
+            <TouchableOpacity
+              style={[styles.testPillBtn, { borderColor: theme.border }]}
+              onPress={() => {
+                triggerSelectionHaptic();
+                setShowSuppEditor((p) => !p);
+              }}
+              activeOpacity={0.75}
+            >
+              <Text style={[styles.testPillText, { color: theme.text }]}>
+                {showSuppEditor ? 'Zwiń' : 'Edytuj'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          <Text style={[styles.rowSub, { color: theme.textSecondary, marginTop: 0 }]}>
+            {buildActiveSupplementsSummary(settings.supplements, activeProfile.weight)}
+          </Text>
+
+          {showSuppEditor && (
+            <View style={{ marginTop: 12 }}>
+              <SupplementConfigurator
+                supplements={settings.supplements}
+                weightKg={activeProfile.weight}
+                onChange={handleSupplementsChange}
+              />
+            </View>
+          )}
+        </View>
+
+        {/* SECTION 3C: HEALTH INTEGRATION (APPLE HEALTH / HEALTH CONNECT) */}
+        <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
+          <View style={styles.cardHeaderRow}>
+            <View style={styles.cardTitleGroup}>
+              <AnimatedIcon
+                name="heart"
+                preset="heart"
+                size={16}
+                color={settings.healthSyncEnabled ? '#EF4444' : theme.text}
+                active={settings.healthSyncEnabled}
+              />
+              <Text style={[styles.cardTitle, { color: theme.text }]}>
+                {Platform.OS === 'ios' ? 'APPLE HEALTH' : 'HEALTH CONNECT'}
+              </Text>
+            </View>
+            {settings.healthSyncEnabled && (
+              <TouchableOpacity
+                style={[styles.testPillBtn, { borderColor: theme.border }]}
+                onPress={handleRefreshHealth}
+                disabled={isSyncingHealth}
+              >
+                <Ionicons name="refresh-outline" size={12} color={theme.text} />
+                <Text style={[styles.testPillText, { color: theme.text }]}>Odśwież</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          <View style={styles.switchRow}>
+            <View style={styles.switchLabelWrap}>
+              <Text style={[styles.rowTitle, { color: theme.text }]}>
+                Synchronizuj kroki i sen
+              </Text>
+              <Text style={[styles.rowSub, { color: theme.textSecondary }]}>
+                Pobiera kroki, czas snu i spaloną energię do inteligentnych wskazówek dnia
+              </Text>
+            </View>
+            <Switch
+              value={settings.healthSyncEnabled}
+              disabled={isSyncingHealth}
+              onValueChange={handleToggleHealthSync}
+              trackColor={switchTrack}
+              thumbColor={switchThumb}
+            />
+          </View>
+
+          {settings.healthSyncEnabled && healthSummary?.authorized && (
+            <View style={[styles.healthPillRow, { borderTopColor: theme.hairline }]}>
+              <View style={[styles.healthChip, { backgroundColor: theme.bg, borderColor: theme.border }]}>
+                <Ionicons name="footsteps-outline" size={13} color={theme.text} />
+                <Text style={[styles.healthChipText, { color: theme.text }]}>
+                  {healthSummary.steps !== null
+                    ? `${healthSummary.steps.toLocaleString('pl-PL')} kroków`
+                    : '— kroków'}
+                </Text>
+              </View>
+              <View style={[styles.healthChip, { backgroundColor: theme.bg, borderColor: theme.border }]}>
+                <Ionicons name="moon-outline" size={13} color={theme.text} />
+                <Text style={[styles.healthChipText, { color: theme.text }]}>
+                  {healthSummary.sleepHours !== null ? `${healthSummary.sleepHours} h snu` : '— h snu'}
+                </Text>
+              </View>
+            </View>
+          )}
+        </View>
+
         {/* SECTION 4: APPEARANCE & EXERCISE DATABASE */}
         <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
           <View style={styles.cardHeaderRow}>
@@ -683,7 +849,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               activeOpacity={0.75}
             >
               <Ionicons name="download-outline" size={16} color={theme.text} />
-              <Text style={[styles.secondaryBtnText, { color: theme.text }]}>Importuj Seed / JSON</Text>
+              <Text style={[styles.secondaryBtnText, { color: theme.text }]}>Importuj JSON</Text>
             </TouchableOpacity>
           </View>
 
@@ -1035,5 +1201,26 @@ const styles = StyleSheet.create({
     minHeight: 220,
     fontSize: 12,
     fontFamily: 'Courier',
+  },
+  healthPillRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    paddingTop: 12,
+    marginTop: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  healthChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  healthChipText: {
+    fontSize: 12,
+    fontWeight: '700',
   },
 });

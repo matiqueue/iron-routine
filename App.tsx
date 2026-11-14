@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { StyleSheet, View, Animated } from 'react-native';
+import { Alert, Animated, AppState, Platform, StyleSheet, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
@@ -11,6 +11,7 @@ import {
   DayPlan,
   DayProgress,
   Exercise,
+  HealthDailySummary,
   NewPRHighlight,
   PRRecord,
   SessionExerciseConfig,
@@ -29,9 +30,11 @@ import {
   saveSessionExerciseConfig,
   saveSetEntry,
 } from './src/services/storage';
-import { getAppSettings } from './src/services/settings';
+import { getAppSettings, updateAppSettings } from './src/services/settings';
+import { fetchTodayHealthSummary, requestHealthPermissions } from './src/services/health';
 import { triggerNotificationHaptic, triggerSelectionHaptic } from './src/services/haptics';
 import {
+  cancelRestFinishedNotification,
   handleNotificationResponse,
   setupCreatineNotificationCategories,
   syncRemindersWithSettings,
@@ -56,6 +59,7 @@ import { WorkoutSummaryModal } from './src/components/WorkoutSummaryModal';
 import { ExerciseDetailModal } from './src/components/ExerciseDetailModal';
 import { BodyStatsModal } from './src/components/BodyStatsModal';
 import { PlanManagerModal } from './src/components/PlanManagerModal';
+import { SessionExercisePickerModal } from './src/components/SessionExercisePickerModal';
 
 function MainApp() {
   const { theme, isDark } = useAppTheme();
@@ -79,10 +83,19 @@ function MainApp() {
   const [showPlanManagerModal, setShowPlanManagerModal] = useState(false);
   const [progressRefreshKey, setProgressRefreshKey] = useState(0);
 
-  // Active workout mode
+  // Active workout mode & Pre-workout Session Picker
   const [isActiveWorkout, setIsActiveWorkout] = useState(false);
   const [activeWorkoutDayId, setActiveWorkoutDayId] = useState<string>(getTodayDayId());
   const [autoOpenSessionPicker, setAutoOpenSessionPicker] = useState(false);
+  const [sessionPickerTarget, setSessionPickerTarget] = useState<{
+    dayPlan: DayPlan;
+    progress: DayProgress;
+    mode: 'start' | 'edit';
+  } | null>(null);
+
+  // Health integration (Apple HealthKit / Health Connect)
+  const [healthSummary, setHealthSummary] = useState<HealthDailySummary | null>(null);
+  const [isHealthLoading, setIsHealthLoading] = useState(false);
 
   // Today / Active Workout Progress Data
   const [todayDayId] = useState<string>(getTodayDayId());
@@ -91,6 +104,10 @@ function MainApp() {
 
   // Monotonic write sequence guard prevents out-of-order AsyncStorage state reverts on typing
   const setWriteSeqRef = useRef(0);
+  const isActiveWorkoutRef = useRef(isActiveWorkout);
+  useEffect(() => {
+    isActiveWorkoutRef.current = isActiveWorkout;
+  }, [isActiveWorkout]);
 
   // Exercise Detail Modal
   const [previewExercise, setPreviewExercise] = useState<Exercise | null>(null);
@@ -104,6 +121,44 @@ function MainApp() {
   const [summaryVolumeKg, setSummaryVolumeKg] = useState<number | undefined>(undefined);
   const [summaryNewPRs, setSummaryNewPRs] = useState<NewPRHighlight[]>([]);
 
+  const refreshHealthIfEnabled = useCallback(async () => {
+    try {
+      const settings = await getAppSettings();
+      if (!settings.healthSyncEnabled) {
+        setHealthSummary(null);
+        return;
+      }
+      setIsHealthLoading(true);
+      const summary = await fetchTodayHealthSummary();
+      setHealthSummary(summary);
+    } finally {
+      setIsHealthLoading(false);
+    }
+  }, []);
+
+  const handleConnectHealth = useCallback(async () => {
+    triggerSelectionHaptic();
+    setIsHealthLoading(true);
+    try {
+      const granted = await requestHealthPermissions();
+      if (!granted) {
+        Alert.alert(
+          'Brak dostępu do Zdrowia',
+          Platform.OS === 'ios'
+            ? 'Włącz uprawnienia dla Iron Routine w aplikacji Zdrowie -> Udostępnianie, aby pobierać kroki i sen.'
+            : 'Zezwól Iron Routine na odczyt kroków i snu w Health Connect.'
+        );
+        return;
+      }
+      await updateAppSettings({ healthSyncEnabled: true });
+      const summary = await fetchTodayHealthSummary();
+      setHealthSummary(summary);
+      triggerNotificationHaptic('success');
+    } finally {
+      setIsHealthLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     activateKeepAwakeAsync();
     setupCreatineNotificationCategories();
@@ -112,11 +167,21 @@ function MainApp() {
       handleNotificationResponse(response);
     });
 
+    const appStateSub = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') {
+        refreshHealthIfEnabled();
+        if (!isActiveWorkoutRef.current) {
+          cancelRestFinishedNotification();
+        }
+      }
+    });
+
     return () => {
       deactivateKeepAwake();
       responseSubscription.remove();
+      appStateSub.remove();
     };
-  }, []);
+  }, [refreshHealthIfEnabled]);
 
   const loadUserWorkspace = useCallback(
     async (profile: UserProfile | null) => {
@@ -154,10 +219,13 @@ function MainApp() {
       syncRemindersWithSettings(settings);
       setActiveProfile(current);
       await loadUserWorkspace(current);
+      if (settings.healthSyncEnabled) {
+        refreshHealthIfEnabled();
+      }
     } catch (e) {
       console.warn('Initialization error', e);
     }
-  }, [loadUserWorkspace]);
+  }, [loadUserWorkspace, refreshHealthIfEnabled]);
 
   useEffect(() => {
     initApp();
@@ -191,6 +259,9 @@ function MainApp() {
     await loadUserWorkspace(profile);
     const settings = await getAppSettings();
     syncRemindersWithSettings(settings);
+    if (settings.healthSyncEnabled) {
+      refreshHealthIfEnabled();
+    }
     setProgressRefreshKey((k) => k + 1);
   };
 
@@ -206,15 +277,18 @@ function MainApp() {
     const current = await getActiveProfile();
     setActiveProfile(current);
     await loadUserWorkspace(current);
+    refreshHealthIfEnabled();
     setProgressRefreshKey((k) => k + 1);
   };
 
   const handleAppReset = () => {
     setIsActiveWorkout(false);
+    setSessionPickerTarget(null);
     setShowBodyStatsModal(false);
     setShowPlanManagerModal(false);
     setShowSummaryModal(false);
     setPreviewExercise(null);
+    setHealthSummary(null);
     setActiveTab('today');
     setActiveProfile(null);
     setProfilePlans([]);
@@ -273,6 +347,65 @@ function MainApp() {
 
   const planDays: DayPlan[] = activePlan?.days?.length ? activePlan.days : WORKOUT_PLAN;
 
+  const launchActiveWorkout = (plan: DayPlan, prog: DayProgress) => {
+    const raw = plan.exercises || [];
+    const orderedIds = prog.sessionConfig?.orderedIds;
+    let ordered = raw;
+    if (orderedIds?.length) {
+      const byId = new Map(raw.map((e) => [e.id, e]));
+      ordered = [];
+      for (const id of orderedIds) {
+        const found = byId.get(id);
+        if (found) ordered.push(found);
+      }
+      for (const ex of raw) {
+        if (!ordered.some((o) => o.id === ex.id)) ordered.push(ex);
+      }
+    }
+    const skippedSet = new Set(prog.sessionConfig?.skippedIds || []);
+    const activeList = ordered.filter((e) => !skippedSet.has(e.id));
+    const effectiveList = activeList.length > 0 ? activeList : ordered;
+
+    let completedInSession = 0;
+    for (const setsMap of Object.values(prog.sets || {})) {
+      for (const entry of Object.values(setsMap)) {
+        if (entry?.completed) completedInSession++;
+      }
+    }
+
+    setDayProgress(prog);
+    setActiveWorkoutDayId(plan.id);
+    setAutoOpenSessionPicker(false);
+    setIsActiveWorkout(true);
+
+    const firstEx = effectiveList[0] || raw[0];
+    const total = effectiveList.reduce((sum, e) => sum + e.sets, 0);
+    if (firstEx) {
+      startWorkoutLiveActivity({
+        workoutName: plan.name,
+        exerciseName: firstEx.name,
+        currentSet: 1,
+        totalSets: firstEx.sets,
+        completedSets: completedInSession,
+        totalWorkoutSets: total,
+      });
+    }
+  };
+
+  const handleConfigureSession = async (dayId?: string) => {
+    const targetDay = dayId || todayDayId;
+    const plan = planDays.find((p) => p.id === targetDay);
+    if (!plan || !plan.exercises || plan.exercises.length === 0) return;
+
+    let prog: DayProgress = dayProgress;
+    if (activeProfile) {
+      prog = await loadDayProgress(targetDay, undefined, activeProfile.id);
+      if (targetDay === todayDayId) setDayProgress(prog);
+    }
+
+    setSessionPickerTarget({ dayPlan: plan, progress: prog, mode: 'edit' });
+  };
+
   const handleStartWorkout = async (dayId?: string) => {
     const targetDay = dayId || todayDayId;
     const plan = planDays.find((p) => p.id === targetDay);
@@ -291,20 +424,39 @@ function MainApp() {
       }
     }
 
-    setActiveWorkoutDayId(targetDay);
-    setAutoOpenSessionPicker(!prog.sessionConfig && completedInSession === 0);
-    setIsActiveWorkout(true);
+    if (!prog.sessionConfig && completedInSession === 0) {
+      // Pre-workout configuration modal happens BEFORE launching ActiveWorkoutView
+      setSessionPickerTarget({ dayPlan: plan, progress: prog, mode: 'start' });
+      return;
+    }
 
-    const firstEx = plan.exercises[0];
-    const total = plan.exercises.reduce((sum, e) => sum + e.sets, 0);
-    startWorkoutLiveActivity({
-      workoutName: plan.name,
-      exerciseName: firstEx.name,
-      currentSet: 1,
-      totalSets: firstEx.sets,
-      completedSets: completedInSession,
-      totalWorkoutSets: total,
-    });
+    launchActiveWorkout(plan, prog);
+  };
+
+  const handleConfirmPreWorkoutPicker = async (config: SessionExerciseConfig) => {
+    const target = sessionPickerTarget;
+    if (!target) return;
+
+    const updatedProgress: DayProgress = {
+      ...target.progress,
+      sessionConfig: config,
+    };
+
+    if (activeProfile) {
+      if (target.dayPlan.id === todayDayId) {
+        setDayProgress(updatedProgress);
+      }
+      try {
+        await saveSessionExerciseConfig(target.dayPlan.id, config, undefined, activeProfile.id);
+      } catch (e) {
+        console.error('Error saving pre-workout session config', e);
+      }
+    }
+
+    setSessionPickerTarget(null);
+    if (target.mode === 'start') {
+      launchActiveWorkout(target.dayPlan, updatedProgress);
+    }
   };
 
   const handleExitWorkout = async () => {
@@ -465,6 +617,11 @@ function MainApp() {
               dayProgress={dayProgress}
               streak={streak}
               bestPRs={bestPRs}
+              healthSummary={healthSummary}
+              isHealthLoading={isHealthLoading}
+              onRefreshHealth={refreshHealthIfEnabled}
+              onConnectHealth={handleConnectHealth}
+              onConfigureSession={() => handleConfigureSession(currentPlan.id)}
               onOpenPlanManager={() => setShowPlanManagerModal(true)}
               onOpenBodyStats={() => setShowBodyStatsModal(true)}
               onStartWorkout={(dayId) => handleStartWorkout(dayId)}
@@ -504,8 +661,14 @@ function MainApp() {
                 setActiveProfile(updated);
                 setProgressRefreshKey((k) => k + 1);
               }}
+              onSettingsUpdated={(next) => {
+                if (!next.healthSyncEnabled) {
+                  setHealthSummary(null);
+                }
+              }}
               onDataImported={handleFullDataRefresh}
               onLibraryChanged={() => setProgressRefreshKey((k) => k + 1)}
+              onHealthSynced={(summary) => setHealthSummary(summary)}
               onAppReset={handleAppReset}
             />
           )}
@@ -513,6 +676,23 @@ function MainApp() {
 
         {/* Extracted 4-Tab Bottom Navigation Bar */}
         <BottomTabBar activeTab={activeTab} onSelectTab={handleSwitchTab} />
+
+        {/* Pre-Workout Session Checklist & Drag-Drop Order Picker */}
+        {sessionPickerTarget && (
+          <SessionExercisePickerModal
+            visible={true}
+            onClose={() => setSessionPickerTarget(null)}
+            exercises={sessionPickerTarget.dayPlan.exercises || []}
+            dayProgress={sessionPickerTarget.progress}
+            initialConfig={sessionPickerTarget.progress.sessionConfig}
+            mode={sessionPickerTarget.mode}
+            onConfirm={handleConfirmPreWorkoutPicker}
+            onOpenAddExercise={() => {
+              setSessionPickerTarget(null);
+              handleSwitchTab('plan');
+            }}
+          />
+        )}
 
         {/* Plan Manager Modal (replaces old Profile Switcher) */}
         {activePlan && (

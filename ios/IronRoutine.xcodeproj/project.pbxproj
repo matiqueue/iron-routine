@@ -7,45 +7,46 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		084E4A57A98943F98D0EDE54 /* Image+dynamic.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B6DF7C109FB482E9A025AC6 /* Image+dynamic.swift */; };
+		0030F9F623B2E4D85831A28D /* libPods-IronRoutine.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 2E3426051465A3A27A125DA2 /* libPods-IronRoutine.a */; };
+		0BCDE956A5CFA310BE865E28 /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38E365B28FF0ABB2DE87F0A8 /* ExpoModulesProvider.swift */; };
+		12C44F08C573403287CAB17B /* View+applyWidgetURL.swift in Sources */ = {isa = PBXBuildFile; fileRef = 030C0F299E9847FFB227EE21 /* View+applyWidgetURL.swift */; };
 		13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB51A68108700A75B9A /* Images.xcassets */; };
-		1D8DB686E6804399B981540B /* Color+hex.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10124CD6B55343E79A3C35F9 /* Color+hex.swift */; };
-		2321B4C3B2B34D29A9E20111 /* View+applyWidgetURL.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6EDC0678D8F2442EB838A884 /* View+applyWidgetURL.swift */; };
-		294472415B2340A2842E96A6 /* ViewHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = B64D9BC60D7948208B872B8C /* ViewHelpers.swift */; };
-		308E459A22AA43C08A28DAB5 /* Date+toTimerInterval.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00FEF927EF8146DE9AEBA3CA /* Date+toTimerInterval.swift */; };
-		36967445B5EC4CD581A349CF /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2066D9F30DCAE0FF0DEC7428 /* ExpoModulesProvider.swift */; };
+		21114C3E56AA444884D63BDE /* LiveActivityWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9E2A300E3D145C582615F4C /* LiveActivityWidgetBundle.swift */; };
+		2485911AF0D941B989CA60A5 /* rest_alarm.wav in Resources */ = {isa = PBXBuildFile; fileRef = 51BFFD163DFF43CBB3DE73CC /* rest_alarm.wav */; };
 		3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */; };
-		5E0FFA3D903C8C29B1B8E455 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 51BBD46D697FCF60F999487F /* PrivacyInfo.xcprivacy */; };
-		60F0621D4D6D4DA281102B35 /* LiveActivityView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4EA838331A949329D3F125B /* LiveActivityView.swift */; };
-		73BEEBD27D774281A3A97FA7 /* LiveActivityWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7DD86757CAA2451A957E488B /* LiveActivityWidget.swift */; };
-		87012A706905448B85C006AB /* LiveActivityWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94B7232B8D624E1BA73EA0E4 /* LiveActivityWidgetBundle.swift */; };
+		673AB3E0AED54BDEA3719424 /* LiveActivity.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 918AA30909654822A279E26C /* LiveActivity.appex */; };
+		81A51C262C9540A4B5D41191 /* LiveActivityWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F8FD36AC9414654B66034E7 /* LiveActivityWidget.swift */; };
+		83AFD13564534F719F59B612 /* View+applyIfPresent.swift in Sources */ = {isa = PBXBuildFile; fileRef = E27AAB484DE94CE4B519F833 /* View+applyIfPresent.swift */; };
+		8D7BF7D8286AFC9598A69541 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 6D8A8FDE47B484AEEE82B6B6 /* PrivacyInfo.xcprivacy */; };
+		A7E38B8363904D99A22B20EF /* Date+toTimerInterval.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AE45258BC4E41D0B111B050 /* Date+toTimerInterval.swift */; };
+		A82C7E6DC53D4A448960C8D5 /* Image+dynamic.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2FA2E1ABB124C498729DBAF /* Image+dynamic.swift */; };
+		B5AD45D9E7E04996873D5C96 /* LiveActivityView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C133D6758C884E60968212D4 /* LiveActivityView.swift */; };
 		BB2F792D24A3F905000567C9 /* Expo.plist in Resources */ = {isa = PBXBuildFile; fileRef = BB2F792C24A3F905000567C9 /* Expo.plist */; };
-		CCB766A347C3A71ED9329371 /* libPods-IronRoutine.a in Frameworks */ = {isa = PBXBuildFile; fileRef = C974460942F63D0F2D1F6B3D /* libPods-IronRoutine.a */; };
-		DD950C0A817242E08D661575 /* LiveActivity.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 7435502304B4464EAB469105 /* LiveActivity.appex */; };
-		E42493EC7A894293BB58268F /* View+applyIfPresent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4512FF6D8376458BACDFEC55 /* View+applyIfPresent.swift */; };
-		E902CA2E9C5B46B1918108E0 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = C5DDD97A89B44CF694C08987 /* Assets.xcassets */; };
+		BF530331D9D64DFE8221AB40 /* ViewHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8697CAB5DC9D49489A8ED959 /* ViewHelpers.swift */; };
+		C9CDCD9B33D145349C3347DF /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B9741148645E4BC78729EBA5 /* Assets.xcassets */; };
+		DCC8E6B6A891498391C1C74E /* Color+hex.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7834B54E35A24E58A3C069CA /* Color+hex.swift */; };
 		F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11748412D0307B40044C1D9 /* AppDelegate.swift */; };
 		F11748442D0307B40044C1D9 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11748432D0307B40044C1D9 /* SceneDelegate.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
-		29BA75A1DB2A4A60B9756217 /* PBXContainerItemProxy */ = {
+		DBFC2595DB7749DA9E98BA3C /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 83CBB9F71A601CBA00E9B192 /* Project object */;
 			proxyType = 1;
-			remoteGlobalIDString = 0AA604DFCFED4BD0BA442225;
+			remoteGlobalIDString = 8D0E591C3C0048D9A1A44C88;
 			remoteInfo = LiveActivity;
 		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
-		DB8473AD2AF1457B8EB11F10 /* Embed Foundation Extensions */ = {
+		E28691D223D5419DA6C65363 /* Embed Foundation Extensions */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
 			dstPath = "";
 			dstSubfolderSpec = 13;
 			files = (
-				DD950C0A817242E08D661575 /* LiveActivity.appex in Embed Foundation Extensions */,
+				673AB3E0AED54BDEA3719424 /* LiveActivity.appex in Embed Foundation Extensions */,
 			);
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -53,33 +54,34 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		00FEF927EF8146DE9AEBA3CA /* Date+toTimerInterval.swift */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 4; includeInIndex = 0; lastKnownFileType = sourcecode.swift; name = "Date+toTimerInterval.swift"; path = "Date+toTimerInterval.swift"; sourceTree = "<group>"; };
-		10124CD6B55343E79A3C35F9 /* Color+hex.swift */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 4; includeInIndex = 0; lastKnownFileType = sourcecode.swift; name = "Color+hex.swift"; path = "Color+hex.swift"; sourceTree = "<group>"; };
+		030C0F299E9847FFB227EE21 /* View+applyWidgetURL.swift */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 4; includeInIndex = 0; lastKnownFileType = sourcecode.swift; name = "View+applyWidgetURL.swift"; path = "View+applyWidgetURL.swift"; sourceTree = "<group>"; };
+		0F8FD36AC9414654B66034E7 /* LiveActivityWidget.swift */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 4; includeInIndex = 0; lastKnownFileType = sourcecode.swift; name = LiveActivityWidget.swift; path = LiveActivityWidget.swift; sourceTree = "<group>"; };
 		13B07F961A680F5B00A75B9A /* IronRoutine.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = IronRoutine.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		13B07FB51A68108700A75B9A /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Images.xcassets; path = IronRoutine/Images.xcassets; sourceTree = "<group>"; };
 		13B07FB61A68108700A75B9A /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = Info.plist; path = IronRoutine/Info.plist; sourceTree = "<group>"; };
-		2066D9F30DCAE0FF0DEC7428 /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-IronRoutine/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
-		4512FF6D8376458BACDFEC55 /* View+applyIfPresent.swift */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 4; includeInIndex = 0; lastKnownFileType = sourcecode.swift; name = "View+applyIfPresent.swift"; path = "View+applyIfPresent.swift"; sourceTree = "<group>"; };
-		50CF5951A998411A9F79C7DB /* LiveActivity.entitlements */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = undefined; includeInIndex = 0; lastKnownFileType = unknown; name = LiveActivity.entitlements; path = LiveActivity.entitlements; sourceTree = "<group>"; };
-		51BBD46D697FCF60F999487F /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; name = PrivacyInfo.xcprivacy; path = IronRoutine/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
-		5B6DF7C109FB482E9A025AC6 /* Image+dynamic.swift */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 4; includeInIndex = 0; lastKnownFileType = sourcecode.swift; name = "Image+dynamic.swift"; path = "Image+dynamic.swift"; sourceTree = "<group>"; };
-		63BEB245C568110F0FA8BAEF /* Pods-IronRoutine.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-IronRoutine.release.xcconfig"; path = "Target Support Files/Pods-IronRoutine/Pods-IronRoutine.release.xcconfig"; sourceTree = "<group>"; };
-		6739E8132D6B448CB12172C6 /* Info.plist */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 4; includeInIndex = 0; lastKnownFileType = text.plist.xml; name = Info.plist; path = Info.plist; sourceTree = "<group>"; };
-		6EDC0678D8F2442EB838A884 /* View+applyWidgetURL.swift */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 4; includeInIndex = 0; lastKnownFileType = sourcecode.swift; name = "View+applyWidgetURL.swift"; path = "View+applyWidgetURL.swift"; sourceTree = "<group>"; };
-		7435502304B4464EAB469105 /* LiveActivity.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; fileEncoding = undefined; includeInIndex = 0; lastKnownFileType = undefined; name = LiveActivity.appex; path = LiveActivity.appex; sourceTree = BUILT_PRODUCTS_DIR; };
-		7DD86757CAA2451A957E488B /* LiveActivityWidget.swift */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 4; includeInIndex = 0; lastKnownFileType = sourcecode.swift; name = LiveActivityWidget.swift; path = LiveActivityWidget.swift; sourceTree = "<group>"; };
-		94B7232B8D624E1BA73EA0E4 /* LiveActivityWidgetBundle.swift */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 4; includeInIndex = 0; lastKnownFileType = sourcecode.swift; name = LiveActivityWidgetBundle.swift; path = LiveActivityWidgetBundle.swift; sourceTree = "<group>"; };
+		182C96CA5834FCD39817A8FF /* Pods-IronRoutine.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-IronRoutine.debug.xcconfig"; path = "Target Support Files/Pods-IronRoutine/Pods-IronRoutine.debug.xcconfig"; sourceTree = "<group>"; };
+		1C1DB917DA4941B7A144C3F6 /* LiveActivity.entitlements */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = undefined; includeInIndex = 0; lastKnownFileType = unknown; name = LiveActivity.entitlements; path = LiveActivity.entitlements; sourceTree = "<group>"; };
+		2AE45258BC4E41D0B111B050 /* Date+toTimerInterval.swift */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 4; includeInIndex = 0; lastKnownFileType = sourcecode.swift; name = "Date+toTimerInterval.swift"; path = "Date+toTimerInterval.swift"; sourceTree = "<group>"; };
+		2E3426051465A3A27A125DA2 /* libPods-IronRoutine.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-IronRoutine.a"; sourceTree = BUILT_PRODUCTS_DIR; };
+		38E365B28FF0ABB2DE87F0A8 /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-IronRoutine/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
+		51BFFD163DFF43CBB3DE73CC /* rest_alarm.wav */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = undefined; includeInIndex = 0; lastKnownFileType = unknown; name = rest_alarm.wav; path = IronRoutine/rest_alarm.wav; sourceTree = "<group>"; };
+		6D8A8FDE47B484AEEE82B6B6 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; name = PrivacyInfo.xcprivacy; path = IronRoutine/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		7834B54E35A24E58A3C069CA /* Color+hex.swift */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 4; includeInIndex = 0; lastKnownFileType = sourcecode.swift; name = "Color+hex.swift"; path = "Color+hex.swift"; sourceTree = "<group>"; };
+		8697CAB5DC9D49489A8ED959 /* ViewHelpers.swift */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 4; includeInIndex = 0; lastKnownFileType = sourcecode.swift; name = ViewHelpers.swift; path = ViewHelpers.swift; sourceTree = "<group>"; };
+		9024E6CEF75D19A248A8982E /* Pods-IronRoutine.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-IronRoutine.release.xcconfig"; path = "Target Support Files/Pods-IronRoutine/Pods-IronRoutine.release.xcconfig"; sourceTree = "<group>"; };
+		918AA30909654822A279E26C /* LiveActivity.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; fileEncoding = undefined; includeInIndex = 0; lastKnownFileType = undefined; name = LiveActivity.appex; path = LiveActivity.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		A9E2A300E3D145C582615F4C /* LiveActivityWidgetBundle.swift */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 4; includeInIndex = 0; lastKnownFileType = sourcecode.swift; name = LiveActivityWidgetBundle.swift; path = LiveActivityWidgetBundle.swift; sourceTree = "<group>"; };
 		AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = SplashScreen.storyboard; path = IronRoutine/SplashScreen.storyboard; sourceTree = "<group>"; };
-		B64D9BC60D7948208B872B8C /* ViewHelpers.swift */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 4; includeInIndex = 0; lastKnownFileType = sourcecode.swift; name = ViewHelpers.swift; path = ViewHelpers.swift; sourceTree = "<group>"; };
+		B9741148645E4BC78729EBA5 /* Assets.xcassets */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = undefined; includeInIndex = 0; lastKnownFileType = folder.assetcatalog; name = Assets.xcassets; path = Assets.xcassets; sourceTree = "<group>"; };
 		BB2F792C24A3F905000567C9 /* Expo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = Expo.plist; sourceTree = "<group>"; };
-		C5DDD97A89B44CF694C08987 /* Assets.xcassets */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = undefined; includeInIndex = 0; lastKnownFileType = folder.assetcatalog; name = Assets.xcassets; path = Assets.xcassets; sourceTree = "<group>"; };
-		C974460942F63D0F2D1F6B3D /* libPods-IronRoutine.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-IronRoutine.a"; sourceTree = BUILT_PRODUCTS_DIR; };
-		E8F41094A0BD8FCF651DB8DB /* Pods-IronRoutine.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-IronRoutine.debug.xcconfig"; path = "Target Support Files/Pods-IronRoutine/Pods-IronRoutine.debug.xcconfig"; sourceTree = "<group>"; };
+		C133D6758C884E60968212D4 /* LiveActivityView.swift */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 4; includeInIndex = 0; lastKnownFileType = sourcecode.swift; name = LiveActivityView.swift; path = LiveActivityView.swift; sourceTree = "<group>"; };
+		C2FA2E1ABB124C498729DBAF /* Image+dynamic.swift */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 4; includeInIndex = 0; lastKnownFileType = sourcecode.swift; name = "Image+dynamic.swift"; path = "Image+dynamic.swift"; sourceTree = "<group>"; };
+		E27AAB484DE94CE4B519F833 /* View+applyIfPresent.swift */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 4; includeInIndex = 0; lastKnownFileType = sourcecode.swift; name = "View+applyIfPresent.swift"; path = "View+applyIfPresent.swift"; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 		F11748412D0307B40044C1D9 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = IronRoutine/AppDelegate.swift; sourceTree = "<group>"; };
 		F11748432D0307B40044C1D9 /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SceneDelegate.swift; path = IronRoutine/SceneDelegate.swift; sourceTree = "<group>"; };
 		F11748442D0722820044C1D9 /* IronRoutine-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = "IronRoutine-Bridging-Header.h"; path = "IronRoutine/IronRoutine-Bridging-Header.h"; sourceTree = "<group>"; };
-		F4EA838331A949329D3F125B /* LiveActivityView.swift */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 4; includeInIndex = 0; lastKnownFileType = sourcecode.swift; name = LiveActivityView.swift; path = LiveActivityView.swift; sourceTree = "<group>"; };
+		F5A52269962144E4A545987E /* Info.plist */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 4; includeInIndex = 0; lastKnownFileType = text.plist.xml; name = Info.plist; path = Info.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -87,11 +89,11 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				CCB766A347C3A71ED9329371 /* libPods-IronRoutine.a in Frameworks */,
+				0030F9F623B2E4D85831A28D /* libPods-IronRoutine.a in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		423DE451746447E0A307EE7D /* Frameworks */ = {
+		7D9508433B9347F9AB27CFD5 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -101,26 +103,6 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		065CC4EC75484982B22FDEF1 /* LiveActivity */ = {
-			isa = PBXGroup;
-			children = (
-				10124CD6B55343E79A3C35F9 /* Color+hex.swift */,
-				00FEF927EF8146DE9AEBA3CA /* Date+toTimerInterval.swift */,
-				5B6DF7C109FB482E9A025AC6 /* Image+dynamic.swift */,
-				F4EA838331A949329D3F125B /* LiveActivityView.swift */,
-				7DD86757CAA2451A957E488B /* LiveActivityWidget.swift */,
-				94B7232B8D624E1BA73EA0E4 /* LiveActivityWidgetBundle.swift */,
-				4512FF6D8376458BACDFEC55 /* View+applyIfPresent.swift */,
-				6EDC0678D8F2442EB838A884 /* View+applyWidgetURL.swift */,
-				B64D9BC60D7948208B872B8C /* ViewHelpers.swift */,
-				6739E8132D6B448CB12172C6 /* Info.plist */,
-				C5DDD97A89B44CF694C08987 /* Assets.xcassets */,
-				50CF5951A998411A9F79C7DB /* LiveActivity.entitlements */,
-			);
-			name = LiveActivity;
-			path = LiveActivity;
-			sourceTree = "<group>";
-		};
 		13B07FAE1A68108700A75B9A /* IronRoutine */ = {
 			isa = PBXGroup;
 			children = (
@@ -131,28 +113,37 @@
 				13B07FB51A68108700A75B9A /* Images.xcassets */,
 				13B07FB61A68108700A75B9A /* Info.plist */,
 				AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */,
-				51BBD46D697FCF60F999487F /* PrivacyInfo.xcprivacy */,
+				51BFFD163DFF43CBB3DE73CC /* rest_alarm.wav */,
+				6D8A8FDE47B484AEEE82B6B6 /* PrivacyInfo.xcprivacy */,
 			);
 			name = IronRoutine;
-			sourceTree = "<group>";
-		};
-		1851C1FD50D68F83D1463361 /* Pods */ = {
-			isa = PBXGroup;
-			children = (
-				E8F41094A0BD8FCF651DB8DB /* Pods-IronRoutine.debug.xcconfig */,
-				63BEB245C568110F0FA8BAEF /* Pods-IronRoutine.release.xcconfig */,
-			);
-			name = Pods;
-			path = Pods;
 			sourceTree = "<group>";
 		};
 		2D16E6871FA4F8E400B85C8A /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
 				ED297162215061F000B7C4FE /* JavaScriptCore.framework */,
-				C974460942F63D0F2D1F6B3D /* libPods-IronRoutine.a */,
+				2E3426051465A3A27A125DA2 /* libPods-IronRoutine.a */,
 			);
 			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		696B4570855C658C983A3617 /* Pods */ = {
+			isa = PBXGroup;
+			children = (
+				182C96CA5834FCD39817A8FF /* Pods-IronRoutine.debug.xcconfig */,
+				9024E6CEF75D19A248A8982E /* Pods-IronRoutine.release.xcconfig */,
+			);
+			name = Pods;
+			path = Pods;
+			sourceTree = "<group>";
+		};
+		6B8F87571C3F4B150A03A502 /* IronRoutine */ = {
+			isa = PBXGroup;
+			children = (
+				38E365B28FF0ABB2DE87F0A8 /* ExpoModulesProvider.swift */,
+			);
+			name = IronRoutine;
 			sourceTree = "<group>";
 		};
 		832341AE1AAA6A7D00B99B32 /* Libraries */ = {
@@ -169,9 +160,9 @@
 				832341AE1AAA6A7D00B99B32 /* Libraries */,
 				83CBBA001A601CBA00E9B192 /* Products */,
 				2D16E6871FA4F8E400B85C8A /* Frameworks */,
-				065CC4EC75484982B22FDEF1 /* LiveActivity */,
-				1851C1FD50D68F83D1463361 /* Pods */,
-				E780E0CFF090E5C84D769E8E /* ExpoModulesProviders */,
+				AA1ACEBBC3464640A873902E /* LiveActivity */,
+				696B4570855C658C983A3617 /* Pods */,
+				9793DD4669BCA5526A203162 /* ExpoModulesProviders */,
 			);
 			indentWidth = 2;
 			sourceTree = "<group>";
@@ -182,9 +173,37 @@
 			isa = PBXGroup;
 			children = (
 				13B07F961A680F5B00A75B9A /* IronRoutine.app */,
-				7435502304B4464EAB469105 /* LiveActivity.appex */,
+				918AA30909654822A279E26C /* LiveActivity.appex */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		9793DD4669BCA5526A203162 /* ExpoModulesProviders */ = {
+			isa = PBXGroup;
+			children = (
+				6B8F87571C3F4B150A03A502 /* IronRoutine */,
+			);
+			name = ExpoModulesProviders;
+			sourceTree = "<group>";
+		};
+		AA1ACEBBC3464640A873902E /* LiveActivity */ = {
+			isa = PBXGroup;
+			children = (
+				7834B54E35A24E58A3C069CA /* Color+hex.swift */,
+				2AE45258BC4E41D0B111B050 /* Date+toTimerInterval.swift */,
+				C2FA2E1ABB124C498729DBAF /* Image+dynamic.swift */,
+				C133D6758C884E60968212D4 /* LiveActivityView.swift */,
+				0F8FD36AC9414654B66034E7 /* LiveActivityWidget.swift */,
+				A9E2A300E3D145C582615F4C /* LiveActivityWidgetBundle.swift */,
+				E27AAB484DE94CE4B519F833 /* View+applyIfPresent.swift */,
+				030C0F299E9847FFB227EE21 /* View+applyWidgetURL.swift */,
+				8697CAB5DC9D49489A8ED959 /* ViewHelpers.swift */,
+				F5A52269962144E4A545987E /* Info.plist */,
+				B9741148645E4BC78729EBA5 /* Assets.xcassets */,
+				1C1DB917DA4941B7A144C3F6 /* LiveActivity.entitlements */,
+			);
+			name = LiveActivity;
+			path = LiveActivity;
 			sourceTree = "<group>";
 		};
 		BB2F792B24A3F905000567C9 /* Supporting */ = {
@@ -196,32 +215,40 @@
 			path = IronRoutine/Supporting;
 			sourceTree = "<group>";
 		};
-		E57EE281DB5CDAC52E631CB0 /* IronRoutine */ = {
-			isa = PBXGroup;
-			children = (
-				2066D9F30DCAE0FF0DEC7428 /* ExpoModulesProvider.swift */,
-			);
-			name = IronRoutine;
-			sourceTree = "<group>";
-		};
-		E780E0CFF090E5C84D769E8E /* ExpoModulesProviders */ = {
-			isa = PBXGroup;
-			children = (
-				E57EE281DB5CDAC52E631CB0 /* IronRoutine */,
-			);
-			name = ExpoModulesProviders;
-			sourceTree = "<group>";
-		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		0AA604DFCFED4BD0BA442225 /* LiveActivity */ = {
+		13B07F861A680F5B00A75B9A /* IronRoutine */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 35B63C8C62CB4B79B8E43291 /* Build configuration list for PBXNativeTarget "LiveActivity" */;
+			buildConfigurationList = 13B07F931A680F5B00A75B9A /* Build configuration list for PBXNativeTarget "IronRoutine" */;
 			buildPhases = (
-				90B9045F1817496AB751632F /* Sources */,
-				423DE451746447E0A307EE7D /* Frameworks */,
-				6980B820E11544EFB7E18A76 /* Resources */,
+				08A4A3CD28434E44B6B9DE2E /* [CP] Check Pods Manifest.lock */,
+				F983EDA75D22FC8BB1EE7E70 /* [Expo] Configure project */,
+				13B07F871A680F5B00A75B9A /* Sources */,
+				13B07F8C1A680F5B00A75B9A /* Frameworks */,
+				13B07F8E1A680F5B00A75B9A /* Resources */,
+				00DD1BFF1BD5951E006B06BC /* Bundle React Native code and images */,
+				800E24972A6A228C8D4807E9 /* [CP] Copy Pods Resources */,
+				E28691D223D5419DA6C65363 /* Embed Foundation Extensions */,
+				B8403906FDFE852EF8042D67 /* [CP] Embed Pods Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				D17B5FBCE5A0433C94CA2D63 /* PBXTargetDependency */,
+			);
+			name = IronRoutine;
+			productName = IronRoutine;
+			productReference = 13B07F961A680F5B00A75B9A /* IronRoutine.app */;
+			productType = "com.apple.product-type.application";
+		};
+		8D0E591C3C0048D9A1A44C88 /* LiveActivity */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A4C0AACA152642B190E2D215 /* Build configuration list for PBXNativeTarget "LiveActivity" */;
+			buildPhases = (
+				470FD43A03DC4D948D01206E /* Sources */,
+				7D9508433B9347F9AB27CFD5 /* Frameworks */,
+				EDECB8C2E7D546699AF9B88B /* Resources */,
 			);
 			buildRules = (
 			);
@@ -229,32 +256,8 @@
 			);
 			name = LiveActivity;
 			productName = LiveActivity;
-			productReference = 7435502304B4464EAB469105 /* LiveActivity.appex */;
+			productReference = 918AA30909654822A279E26C /* LiveActivity.appex */;
 			productType = "com.apple.product-type.app-extension";
-		};
-		13B07F861A680F5B00A75B9A /* IronRoutine */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = 13B07F931A680F5B00A75B9A /* Build configuration list for PBXNativeTarget "IronRoutine" */;
-			buildPhases = (
-				08A4A3CD28434E44B6B9DE2E /* [CP] Check Pods Manifest.lock */,
-				E86AB3BE041F65C2EA896DC8 /* [Expo] Configure project */,
-				13B07F871A680F5B00A75B9A /* Sources */,
-				13B07F8C1A680F5B00A75B9A /* Frameworks */,
-				13B07F8E1A680F5B00A75B9A /* Resources */,
-				00DD1BFF1BD5951E006B06BC /* Bundle React Native code and images */,
-				800E24972A6A228C8D4807E9 /* [CP] Copy Pods Resources */,
-				DB8473AD2AF1457B8EB11F10 /* Embed Foundation Extensions */,
-				22ED24AEEDD680375E347BBE /* [CP] Embed Pods Frameworks */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-				F53E3F04D01743FD9D8F66F7 /* PBXTargetDependency */,
-			);
-			name = IronRoutine;
-			productName = IronRoutine;
-			productReference = 13B07F961A680F5B00A75B9A /* IronRoutine.app */;
-			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
 
@@ -264,15 +267,11 @@
 			attributes = {
 				LastUpgradeCheck = 1130;
 				TargetAttributes = {
-					0AA604DFCFED4BD0BA442225 = {
-						DevelopmentTeam = 3X24W8AX3N;
-						LastSwiftMigration = 1250;
-						ProvisioningStyle = Automatic;
-					};
 					13B07F861A680F5B00A75B9A = {
-						DevelopmentTeam = 3X24W8AX3N;
 						LastSwiftMigration = 1250;
-						ProvisioningStyle = Automatic;
+					};
+					8D0E591C3C0048D9A1A44C88 = {
+						LastSwiftMigration = 1250;
 					};
 				};
 			};
@@ -290,7 +289,7 @@
 			projectRoot = "";
 			targets = (
 				13B07F861A680F5B00A75B9A /* IronRoutine */,
-				0AA604DFCFED4BD0BA442225 /* LiveActivity */,
+				8D0E591C3C0048D9A1A44C88 /* LiveActivity */,
 			);
 		};
 /* End PBXProject section */
@@ -303,15 +302,16 @@
 				BB2F792D24A3F905000567C9 /* Expo.plist in Resources */,
 				13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */,
 				3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */,
-				5E0FFA3D903C8C29B1B8E455 /* PrivacyInfo.xcprivacy in Resources */,
+				2485911AF0D941B989CA60A5 /* rest_alarm.wav in Resources */,
+				8D7BF7D8286AFC9598A69541 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		6980B820E11544EFB7E18A76 /* Resources */ = {
+		EDECB8C2E7D546699AF9B88B /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				E902CA2E9C5B46B1918108E0 /* Assets.xcassets in Resources */,
+				C9CDCD9B33D145349C3347DF /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -357,38 +357,6 @@
 			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
 			showEnvVarsInLog = 0;
 		};
-		22ED24AEEDD680375E347BBE /* [CP] Embed Pods Frameworks */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputPaths = (
-				"${PODS_ROOT}/Target Support Files/Pods-IronRoutine/Pods-IronRoutine-frameworks.sh",
-				"${PODS_XCFRAMEWORKS_BUILD_DIR}/ExpoFileSystem/ExpoFileSystem.framework/ExpoFileSystem",
-				"${PODS_XCFRAMEWORKS_BUILD_DIR}/ExpoFont/ExpoFont.framework/ExpoFont",
-				"${PODS_XCFRAMEWORKS_BUILD_DIR}/ExpoModulesCore/ExpoModulesCore.framework/ExpoModulesCore",
-				"${PODS_XCFRAMEWORKS_BUILD_DIR}/ExpoModulesJSI/ExpoModulesJSI.framework/ExpoModulesJSI",
-				"${PODS_XCFRAMEWORKS_BUILD_DIR}/ExpoModulesWorklets/ExpoModulesWorklets.framework/ExpoModulesWorklets",
-				"${PODS_XCFRAMEWORKS_BUILD_DIR}/React-Core-prebuilt/React.framework/React",
-				"${PODS_XCFRAMEWORKS_BUILD_DIR}/ReactNativeDependencies/ReactNativeDependencies.framework/ReactNativeDependencies",
-				"${PODS_XCFRAMEWORKS_BUILD_DIR}/hermes-engine/Pre-built/hermesvm.framework/hermesvm",
-			);
-			name = "[CP] Embed Pods Frameworks";
-			outputPaths = (
-				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/ExpoFileSystem.framework",
-				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/ExpoFont.framework",
-				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/ExpoModulesCore.framework",
-				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/ExpoModulesJSI.framework",
-				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/ExpoModulesWorklets.framework",
-				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/React.framework",
-				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/ReactNativeDependencies.framework",
-				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/hermesvm.framework",
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-IronRoutine/Pods-IronRoutine-frameworks.sh\"\n";
-			showEnvVarsInLog = 0;
-		};
 		800E24972A6A228C8D4807E9 /* [CP] Copy Pods Resources */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
@@ -423,7 +391,39 @@
 			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-IronRoutine/Pods-IronRoutine-resources.sh\"\n";
 			showEnvVarsInLog = 0;
 		};
-		E86AB3BE041F65C2EA896DC8 /* [Expo] Configure project */ = {
+		B8403906FDFE852EF8042D67 /* [CP] Embed Pods Frameworks */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+				"${PODS_ROOT}/Target Support Files/Pods-IronRoutine/Pods-IronRoutine-frameworks.sh",
+				"${PODS_XCFRAMEWORKS_BUILD_DIR}/ExpoFileSystem/ExpoFileSystem.framework/ExpoFileSystem",
+				"${PODS_XCFRAMEWORKS_BUILD_DIR}/ExpoFont/ExpoFont.framework/ExpoFont",
+				"${PODS_XCFRAMEWORKS_BUILD_DIR}/ExpoModulesCore/ExpoModulesCore.framework/ExpoModulesCore",
+				"${PODS_XCFRAMEWORKS_BUILD_DIR}/ExpoModulesJSI/ExpoModulesJSI.framework/ExpoModulesJSI",
+				"${PODS_XCFRAMEWORKS_BUILD_DIR}/ExpoModulesWorklets/ExpoModulesWorklets.framework/ExpoModulesWorklets",
+				"${PODS_XCFRAMEWORKS_BUILD_DIR}/React-Core-prebuilt/React.framework/React",
+				"${PODS_XCFRAMEWORKS_BUILD_DIR}/ReactNativeDependencies/ReactNativeDependencies.framework/ReactNativeDependencies",
+				"${PODS_XCFRAMEWORKS_BUILD_DIR}/hermes-engine/Pre-built/hermesvm.framework/hermesvm",
+			);
+			name = "[CP] Embed Pods Frameworks";
+			outputPaths = (
+				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/ExpoFileSystem.framework",
+				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/ExpoFont.framework",
+				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/ExpoModulesCore.framework",
+				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/ExpoModulesJSI.framework",
+				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/ExpoModulesWorklets.framework",
+				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/React.framework",
+				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/ReactNativeDependencies.framework",
+				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/hermesvm.framework",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-IronRoutine/Pods-IronRoutine-frameworks.sh\"\n";
+			showEnvVarsInLog = 0;
+		};
+		F983EDA75D22FC8BB1EE7E70 /* [Expo] Configure project */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
 			buildActionMask = 2147483647;
@@ -456,47 +456,47 @@
 			files = (
 				F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */,
 				F11748442D0307B40044C1D9 /* SceneDelegate.swift in Sources */,
-				36967445B5EC4CD581A349CF /* ExpoModulesProvider.swift in Sources */,
+				0BCDE956A5CFA310BE865E28 /* ExpoModulesProvider.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		90B9045F1817496AB751632F /* Sources */ = {
+		470FD43A03DC4D948D01206E /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				1D8DB686E6804399B981540B /* Color+hex.swift in Sources */,
-				308E459A22AA43C08A28DAB5 /* Date+toTimerInterval.swift in Sources */,
-				084E4A57A98943F98D0EDE54 /* Image+dynamic.swift in Sources */,
-				60F0621D4D6D4DA281102B35 /* LiveActivityView.swift in Sources */,
-				73BEEBD27D774281A3A97FA7 /* LiveActivityWidget.swift in Sources */,
-				87012A706905448B85C006AB /* LiveActivityWidgetBundle.swift in Sources */,
-				E42493EC7A894293BB58268F /* View+applyIfPresent.swift in Sources */,
-				2321B4C3B2B34D29A9E20111 /* View+applyWidgetURL.swift in Sources */,
-				294472415B2340A2842E96A6 /* ViewHelpers.swift in Sources */,
+				DCC8E6B6A891498391C1C74E /* Color+hex.swift in Sources */,
+				A7E38B8363904D99A22B20EF /* Date+toTimerInterval.swift in Sources */,
+				A82C7E6DC53D4A448960C8D5 /* Image+dynamic.swift in Sources */,
+				B5AD45D9E7E04996873D5C96 /* LiveActivityView.swift in Sources */,
+				81A51C262C9540A4B5D41191 /* LiveActivityWidget.swift in Sources */,
+				21114C3E56AA444884D63BDE /* LiveActivityWidgetBundle.swift in Sources */,
+				83AFD13564534F719F59B612 /* View+applyIfPresent.swift in Sources */,
+				12C44F08C573403287CAB17B /* View+applyWidgetURL.swift in Sources */,
+				BF530331D9D64DFE8221AB40 /* ViewHelpers.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
-		F53E3F04D01743FD9D8F66F7 /* PBXTargetDependency */ = {
+		D17B5FBCE5A0433C94CA2D63 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = 0AA604DFCFED4BD0BA442225 /* LiveActivity */;
-			targetProxy = 29BA75A1DB2A4A60B9756217 /* PBXContainerItemProxy */;
+			target = 8D0E591C3C0048D9A1A44C88 /* LiveActivity */;
+			targetProxy = DBFC2595DB7749DA9E98BA3C /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		13B07F941A680F5B00A75B9A /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = E8F41094A0BD8FCF651DB8DB /* Pods-IronRoutine.debug.xcconfig */;
+			baseConfigurationReference = 182C96CA5834FCD39817A8FF /* Pods-IronRoutine.debug.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = IronRoutine/IronRoutine.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 3X24W8AX3N;
+				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_BITCODE = NO;
 				GCC_PREPROCESSOR_DEFINITIONS = (
 					"$(inherited)",
@@ -528,14 +528,14 @@
 		};
 		13B07F951A680F5B00A75B9A /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 63BEB245C568110F0FA8BAEF /* Pods-IronRoutine.release.xcconfig */;
+			baseConfigurationReference = 9024E6CEF75D19A248A8982E /* Pods-IronRoutine.release.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = IronRoutine/IronRoutine.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 3X24W8AX3N;
+				CURRENT_PROJECT_VERSION = 1;
 				INFOPLIST_FILE = IronRoutine/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.4;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -558,29 +558,6 @@
 				VERSIONING_SYSTEM = "apple-generic";
 			};
 			name = Release;
-		};
-		6268E7C1653440A199D799A2 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				APPLICATION_EXTENSION_API_ONLY = YES;
-				CODE_SIGN_ENTITLEMENTS = LiveActivity/LiveActivity.entitlements;
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 3X24W8AX3N;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = LiveActivity/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = LiveActivity;
-				INFOPLIST_KEY_NSHumanReadableCopyright = "";
-				IPHONEOS_DEPLOYMENT_TARGET = 16.2;
-				MARKETING_VERSION = "1.0.0-beta.1";
-				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_DEBUG";
-				PRODUCT_BUNDLE_IDENTIFIER = com.matique.ironroutine.LiveActivity;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-			};
-			name = Debug;
 		};
 		83CBBA201A601CBA00E9B192 /* Debug */ = {
 			isa = XCBuildConfiguration;
@@ -716,20 +693,20 @@
 			};
 			name = Release;
 		};
-		AD86D0A69F1A4F88A84A2912 /* Release */ = {
+		ACC204CA9EC7436D99A2923D /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CODE_SIGN_ENTITLEMENTS = LiveActivity/LiveActivity.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 3X24W8AX3N;
+				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = LiveActivity/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = LiveActivity;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				IPHONEOS_DEPLOYMENT_TARGET = 16.2;
-				MARKETING_VERSION = "1.0.0-beta.1";
+				MARKETING_VERSION = 1.0.1;
 				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_RELEASE";
 				PRODUCT_BUNDLE_IDENTIFIER = com.matique.ironroutine.LiveActivity;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -738,6 +715,29 @@
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Release;
+		};
+		DBC438C406904642B594455D /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = LiveActivity/LiveActivity.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 3X24W8AX3N;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = LiveActivity/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = LiveActivity;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 16.2;
+				MARKETING_VERSION = 1.0.1;
+				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_DEBUG";
+				PRODUCT_BUNDLE_IDENTIFIER = com.matique.ironroutine.LiveActivity;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
 		};
 /* End XCBuildConfiguration section */
 
@@ -751,20 +751,20 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		35B63C8C62CB4B79B8E43291 /* Build configuration list for PBXNativeTarget "LiveActivity" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				6268E7C1653440A199D799A2 /* Debug */,
-				AD86D0A69F1A4F88A84A2912 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
 		83CBB9FA1A601CBA00E9B192 /* Build configuration list for PBXProject "IronRoutine" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				83CBBA201A601CBA00E9B192 /* Debug */,
 				83CBBA211A601CBA00E9B192 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A4C0AACA152642B190E2D215 /* Build configuration list for PBXNativeTarget "LiveActivity" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				DBC438C406904642B594455D /* Debug */,
+				ACC204CA9EC7436D99A2923D /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

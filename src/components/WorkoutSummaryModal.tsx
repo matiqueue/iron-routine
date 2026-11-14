@@ -3,6 +3,7 @@ import { View, Text, Modal, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAppTheme } from '../context/ThemeContext';
 import { NewPRHighlight } from '../types/workout';
+import { AnimatedIcon } from './AnimatedIcon';
 
 interface WorkoutSummaryModalProps {
   visible: boolean;
@@ -34,7 +35,7 @@ export const WorkoutSummaryModal: React.FC<WorkoutSummaryModalProps> = ({
       <View style={styles.overlay}>
         <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
           <View style={[styles.iconCircle, { backgroundColor: theme.bgSecondary }]}>
-            <Ionicons name="trophy-outline" size={32} color={theme.text} />
+            <AnimatedIcon name="trophy" preset="trophy" size={32} color="#F59E0B" active={visible} />
           </View>
 
           <Text style={[styles.title, { color: theme.text }]}>Trening ukończony</Text>

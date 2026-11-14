@@ -2,7 +2,9 @@ import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AppSettings } from '../types/workout';
+import { buildActiveSupplementsSummary, formatSupplementDose } from '../data/supplements';
 import { getAppSettings } from './settings';
+import { getActiveProfile } from './storage';
 
 // Storage keys
 const WEIGHT_NOTIF_STORAGE_KEY = '@iron_routine_daily_weight_notif_enabled';
@@ -11,8 +13,8 @@ const CREATINE_TAKEN_KEY_PREFIX = '@iron_routine_creatine_taken_';
 
 // Notification categories
 export const CREATINE_CATEGORIES = {
-  MORNING: 'creatine-morning',
-  EVENING: 'creatine-evening',
+  MORNING: 'supplements-morning',
+  EVENING: 'supplements-evening',
 } as const;
 
 // Action Identifiers
@@ -42,33 +44,31 @@ Notifications.setNotificationHandler({
 
 /**
  * Configure interactive iOS notification categories and buttons.
- * Allows user to answer directly from lockscreen / banner.
+ * Allows confirming supplement intake directly from Lock Screen without opening app.
  */
 export async function setupCreatineNotificationCategories(): Promise<void> {
   try {
-    // 09:00 Morning Category: "Wziąłem (5g) ✅" or "Nie jeszcze ⏳"
     await Notifications.setNotificationCategoryAsync(CREATINE_CATEGORIES.MORNING, [
       {
         identifier: CREATINE_ACTIONS.TAKEN,
-        buttonTitle: 'Wziąłem (5g) ✅',
+        buttonTitle: 'Wziąłem porcję ✅',
         options: {
           opensAppToForeground: false,
         },
       },
       {
         identifier: CREATINE_ACTIONS.NOT_YET,
-        buttonTitle: 'Nie jeszcze ⏳',
+        buttonTitle: 'Przypomnij wieczorem ⏳',
         options: {
           opensAppToForeground: false,
         },
       },
     ]);
 
-    // 22:00 Evening Category: "Wziąłem (5g) ✅" or "Dziś pomijam ❌"
     await Notifications.setNotificationCategoryAsync(CREATINE_CATEGORIES.EVENING, [
       {
         identifier: CREATINE_ACTIONS.TAKEN,
-        buttonTitle: 'Wziąłem (5g) ✅',
+        buttonTitle: 'Wziąłem porcję ✅',
         options: {
           opensAppToForeground: false,
         },
@@ -87,7 +87,46 @@ export async function setupCreatineNotificationCategories(): Promise<void> {
   }
 }
 
-// ==================== CREATINE STATUS STORAGE ====================
+async function getDynamicSupplementCopy(settings?: AppSettings): Promise<{
+  title: string;
+  body: string;
+  eveningBody: string;
+}> {
+  const [resolvedSettings, profile] = await Promise.all([
+    settings ? Promise.resolve(settings) : getAppSettings(),
+    getActiveProfile().catch(() => null),
+  ]);
+
+  const activeSupps = (resolvedSettings.supplements || []).filter((s) => s.enabled);
+  const weightKg = profile?.weight;
+
+  if (activeSupps.length === 0) {
+    return {
+      title: 'Suplementacja 💧',
+      body: 'Pamiętaj o dzisiejszym nawodnieniu i witaminach.',
+      eveningBody: 'Sprawdź dzisiejszą listę suplementów przed snem.',
+    };
+  }
+
+  if (activeSupps.length === 1) {
+    const primary = activeSupps[0];
+    const doseLabel = formatSupplementDose(primary, weightKg);
+    return {
+      title: `${primary.name} 💧`,
+      body: `Zalecana dawka: ${doseLabel}. Czy wziąłeś już dziś?`,
+      eveningBody: `Pamiętaj przed snem: ${primary.name} (${doseLabel}). Czy wzięte?`,
+    };
+  }
+
+  const summary = buildActiveSupplementsSummary(activeSupps, weightKg);
+  return {
+    title: `Dzisiejsze suplementy (${activeSupps.length}) 💧`,
+    body: `${summary} — czy dzisiejszy zestaw już wzięty?`,
+    eveningBody: `Przed snem sprawdź zestaw: ${summary}.`,
+  };
+}
+
+// ==================== SUPPLEMENT STATUS STORAGE ====================
 
 export async function hasTakenCreatineToday(): Promise<boolean> {
   try {
@@ -104,16 +143,15 @@ export async function setCreatineTakenToday(taken: boolean): Promise<void> {
     const todayStr = new Date().toISOString().slice(0, 10);
     await AsyncStorage.setItem(`${CREATINE_TAKEN_KEY_PREFIX}${todayStr}`, taken ? 'true' : 'false');
   } catch (e) {
-    console.warn('Error saving creatine status:', e);
+    console.warn('Error saving supplement status:', e);
   }
 }
 
-// ==================== CREATINE NOTIFICATION SCHEDULING ====================
+// ==================== SUPPLEMENT NOTIFICATION SCHEDULING ====================
 
 export async function isCreatineReminderEnabled(): Promise<boolean> {
   try {
     const val = await AsyncStorage.getItem(CREATINE_NOTIF_STORAGE_KEY);
-    // Enabled by default unless explicitly turned off
     return val === null ? true : val === 'true';
   } catch {
     return true;
@@ -125,12 +163,13 @@ export async function scheduleEveningCreatineReminder(hour?: number): Promise<vo
     await cancelEveningCreatineReminder();
     const settings = await getAppSettings();
     const targetHour = hour ?? settings.creatineEveningHour ?? 22;
+    const copy = await getDynamicSupplementCopy(settings);
 
     await Notifications.scheduleNotificationAsync({
       identifier: NOTIF_IDS.CREATINE_EVENING,
       content: {
-        title: 'Kreatyna przed snem 🌙',
-        body: 'Pamiętaj o dzisiejszej dawce kreatyny (5g)! Czy wziąłeś?',
+        title: 'Suplementacja przed snem 🌙',
+        body: copy.eveningBody,
         categoryIdentifier: CREATINE_CATEGORIES.EVENING,
         sound: true,
       },
@@ -141,7 +180,7 @@ export async function scheduleEveningCreatineReminder(hour?: number): Promise<vo
       },
     });
   } catch (e) {
-    console.warn('Error scheduling evening creatine reminder', e);
+    console.warn('Error scheduling evening supplement reminder', e);
   }
 }
 
@@ -167,16 +206,15 @@ export async function scheduleCreatineReminders(
     const settings = await getAppSettings();
     const targetMorning = morningHour ?? settings.creatineMorningHour ?? 9;
     const targetEvening = eveningHour ?? settings.creatineEveningHour ?? 22;
+    const copy = await getDynamicSupplementCopy(settings);
 
-    // Cancel old ones first
     await cancelAllCreatineReminders();
 
-    // 1. Schedule Morning reminder daily
     await Notifications.scheduleNotificationAsync({
       identifier: NOTIF_IDS.CREATINE_MORNING,
       content: {
-        title: 'Kreatyna (5g) 💧',
-        body: 'Czy wziąłeś już dzisiaj swoją porcję kreatyny?',
+        title: copy.title,
+        body: copy.body,
         categoryIdentifier: CREATINE_CATEGORIES.MORNING,
         sound: true,
       },
@@ -187,13 +225,12 @@ export async function scheduleCreatineReminders(
       },
     });
 
-    // 2. Schedule Evening reminder if not already taken today
     const takenToday = await hasTakenCreatineToday();
     if (!takenToday) {
       await scheduleEveningCreatineReminder(targetEvening);
     }
   } catch (e) {
-    console.warn('Error scheduling creatine reminders', e);
+    console.warn('Error scheduling supplement reminders', e);
   }
 }
 
@@ -214,49 +251,38 @@ export async function setCreatineReminderEnabled(enabled: boolean): Promise<bool
       return false;
     }
   } catch (e) {
-    console.warn('Error setting creatine reminder:', e);
+    console.warn('Error setting supplement reminder:', e);
     return false;
   }
 }
 
-/**
- * Handle user interacting with notification buttons on lockscreen / banner.
- */
 export async function handleNotificationResponse(
   response: Notifications.NotificationResponse
 ): Promise<void> {
   try {
     const actionId = response.actionIdentifier;
-    const todayStr = new Date().toISOString().slice(0, 10);
 
     if (actionId === CREATINE_ACTIONS.TAKEN) {
       await setCreatineTakenToday(true);
-      // User confirmed taking creatine today -> cancel the 22:00 evening reminder!
       await cancelEveningCreatineReminder();
-      console.log(`[Notification] Creatine marked TAKEN for ${todayStr}. Evening 22:00 reminder cancelled.`);
     } else if (actionId === CREATINE_ACTIONS.NOT_YET) {
       await setCreatineTakenToday(false);
-      // User answered NOT YET -> ensure evening reminder at 22:00 is active!
       await scheduleEveningCreatineReminder();
-      console.log(`[Notification] Creatine NOT YET for ${todayStr}. Evening 22:00 reminder scheduled.`);
     } else if (actionId === CREATINE_ACTIONS.SKIP) {
       await setCreatineTakenToday(false);
-      console.log(`[Notification] Creatine SKIPPED for ${todayStr}.`);
     }
   } catch (e) {
     console.warn('Error handling notification response:', e);
   }
 }
 
-/**
- * Instant test trigger (3 seconds) to verify custom lockscreen notification buttons on physical iPhone.
- */
 export async function sendTestCreatineNotification(): Promise<void> {
   await setupCreatineNotificationCategories();
+  const copy = await getDynamicSupplementCopy();
   await Notifications.scheduleNotificationAsync({
     content: {
-      title: 'Kreatyna (5g) 💧',
-      body: 'Czy wziąłeś już dzisiaj swoją porcję kreatyny? (Test)',
+      title: copy.title,
+      body: `${copy.body} (Test)`,
       categoryIdentifier: CREATINE_CATEGORIES.MORNING,
       sound: true,
     },
@@ -293,7 +319,6 @@ export async function setDailyWeightReminder(enabled: boolean, hour?: number): P
 
       await cancelDailyWeightReminder();
 
-      // Schedule daily recurring reminder
       await Notifications.scheduleNotificationAsync({
         identifier: NOTIF_IDS.WEIGHT,
         content: {
@@ -336,30 +361,47 @@ export async function syncRemindersWithSettings(settings: AppSettings): Promise<
   }
 }
 
-// ==================== WORKOUT REST TIMER NOTIFICATION ====================
+// ==================== WORKOUT REST TIMER ALARM-STYLE NOTIFICATIONS ====================
 
-const REST_TIMER_CHANNEL_ID = 'rest_timer_urgent';
-const REST_TIMER_NOTIF_ID = 'iron_routine_rest_timer_done';
+const REST_TIMER_CHANNEL_ID = 'rest_timer_alarm_v2';
+const REST_TIMER_NOTIF_IDS = [
+  'iron_routine_rest_alarm_1',
+  'iron_routine_rest_alarm_2',
+  'iron_routine_rest_alarm_3',
+];
 
 async function ensureRestTimerChannel(): Promise<void> {
   if (Platform.OS !== 'android') return;
   try {
     await Notifications.setNotificationChannelAsync(REST_TIMER_CHANNEL_ID, {
-      name: 'Koniec przerwy w treningu',
+      name: 'Alarm końca przerwy',
       importance: Notifications.AndroidImportance.MAX,
-      vibrationPattern: [0, 350, 150, 350, 150, 450],
+      vibrationPattern: [0, 550, 150, 550, 150, 650],
       enableVibrate: true,
-      sound: 'default',
+      sound: 'rest_alarm.wav',
+      bypassDnd: true,
     });
   } catch {}
 }
 
 export async function cancelRestFinishedNotification(): Promise<void> {
-  try {
-    await Notifications.cancelScheduledNotificationAsync(REST_TIMER_NOTIF_ID);
-  } catch {}
+  await Promise.all(
+    REST_TIMER_NOTIF_IDS.map(async (id) => {
+      try {
+        await Notifications.cancelScheduledNotificationAsync(id);
+      } catch {}
+      try {
+        await Notifications.dismissNotificationAsync(id);
+      } catch {}
+    })
+  );
 }
 
+/**
+ * Schedules alarm-like multi-wave background alerts (with custom bundled alarm chime
+ * + Time Sensitive interruption + Android max vibration pattern) so the user hears
+ * and feels the end of rest even when screen is locked or app is backgrounded/closed.
+ */
 export async function scheduleRestFinishedNotification(
   seconds: number,
   exerciseName: string,
@@ -377,22 +419,30 @@ export async function scheduleRestFinishedNotification(
 
     await ensureRestTimerChannel();
 
-    await Notifications.scheduleNotificationAsync({
-      identifier: REST_TIMER_NOTIF_ID,
-      content: {
-        title: 'KONIEC PRZERWY — WRACAJ DO SERII!',
-        body: nextInfo ? `${exerciseName} • ${nextInfo}` : exerciseName,
-        sound: true,
-        interruptionLevel: settings.restTimeSensitive ? 'timeSensitive' : 'active',
-      },
-      trigger: {
-        type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
-        seconds: Math.max(2, Math.round(seconds)),
-        repeats: false,
-        ...(Platform.OS === 'android' ? { channelId: REST_TIMER_CHANNEL_ID } : {}),
-      },
-    });
+    const baseSeconds = Math.max(2, Math.round(seconds));
+    const offsets = settings.restEndMultiBuzz ? [0, 2, 4] : [0];
+    const bodyText = nextInfo ? `${exerciseName} • ${nextInfo}` : exerciseName;
+
+    await Promise.all(
+      offsets.map((offset, idx) =>
+        Notifications.scheduleNotificationAsync({
+          identifier: REST_TIMER_NOTIF_IDS[idx],
+          content: {
+            title: idx === 0 ? '⏰ KONIEC PRZERWY — WRACAJ DO SERII!' : '⏰ CZAS NA SERIĘ!',
+            body: bodyText,
+            sound: 'rest_alarm.wav',
+            interruptionLevel: settings.restTimeSensitive ? 'timeSensitive' : 'active',
+          },
+          trigger: {
+            type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+            seconds: baseSeconds + offset,
+            repeats: false,
+            ...(Platform.OS === 'android' ? { channelId: REST_TIMER_CHANNEL_ID } : {}),
+          },
+        })
+      )
+    );
   } catch (e) {
-    console.warn('Error scheduling rest notification:', e);
+    console.warn('Error scheduling rest alarm notifications:', e);
   }
 }

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Modal,
   View,
@@ -7,15 +7,12 @@ import {
   TouchableOpacity,
   Animated,
   PanResponder,
-  Dimensions,
-  Platform,
   TouchableWithoutFeedback,
+  useWindowDimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import * as Haptics from 'expo-haptics';
 import { useAppTheme } from '../context/ThemeContext';
-
-const SCREEN_HEIGHT = Dimensions.get('window').height;
+import { triggerImpactHaptic, triggerSelectionHaptic } from '../services/haptics';
 
 interface InteractiveBottomSheetProps {
   visible: boolean;
@@ -23,7 +20,7 @@ interface InteractiveBottomSheetProps {
   title?: string;
   subtitle?: string;
   headerRight?: React.ReactNode;
-  initialHeightPercent?: number; // 0.65 to 0.95 (default: 0.82)
+  initialHeightPercent?: number; // 0.5 to 0.92 (default: 0.85)
   children: React.ReactNode;
   showHandle?: boolean;
   customHeader?: React.ReactNode;
@@ -41,28 +38,37 @@ export const InteractiveBottomSheet: React.FC<InteractiveBottomSheetProps> = ({
   customHeader,
 }) => {
   const { theme, isDark } = useAppTheme();
+  const { height: windowHeight } = useWindowDimensions();
 
-  // Mode: 0 = collapsed (default height percent), 1 = expanded (full 94% height)
   const [isExpanded, setIsExpanded] = useState(false);
   const isExpandedRef = useRef(isExpanded);
   isExpandedRef.current = isExpanded;
 
-  const collapsedHeight = SCREEN_HEIGHT * Math.min(0.92, Math.max(0.5, initialHeightPercent));
-  const expandedHeight = SCREEN_HEIGHT * 0.94;
-  const currentHeight = isExpanded ? expandedHeight : collapsedHeight;
+  const collapsedHeight = Math.round(
+    windowHeight * Math.min(0.92, Math.max(0.5, initialHeightPercent))
+  );
+  const expandedHeight = Math.round(windowHeight * 0.94);
 
-  // Animated values
-  const translateY = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
+  const windowHeightRef = useRef(windowHeight);
+  windowHeightRef.current = windowHeight;
+  const collapsedHeightRef = useRef(collapsedHeight);
+  collapsedHeightRef.current = collapsedHeight;
+  const expandedHeightRef = useRef(expandedHeight);
+  expandedHeightRef.current = expandedHeight;
+
+  // Native driver ONLY owns translateY & backdropOpacity; JS driver ONLY owns height on separate View.
+  const translateY = useRef(new Animated.Value(windowHeight)).current;
   const backdropOpacity = useRef(new Animated.Value(0)).current;
   const sheetHeightAnim = useRef(new Animated.Value(collapsedHeight)).current;
 
-  // Reset & open animation
   useEffect(() => {
     if (visible) {
       setIsExpanded(false);
       isExpandedRef.current = false;
+      sheetHeightAnim.stopAnimation();
       sheetHeightAnim.setValue(collapsedHeight);
-      translateY.setValue(SCREEN_HEIGHT);
+      translateY.setValue(windowHeight);
+      backdropOpacity.setValue(0);
 
       Animated.parallel([
         Animated.spring(translateY, {
@@ -78,17 +84,15 @@ export const InteractiveBottomSheet: React.FC<InteractiveBottomSheetProps> = ({
         }),
       ]).start();
     }
-  }, [visible, collapsedHeight, sheetHeightAnim, translateY, backdropOpacity]);
+  }, [visible]);
 
   const handleDismiss = () => {
-    try {
-      Haptics.selectionAsync();
-    } catch {}
+    triggerSelectionHaptic();
 
     Animated.parallel([
       Animated.timing(translateY, {
-        toValue: SCREEN_HEIGHT,
-        duration: 220,
+        toValue: windowHeightRef.current,
+        duration: 210,
         useNativeDriver: true,
       }),
       Animated.timing(backdropOpacity, {
@@ -102,65 +106,91 @@ export const InteractiveBottomSheet: React.FC<InteractiveBottomSheetProps> = ({
   };
 
   const toggleExpand = (expand: boolean) => {
-    try {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    } catch {}
+    triggerImpactHaptic('light');
     setIsExpanded(expand);
     isExpandedRef.current = expand;
+    sheetHeightAnim.stopAnimation();
     Animated.spring(sheetHeightAnim, {
-      toValue: expand ? expandedHeight : collapsedHeight,
-      friction: 8,
-      tension: 65,
+      toValue: expand ? expandedHeightRef.current : collapsedHeightRef.current,
+      friction: 9,
+      tension: 70,
       useNativeDriver: false,
     }).start();
   };
 
-  // Pan responder attached to entire sheet container for fluid swipe-down dismissal
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => false,
-      onStartShouldSetPanResponderCapture: () => false,
-      onMoveShouldSetPanResponder: (_, gestureState) => {
-        return gestureState.dy > 5 && Math.abs(gestureState.dy) > Math.abs(gestureState.dx) * 1.1;
-      },
-      onMoveShouldSetPanResponderCapture: (_, gestureState) => {
-        // Intercept downward drag from anywhere in the sheet
-        return gestureState.dy > 5 && Math.abs(gestureState.dy) > Math.abs(gestureState.dx) * 1.1;
-      },
-      onPanResponderGrant: () => {
-        translateY.stopAnimation();
-      },
-      onPanResponderMove: (_, gestureState) => {
-        // Dragging down: move sheet down
-        if (gestureState.dy > 0) {
-          translateY.setValue(gestureState.dy);
-          const ratio = Math.max(0, 1 - gestureState.dy / (SCREEN_HEIGHT * 0.45));
-          backdropOpacity.setValue(ratio);
-        } else if (gestureState.dy < 0 && !isExpandedRef.current) {
-          // Dragging up when not expanded: expand height smoothly
-          const target = Math.min(expandedHeight, collapsedHeight + Math.abs(gestureState.dy) * 1.2);
-          sheetHeightAnim.setValue(target);
-        }
-      },
-      onPanResponderRelease: (_, gestureState) => {
-        // If swiped down with enough distance or velocity -> DISMISS
-        if (gestureState.dy > 50 || gestureState.vy > 0.35) {
-          handleDismiss();
-        } else if (gestureState.dy < -40 || gestureState.vy < -0.4) {
-          // Swiped up -> EXPAND FULL
-          toggleExpand(true);
-          Animated.spring(translateY, {
-            toValue: 0,
-            friction: 7,
-            useNativeDriver: true,
-          }).start();
-        } else {
-          // Snap back to resting state
+  const dismissRef = useRef(handleDismiss);
+  dismissRef.current = handleDismiss;
+  const toggleExpandRef = useRef(toggleExpand);
+  toggleExpandRef.current = toggleExpand;
+
+  // PanResponder attached ONLY to grabArea so child ScrollViews & drag handles work freely
+  const panResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => false,
+        onMoveShouldSetPanResponder: (_, gestureState) => {
+          return (
+            Math.abs(gestureState.dy) > 6 &&
+            Math.abs(gestureState.dy) > Math.abs(gestureState.dx) * 1.2
+          );
+        },
+        onPanResponderGrant: () => {
+          translateY.stopAnimation();
+        },
+        onPanResponderMove: (_, gestureState) => {
+          if (gestureState.dy > 0) {
+            translateY.setValue(gestureState.dy);
+            const ratio = Math.max(0, 1 - gestureState.dy / (windowHeightRef.current * 0.45));
+            backdropOpacity.setValue(ratio);
+          } else if (gestureState.dy < 0 && !isExpandedRef.current) {
+            const target = Math.min(
+              expandedHeightRef.current,
+              collapsedHeightRef.current + Math.abs(gestureState.dy) * 1.15
+            );
+            sheetHeightAnim.setValue(target);
+          }
+        },
+        onPanResponderRelease: (_, gestureState) => {
+          if (gestureState.dy > 55 || gestureState.vy > 0.4) {
+            dismissRef.current();
+          } else if (gestureState.dy < -40 || gestureState.vy < -0.4) {
+            toggleExpandRef.current(true);
+            Animated.spring(translateY, {
+              toValue: 0,
+              friction: 8,
+              useNativeDriver: true,
+            }).start();
+          } else {
+            Animated.parallel([
+              Animated.spring(translateY, {
+                toValue: 0,
+                friction: 8,
+                tension: 65,
+                useNativeDriver: true,
+              }),
+              Animated.timing(backdropOpacity, {
+                toValue: 1,
+                duration: 150,
+                useNativeDriver: true,
+              }),
+              Animated.spring(sheetHeightAnim, {
+                toValue: isExpandedRef.current
+                  ? expandedHeightRef.current
+                  : collapsedHeightRef.current,
+                friction: 8,
+                tension: 65,
+                useNativeDriver: false,
+              }),
+            ]).start();
+          }
+        },
+        onPanResponderTerminationRequest: () => false,
+        onPanResponderTerminate: () => {
           Animated.parallel([
             Animated.spring(translateY, {
               toValue: 0,
-              friction: 7,
-              tension: 60,
+              friction: 8,
+              tension: 65,
               useNativeDriver: true,
             }),
             Animated.timing(backdropOpacity, {
@@ -168,33 +198,11 @@ export const InteractiveBottomSheet: React.FC<InteractiveBottomSheetProps> = ({
               duration: 150,
               useNativeDriver: true,
             }),
-            Animated.spring(sheetHeightAnim, {
-              toValue: isExpandedRef.current ? expandedHeight : collapsedHeight,
-              friction: 7,
-              tension: 60,
-              useNativeDriver: false,
-            }),
           ]).start();
-        }
-      },
-      onPanResponderTerminationRequest: () => false,
-      onPanResponderTerminate: () => {
-        Animated.parallel([
-          Animated.spring(translateY, {
-            toValue: 0,
-            friction: 7,
-            tension: 60,
-            useNativeDriver: true,
-          }),
-          Animated.timing(backdropOpacity, {
-            toValue: 1,
-            duration: 150,
-            useNativeDriver: true,
-          }),
-        ]).start();
-      },
-    })
-  ).current;
+        },
+      }),
+    [translateY, backdropOpacity, sheetHeightAnim]
+  );
 
   if (!visible) return null;
 
@@ -216,73 +224,83 @@ export const InteractiveBottomSheet: React.FC<InteractiveBottomSheetProps> = ({
           </TouchableWithoutFeedback>
         </Animated.View>
 
-        {/* Sliding Sheet with gesture panHandlers on entire surface */}
+        {/* Outer Native-Driven Sliding Wrapper */}
         <Animated.View
           style={[
-            styles.sheet,
+            styles.sheetOuter,
             {
-              backgroundColor: theme.card,
-              borderColor: theme.border,
-              height: sheetHeightAnim,
               transform: [{ translateY }],
             },
           ]}
-          {...panResponder.panHandlers}
         >
-          {/* Grab Area: Handle bar + Header */}
-          <View style={styles.grabArea}>
-            {showHandle && (
-              <View style={styles.handleWrapper}>
-                <View style={[styles.handleBar, { backgroundColor: theme.borderDark }]} />
-              </View>
-            )}
+          {/* Inner JS-Driven Height Sheet */}
+          <Animated.View
+            style={[
+              styles.sheet,
+              {
+                backgroundColor: theme.card,
+                borderColor: theme.border,
+                height: sheetHeightAnim,
+              },
+            ]}
+          >
+            {/* Grab Area ONLY handles swipe-to-dismiss / swipe-to-expand */}
+            <View style={styles.grabArea} {...panResponder.panHandlers}>
+              {showHandle && (
+                <View style={styles.handleWrapper}>
+                  <View style={[styles.handleBar, { backgroundColor: theme.borderDark }]} />
+                </View>
+              )}
 
-            {customHeader ? (
-              customHeader
-            ) : title ? (
-              <View style={[styles.defaultHeader, { borderBottomColor: theme.hairline }]}>
-                <View style={{ flex: 1, paddingRight: 10 }}>
-                  <Text style={[styles.title, { color: theme.text }]} numberOfLines={1}>
-                    {title}
-                  </Text>
-                  {subtitle ? (
-                    <Text style={[styles.subtitle, { color: theme.textMuted }]} numberOfLines={1}>
-                      {subtitle}
+              {customHeader ? (
+                customHeader
+              ) : title ? (
+                <View style={[styles.defaultHeader, { borderBottomColor: theme.hairline }]}>
+                  <View style={{ flex: 1, minWidth: 0, paddingRight: 10 }}>
+                    <Text style={[styles.title, { color: theme.text }]} numberOfLines={1}>
+                      {title}
                     </Text>
-                  ) : null}
+                    {subtitle ? (
+                      <Text style={[styles.subtitle, { color: theme.textMuted }]} numberOfLines={1}>
+                        {subtitle}
+                      </Text>
+                    ) : null}
+                  </View>
+
+                  <View style={styles.headerActions}>
+                    {headerRight}
+
+                    {/* Expand / Collapse Toggle Button */}
+                    <TouchableOpacity
+                      onPress={() => toggleExpand(!isExpanded)}
+                      style={[styles.headerIconBtn, { backgroundColor: theme.bgSecondary }]}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      accessibilityLabel={isExpanded ? 'Zwiń okno' : 'Powiększ okno'}
+                    >
+                      <Ionicons
+                        name={isExpanded ? 'contract-outline' : 'expand-outline'}
+                        size={16}
+                        color={theme.text}
+                      />
+                    </TouchableOpacity>
+
+                    {/* Close 'X' Button */}
+                    <TouchableOpacity
+                      onPress={handleDismiss}
+                      style={[styles.headerIconBtn, { backgroundColor: theme.bgSecondary }]}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      accessibilityLabel="Zamknij"
+                    >
+                      <Ionicons name="close" size={17} color={theme.text} />
+                    </TouchableOpacity>
+                  </View>
                 </View>
+              ) : null}
+            </View>
 
-                <View style={styles.headerActions}>
-                  {headerRight}
-
-                  {/* Expand / Collapse Toggle Button */}
-                  <TouchableOpacity
-                    onPress={() => toggleExpand(!isExpanded)}
-                    style={[styles.headerIconBtn, { backgroundColor: theme.bgSecondary }]}
-                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                  >
-                    <Ionicons
-                      name={isExpanded ? 'contract-outline' : 'expand-outline'}
-                      size={16}
-                      color={theme.text}
-                    />
-                  </TouchableOpacity>
-
-                  {/* Close 'X' Button */}
-                  <TouchableOpacity
-                    onPress={handleDismiss}
-                    style={[styles.headerIconBtn, { backgroundColor: theme.bgSecondary }]}
-                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                  >
-                    <Ionicons name="close" size={17} color={theme.text} />
-                  </TouchableOpacity>
-                </View>
-              </View>
-            ) : null}
-          </View>
-
-          {/* Sheet Inner Content */}
-          <View style={styles.contentContainer}>{children}</View>
+            {/* Sheet Inner Content */}
+            <View style={styles.contentContainer}>{children}</View>
+          </Animated.View>
         </Animated.View>
       </View>
     </Modal>
@@ -296,6 +314,9 @@ const styles = StyleSheet.create({
   },
   backdrop: {
     ...StyleSheet.absoluteFill,
+  },
+  sheetOuter: {
+    width: '100%',
   },
   sheet: {
     borderTopLeftRadius: 28,

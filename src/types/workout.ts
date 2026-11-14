@@ -52,6 +52,30 @@ export interface SessionExerciseConfig {
   skippedIds: string[];
 }
 
+export type SupplementDosingMode = 'recommended' | 'per_kg' | 'fixed';
+
+export interface SupplementItem {
+  id: string;
+  name: string;
+  enabled: boolean;
+  dosingMode: SupplementDosingMode;
+  recommendedText: string;
+  perKgGrams?: number;
+  fixedAmountText?: string;
+  timing?: 'morning' | 'pre_workout' | 'post_workout' | 'evening' | 'anytime';
+  isCustom?: boolean;
+}
+
+export interface HealthDailySummary {
+  platformAvailable: boolean;
+  authorized: boolean;
+  steps: number | null;
+  sleepHours: number | null;
+  activeCalories: number | null;
+  distanceKm: number | null;
+  lastSyncedAt?: string;
+}
+
 export interface AppSettings {
   hapticsEnabled: boolean;
   hapticsIntensity: 'subtle' | 'medium' | 'strong';
@@ -64,6 +88,8 @@ export interface AppSettings {
   weightReminderEnabled: boolean;
   weightReminderHour: number;
   defaultRestSeconds: number;
+  supplements: SupplementItem[];
+  healthSyncEnabled: boolean;
 }
 
 export type PlanTemplateKey = 'blank' | 'fbw3' | 'ppl' | 'upper_lower' | 'clone_current';
