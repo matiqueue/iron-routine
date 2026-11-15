@@ -323,7 +323,6 @@ export const ExerciseLibraryContent: React.FC<ExerciseLibraryContentProps> = ({
               placeholderTextColor={theme.textMuted}
               value={newName}
               onChangeText={setNewName}
-              autoFocus
             />
 
             <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>PARTIA MIĘŚNIOWA</Text>

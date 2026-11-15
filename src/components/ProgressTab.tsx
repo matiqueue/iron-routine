@@ -176,9 +176,6 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
   const navScaleAnim = useRef(new Animated.Value(1)).current;
   const viewFadeAnim = useRef(new Animated.Value(1)).current;
 
-  // Viewport auto-fit state (disables unnecessary micro-scroll when content fits)
-  const [scrollViewportH, setScrollViewportH] = useState(0);
-  const [scrollContentH, setScrollContentH] = useState(0);
   const scrollViewRef = useRef<any>(null);
 
   useEffect(() => {
@@ -726,12 +723,11 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
   const renderOpenLineChart = (
     points: Array<{ value: number; label: string }>,
     strokeColor: string,
-    unitLabel: string,
-    compact = false
+    unitLabel: string
   ) => {
     if (points.length === 0) {
       return (
-        <View style={[styles.emptyChartOpen, compact && { paddingVertical: 14 }]}>
+        <View style={styles.emptyChartOpen}>
           <Text style={[styles.emptyChartText, { color: theme.textMuted }]}>
             Brak zapisanych pomiarów w wybranym okresie
           </Text>
@@ -740,11 +736,11 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
     }
 
     const chartW = SCREEN_WIDTH - 40;
-    const chartH = compact ? 104 : 150;
+    const chartH = 150;
     const padL = 8;
     const padR = 8;
-    const padT = compact ? 12 : 18;
-    const padB = compact ? 18 : 26;
+    const padT = 18;
+    const padB = 26;
     const innerW = chartW - padL - padR;
     const innerH = chartH - padT - padB;
 
@@ -852,7 +848,6 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
     outputRange: [0, SLIDER_SLOT_W, SLIDER_SLOT_W * 2],
   });
 
-  const isScrollNeeded = scrollViewportH <= 0 || scrollContentH > scrollViewportH + 6;
   const visibleMuscles =
     selectedRankTier || showAllMuscles
       ? orderedMuscleList
@@ -919,13 +914,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
       <ScrollView
         ref={scrollViewRef}
         style={styles.scroll}
-        contentContainerStyle={
-          subView === 'journal' ? styles.scrollContentCompact : styles.scrollContent
-        }
-        onLayout={(e) => setScrollViewportH(e.nativeEvent.layout.height)}
-        onContentSizeChange={(_, h) => setScrollContentH(h)}
-        scrollEnabled={isScrollNeeded}
-        bounces={isScrollNeeded}
+        contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
@@ -1653,13 +1642,13 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
           )}
 
           {/* =========================================================
-              SUB-VIEW 3: DZIENNIK (VIEWPORT-FITTED WEIGHT & ACTIVITY LOG)
+              SUB-VIEW 3: DZIENNIK (WEIGHT & ACTIVITY LOG)
              ========================================================= */}
           {subView === 'journal' && (
-            <View style={styles.openPageJournal}>
+            <View style={styles.openPage}>
               {/* Open Weight Section */}
               <View style={styles.openSectionNoBorder}>
-                <View style={[styles.openSectionHeader, { marginBottom: 6 }]}>
+                <View style={styles.openSectionHeader}>
                   <View>
                     <Text style={[styles.sectionEyebrow, { color: theme.textMuted }]}>
                       MASA CIAŁA
@@ -1734,18 +1723,16 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                     label: w.date.slice(5, 10),
                   })),
                   '#38BDF8',
-                  'kg',
-                  true
+                  'kg'
                 )}
 
-                <View style={[styles.inlineInputRow, { marginTop: 6, marginBottom: 4 }]}>
+                <View style={styles.inlineInputRow}>
                   <TextInput
                     style={[
                       styles.inlineInput,
                       {
                         backgroundColor: theme.bgSecondary,
                         color: theme.text,
-                        paddingVertical: 9,
                       },
                     ]}
                     placeholder="Wpisz dzisiejszą wagę (kg)..."
@@ -1755,7 +1742,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                     onChangeText={setNewWeightInput}
                   />
                   <TouchableOpacity
-                    style={[styles.inlineActionBtn, { backgroundColor: theme.text, paddingVertical: 9 }]}
+                    style={[styles.inlineActionBtn, { backgroundColor: theme.text }]}
                     onPress={handleSaveWeight}
                     activeOpacity={0.8}
                   >
@@ -1766,12 +1753,12 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                 </View>
 
                 {weightHistory
-                  .slice(-2)
+                  .slice(-5)
                   .reverse()
                   .map((w) => (
                     <View
                       key={w.id}
-                      style={[styles.simpleLogRow, { borderBottomColor: theme.hairline, paddingVertical: 7 }]}
+                      style={[styles.simpleLogRow, { borderBottomColor: theme.hairline }]}
                     >
                       <Text style={[styles.simpleLogDate, { color: theme.textMuted }]}>
                         {new Date(w.date).toLocaleDateString('pl-PL', {
@@ -1793,13 +1780,13 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
               </View>
 
               {/* Open 28-Day Activity Matrix */}
-              <View style={[styles.openSectionCompact, { borderTopColor: theme.hairline }]}>
-                <View style={[styles.openSectionHeader, { marginBottom: 8 }]}>
+              <View style={[styles.openSection, { borderTopColor: theme.hairline }]}>
+                <View style={styles.openSectionHeader}>
                   <View>
                     <Text style={[styles.sectionEyebrow, { color: theme.textMuted }]}>
                       REGULARNOŚĆ
                     </Text>
-                    <Text style={[styles.sectionHeadingCompact, { color: theme.text }]}>
+                    <Text style={[styles.sectionHeading, { color: theme.text }]}>
                       Ostatnie 28 dni
                     </Text>
                   </View>
@@ -1808,12 +1795,12 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                   </Text>
                 </View>
 
-                <View style={styles.dotsGridCompact}>
+                <View style={styles.dotsGrid}>
                   {last28Days.map((day) => (
                     <View
                       key={day.key}
                       style={[
-                        styles.dayDotBoxCompact,
+                        styles.dayDotBox,
                         {
                           backgroundColor: day.active
                             ? '#10B981'
@@ -1839,17 +1826,17 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
               </View>
 
               {/* Open Recent Workouts Timeline */}
-              <View style={[styles.openSectionCompact, { borderTopColor: theme.hairline }]}>
-                <View style={[styles.openSectionHeader, { marginBottom: 6 }]}>
+              <View style={[styles.openSection, { borderTopColor: theme.hairline }]}>
+                <View style={styles.openSectionHeader}>
                   <View>
                     <Text style={[styles.sectionEyebrow, { color: theme.textMuted }]}>
                       HISTORIA SESJI
                     </Text>
-                    <Text style={[styles.sectionHeadingCompact, { color: theme.text }]}>
+                    <Text style={[styles.sectionHeading, { color: theme.text }]}>
                       Ostatnie treningi
                     </Text>
                   </View>
-                  {workoutHistory.length > 2 ? (
+                  {workoutHistory.length > 4 ? (
                     <TouchableOpacity
                       onPress={() => {
                         LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -1872,13 +1859,13 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                     Nie ukończono jeszcze żadnego treningu
                   </Text>
                 ) : (
-                  (showAllJournalWorkouts ? workoutHistory.slice(-10) : workoutHistory.slice(-2))
+                  (showAllJournalWorkouts ? workoutHistory.slice(-15) : workoutHistory.slice(-4))
                     .slice()
                     .reverse()
                     .map((entry, idx) => (
                       <View
                         key={`${entry.date}-${idx}`}
-                        style={[styles.workoutLogRow, { borderBottomColor: theme.hairline, paddingVertical: 8 }]}
+                        style={[styles.workoutLogRow, { borderBottomColor: theme.hairline }]}
                       >
                         <View style={{ flex: 1 }}>
                           <Text style={[styles.workoutLogTitle, { color: theme.text }]}>
@@ -1922,10 +1909,6 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
         }
         initialHeightPercent={0.86}
       >
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          style={{ flex: 1 }}
-        >
           <BottomSheetScrollView
             style={{ flex: 1 }}
             contentContainerStyle={styles.sheetScrollContent}
@@ -2091,7 +2074,6 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
               )}
             </View>
           </BottomSheetScrollView>
-        </KeyboardAvoidingView>
       </InteractiveBottomSheet>
     </View>
   );
@@ -2151,15 +2133,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 120,
   },
-  scrollContentCompact: {
-    paddingHorizontal: 20,
-    paddingBottom: 84,
-  },
   openPage: {
     paddingTop: 6,
-  },
-  openPageJournal: {
-    paddingTop: 2,
   },
   heroShowcaseWrap: {
     flexDirection: 'row',
@@ -2459,29 +2434,6 @@ const styles = StyleSheet.create({
   loadAllMusclesText: {
     fontSize: 13,
     fontWeight: '800',
-  },
-  openSectionCompact: {
-    marginTop: 12,
-    paddingTop: 12,
-    borderTopWidth: StyleSheet.hairlineWidth,
-  },
-  sectionHeadingCompact: {
-    fontSize: 17,
-    fontWeight: '800',
-    letterSpacing: -0.3,
-  },
-  dotsGridCompact: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-    marginTop: 2,
-  },
-  dayDotBoxCompact: {
-    width: (SCREEN_WIDTH - 40 - 6 * 6) / 7,
-    height: 27,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   openSearchRow: {
     flexDirection: 'row',

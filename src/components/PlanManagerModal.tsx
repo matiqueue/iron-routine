@@ -203,11 +203,7 @@ export const PlanManagerModal: React.FC<PlanManagerModalProps> = ({
       subtitle={`${plans.length} ${plans.length === 1 ? 'plan' : 'plany'} • Wspólne rekordy PR`}
       initialHeightPercent={0.86}
     >
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={{ flex: 1 }}
-      >
-        <BottomSheetScrollView
+      <BottomSheetScrollView
           style={styles.scroll}
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
@@ -585,7 +581,6 @@ export const PlanManagerModal: React.FC<PlanManagerModalProps> = ({
             );
           })}
         </BottomSheetScrollView>
-      </KeyboardAvoidingView>
     </InteractiveBottomSheet>
   );
 };

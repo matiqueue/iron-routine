@@ -1,7 +1,6 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
 import {
   ActivityIndicator,
-  LayoutAnimation,
   Platform,
   ScrollView,
   StyleSheet,
@@ -23,7 +22,6 @@ import {
 import { getDayBannerTagMeta, resolveDayBannerTag } from '../data/dayTags';
 import { resolveActiveSessionExercises } from '../utils/sessionExercises';
 import { triggerSelectionHaptic } from '../services/haptics';
-import { generateHealthCoachingInsight } from '../services/health';
 import { AnimatedIcon } from '../components/AnimatedIcon';
 import { DayBannerArtwork } from '../components/DayBannerArtwork';
 import { DayExercisePreviewList } from '../components/DayExercisePreviewList';
@@ -90,9 +88,6 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
   onSwitchToPlanTab,
 }) => {
   const { theme, isDark, toggleTheme } = useAppTheme();
-  const [viewportH, setViewportH] = useState(0);
-  const [contentH, setContentH] = useState(0);
-  const [showAllTodayExercises, setShowAllTodayExercises] = useState(false);
 
   const bannerTag = resolveDayBannerTag(currentPlan);
   const tagMeta = getDayBannerTagMeta(bannerTag);
@@ -129,19 +124,10 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
     ? 'rgba(255, 255, 255, 0.11)'
     : 'rgba(24, 24, 27, 0.08)';
 
-  const isScrollNeeded = viewportH <= 0 || contentH > viewportH + 6;
-  const visiblePreviewExercises = showAllTodayExercises
-    ? sessionPreviewExercises
-    : sessionPreviewExercises.slice(0, 2);
-
   return (
     <ScrollView
       style={styles.tabScroll}
       contentContainerStyle={styles.tabContent}
-      onLayout={(e) => setViewportH(e.nativeEvent.layout.height)}
-      onContentSizeChange={(_, h) => setContentH(h)}
-      scrollEnabled={isScrollNeeded}
-      bounces={isScrollNeeded}
       showsVerticalScrollIndicator={false}
     >
       {/* Open Editorial Header with Glassmorphic Action Pills */}
@@ -531,42 +517,12 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
               </View>
 
               <DayExercisePreviewList
-                exercises={visiblePreviewExercises}
+                exercises={sessionPreviewExercises}
                 daySets={dayProgress.sets}
                 bestPRs={bestPRs}
                 skippedIds={skippedIds}
-                compact
                 onPressExercise={onOpenExerciseDetail}
               />
-
-              {sessionPreviewExercises.length > 2 && (
-                <TouchableOpacity
-                  style={[
-                    styles.expandExercisesBtn,
-                    {
-                      backgroundColor: glassSurfaceBg,
-                      borderColor: glassSurfaceBorder,
-                    },
-                  ]}
-                  onPress={() => {
-                    triggerSelectionHaptic();
-                    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-                    setShowAllTodayExercises((v) => !v);
-                  }}
-                  activeOpacity={0.78}
-                >
-                  <Text style={[styles.expandExercisesText, { color: theme.text }]}>
-                    {showAllTodayExercises
-                      ? 'Zwiń listę'
-                      : `Pokaż wszystkie ćwiczenia (${sessionPreviewExercises.length})`}
-                  </Text>
-                  <Ionicons
-                    name={showAllTodayExercises ? 'chevron-up' : 'chevron-down'}
-                    size={14}
-                    color={theme.textSecondary}
-                  />
-                </TouchableOpacity>
-              )}
             </View>
           )}
         </>
@@ -592,7 +548,6 @@ const OpenBiometricsAndRecoverySection: React.FC<
   weight,
   height,
   summary,
-  isWorkoutDay,
   isLoading = false,
   onOpenBodyStats,
   onRefresh,
@@ -600,7 +555,6 @@ const OpenBiometricsAndRecoverySection: React.FC<
 }) => {
   const { theme, isDark } = useAppTheme();
   const isConnected = Boolean(summary?.authorized);
-  const insight = generateHealthCoachingInsight(summary, isWorkoutDay);
   const platformLabel = Platform.OS === 'ios' ? 'APPLE HEALTH' : 'HEALTH CONNECT';
 
   const bmiValue = useMemo(() => {
@@ -623,13 +577,6 @@ const OpenBiometricsAndRecoverySection: React.FC<
   const glassPillBorder = isDark
     ? 'rgba(255, 255, 255, 0.11)'
     : 'rgba(24, 24, 27, 0.08)';
-
-  const insightAccent =
-    insight.tone === 'warning'
-      ? '#F59E0B'
-      : insight.tone === 'good'
-      ? '#10B981'
-      : '#38BDF8';
 
   return (
     <View style={[styles.openSection, { borderTopColor: theme.hairline }]}>
@@ -712,12 +659,7 @@ const OpenBiometricsAndRecoverySection: React.FC<
       </View>
 
       {/* Open 4-Column Telemetry Strip (Weight, BMI/Height, Steps, Sleep/Kcal) */}
-      <View
-        style={[
-          styles.openTelemetryGrid,
-          { borderBottomColor: theme.hairline },
-        ]}
-      >
+      <View style={styles.openTelemetryGrid}>
         <TouchableOpacity
           style={styles.telemetryCell}
           onPress={() => {
@@ -821,34 +763,6 @@ const OpenBiometricsAndRecoverySection: React.FC<
           </Text>
         </View>
       </View>
-
-      {/* Open Editorial Recovery Insight Strip */}
-      <View
-        style={[
-          styles.openInsightStrip,
-          {
-            borderLeftColor: insightAccent,
-            backgroundColor: isDark
-              ? 'rgba(39, 39, 42, 0.35)'
-              : 'rgba(244, 244, 245, 0.65)',
-          },
-        ]}
-      >
-        <Ionicons
-          name={insight.icon}
-          size={16}
-          color={insightAccent}
-          style={{ marginTop: 1 }}
-        />
-        <View style={{ flex: 1, minWidth: 0 }}>
-          <Text style={[styles.insightHeadline, { color: theme.text }]}>
-            {insight.headline}
-          </Text>
-          <Text style={[styles.insightTip, { color: theme.textSecondary }]}>
-            {insight.tip}
-          </Text>
-        </View>
-      </View>
     </View>
   );
 };
@@ -859,14 +773,14 @@ const styles = StyleSheet.create({
   },
   tabContent: {
     paddingHorizontal: 18,
-    paddingTop: 8,
-    paddingBottom: 84,
+    paddingTop: 14,
+    paddingBottom: 124,
   },
   topHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingBottom: 10,
+    paddingBottom: 12,
     gap: 10,
   },
   greetingCol: {
@@ -917,8 +831,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 9,
-    marginBottom: 11,
+    paddingVertical: 12,
+    marginBottom: 16,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderBottomWidth: StyleSheet.hairlineWidth,
     gap: 10,
@@ -989,12 +903,12 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     borderWidth: 1,
     overflow: 'hidden',
-    marginBottom: 10,
-    minHeight: 148,
+    marginBottom: 14,
+    minHeight: 168,
     justifyContent: 'flex-end',
   },
   heroInner: {
-    padding: 16,
+    padding: 18,
   },
   heroTagRow: {
     flexDirection: 'row',
@@ -1147,8 +1061,8 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   openSection: {
-    marginTop: 14,
-    paddingTop: 14,
+    marginTop: 20,
+    paddingTop: 18,
     borderTopWidth: StyleSheet.hairlineWidth,
   },
   openSectionHeader: {
@@ -1156,7 +1070,7 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
     justifyContent: 'space-between',
     gap: 10,
-    marginBottom: 10,
+    marginBottom: 14,
   },
   eyebrowWithIcon: {
     flexDirection: 'row',
@@ -1215,8 +1129,7 @@ const styles = StyleSheet.create({
   openTelemetryGrid: {
     flexDirection: 'row',
     alignItems: 'stretch',
-    paddingBottom: 14,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    paddingBottom: 6,
   },
   telemetryCell: {
     flex: 1,
@@ -1254,26 +1167,6 @@ const styles = StyleSheet.create({
     height: 3.5,
     borderRadius: 999,
   },
-  openInsightStrip: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 10,
-    marginTop: 12,
-    paddingVertical: 11,
-    paddingHorizontal: 13,
-    borderLeftWidth: 3,
-    borderRadius: 12,
-  },
-  insightHeadline: {
-    fontSize: 13,
-    fontWeight: '800',
-    letterSpacing: -0.2,
-  },
-  insightTip: {
-    fontSize: 12,
-    lineHeight: 17,
-    marginTop: 2,
-  },
   weekGlassPill: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1285,20 +1178,6 @@ const styles = StyleSheet.create({
   },
   weekGlassPillText: {
     fontSize: 11.5,
-    fontWeight: '800',
-  },
-  expandExercisesBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 7,
-    marginTop: 10,
-    paddingVertical: 10,
-    borderRadius: 999,
-    borderWidth: 1,
-  },
-  expandExercisesText: {
-    fontSize: 12.5,
     fontWeight: '800',
   },
 });

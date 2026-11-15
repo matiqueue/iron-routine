@@ -14,7 +14,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import Svg, { Path } from 'react-native-svg';
+import Svg, { Circle, Defs, Path, Pattern, Rect } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
 import { useAppTheme } from '../context/ThemeContext';
 import {
@@ -52,6 +52,52 @@ interface OnboardingScreenProps {
 
 const TOTAL_STEPS = 5;
 const ONBOARDING_REST_PRESETS = [90, 120, 180];
+const WEEK_SHORT_LABELS = ['Pn', 'Wt', 'Śr', 'Cz', 'Pt', 'Sb', 'Nd'];
+
+const PLAN_VISUAL_META: Record<
+  Exclude<PlanTemplateKey, 'clone_current'>,
+  {
+    badge: string;
+    accent: string;
+    freq: string;
+    duration: string;
+    focus: string;
+    dayCodes: string[];
+  }
+> = {
+  fbw3: {
+    badge: 'POLECANY NA START',
+    accent: '#10B981',
+    freq: '3 dni / tydz.',
+    duration: '~55 min',
+    focus: 'Siła i baza',
+    dayCodes: ['T', '·', 'T', '·', 'T', '·', '·'],
+  },
+  upper_lower: {
+    badge: 'BALANS OBJĘTOŚCI',
+    accent: '#38BDF8',
+    freq: '4 dni / tydz.',
+    duration: '~60 min',
+    focus: 'Hipertrofia',
+    dayCodes: ['G', 'D', '·', 'G', 'D', '·', '·'],
+  },
+  ppl: {
+    badge: 'WYSOKA OBJĘTOŚĆ',
+    accent: '#A855F7',
+    freq: '6 dni / tydz.',
+    duration: '~65 min',
+    focus: 'Maks. progres',
+    dayCodes: ['P', 'P', 'L', 'P', 'P', 'L', '·'],
+  },
+  blank: {
+    badge: 'PEŁNA SWOBODA',
+    accent: '#F59E0B',
+    freq: 'Własny rytm',
+    duration: 'Dowolny',
+    focus: 'Od zera',
+    dayCodes: ['+', '+', '+', '+', '+', '+', '+'],
+  },
+};
 
 const STEP_META = [
   {
@@ -99,11 +145,13 @@ const STEP_META = [
 export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted }) => {
   const { theme, isDark, toggleTheme } = useAppTheme();
 
+  const [showWelcomeIntro, setShowWelcomeIntro] = useState(true);
   const [step, setStep] = useState(0);
   const [name, setName] = useState('');
   const [gender, setGender] = useState<UserGender>('male');
   const [weightText, setWeightText] = useState('');
   const [heightText, setHeightText] = useState('');
+  const [focusedField, setFocusedField] = useState<'name' | 'weight' | 'height' | null>(null);
   const [supplements, setSupplements] = useState<SupplementItem[]>(() =>
     DEFAULT_SUPPLEMENTS.map((s) => ({ ...s }))
   );
@@ -130,6 +178,117 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
   const progressAnim = useRef(new Animated.Value(1)).current;
   const heroScale = useRef(new Animated.Value(1)).current;
   const genderFlip = useRef(new Animated.Value(1)).current;
+
+  // Welcome Intro Stagger & Ring Animations
+  const welcomeBgOpacity = useRef(new Animated.Value(0)).current;
+  const welcomeCrestScale = useRef(new Animated.Value(0.72)).current;
+  const welcomeRingSpin = useRef(new Animated.Value(0)).current;
+  const welcomeTitleSlide = useRef(new Animated.Value(22)).current;
+  const welcomeTitleOpacity = useRef(new Animated.Value(0)).current;
+  const welcomeCardsSlide = useRef(new Animated.Value(28)).current;
+  const welcomeCardsOpacity = useRef(new Animated.Value(0)).current;
+  const welcomeCtaOpacity = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (!showWelcomeIntro) return;
+    const loopSpin = Animated.loop(
+      Animated.timing(welcomeRingSpin, {
+        toValue: 1,
+        duration: 18000,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      })
+    );
+    loopSpin.start();
+
+    Animated.sequence([
+      Animated.parallel([
+        Animated.timing(welcomeBgOpacity, {
+          toValue: 1,
+          duration: 360,
+          useNativeDriver: true,
+        }),
+        Animated.spring(welcomeCrestScale, {
+          toValue: 1,
+          friction: 7,
+          tension: 65,
+          useNativeDriver: true,
+        }),
+      ]),
+      Animated.parallel([
+        Animated.timing(welcomeTitleOpacity, {
+          toValue: 1,
+          duration: 360,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.spring(welcomeTitleSlide, {
+          toValue: 0,
+          friction: 9,
+          tension: 70,
+          useNativeDriver: true,
+        }),
+      ]),
+      Animated.parallel([
+        Animated.timing(welcomeCardsOpacity, {
+          toValue: 1,
+          duration: 320,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.spring(welcomeCardsSlide, {
+          toValue: 0,
+          friction: 9,
+          tension: 68,
+          useNativeDriver: true,
+        }),
+        Animated.timing(welcomeCtaOpacity, {
+          toValue: 1,
+          duration: 340,
+          useNativeDriver: true,
+        }),
+      ]),
+    ]).start();
+
+    return () => loopSpin.stop();
+  }, [
+    showWelcomeIntro,
+    welcomeBgOpacity,
+    welcomeCrestScale,
+    welcomeRingSpin,
+    welcomeTitleSlide,
+    welcomeTitleOpacity,
+    welcomeCardsSlide,
+    welcomeCardsOpacity,
+    welcomeCtaOpacity,
+  ]);
+
+  const handleStartConfigurator = () => {
+    triggerSelectionHaptic();
+    Animated.timing(welcomeBgOpacity, {
+      toValue: 0,
+      duration: 210,
+      useNativeDriver: true,
+    }).start(() => {
+      setShowWelcomeIntro(false);
+      stepFade.setValue(0);
+      stepSlide.setValue(24);
+      Animated.parallel([
+        Animated.timing(stepFade, {
+          toValue: 1,
+          duration: 280,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.spring(stepSlide, {
+          toValue: 0,
+          friction: 10,
+          tension: 75,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    });
+  };
 
   useEffect(() => {
     Animated.timing(progressAnim, {
@@ -406,12 +565,202 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
   };
 
   const meta = STEP_META[step];
-  const progressWidth = progressAnim.interpolate({
-    inputRange: [1, TOTAL_STEPS],
-    outputRange: ['20%', '100%'],
+  const enabledSuppCount = supplements.filter((s) => s.enabled).length;
+  const selectedPlanMeta = PLAN_VISUAL_META[templateKey] || PLAN_VISUAL_META.fbw3;
+  const welcomeSpinDeg = welcomeRingSpin.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '360deg'],
   });
 
-  const enabledSuppCount = supplements.filter((s) => s.enabled).length;
+  if (showWelcomeIntro) {
+    return (
+      <View style={[styles.container, { backgroundColor: theme.bg }]}>
+        {/* Subtle technical grid backdrop */}
+        <Svg
+          width="100%"
+          height="100%"
+          style={StyleSheet.absoluteFill}
+          pointerEvents="none"
+        >
+          <Defs>
+            <Pattern id="welcomeGrid" width={42} height={48} patternUnits="userSpaceOnUse">
+              <Path
+                d="M 42 0 L 0 0 0 48"
+                fill="none"
+                stroke={isDark ? 'rgba(255, 255, 255, 0.055)' : 'rgba(24, 24, 27, 0.055)'}
+                strokeWidth={1}
+              />
+            </Pattern>
+          </Defs>
+          <Rect x={0} y={0} width="100%" height="100%" fill="url(#welcomeGrid)" />
+        </Svg>
+
+        <Animated.View style={[styles.welcomeWrap, { opacity: welcomeBgOpacity }]}>
+          <View style={styles.welcomeTopBar}>
+            <View
+              style={[
+                styles.welcomePillTag,
+                {
+                  backgroundColor: isDark
+                    ? 'rgba(16, 185, 129, 0.14)'
+                    : 'rgba(16, 185, 129, 0.10)',
+                  borderColor: 'rgba(16, 185, 129, 0.35)',
+                },
+              ]}
+            >
+              <View style={styles.welcomeLiveDot} />
+              <Text style={styles.welcomePillText}>IRON ROUTINE · KONFIGURACJA</Text>
+            </View>
+
+            <TouchableOpacity
+              style={[styles.navIconBtn, { backgroundColor: theme.bgSecondary }]}
+              onPress={() => {
+                triggerSelectionHaptic();
+                toggleTheme();
+              }}
+              activeOpacity={0.75}
+              accessibilityLabel="Przełącz motyw"
+            >
+              <Ionicons
+                name={isDark ? 'sunny-outline' : 'moon-outline'}
+                size={18}
+                color={theme.text}
+              />
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.welcomeCenter}>
+            <Animated.View
+              style={[
+                styles.welcomeCrestStage,
+                { transform: [{ scale: welcomeCrestScale }] },
+              ]}
+            >
+              <Animated.View
+                style={[
+                  styles.welcomeOrbitRing,
+                  {
+                    borderColor: isDark
+                      ? 'rgba(16, 185, 129, 0.32)'
+                      : 'rgba(16, 185, 129, 0.38)',
+                    transform: [{ rotate: welcomeSpinDeg }],
+                  },
+                ]}
+              >
+                <View style={styles.welcomeOrbitDotTop} />
+                <View style={styles.welcomeOrbitDotBottom} />
+              </Animated.View>
+
+              <View
+                style={[
+                  styles.welcomeCoreOrb,
+                  {
+                    backgroundColor: isDark
+                      ? 'rgba(24, 24, 27, 0.92)'
+                      : 'rgba(255, 255, 255, 0.94)',
+                    borderColor: isDark
+                      ? 'rgba(255, 255, 255, 0.14)'
+                      : 'rgba(24, 24, 27, 0.12)',
+                  },
+                ]}
+              >
+                <Svg width={44} height={44} viewBox="0 0 44 44">
+                  <Circle
+                    cx={22}
+                    cy={22}
+                    r={17}
+                    fill="none"
+                    stroke="#10B981"
+                    strokeWidth={2.2}
+                    strokeDasharray="6 4"
+                  />
+                  <Circle
+                    cx={22}
+                    cy={22}
+                    r={9}
+                    fill="none"
+                    stroke={theme.text}
+                    strokeWidth={2.4}
+                  />
+                  <Circle cx={22} cy={22} r={2.5} fill="#38BDF8" />
+                </Svg>
+              </View>
+            </Animated.View>
+
+            <Animated.View
+              style={{
+                opacity: welcomeTitleOpacity,
+                transform: [{ translateY: welcomeTitleSlide }],
+                alignItems: 'center',
+              }}
+            >
+              <Text style={[styles.welcomeHeadline, { color: theme.text }]}>
+                Witaj na siłowni.{'\n'}Zacznij mądrze.
+              </Text>
+              <Text style={[styles.welcomeSub, { color: theme.textSecondary }]}>
+                W minutę dopasujemy model sylwetki, dawkowanie suplementów, budzik przerw oraz plan startowy.
+              </Text>
+            </Animated.View>
+
+            <Animated.View
+              style={[
+                styles.welcomeHighlights,
+                {
+                  opacity: welcomeCardsOpacity,
+                  transform: [{ translateY: welcomeCardsSlide }],
+                  borderTopColor: theme.hairline,
+                  borderBottomColor: theme.hairline,
+                },
+              ]}
+            >
+              <View style={styles.welcomeHighlightCell}>
+                <Ionicons name="body-outline" size={18} color="#10B981" />
+                <Text style={[styles.welcomeHighlightTitle, { color: theme.text }]}>
+                  Anatomia
+                </Text>
+                <Text style={[styles.welcomeHighlightSub, { color: theme.textMuted }]}>
+                  Rangi F do S+
+                </Text>
+              </View>
+              <View style={[styles.welcomeCellDivider, { backgroundColor: theme.hairline }]} />
+              <View style={styles.welcomeHighlightCell}>
+                <Ionicons name="timer-outline" size={18} color="#38BDF8" />
+                <Text style={[styles.welcomeHighlightTitle, { color: theme.text }]}>
+                  Przerwy
+                </Text>
+                <Text style={[styles.welcomeHighlightSub, { color: theme.textMuted }]}>
+                  Live Activity
+                </Text>
+              </View>
+              <View style={[styles.welcomeCellDivider, { backgroundColor: theme.hairline }]} />
+              <View style={styles.welcomeHighlightCell}>
+                <Ionicons name="cloud-done-outline" size={18} color="#A855F7" />
+                <Text style={[styles.welcomeHighlightTitle, { color: theme.text }]}>
+                  Chmura
+                </Text>
+                <Text style={[styles.welcomeHighlightSub, { color: theme.textMuted }]}>
+                  iCloud i Gmail
+                </Text>
+              </View>
+            </Animated.View>
+          </View>
+
+          <Animated.View style={{ opacity: welcomeCtaOpacity }}>
+            <TouchableOpacity
+              style={[styles.primaryBtn, { backgroundColor: theme.primary }]}
+              onPress={handleStartConfigurator}
+              activeOpacity={0.86}
+            >
+              <Text style={[styles.primaryBtnText, { color: theme.primaryText }]}>
+                Rozpocznij konfigurację
+              </Text>
+              <Ionicons name="arrow-forward" size={18} color={theme.primaryText} />
+            </TouchableOpacity>
+          </Animated.View>
+        </Animated.View>
+      </View>
+    );
+  }
 
   return (
     <KeyboardAvoidingView
@@ -422,20 +771,22 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
       <View style={[styles.headerShell, { borderBottomColor: theme.hairline }]}>
         <View style={styles.topRow}>
           <View style={styles.brandRow}>
-            {step > 0 ? (
-              <TouchableOpacity
-                style={[styles.navIconBtn, { backgroundColor: theme.bgSecondary }]}
-                onPress={handlePrevStep}
-                activeOpacity={0.75}
-                accessibilityLabel="Wstecz"
-              >
-                <Ionicons name="arrow-back" size={18} color={theme.text} />
-              </TouchableOpacity>
-            ) : (
-              <View style={[styles.navIconBtn, { backgroundColor: theme.bgSecondary }]}>
-                <AnimatedIcon name="barbell-outline" preset="barbell" size={18} color={theme.text} active />
-              </View>
-            )}
+            <TouchableOpacity
+              style={[styles.navIconBtn, { backgroundColor: theme.bgSecondary }]}
+              onPress={() => {
+                if (step > 0) {
+                  handlePrevStep();
+                } else {
+                  triggerSelectionHaptic();
+                  welcomeBgOpacity.setValue(1);
+                  setShowWelcomeIntro(true);
+                }
+              }}
+              activeOpacity={0.75}
+              accessibilityLabel="Wstecz"
+            >
+              <Ionicons name="arrow-back" size={18} color={theme.text} />
+            </TouchableOpacity>
 
             <View style={{ flexShrink: 1, minWidth: 0 }}>
               <Text style={[styles.brandTitle, { color: theme.text }]} numberOfLines={1}>
@@ -464,15 +815,25 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
           </TouchableOpacity>
         </View>
 
-        {/* Smooth Step Progress Track */}
+        {/* Segmented Open Step Progress Track */}
         <View style={styles.progressRow}>
-          <View style={[styles.progressTrack, { backgroundColor: theme.bgSecondary }]}>
-            <Animated.View
-              style={[
-                styles.progressFill,
-                { backgroundColor: meta.accent, width: progressWidth },
-              ]}
-            />
+          <View style={styles.segmentsTrack}>
+            {STEP_META.map((sMeta, idx) => {
+              const isDoneOrCurrent = idx <= step;
+              const isCurrent = idx === step;
+              return (
+                <View
+                  key={sMeta.kicker}
+                  style={[
+                    styles.segmentPill,
+                    {
+                      backgroundColor: isDoneOrCurrent ? meta.accent : theme.bgSecondary,
+                      opacity: isCurrent ? 1 : isDoneOrCurrent ? 0.55 : 1,
+                    },
+                  ]}
+                />
+              );
+            })}
           </View>
           <Text style={[styles.stepFractionText, { color: theme.textMuted }]}>
             0{step + 1} / 0{TOTAL_STEPS}
@@ -615,8 +976,21 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
                   TWOJE PARAMETRY
                 </Text>
 
-                <View style={[styles.underlineInputGroup, { borderBottomColor: theme.hairline }]}>
-                  <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>
+                <View
+                  style={[
+                    styles.underlineInputGroup,
+                    {
+                      borderBottomColor: focusedField === 'name' ? meta.accent : theme.hairline,
+                      borderBottomWidth: focusedField === 'name' ? 1.5 : StyleSheet.hairlineWidth,
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.fieldLabel,
+                      { color: focusedField === 'name' ? meta.accent : theme.textMuted },
+                    ]}
+                  >
                     Imię lub pseudonim
                   </Text>
                   <TextInput
@@ -625,6 +999,8 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
                     placeholderTextColor={theme.textMuted}
                     value={name}
                     onChangeText={setName}
+                    onFocus={() => setFocusedField('name')}
+                    onBlur={() => setFocusedField((f) => (f === 'name' ? null : f))}
                     returnKeyType="done"
                   />
                 </View>
@@ -633,10 +1009,19 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
                   <View
                     style={[
                       styles.underlineInputGroup,
-                      { flex: 1, borderBottomColor: theme.hairline },
+                      {
+                        flex: 1,
+                        borderBottomColor: focusedField === 'weight' ? meta.accent : theme.hairline,
+                        borderBottomWidth: focusedField === 'weight' ? 1.5 : StyleSheet.hairlineWidth,
+                      },
                     ]}
                   >
-                    <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>
+                    <Text
+                      style={[
+                        styles.fieldLabel,
+                        { color: focusedField === 'weight' ? meta.accent : theme.textMuted },
+                      ]}
+                    >
                       Masa ciała (kg)
                     </Text>
                     <TextInput
@@ -646,16 +1031,27 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
                       keyboardType="decimal-pad"
                       value={weightText}
                       onChangeText={setWeightText}
+                      onFocus={() => setFocusedField('weight')}
+                      onBlur={() => setFocusedField((f) => (f === 'weight' ? null : f))}
                     />
                   </View>
 
                   <View
                     style={[
                       styles.underlineInputGroup,
-                      { flex: 1, borderBottomColor: theme.hairline },
+                      {
+                        flex: 1,
+                        borderBottomColor: focusedField === 'height' ? meta.accent : theme.hairline,
+                        borderBottomWidth: focusedField === 'height' ? 1.5 : StyleSheet.hairlineWidth,
+                      },
                     ]}
                   >
-                    <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>
+                    <Text
+                      style={[
+                        styles.fieldLabel,
+                        { color: focusedField === 'height' ? meta.accent : theme.textMuted },
+                      ]}
+                    >
                       Wzrost (cm)
                     </Text>
                     <TextInput
@@ -665,6 +1061,8 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
                       keyboardType="number-pad"
                       value={heightText}
                       onChangeText={setHeightText}
+                      onFocus={() => setFocusedField('height')}
+                      onBlur={() => setFocusedField((f) => (f === 'height' ? null : f))}
                     />
                   </View>
                 </View>
@@ -888,53 +1286,176 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
           )}
 
           {/* =========================================================
-              STEP 4: STARTER PLAN SELECTION (OPEN EDITORIAL LIST)
+              STEP 4: STARTER PLAN SELECTION (VISUAL WEEK SPLIT MATRIX)
              ========================================================= */}
           {step === 3 && (
-            <View style={[styles.openSection, { borderTopColor: theme.hairline }]}>
-              <Text style={[styles.sectionEyebrow, { color: '#38BDF8' }]}>
-                SCHEMAT TRENINGOWY NA START
-              </Text>
+            <View style={styles.openStepFlow}>
+              {/* Live 3-Column Summary Telemetry for Currently Chosen Plan */}
+              <View
+                style={[
+                  styles.planTelemetryBar,
+                  {
+                    borderTopColor: theme.hairline,
+                    borderBottomColor: theme.hairline,
+                  },
+                ]}
+              >
+                <View style={styles.planTelemetryCell}>
+                  <Text style={[styles.planTelemetryLabel, { color: theme.textMuted }]}>
+                    RYTM TYGODNIA
+                  </Text>
+                  <Text style={[styles.planTelemetryVal, { color: selectedPlanMeta.accent }]}>
+                    {selectedPlanMeta.freq}
+                  </Text>
+                </View>
+                <View style={[styles.planTelemetryDivider, { backgroundColor: theme.hairline }]} />
+                <View style={styles.planTelemetryCell}>
+                  <Text style={[styles.planTelemetryLabel, { color: theme.textMuted }]}>
+                    CZAS SESJI
+                  </Text>
+                  <Text style={[styles.planTelemetryVal, { color: theme.text }]}>
+                    {selectedPlanMeta.duration}
+                  </Text>
+                </View>
+                <View style={[styles.planTelemetryDivider, { backgroundColor: theme.hairline }]} />
+                <View style={styles.planTelemetryCell}>
+                  <Text style={[styles.planTelemetryLabel, { color: theme.textMuted }]}>
+                    PRIORYTET
+                  </Text>
+                  <Text style={[styles.planTelemetryVal, { color: theme.text }]}>
+                    {selectedPlanMeta.focus}
+                  </Text>
+                </View>
+              </View>
 
-              {PLAN_TEMPLATE_OPTIONS.map((tpl) => {
-                const selected = templateKey === tpl.id;
-                return (
-                  <TouchableOpacity
-                    key={tpl.id}
-                    style={[
-                      styles.openTemplateRow,
-                      {
-                        borderBottomColor: theme.hairline,
-                        borderLeftColor: selected ? '#38BDF8' : 'transparent',
-                        borderLeftWidth: selected ? 3 : 0,
-                        paddingLeft: selected ? 14 : 0,
-                      },
-                    ]}
-                    onPress={() => {
-                      triggerSelectionHaptic();
-                      setTemplateKey(tpl.id as Exclude<PlanTemplateKey, 'clone_current'>);
-                    }}
-                    activeOpacity={0.75}
-                  >
-                    <View style={{ flex: 1 }}>
+              <View style={styles.planListWrap}>
+                {PLAN_TEMPLATE_OPTIONS.map((tpl) => {
+                  const key = tpl.id as Exclude<PlanTemplateKey, 'clone_current'>;
+                  const pMeta = PLAN_VISUAL_META[key] || PLAN_VISUAL_META.fbw3;
+                  const selected = templateKey === tpl.id;
+                  return (
+                    <TouchableOpacity
+                      key={tpl.id}
+                      style={[
+                        styles.planOptionBlock,
+                        {
+                          borderBottomColor: selected ? pMeta.accent : theme.hairline,
+                          borderColor: selected ? pMeta.accent : theme.hairline,
+                          backgroundColor: selected
+                            ? isDark
+                              ? `${pMeta.accent}14`
+                              : `${pMeta.accent}10`
+                            : 'transparent',
+                        },
+                      ]}
+                      onPress={() => {
+                        triggerSelectionHaptic();
+                        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                        setTemplateKey(key);
+                      }}
+                      activeOpacity={0.82}
+                    >
+                      <View style={styles.planOptionTopRow}>
+                        <View style={styles.planBadgeGroup}>
+                          <View
+                            style={[
+                              styles.planBadgePill,
+                              {
+                                backgroundColor: selected
+                                  ? pMeta.accent
+                                  : isDark
+                                  ? 'rgba(255,255,255,0.06)'
+                                  : 'rgba(24,24,27,0.06)',
+                              },
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.planBadgeText,
+                                { color: selected ? '#09090B' : theme.textSecondary },
+                              ]}
+                            >
+                              {pMeta.badge}
+                            </Text>
+                          </View>
+
+                          <Text style={[styles.planFreqInline, { color: pMeta.accent }]}>
+                            {pMeta.freq}
+                          </Text>
+                        </View>
+
+                        <View
+                          style={[
+                            styles.planCheckCircle,
+                            {
+                              backgroundColor: selected ? pMeta.accent : 'transparent',
+                              borderColor: selected ? pMeta.accent : theme.border,
+                            },
+                          ]}
+                        >
+                          {selected && <Ionicons name="checkmark" size={14} color="#09090B" />}
+                        </View>
+                      </View>
+
                       <Text style={[styles.templateTitle, { color: theme.text }]}>
                         {tpl.label}
-                      </Text>
-                      <Text style={[styles.templateSub, { color: '#38BDF8' }]}>
-                        {tpl.subtitle}
                       </Text>
                       <Text style={[styles.templateDesc, { color: theme.textSecondary }]}>
                         {tpl.summary}
                       </Text>
-                    </View>
-                    <Ionicons
-                      name={selected ? 'checkmark-circle' : 'ellipse-outline'}
-                      size={22}
-                      color={selected ? '#38BDF8' : theme.textMuted}
-                    />
-                  </TouchableOpacity>
-                );
-              })}
+
+                      {/* Visual 7-Day Week Split Mini-Timeline */}
+                      <View style={styles.weekMatrixRow}>
+                        {WEEK_SHORT_LABELS.map((dayLbl, dayIdx) => {
+                          const code = pMeta.dayCodes[dayIdx] || '·';
+                          const isWorkout = code !== '·';
+                          return (
+                            <View key={dayLbl} style={styles.weekMatrixCol}>
+                              <Text style={[styles.weekDayLbl, { color: theme.textMuted }]}>
+                                {dayLbl}
+                              </Text>
+                              <View
+                                style={[
+                                  styles.weekDayPill,
+                                  {
+                                    backgroundColor: isWorkout
+                                      ? selected
+                                        ? pMeta.accent
+                                        : isDark
+                                        ? 'rgba(255,255,255,0.08)'
+                                        : 'rgba(24,24,27,0.07)'
+                                      : 'transparent',
+                                    borderColor: isWorkout
+                                      ? selected
+                                        ? pMeta.accent
+                                        : theme.border
+                                      : theme.hairline,
+                                  },
+                                ]}
+                              >
+                                <Text
+                                  style={[
+                                    styles.weekDayCode,
+                                    {
+                                      color: isWorkout
+                                        ? selected
+                                          ? '#09090B'
+                                          : theme.text
+                                        : theme.textMuted,
+                                    },
+                                  ]}
+                                >
+                                  {code}
+                                </Text>
+                              </View>
+                            </View>
+                          );
+                        })}
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
             </View>
           )}
           {/* =========================================================
@@ -1109,15 +1630,232 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
   },
-  progressTrack: {
+  segmentsTrack: {
+    flex: 1,
+    flexDirection: 'row',
+    gap: 6,
+  },
+  segmentPill: {
     flex: 1,
     height: 4,
     borderRadius: 99,
-    overflow: 'hidden',
   },
-  progressFill: {
-    height: '100%',
-    borderRadius: 99,
+  welcomeWrap: {
+    flex: 1,
+    paddingHorizontal: 22,
+    paddingTop: 18,
+    paddingBottom: 28,
+    justifyContent: 'space-between',
+  },
+  welcomeTopBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  welcomePillTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  welcomeLiveDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: '#10B981',
+  },
+  welcomePillText: {
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 1.1,
+    color: '#10B981',
+  },
+  welcomeCenter: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 24,
+  },
+  welcomeCrestStage: {
+    width: 126,
+    height: 126,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  welcomeOrbitRing: {
+    position: 'absolute',
+    width: 126,
+    height: 126,
+    borderRadius: 63,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+  },
+  welcomeOrbitDotTop: {
+    position: 'absolute',
+    top: -4,
+    left: '50%',
+    marginLeft: -4,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#10B981',
+  },
+  welcomeOrbitDotBottom: {
+    position: 'absolute',
+    bottom: -3.5,
+    left: '50%',
+    marginLeft: -3.5,
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    backgroundColor: '#38BDF8',
+  },
+  welcomeCoreOrb: {
+    width: 88,
+    height: 88,
+    borderRadius: 44,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  welcomeHeadline: {
+    fontSize: 34,
+    fontWeight: '900',
+    letterSpacing: -1,
+    lineHeight: 39,
+    textAlign: 'center',
+  },
+  welcomeSub: {
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: 'center',
+    marginTop: 10,
+    paddingHorizontal: 10,
+  },
+  welcomeHighlights: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  welcomeHighlightCell: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 4,
+  },
+  welcomeCellDivider: {
+    width: StyleSheet.hairlineWidth,
+    height: 36,
+  },
+  welcomeHighlightTitle: {
+    fontSize: 12.5,
+    fontWeight: '800',
+  },
+  welcomeHighlightSub: {
+    fontSize: 10.5,
+    fontWeight: '600',
+  },
+  planTelemetryBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    marginBottom: 14,
+  },
+  planTelemetryCell: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 3,
+  },
+  planTelemetryDivider: {
+    width: StyleSheet.hairlineWidth,
+    height: 26,
+  },
+  planTelemetryLabel: {
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.9,
+  },
+  planTelemetryVal: {
+    fontSize: 13.5,
+    fontWeight: '900',
+    letterSpacing: -0.2,
+  },
+  planListWrap: {
+    gap: 10,
+  },
+  planOptionBlock: {
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 14,
+    gap: 6,
+  },
+  planOptionTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 2,
+  },
+  planBadgeGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  planBadgePill: {
+    paddingHorizontal: 8,
+    paddingVertical: 3.5,
+    borderRadius: 6,
+  },
+  planBadgeText: {
+    fontSize: 9.5,
+    fontWeight: '900',
+    letterSpacing: 0.7,
+  },
+  planFreqInline: {
+    fontSize: 11.5,
+    fontWeight: '800',
+  },
+  planCheckCircle: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  weekMatrixRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 6,
+    marginTop: 8,
+    paddingTop: 8,
+  },
+  weekMatrixCol: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 4,
+  },
+  weekDayLbl: {
+    fontSize: 9.5,
+    fontWeight: '700',
+  },
+  weekDayPill: {
+    width: '100%',
+    height: 24,
+    borderRadius: 7,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  weekDayCode: {
+    fontSize: 11,
+    fontWeight: '900',
   },
   stepFractionText: {
     fontSize: 11,

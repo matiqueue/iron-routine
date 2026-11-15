@@ -229,11 +229,7 @@ export const BodyStatsModal: React.FC<BodyStatsModalProps> = ({
       subtitle="Pomiary ciała i codzienne monitorowanie"
       initialHeightPercent={0.88}
     >
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={{ flex: 1 }}
-      >
-        <BottomSheetScrollView
+      <BottomSheetScrollView
           style={styles.scroll}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={{ paddingBottom: 40 }}
@@ -472,7 +468,6 @@ export const BodyStatsModal: React.FC<BodyStatsModalProps> = ({
               )}
             </View>
           </BottomSheetScrollView>
-        </KeyboardAvoidingView>
     </InteractiveBottomSheet>
   );
 };

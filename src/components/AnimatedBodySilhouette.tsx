@@ -520,15 +520,15 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = Rea
           <Defs>
             <Pattern
               id="silhouetteGrid"
-              width={24}
-              height={24}
+              width={40}
+              height={46}
               patternUnits="userSpaceOnUse"
             >
               <Path
-                d="M 24 0 L 0 0 0 24"
+                d="M 40 0 L 0 0 0 46"
                 fill="none"
-                stroke={isDark ? 'rgba(255, 255, 255, 0.055)' : 'rgba(24, 24, 27, 0.055)'}
-                strokeWidth={1}
+                stroke={isDark ? 'rgba(255, 255, 255, 0.088)' : 'rgba(24, 24, 27, 0.082)'}
+                strokeWidth={1.1}
               />
             </Pattern>
           </Defs>

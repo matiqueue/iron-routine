@@ -1,5 +1,4 @@
 import React from 'react';
-import { KeyboardAvoidingView, Platform } from 'react-native';
 import { InteractiveBottomSheet } from './InteractiveBottomSheet';
 import { ExerciseLibraryContent } from './ExerciseLibraryContent';
 import { Exercise } from '../types/workout';
@@ -49,18 +48,13 @@ export const ExerciseLibraryModal: React.FC<ExerciseLibraryModalProps> = ({
       subtitle={resolvedSubtitle}
       initialHeightPercent={0.9}
     >
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={{ flex: 1 }}
-      >
-        <ExerciseLibraryContent
-          mode={mode}
-          alreadyInDayIds={alreadyInDayIds}
-          extraExercises={extraExercises}
-          onSelectExercise={onSelectExercise}
-          onLibraryChanged={onLibraryChanged}
-        />
-      </KeyboardAvoidingView>
+      <ExerciseLibraryContent
+        mode={mode}
+        alreadyInDayIds={alreadyInDayIds}
+        extraExercises={extraExercises}
+        onSelectExercise={onSelectExercise}
+        onLibraryChanged={onLibraryChanged}
+      />
     </InteractiveBottomSheet>
   );
 };
