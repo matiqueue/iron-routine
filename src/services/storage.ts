@@ -169,8 +169,20 @@ async function applyLocalDeviceSeedIfNeeded(): Promise<void> {
 
 // ==================== PROFILE MANAGEMENT ====================
 
-const ONE_TIME_RESET_KEY = '@iron_routine_fresh_reset_v2_4';
+const ONE_TIME_RESET_KEY = '@iron_routine_fresh_reset_v2_5';
 let resetCheckedInMemory = false;
+
+let cloudAutoSyncTrigger: ((profileId?: string) => void) | null = null;
+
+export function registerCloudAutoSyncTrigger(fn: (profileId?: string) => void): void {
+  cloudAutoSyncTrigger = fn;
+}
+
+function notifyCloudAutoSync(profileId?: string): void {
+  if (cloudAutoSyncTrigger) {
+    cloudAutoSyncTrigger(profileId);
+  }
+}
 
 async function ensureOneTimeDeviceReset(): Promise<void> {
   if (resetCheckedInMemory) return;
@@ -230,6 +242,9 @@ export async function createProfile(
     height?: number;
     weight?: number;
     templateKey?: Exclude<PlanTemplateKey, 'clone_current'>;
+    cloudUserId?: string;
+    cloudProvider?: 'apple' | 'google';
+    cloudEmail?: string;
   }
 ): Promise<UserProfile> {
   try {
@@ -250,6 +265,9 @@ export async function createProfile(
       gender: options?.gender || 'male',
       height: parsedHeight,
       weight: parsedWeight,
+      cloudUserId: options?.cloudUserId,
+      cloudProvider: options?.cloudProvider,
+      cloudEmail: options?.cloudEmail,
     };
 
     const updated = [...profiles, newProfile];
@@ -312,7 +330,8 @@ export async function updateProfile(
     cloudProvider?: 'apple' | 'google';
     cloudEmail?: string;
     lastCloudSyncAt?: string;
-  }
+  },
+  options?: { skipCloudSync?: boolean }
 ): Promise<UserProfile> {
   const profiles = await getProfiles();
   const target = profiles.find((p) => p.id === profileId);
@@ -344,6 +363,9 @@ export async function updateProfile(
   }
 
   await AsyncStorage.setItem(STORAGE_KEYS.PROFILES, JSON.stringify(profiles));
+  if (!options?.skipCloudSync) {
+    notifyCloudAutoSync(profileId);
+  }
   return target;
 }
 
@@ -485,6 +507,7 @@ export async function addPRRecord(
       history.unshift(newRecord);
       await AsyncStorage.setItem(storageKey, JSON.stringify(history));
       triggerNotificationHaptic('success');
+      notifyCloudAutoSync(pid);
       return newRecord;
     });
   } catch (error) {
@@ -519,6 +542,7 @@ export async function deletePRRecord(
         }
       })
     );
+    notifyCloudAutoSync(pid);
   } catch (error) {
     console.error('Error deleting PR record:', error);
   }
@@ -757,6 +781,7 @@ export async function markWorkoutCompleted(
     }
 
     await AsyncStorage.setItem(histKey, JSON.stringify(history.slice(0, 60)));
+    notifyCloudAutoSync(pid);
     return { totalVolumeKg, newPRs };
   } catch (error) {
     console.error('Error marking workout completed:', error);
@@ -891,6 +916,7 @@ export async function addWeightEntry(
   } catch {}
 
   triggerNotificationHaptic('success');
+  notifyCloudAutoSync(pid);
 
   return newEntry;
 }
@@ -901,6 +927,7 @@ export async function deleteWeightEntry(id: string, profileId?: string): Promise
   const history = await getWeightHistory(pid);
   const filtered = history.filter((h) => h.id !== id);
   await AsyncStorage.setItem(`${STORAGE_KEYS.WEIGHT_PREFIX}${pid}`, JSON.stringify(filtered));
+  notifyCloudAutoSync(pid);
 }
 
 export async function updateProfileStats(
@@ -915,6 +942,7 @@ export async function updateProfileStats(
   profile.height = Math.round(height);
   profile.weight = Math.round(weight * 10) / 10;
   await AsyncStorage.setItem(STORAGE_KEYS.PROFILES, JSON.stringify(profiles));
+  notifyCloudAutoSync(profileId);
   return profile;
 }
 
@@ -1200,6 +1228,7 @@ export async function createWorkoutPlan(params: {
   }
 
   triggerNotificationHaptic('success');
+  notifyCloudAutoSync(pid);
   return newPlan;
 }
 
@@ -1220,6 +1249,7 @@ export async function saveWorkoutPlan(
     : [stamped, ...plans];
 
   await AsyncStorage.setItem(`${STORAGE_KEYS.PLANS_PREFIX}${pid}`, JSON.stringify(next));
+  notifyCloudAutoSync(pid);
   return next;
 }
 
@@ -1280,8 +1310,10 @@ export async function deleteWorkoutPlan(planId: string, profileId?: string): Pro
   if (currentActive === planId) {
     const nextActiveId = remaining[0].id;
     await setActivePlanId(nextActiveId, pid);
+    notifyCloudAutoSync(pid);
     return nextActiveId;
   }
+  notifyCloudAutoSync(pid);
   return currentActive;
 }
 
@@ -1315,6 +1347,7 @@ export async function saveCustomExercise(
 
   await AsyncStorage.setItem(STORAGE_KEYS.CUSTOM_EXERCISES, JSON.stringify(next));
   triggerNotificationHaptic('success');
+  notifyCloudAutoSync();
   return exercise;
 }
 
@@ -1322,6 +1355,7 @@ export async function deleteCustomExercise(exerciseId: string): Promise<void> {
   const existing = await getCustomExercises();
   const filtered = existing.filter((item) => item.id !== exerciseId);
   await AsyncStorage.setItem(STORAGE_KEYS.CUSTOM_EXERCISES, JSON.stringify(filtered));
+  notifyCloudAutoSync();
 }
 
 // ==================== WORKOUT HISTORY & WEEKLY VOLUME ANALYTICS ====================
@@ -1623,7 +1657,9 @@ export async function importPlansFromSeedOrBackupJson(
  */
 export async function resetAllAppData(): Promise<void> {
   const allKeys = await AsyncStorage.getAllKeys();
-  const ironKeys = allKeys.filter((k) => k.startsWith('@iron_routine_'));
+  const ironKeys = allKeys.filter(
+    (k) => k.startsWith('@iron_routine') && k !== ONE_TIME_RESET_KEY
+  );
   if (ironKeys.length > 0) {
     await Promise.all(ironKeys.map((k) => AsyncStorage.removeItem(k)));
   }

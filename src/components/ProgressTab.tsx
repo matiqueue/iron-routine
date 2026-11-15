@@ -82,14 +82,18 @@ export interface ProgressTabProps {
 type SubViewTab = 'physique' | 'exercises' | 'journal';
 type ChartRange = '7d' | '30d' | 'all';
 
-const SUB_TABS: Array<{ id: SubViewTab; label: string; icon: keyof typeof Ionicons.glyphMap }> = [
-  { id: 'physique', label: 'Sylwetka', icon: 'body-outline' },
-  { id: 'exercises', label: 'Ćwiczenia', icon: 'barbell-outline' },
-  { id: 'journal', label: 'Dziennik', icon: 'pulse-outline' },
+const SUB_TABS: Array<{ id: SubViewTab; icon: keyof typeof Ionicons.glyphMap; activeIcon: keyof typeof Ionicons.glyphMap; a11y: string }> = [
+  { id: 'physique', icon: 'body-outline', activeIcon: 'body', a11y: 'Sylwetka' },
+  { id: 'exercises', icon: 'barbell-outline', activeIcon: 'barbell', a11y: 'Ćwiczenia' },
+  { id: 'journal', icon: 'stats-chart-outline', activeIcon: 'stats-chart', a11y: 'Dziennik' },
 ];
 
+const SLIDER_PADDING = 3;
+const SLIDER_SLOT_W = 46;
+const SLIDER_WIDTH = SLIDER_SLOT_W * 3 + SLIDER_PADDING * 2; // 144px
+
 /**
- * Smoothly animated horizontal progress bar that fills on mount/update.
+ * Lightweight zero-JS-animation progress fill bar for instant tab switching.
  */
 const AnimatedFillBar: React.FC<{
   pct: number;
@@ -97,40 +101,23 @@ const AnimatedFillBar: React.FC<{
   trackColor: string;
   height?: number;
   delayMs?: number;
-}> = ({ pct, color, trackColor, height = 5, delayMs = 0 }) => {
-  const anim = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    anim.setValue(0);
-    const timing = Animated.timing(anim, {
-      toValue: Math.max(0, Math.min(100, pct)),
-      duration: 560,
-      delay: delayMs,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: false,
-    });
-    timing.start();
-    return () => timing.stop();
-  }, [pct, delayMs, anim]);
-
+}> = React.memo(({ pct, color, trackColor, height = 5 }) => {
+  const clamped = Math.max(0, Math.min(100, pct));
   return (
     <View style={[styles.barTrack, { backgroundColor: trackColor, height }]}>
-      <Animated.View
+      <View
         style={[
           styles.barFill,
           {
             backgroundColor: color,
             height,
-            width: anim.interpolate({
-              inputRange: [0, 100],
-              outputRange: ['0%', '100%'],
-            }),
+            width: `${clamped}%`,
           },
         ]}
       />
     </View>
   );
-};
+});
 
 const AnimatedVerticalSpectrumBar: React.FC<{
   pct: number;
@@ -138,22 +125,8 @@ const AnimatedVerticalSpectrumBar: React.FC<{
   trackColor: string;
   isSelected: boolean;
   delayMs?: number;
-}> = ({ pct, color, trackColor, isSelected, delayMs = 0 }) => {
-  const anim = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    anim.setValue(0);
-    const timing = Animated.timing(anim, {
-      toValue: Math.max(10, Math.min(100, pct)),
-      duration: 620,
-      delay: delayMs,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: false,
-    });
-    timing.start();
-    return () => timing.stop();
-  }, [pct, delayMs, anim]);
-
+}> = React.memo(({ pct, color, trackColor, isSelected }) => {
+  const clamped = Math.max(10, Math.min(100, pct));
   return (
     <View
       style={[
@@ -165,22 +138,19 @@ const AnimatedVerticalSpectrumBar: React.FC<{
         },
       ]}
     >
-      <Animated.View
+      <View
         style={[
           styles.spectrumColFill,
           {
             backgroundColor: color,
             opacity: isSelected ? 1 : 0.85,
-            height: anim.interpolate({
-              inputRange: [0, 100],
-              outputRange: ['0%', '100%'],
-            }),
+            height: `${clamped}%`,
           },
         ]}
       />
     </View>
   );
-};
+});
 
 export const ProgressTab: React.FC<ProgressTabProps> = ({
   activeProfile,
@@ -195,19 +165,26 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
   const { theme, isDark } = useAppTheme();
   const effectiveProfileId = activeProfile?.id || profileId || 'default';
 
-  // Top sub-view navigation + animated sliding pill thumb
+  // Top sub-view navigation + silky 120fps icon-only sliding pill thumb
   const [subView, setSubView] = useState<SubViewTab>('physique');
+  const [sliderVisualIdx, setSliderVisualIdx] = useState(0);
   const subViewRef = useRef<SubViewTab>('physique');
-  const [navBarWidth, setNavBarWidth] = useState(0);
-  const navBarWidthRef = useRef(0);
+  const grantXRef = useRef(0);
   const dragStartIndexRef = useRef(0);
+  const hoverIdxRef = useRef(0);
   const navThumbAnim = useRef(new Animated.Value(0)).current;
   const navScaleAnim = useRef(new Animated.Value(1)).current;
   const viewFadeAnim = useRef(new Animated.Value(1)).current;
-  const viewSlideAnim = useRef(new Animated.Value(0)).current;
+
+  // Viewport auto-fit state (disables unnecessary micro-scroll when content fits)
+  const [scrollViewportH, setScrollViewportH] = useState(0);
+  const [scrollContentH, setScrollContentH] = useState(0);
+  const scrollViewRef = useRef<any>(null);
 
   useEffect(() => {
     subViewRef.current = subView;
+    const idx = SUB_TABS.findIndex((t) => t.id === subView);
+    if (idx >= 0) setSliderVisualIdx(idx);
   }, [subView]);
 
   // Silhouette & muscle states
@@ -216,6 +193,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
   const [selectedRankTier, setSelectedRankTier] = useState<RankTier | null>(null);
   const [selectedMuscle, setSelectedMuscle] = useState<MuscleSubGroupId | null>(null);
   const [expandedMuscleId, setExpandedMuscleId] = useState<MuscleSubGroupId | null>(null);
+  const [showAllMuscles, setShowAllMuscles] = useState(false);
   const [physiqueReport, setPhysiqueReport] = useState<PhysiqueAnalyticsReport | null>(null);
 
   // Exercises sub-view filter & search
@@ -236,6 +214,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
   const [weightChartRange, setWeightChartRange] = useState<ChartRange>('30d');
   const [newWeightInput, setNewWeightInput] = useState('');
   const [workoutHistory, setWorkoutHistory] = useState<WorkoutHistoryEntry[]>([]);
+  const [showAllJournalWorkouts, setShowAllJournalWorkouts] = useState(false);
 
   const allExercises = useMemo(() => {
     const planExercises: Exercise[] = [];
@@ -314,133 +293,138 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
   }, [focusedExercise, openExerciseDetail, onClearFocusedExercise]);
 
   const handleSwitchSubView = useCallback(
-    (next: SubViewTab, fromDrag = false) => {
-      if (next === subViewRef.current) return;
+    (next: SubViewTab, animateThumb = true) => {
       const targetIdx = SUB_TABS.findIndex((t) => t.id === next);
-      try {
-        if (fromDrag) {
-          Haptics.selectionAsync();
-        } else {
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        }
-      } catch {}
+      if (targetIdx < 0) return;
 
-      subViewRef.current = next;
-      viewFadeAnim.setValue(0);
-      viewSlideAnim.setValue(8);
-      setSubView(next);
-
-      const animations: Animated.CompositeAnimation[] = [
-        Animated.timing(viewFadeAnim, {
-          toValue: 1,
-          duration: 190,
-          easing: Easing.out(Easing.cubic),
-          useNativeDriver: true,
-        }),
-        Animated.spring(viewSlideAnim, {
-          toValue: 0,
-          friction: 8,
-          tension: 70,
-          useNativeDriver: true,
-        }),
-      ];
-
-      if (!fromDrag) {
-        animations.push(
+      if (animateThumb) {
+        Animated.parallel([
           Animated.spring(navThumbAnim, {
             toValue: targetIdx,
             friction: 7,
-            tension: 85,
+            tension: 110,
             useNativeDriver: true,
           }),
-          Animated.sequence([
-            Animated.timing(navScaleAnim, {
-              toValue: 0.94,
-              duration: 85,
-              useNativeDriver: true,
-            }),
-            Animated.spring(navScaleAnim, {
-              toValue: 1,
-              friction: 5,
-              tension: 110,
-              useNativeDriver: true,
-            }),
-          ])
-        );
+          Animated.spring(navScaleAnim, {
+            toValue: 1,
+            friction: 6,
+            tension: 120,
+            useNativeDriver: true,
+          }),
+        ]).start();
       }
 
-      Animated.parallel(animations).start();
+      if (next === subViewRef.current) return;
+
+      try {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      } catch {}
+
+      subViewRef.current = next;
+      setSliderVisualIdx(targetIdx);
+      scrollViewRef.current?.scrollTo({ y: 0, animated: false });
+      viewFadeAnim.setValue(0.25);
+
+      React.startTransition(() => {
+        setSubView(next);
+      });
+
+      Animated.timing(viewFadeAnim, {
+        toValue: 1,
+        duration: 150,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }).start();
     },
-    [navScaleAnim, navThumbAnim, viewFadeAnim, viewSlideAnim]
+    [navScaleAnim, navThumbAnim, viewFadeAnim]
   );
 
   const navPanResponder = useMemo(
     () =>
       PanResponder.create({
-        onStartShouldSetPanResponder: () => false,
-        onMoveShouldSetPanResponder: (_, gestureState) =>
-          Math.abs(gestureState.dx) > 4 &&
-          Math.abs(gestureState.dx) > Math.abs(gestureState.dy),
-        onMoveShouldSetPanResponderCapture: (_, gestureState) =>
-          Math.abs(gestureState.dx) > 5 &&
-          Math.abs(gestureState.dx) > Math.abs(gestureState.dy),
-        onPanResponderGrant: () => {
-          dragStartIndexRef.current = SUB_TABS.findIndex(
-            (t) => t.id === subViewRef.current
+        onStartShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponder: () => true,
+        onPanResponderTerminationRequest: () => false,
+        onPanResponderGrant: (evt) => {
+          const lx = Math.max(0, Math.min(SLIDER_WIDTH, evt.nativeEvent.locationX));
+          grantXRef.current = lx;
+          const curIdx = SUB_TABS.findIndex((t) => t.id === subViewRef.current);
+          const touchedIdx = Math.max(
+            0,
+            Math.min(SUB_TABS.length - 1, Math.floor((lx - SLIDER_PADDING) / SLIDER_SLOT_W))
           );
+          dragStartIndexRef.current = touchedIdx === curIdx ? curIdx : touchedIdx;
+          hoverIdxRef.current = touchedIdx;
+          setSliderVisualIdx(touchedIdx);
           try {
             Haptics.selectionAsync();
           } catch {}
-          Animated.spring(navScaleAnim, {
-            toValue: 0.96,
-            friction: 7,
-            tension: 120,
-            useNativeDriver: true,
-          }).start();
-        },
-        onPanResponderMove: (_, gestureState) => {
-          const totalW = navBarWidthRef.current;
-          const slotW = totalW > 6 ? (totalW - 6) / 3 : 74;
-          const rawIdx = dragStartIndexRef.current + gestureState.dx / slotW;
-          const clampedIdx = Math.max(0, Math.min(SUB_TABS.length - 1, rawIdx));
-          navThumbAnim.setValue(clampedIdx);
-
-          const nearestIdx = Math.round(clampedIdx);
-          const candidate = SUB_TABS[nearestIdx]?.id;
-          if (candidate && candidate !== subViewRef.current) {
-            handleSwitchSubView(candidate, true);
-          }
-        },
-        onPanResponderRelease: () => {
-          const finalIdx = SUB_TABS.findIndex((t) => t.id === subViewRef.current);
           Animated.parallel([
-            Animated.spring(navThumbAnim, {
-              toValue: finalIdx,
-              friction: 7,
-              tension: 90,
+            Animated.spring(navScaleAnim, {
+              toValue: 0.94,
+              friction: 8,
+              tension: 140,
               useNativeDriver: true,
             }),
-            Animated.spring(navScaleAnim, {
-              toValue: 1,
-              friction: 6,
-              tension: 110,
+            Animated.spring(navThumbAnim, {
+              toValue: touchedIdx,
+              friction: 9,
+              tension: 160,
               useNativeDriver: true,
             }),
           ]).start();
         },
+        onPanResponderMove: (_, gestureState) => {
+          const currentX = grantXRef.current + gestureState.dx;
+          const rawIdx = (currentX - SLIDER_PADDING - SLIDER_SLOT_W / 2) / SLIDER_SLOT_W;
+          const clampedIdx = Math.max(0, Math.min(SUB_TABS.length - 1, rawIdx));
+          navThumbAnim.setValue(clampedIdx);
+
+          const nearestIdx = Math.round(clampedIdx);
+          if (nearestIdx !== hoverIdxRef.current) {
+            hoverIdxRef.current = nearestIdx;
+            setSliderVisualIdx(nearestIdx);
+            try {
+              Haptics.selectionAsync();
+            } catch {}
+          }
+        },
+        onPanResponderRelease: (_, gestureState) => {
+          const moved = Math.abs(gestureState.dx) > 4;
+          const currentX = grantXRef.current + gestureState.dx;
+          const targetIdx = moved
+            ? Math.max(
+                0,
+                Math.min(
+                  SUB_TABS.length - 1,
+                  Math.round((currentX - SLIDER_PADDING - SLIDER_SLOT_W / 2) / SLIDER_SLOT_W)
+                )
+              )
+            : Math.max(
+                0,
+                Math.min(
+                  SUB_TABS.length - 1,
+                  Math.floor((grantXRef.current - SLIDER_PADDING) / SLIDER_SLOT_W)
+                )
+              );
+
+          const targetTab = SUB_TABS[targetIdx]?.id || subViewRef.current;
+          handleSwitchSubView(targetTab, true);
+        },
         onPanResponderTerminate: () => {
-          const finalIdx = SUB_TABS.findIndex((t) => t.id === subViewRef.current);
+          const curIdx = SUB_TABS.findIndex((t) => t.id === subViewRef.current);
+          setSliderVisualIdx(curIdx >= 0 ? curIdx : 0);
           Animated.parallel([
             Animated.spring(navThumbAnim, {
-              toValue: finalIdx,
+              toValue: curIdx >= 0 ? curIdx : 0,
               friction: 7,
-              tension: 90,
+              tension: 110,
               useNativeDriver: true,
             }),
             Animated.spring(navScaleAnim, {
               toValue: 1,
               friction: 6,
-              tension: 110,
+              tension: 120,
               useNativeDriver: true,
             }),
           ]).start();
@@ -703,11 +687,12 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
   const renderOpenLineChart = (
     points: Array<{ value: number; label: string }>,
     strokeColor: string,
-    unitLabel: string
+    unitLabel: string,
+    compact = false
   ) => {
     if (points.length === 0) {
       return (
-        <View style={styles.emptyChartOpen}>
+        <View style={[styles.emptyChartOpen, compact && { paddingVertical: 14 }]}>
           <Text style={[styles.emptyChartText, { color: theme.textMuted }]}>
             Brak zapisanych pomiarów w wybranym okresie
           </Text>
@@ -716,11 +701,11 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
     }
 
     const chartW = SCREEN_WIDTH - 40;
-    const chartH = 150;
+    const chartH = compact ? 104 : 150;
     const padL = 8;
     const padR = 8;
-    const padT = 18;
-    const padB = 26;
+    const padT = compact ? 12 : 18;
+    const padB = compact ? 18 : 26;
     const innerW = chartW - padL - padR;
     const innerH = chartH - padT - padB;
 
@@ -823,15 +808,21 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
       ? physiqueReport.exerciseStats[selectedExerciseCanonicalId]
       : null;
 
-  const pillSlotWidth = navBarWidth > 6 ? (navBarWidth - 6) / 3 : 78;
   const thumbTranslateX = navThumbAnim.interpolate({
     inputRange: [0, 1, 2],
-    outputRange: [0, pillSlotWidth, pillSlotWidth * 2],
+    outputRange: [0, SLIDER_SLOT_W, SLIDER_SLOT_W * 2],
   });
+
+  const isScrollNeeded = scrollViewportH <= 0 || scrollContentH > scrollViewportH + 6;
+  const visibleMuscles =
+    selectedRankTier || showAllMuscles
+      ? orderedMuscleList
+      : orderedMuscleList.slice(0, 5);
+  const canToggleMoreMuscles = !selectedRankTier && orderedMuscleList.length > 5;
 
   return (
     <View style={[styles.container, { backgroundColor: theme.bg }]}>
-      {/* Open Editorial Header with Interactive Drag-Slide & Tap Glass Pill Switcher */}
+      {/* Open Editorial Header with Silky 120fps Icon-Only Glass Pill Slider */}
       <View style={[styles.header, { borderBottomColor: theme.hairline }]}>
         <View style={styles.headerTopRow}>
           <Text style={[styles.title, { color: theme.text }]}>Osiągi</Text>
@@ -841,60 +832,45 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
             style={[
               styles.navPills,
               {
+                width: SLIDER_WIDTH,
                 backgroundColor: isDark
-                  ? 'rgba(39, 39, 42, 0.65)'
-                  : 'rgba(244, 244, 245, 0.85)',
+                  ? 'rgba(39, 39, 42, 0.72)'
+                  : 'rgba(244, 244, 245, 0.88)',
                 borderColor: isDark
-                  ? 'rgba(255, 255, 255, 0.1)'
+                  ? 'rgba(255, 255, 255, 0.11)'
                   : 'rgba(24, 24, 27, 0.08)',
               },
             ]}
-            onLayout={(e) => {
-              const w = e.nativeEvent.layout.width;
-              navBarWidthRef.current = w;
-              setNavBarWidth(w);
-            }}
           >
-            {navBarWidth > 0 && (
-              <Animated.View
-                pointerEvents="none"
-                style={[
-                  styles.navPillAnimatedThumb,
-                  {
-                    width: pillSlotWidth,
-                    backgroundColor: theme.text,
-                    transform: [
-                      { translateX: thumbTranslateX },
-                      { scale: navScaleAnim },
-                    ],
-                  },
-                ]}
-              />
-            )}
-            {SUB_TABS.map((tab) => {
-              const active = subView === tab.id;
+            <Animated.View
+              pointerEvents="none"
+              style={[
+                styles.navPillAnimatedThumb,
+                {
+                  width: SLIDER_SLOT_W,
+                  backgroundColor: theme.text,
+                  transform: [
+                    { translateX: thumbTranslateX },
+                    { scale: navScaleAnim },
+                  ],
+                },
+              ]}
+            />
+            {SUB_TABS.map((tab, idx) => {
+              const active = sliderVisualIdx === idx;
               return (
-                <TouchableOpacity
+                <View
                   key={tab.id}
-                  style={[styles.navPillBtn, { width: pillSlotWidth || undefined }]}
-                  onPress={() => handleSwitchSubView(tab.id)}
-                  activeOpacity={0.85}
+                  pointerEvents="none"
+                  accessibilityLabel={tab.a11y}
+                  style={styles.navPillBtn}
                 >
                   <Ionicons
-                    name={tab.icon}
-                    size={12}
+                    name={active ? tab.activeIcon : tab.icon}
+                    size={17}
                     color={active ? theme.bg : theme.textMuted}
                   />
-                  <Text
-                    style={[
-                      styles.navPillText,
-                      { color: active ? theme.bg : theme.textMuted },
-                    ]}
-                    numberOfLines={1}
-                  >
-                    {tab.label}
-                  </Text>
-                </TouchableOpacity>
+                </View>
               );
             })}
           </View>
@@ -902,17 +878,19 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
       </View>
 
       <ScrollView
+        ref={scrollViewRef}
         style={styles.scroll}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={
+          subView === 'journal' ? styles.scrollContentCompact : styles.scrollContent
+        }
+        onLayout={(e) => setScrollViewportH(e.nativeEvent.layout.height)}
+        onContentSizeChange={(_, h) => setScrollContentH(h)}
+        scrollEnabled={isScrollNeeded}
+        bounces={isScrollNeeded}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
-        <Animated.View
-          style={{
-            opacity: viewFadeAnim,
-            transform: [{ translateY: viewSlideAnim }],
-          }}
-        >
+        <Animated.View style={{ opacity: viewFadeAnim }}>
           {/* =========================================================
               SUB-VIEW 1: SYLWETKA (OPEN ANATOMY & MUSCLE RANKS)
              ========================================================= */}
@@ -1311,116 +1289,149 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                     Brak partii mięśniowych w wybranej randze {selectedRankTier}.
                   </Text>
                 ) : (
-                  orderedMuscleList.map((stat, idx) => {
-                    const isExpanded = expandedMuscleId === stat.muscleId;
-                    const muscleExList = exercisesByMuscle[stat.muscleId] || [];
-                    const barColor =
-                      stat.effectiveSetsTotal === 0
-                        ? '#71717A'
-                        : stat.rankMeta.color;
+                  <>
+                    {visibleMuscles.map((stat, idx) => {
+                      const isExpanded = expandedMuscleId === stat.muscleId;
+                      const muscleExList = exercisesByMuscle[stat.muscleId] || [];
+                      const barColor =
+                        stat.effectiveSetsTotal === 0
+                          ? '#71717A'
+                          : stat.rankMeta.color;
 
-                    return (
-                      <View
-                        key={stat.muscleId}
-                        style={[
-                          styles.muscleOpenRowWrap,
-                          { borderBottomColor: theme.hairline },
-                        ]}
-                      >
-                        <TouchableOpacity
-                          style={styles.muscleOpenRow}
-                          onPress={() => handleToggleMuscleRow(stat.muscleId)}
-                          activeOpacity={0.7}
+                      return (
+                        <View
+                          key={stat.muscleId}
+                          style={[
+                            styles.muscleOpenRowWrap,
+                            { borderBottomColor: theme.hairline },
+                          ]}
                         >
-                          <RankCrestIcon
-                            tier={stat.rank}
-                            size={38}
-                            progressPct={stat.progressPct}
-                          />
+                          <TouchableOpacity
+                            style={styles.muscleOpenRow}
+                            onPress={() => handleToggleMuscleRow(stat.muscleId)}
+                            activeOpacity={0.7}
+                          >
+                            <RankCrestIcon
+                              tier={stat.rank}
+                              size={38}
+                              progressPct={stat.progressPct}
+                            />
 
-                          <View style={styles.muscleMiddleCol}>
-                            <View style={styles.muscleRowHeaderLine}>
-                              <Text style={[styles.muscleRowTitle, { color: theme.text }]}>
-                                {stat.meta.label}
-                              </Text>
-                              <Text
-                                style={[
-                                  styles.muscleRowSets,
-                                  { color: theme.textSecondary },
-                                ]}
-                              >
-                                {Math.round(stat.effectiveSetsTotal)} serii
-                                {stat.nextTier ? ` (+${stat.setsToNext} → ${stat.nextTier})` : ' (MAX)'}
-                              </Text>
+                            <View style={styles.muscleMiddleCol}>
+                              <View style={styles.muscleRowHeaderLine}>
+                                <Text style={[styles.muscleRowTitle, { color: theme.text }]}>
+                                  {stat.meta.label}
+                                </Text>
+                                <Text
+                                  style={[
+                                    styles.muscleRowSets,
+                                    { color: theme.textSecondary },
+                                  ]}
+                                >
+                                  {Math.round(stat.effectiveSetsTotal)} serii
+                                  {stat.nextTier ? ` (+${stat.setsToNext} → ${stat.nextTier})` : ' (MAX)'}
+                                </Text>
+                              </View>
+
+                              <AnimatedFillBar
+                                pct={stat.progressPct}
+                                color={barColor}
+                                trackColor={theme.bgSecondary}
+                                height={5}
+                                delayMs={Math.min(idx * 25, 300)}
+                              />
                             </View>
 
-                            <AnimatedFillBar
-                              pct={stat.progressPct}
-                              color={barColor}
-                              trackColor={theme.bgSecondary}
-                              height={5}
-                              delayMs={Math.min(idx * 25, 300)}
+                            <Ionicons
+                              name={isExpanded ? 'chevron-up' : 'chevron-forward'}
+                              size={16}
+                              color={theme.textMuted}
                             />
-                          </View>
+                          </TouchableOpacity>
 
-                          <Ionicons
-                            name={isExpanded ? 'chevron-up' : 'chevron-forward'}
-                            size={16}
-                            color={theme.textMuted}
-                          />
-                        </TouchableOpacity>
+                          {/* Smooth Inline Expanded Exercises for this Muscle */}
+                          {isExpanded && (
+                            <View style={styles.inlineExerciseList}>
+                              {muscleExList.length === 0 ? (
+                                <Text style={[styles.inlineEmptyText, { color: theme.textMuted }]}>
+                                  Brak przypisanych ćwiczeń w bazie
+                                </Text>
+                              ) : (
+                                muscleExList.map((exStat) => {
+                                  const pr = bestPRs[exStat.exerciseId];
+                                  return (
+                                    <TouchableOpacity
+                                      key={exStat.exerciseId}
+                                      style={styles.inlineExerciseRow}
+                                      onPress={() => openExerciseDetail(exStat.exercise)}
+                                      activeOpacity={0.7}
+                                    >
+                                      <RankCrestIcon tier={exStat.rank} size={26} />
+                                      <View style={{ flex: 1 }}>
+                                        <Text
+                                          style={[styles.inlineExName, { color: theme.text }]}
+                                          numberOfLines={1}
+                                        >
+                                          {exStat.exercise.name}
+                                        </Text>
+                                        <Text
+                                          style={[
+                                            styles.inlineExSub,
+                                            { color: theme.textMuted },
+                                          ]}
+                                        >
+                                          {exStat.totalSets} serii
+                                          {pr
+                                            ? ` · PR ${pr.weight} kg × ${pr.reps}`
+                                            : ' · Brak PR'}
+                                        </Text>
+                                      </View>
+                                      <Ionicons
+                                        name="stats-chart-outline"
+                                        size={14}
+                                        color={theme.textSecondary}
+                                      />
+                                    </TouchableOpacity>
+                                  );
+                                })
+                              )}
+                            </View>
+                          )}
+                        </View>
+                      );
+                    })}
 
-                        {/* Smooth Inline Expanded Exercises for this Muscle */}
-                        {isExpanded && (
-                          <View style={styles.inlineExerciseList}>
-                            {muscleExList.length === 0 ? (
-                              <Text style={[styles.inlineEmptyText, { color: theme.textMuted }]}>
-                                Brak przypisanych ćwiczeń w bazie
-                              </Text>
-                            ) : (
-                              muscleExList.map((exStat) => {
-                                const pr = bestPRs[exStat.exerciseId];
-                                return (
-                                  <TouchableOpacity
-                                    key={exStat.exerciseId}
-                                    style={styles.inlineExerciseRow}
-                                    onPress={() => openExerciseDetail(exStat.exercise)}
-                                    activeOpacity={0.7}
-                                  >
-                                    <RankCrestIcon tier={exStat.rank} size={26} />
-                                    <View style={{ flex: 1 }}>
-                                      <Text
-                                        style={[styles.inlineExName, { color: theme.text }]}
-                                        numberOfLines={1}
-                                      >
-                                        {exStat.exercise.name}
-                                      </Text>
-                                      <Text
-                                        style={[
-                                          styles.inlineExSub,
-                                          { color: theme.textMuted },
-                                        ]}
-                                      >
-                                        {exStat.totalSets} serii
-                                        {pr
-                                          ? ` · PR ${pr.weight} kg × ${pr.reps}`
-                                          : ' · Brak PR'}
-                                      </Text>
-                                    </View>
-                                    <Ionicons
-                                      name="stats-chart-outline"
-                                      size={14}
-                                      color={theme.textSecondary}
-                                    />
-                                  </TouchableOpacity>
-                                );
-                              })
-                            )}
-                          </View>
-                        )}
-                      </View>
-                    );
-                  })
+                    {canToggleMoreMuscles && (
+                      <TouchableOpacity
+                        style={[
+                          styles.loadAllMusclesBtn,
+                          {
+                            backgroundColor: theme.bgSecondary,
+                            borderColor: theme.border,
+                          },
+                        ]}
+                        onPress={() => {
+                          try {
+                            Haptics.selectionAsync();
+                          } catch {}
+                          LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                          setShowAllMuscles((v) => !v);
+                        }}
+                        activeOpacity={0.78}
+                      >
+                        <Text style={[styles.loadAllMusclesText, { color: theme.text }]}>
+                          {showAllMuscles
+                            ? 'Pokaż mniej (top 5)'
+                            : `Załaduj wszystkie partie (${orderedMuscleList.length})`}
+                        </Text>
+                        <Ionicons
+                          name={showAllMuscles ? 'chevron-up' : 'chevron-down'}
+                          size={15}
+                          color={theme.textSecondary}
+                        />
+                      </TouchableOpacity>
+                    )}
+                  </>
                 )}
               </View>
             </View>
@@ -1603,13 +1614,13 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
           )}
 
           {/* =========================================================
-              SUB-VIEW 3: DZIENNIK (OPEN WEIGHT & ACTIVITY LOG)
+              SUB-VIEW 3: DZIENNIK (VIEWPORT-FITTED WEIGHT & ACTIVITY LOG)
              ========================================================= */}
           {subView === 'journal' && (
-            <View style={styles.openPage}>
+            <View style={styles.openPageJournal}>
               {/* Open Weight Section */}
               <View style={styles.openSectionNoBorder}>
-                <View style={styles.openSectionHeader}>
+                <View style={[styles.openSectionHeader, { marginBottom: 6 }]}>
                   <View>
                     <Text style={[styles.sectionEyebrow, { color: theme.textMuted }]}>
                       MASA CIAŁA
@@ -1684,16 +1695,18 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                     label: w.date.slice(5, 10),
                   })),
                   '#38BDF8',
-                  'kg'
+                  'kg',
+                  true
                 )}
 
-                <View style={styles.inlineInputRow}>
+                <View style={[styles.inlineInputRow, { marginTop: 6, marginBottom: 4 }]}>
                   <TextInput
                     style={[
                       styles.inlineInput,
                       {
                         backgroundColor: theme.bgSecondary,
                         color: theme.text,
+                        paddingVertical: 9,
                       },
                     ]}
                     placeholder="Wpisz dzisiejszą wagę (kg)..."
@@ -1703,7 +1716,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                     onChangeText={setNewWeightInput}
                   />
                   <TouchableOpacity
-                    style={[styles.inlineActionBtn, { backgroundColor: theme.text }]}
+                    style={[styles.inlineActionBtn, { backgroundColor: theme.text, paddingVertical: 9 }]}
                     onPress={handleSaveWeight}
                     activeOpacity={0.8}
                   >
@@ -1714,12 +1727,12 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                 </View>
 
                 {weightHistory
-                  .slice(-5)
+                  .slice(-2)
                   .reverse()
                   .map((w) => (
                     <View
                       key={w.id}
-                      style={[styles.simpleLogRow, { borderBottomColor: theme.hairline }]}
+                      style={[styles.simpleLogRow, { borderBottomColor: theme.hairline, paddingVertical: 7 }]}
                     >
                       <Text style={[styles.simpleLogDate, { color: theme.textMuted }]}>
                         {new Date(w.date).toLocaleDateString('pl-PL', {
@@ -1741,13 +1754,13 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
               </View>
 
               {/* Open 28-Day Activity Matrix */}
-              <View style={[styles.openSection, { borderTopColor: theme.hairline }]}>
-                <View style={styles.openSectionHeader}>
+              <View style={[styles.openSectionCompact, { borderTopColor: theme.hairline }]}>
+                <View style={[styles.openSectionHeader, { marginBottom: 8 }]}>
                   <View>
                     <Text style={[styles.sectionEyebrow, { color: theme.textMuted }]}>
                       REGULARNOŚĆ
                     </Text>
-                    <Text style={[styles.sectionHeading, { color: theme.text }]}>
+                    <Text style={[styles.sectionHeadingCompact, { color: theme.text }]}>
                       Ostatnie 28 dni
                     </Text>
                   </View>
@@ -1756,12 +1769,12 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                   </Text>
                 </View>
 
-                <View style={styles.dotsGrid}>
+                <View style={styles.dotsGridCompact}>
                   {last28Days.map((day) => (
                     <View
                       key={day.key}
                       style={[
-                        styles.dayDotBox,
+                        styles.dayDotBoxCompact,
                         {
                           backgroundColor: day.active
                             ? '#10B981'
@@ -1787,19 +1800,32 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
               </View>
 
               {/* Open Recent Workouts Timeline */}
-              <View style={[styles.openSection, { borderTopColor: theme.hairline }]}>
-                <View style={styles.openSectionHeader}>
+              <View style={[styles.openSectionCompact, { borderTopColor: theme.hairline }]}>
+                <View style={[styles.openSectionHeader, { marginBottom: 6 }]}>
                   <View>
                     <Text style={[styles.sectionEyebrow, { color: theme.textMuted }]}>
                       HISTORIA SESJI
                     </Text>
-                    <Text style={[styles.sectionHeading, { color: theme.text }]}>
+                    <Text style={[styles.sectionHeadingCompact, { color: theme.text }]}>
                       Ostatnie treningi
                     </Text>
                   </View>
-                  <Text style={[styles.sectionRightMeta, { color: theme.textMuted }]}>
-                    Łącznie {workoutHistory.length}
-                  </Text>
+                  {workoutHistory.length > 2 ? (
+                    <TouchableOpacity
+                      onPress={() => {
+                        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                        setShowAllJournalWorkouts((v) => !v);
+                      }}
+                    >
+                      <Text style={[styles.sectionRightMeta, { color: theme.text }]}>
+                        {showAllJournalWorkouts ? 'Mniej' : `Wszystkie (${workoutHistory.length})`}
+                      </Text>
+                    </TouchableOpacity>
+                  ) : (
+                    <Text style={[styles.sectionRightMeta, { color: theme.textMuted }]}>
+                      Łącznie {workoutHistory.length}
+                    </Text>
+                  )}
                 </View>
 
                 {workoutHistory.length === 0 ? (
@@ -1807,13 +1833,13 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                     Nie ukończono jeszcze żadnego treningu
                   </Text>
                 ) : (
-                  workoutHistory
-                    .slice(-10)
+                  (showAllJournalWorkouts ? workoutHistory.slice(-10) : workoutHistory.slice(-2))
+                    .slice()
                     .reverse()
                     .map((entry, idx) => (
                       <View
                         key={`${entry.date}-${idx}`}
-                        style={[styles.workoutLogRow, { borderBottomColor: theme.hairline }]}
+                        style={[styles.workoutLogRow, { borderBottomColor: theme.hairline, paddingVertical: 8 }]}
                       >
                         <View style={{ flex: 1 }}>
                           <Text style={[styles.workoutLogTitle, { color: theme.text }]}>
@@ -2057,34 +2083,27 @@ const styles = StyleSheet.create({
   navPills: {
     position: 'relative',
     flexDirection: 'row',
-    flex: 1,
-    maxWidth: 236,
+    alignItems: 'center',
+    height: 40,
     borderRadius: 999,
-    padding: 3,
+    padding: SLIDER_PADDING,
     borderWidth: 1,
     overflow: 'hidden',
   },
   navPillAnimatedThumb: {
     position: 'absolute',
-    top: 3,
-    bottom: 3,
-    left: 3,
+    top: SLIDER_PADDING,
+    bottom: SLIDER_PADDING,
+    left: SLIDER_PADDING,
     borderRadius: 999,
   },
   navPillBtn: {
-    flexDirection: 'row',
+    width: SLIDER_SLOT_W,
+    height: '100%',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 4,
-    paddingHorizontal: 6,
-    paddingVertical: 7,
     borderRadius: 999,
     zIndex: 2,
-  },
-  navPillText: {
-    fontSize: 11.5,
-    fontWeight: '700',
-    letterSpacing: -0.1,
   },
   scroll: {
     flex: 1,
@@ -2093,8 +2112,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 120,
   },
+  scrollContentCompact: {
+    paddingHorizontal: 20,
+    paddingBottom: 84,
+  },
   openPage: {
     paddingTop: 6,
+  },
+  openPageJournal: {
+    paddingTop: 2,
   },
   heroShowcaseWrap: {
     flexDirection: 'row',
@@ -2380,6 +2406,43 @@ const styles = StyleSheet.create({
   inlineExSub: {
     fontSize: 11,
     marginTop: 1,
+  },
+  loadAllMusclesBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 14,
+    paddingVertical: 12,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  loadAllMusclesText: {
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  openSectionCompact: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  sectionHeadingCompact: {
+    fontSize: 17,
+    fontWeight: '800',
+    letterSpacing: -0.3,
+  },
+  dotsGridCompact: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 2,
+  },
+  dayDotBoxCompact: {
+    width: (SCREEN_WIDTH - 40 - 6 * 6) / 7,
+    height: 27,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   openSearchRow: {
     flexDirection: 'row',

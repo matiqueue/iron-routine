@@ -51,9 +51,7 @@ import {
   updateProfile,
 } from '../services/storage';
 import {
-  clearStoredCloudSession,
   CloudSession,
-  deleteCloudAccountData,
   getStoredCloudSession,
   pullProfileFromCloud,
   pushProfileToCloud,
@@ -108,7 +106,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 
   // Cloud Sync state (Clerk + Vercel NoSQL)
   const [cloudSession, setCloudSession] = useState<CloudSession | null>(null);
-  const [isCloudBusy, setIsCloudBusy] = useState(false);
+  const [busyCloudProvider, setBusyCloudProvider] = useState<'apple' | 'google' | null>(null);
 
   const [customCount, setCustomCount] = useState(0);
   const [showExerciseLibrary, setShowExerciseLibrary] = useState(false);
@@ -184,128 +182,82 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   };
 
   const handleCloudProviderSignIn = async (provider: 'apple' | 'google') => {
-    if (isCloudBusy) return;
+    if (busyCloudProvider) return;
     triggerSelectionHaptic();
-    setIsCloudBusy(true);
+    setBusyCloudProvider(provider);
     try {
       const res =
         provider === 'apple'
           ? await signInWithAppleCloud(nameInput.trim() || activeProfile.name)
-          : await signInWithGoogleCloud();
+          : await signInWithGoogleCloud(nameInput.trim() || activeProfile.name);
 
       if (!res.ok || !res.session) {
         Alert.alert('Logowanie w chmurze', res.error || 'Nie udało się połączyć konta.');
         return;
       }
 
-      setCloudSession(res.session);
+      const session = res.session;
+      setCloudSession(session);
       triggerNotificationHaptic('success');
 
-      const pushRes = await pushProfileToCloud(activeProfile.id);
-      if (pushRes.ok) {
-        const refreshed = await getStoredCloudSession();
-        if (refreshed) setCloudSession(refreshed);
-      }
+      const uploadCurrent = async () => {
+        const pushRes = await pushProfileToCloud(activeProfile.id);
+        const updatedProfile = await updateProfile(
+          activeProfile.id,
+          {
+            cloudUserId: session.userId,
+            cloudProvider: session.provider,
+            cloudEmail: session.email,
+            lastCloudSyncAt: pushRes.syncedAt || new Date().toISOString(),
+          },
+          { skipCloudSync: true }
+        ).catch(() => null);
+        if (updatedProfile) {
+          onProfileUpdated(updatedProfile);
+        }
+        Alert.alert(
+          'Połączono konto',
+          `Połączono z ${
+            session.provider === 'apple' ? 'iCloud' : 'Google'
+          }. Od teraz Twoje dane będą się automatycznie zapisywać w chmurze.`
+        );
+      };
 
-      Alert.alert(
-        'Połączono konto',
-        `Zalogowano przez ${
-          res.session.provider === 'apple' ? 'Apple iCloud' : 'Google (Clerk)'
-        } (${res.session.displayName}) i zsynchronizowano dane z bazą NoSQL.`
-      );
+      if (!res.isNewAccount && session.backupSummary) {
+        Alert.alert(
+          'Znaleziono konto w chmurze',
+          `Na tym koncie zapisany jest profil "${session.backupSummary.profileName}" (${session.backupSummary.plansCount} planów). Przywrócić go czy zapisać obecne dane lokalne?`,
+          [
+            {
+              text: 'Zapisz obecne',
+              onPress: () => {
+                uploadCurrent();
+              },
+            },
+            {
+              text: 'Przywróć z chmury',
+              onPress: async () => {
+                const pullRes = await pullProfileFromCloud();
+                if (pullRes.ok && pullRes.profile) {
+                  await onDataImported();
+                  await loadMeta();
+                  triggerNotificationHaptic('success');
+                  Alert.alert('Przywrócono', `Załadowano profil "${pullRes.profile.name}".`);
+                } else {
+                  await uploadCurrent();
+                }
+              },
+            },
+          ]
+        );
+      } else {
+        await uploadCurrent();
+      }
     } catch (e: any) {
       Alert.alert('Logowanie w chmurze', e?.message || 'Nie udało się połączyć z chmurą.');
     } finally {
-      setIsCloudBusy(false);
+      setBusyCloudProvider(null);
     }
-  };
-
-  const handleCloudPush = async () => {
-    if (isCloudBusy) return;
-    setIsCloudBusy(true);
-    try {
-      const res = await pushProfileToCloud(activeProfile.id);
-      if (!res.ok) {
-        Alert.alert('Błąd synchronizacji', res.error || 'Nie udało się zapisać danych w chmurze.');
-        return;
-      }
-      const refreshed = await getStoredCloudSession();
-      if (refreshed) setCloudSession(refreshed);
-      triggerNotificationHaptic('success');
-      Alert.alert(
-        'Zsynchronizowano z chmurą',
-        'Twoje plany, historia sesji i rekordy 1RM zostały bezpiecznie zapisane w chmurze NoSQL.'
-      );
-    } catch (e: any) {
-      Alert.alert('Błąd synchronizacji', e?.message || 'Nie udało się zapisać danych w chmurze.');
-    } finally {
-      setIsCloudBusy(false);
-    }
-  };
-
-  const handleCloudPull = async () => {
-    if (isCloudBusy) return;
-    Alert.alert(
-      'Pobrać konto z chmury?',
-      'Dane na tym telefonie zostaną zaktualizowane kopią zapisaną w chmurze NoSQL.',
-      [
-        { text: 'Anuluj', style: 'cancel' },
-        {
-          text: 'Pobierz i zastąp',
-          onPress: async () => {
-            setIsCloudBusy(true);
-            try {
-              const res = await pullProfileFromCloud();
-              if (!res.ok || !res.profile) {
-                Alert.alert('Błąd pobierania', res.error || 'Brak zapisanej kopii w chmurze.');
-                return;
-              }
-              await onDataImported();
-              await loadMeta();
-              triggerNotificationHaptic('success');
-              Alert.alert(
-                'Pobrano z chmury',
-                `Załadowano profil "${res.profile.name}" z bazy NoSQL.`
-              );
-            } catch (e: any) {
-              Alert.alert('Błąd pobierania', e?.message || 'Nie udało się pobrać kopii z chmury.');
-            } finally {
-              setIsCloudBusy(false);
-            }
-          },
-        },
-      ]
-    );
-  };
-
-  const handleCloudSignOut = async () => {
-    triggerSelectionHaptic();
-    await clearStoredCloudSession();
-    setCloudSession(null);
-  };
-
-  const handleCloudDelete = () => {
-    Alert.alert(
-      'Usunąć dane z chmury?',
-      'Twoja kopia zapasowa w bazie NoSQL zostanie trwale usunięta z serwera. Dane lokalne na telefonie pozostaną nienaruszone.',
-      [
-        { text: 'Anuluj', style: 'cancel' },
-        {
-          text: 'Usuń z chmury',
-          style: 'destructive',
-          onPress: async () => {
-            setIsCloudBusy(true);
-            try {
-              await deleteCloudAccountData();
-              setCloudSession(null);
-              Alert.alert('Usunięto', 'Twoje dane zostały usunięte z chmury.');
-            } finally {
-              setIsCloudBusy(false);
-            }
-          },
-        },
-      ]
-    );
   };
 
   const handleToggleHealthSync = async (enabled: boolean) => {
@@ -465,13 +417,17 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   };
   const switchThumb = isDark ? (settings.hapticsEnabled ? '#000000' : '#FFFFFF') : '#FFFFFF';
 
+  const isCloudLoggedIn = Boolean(
+    cloudSession || activeProfile.cloudUserId || activeProfile.cloudEmail
+  );
+
   return (
     <View style={[styles.container, { backgroundColor: theme.bg }]}>
       {/* Open Editorial Header */}
       <View style={[styles.header, { borderBottomColor: theme.hairline }]}>
         <Text style={[styles.headerTitle, { color: theme.text }]}>Ustawienia</Text>
         <Text style={[styles.headerSub, { color: theme.textMuted }]}>
-          Profil · Synchronizacja NoSQL · Zdrowie · Baza ćwiczeń
+          Profil · Zdrowie · Suplementacja · Baza ćwiczeń
         </Text>
       </View>
 
@@ -481,159 +437,73 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
         keyboardShouldPersistTaps="handled"
       >
         {/* =========================================================
-            SECTION 1: CLOUD ACCOUNT & NOSQL SYNC (GOOGLE / ICLOUD)
+            CLOUD LINK PROMPT (ONLY VISIBLE WHEN NOT LOGGED IN)
            ========================================================= */}
-        <View style={[styles.openSection, { borderBottomColor: theme.hairline }]}>
-          <View style={styles.sectionHeaderRow}>
-            <View>
-              <Text style={[styles.sectionEyebrow, { color: '#38BDF8' }]}>
-                CHMURA NOSQL (VERCEL)
-              </Text>
-              <Text style={[styles.sectionHeading, { color: theme.text }]}>
-                Synchronizacja konta
-              </Text>
-            </View>
-            <View
-              style={[
-                styles.statusBadge,
-                {
-                  backgroundColor: cloudSession
-                    ? 'rgba(16, 185, 129, 0.14)'
-                    : theme.bgSecondary,
-                },
-              ]}
-            >
-              <View
-                style={[
-                  styles.statusDot,
-                  { backgroundColor: cloudSession ? '#10B981' : theme.textMuted },
-                ]}
-              />
-              <Text
-                style={[
-                  styles.statusBadgeText,
-                  { color: cloudSession ? '#10B981' : theme.textMuted },
-                ]}
-              >
-                {cloudSession ? 'Połączono' : 'Lokalnie'}
-              </Text>
-            </View>
-          </View>
-
-          <Text style={[styles.sectionLead, { color: theme.textSecondary }]}>
-            Zaloguj się przez Apple iCloud lub Google, aby bezpiecznie przechowywać zaszyfrowaną kopię JSON w chmurze i jednym kliknięciem przenieść konto na nowy telefon.
-          </Text>
-
-          {cloudSession ? (
-            <View style={styles.cloudConnectedWrap}>
-              <View style={[styles.cloudAccountBar, { backgroundColor: theme.bgSecondary }]}>
-                <Ionicons
-                  name={cloudSession.provider === 'apple' ? 'logo-apple' : 'logo-google'}
-                  size={20}
-                  color={theme.text}
-                />
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.cloudEmailTitle, { color: theme.text }]}>
-                    {cloudSession.email}
-                  </Text>
-                  <Text style={[styles.cloudSyncSub, { color: theme.textMuted }]}>
-                    {cloudSession.lastSyncedAt
-                      ? `Ostatnia synchronizacja: ${new Date(
-                          cloudSession.lastSyncedAt
-                        ).toLocaleString('pl-PL')}`
-                      : 'Gotowe do pierwszej synchronizacji'}
-                  </Text>
-                </View>
-                <TouchableOpacity onPress={handleCloudSignOut} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                  <Text style={[styles.signOutLink, { color: theme.textSecondary }]}>Wyloguj</Text>
-                </TouchableOpacity>
-              </View>
-
-              <View style={styles.cloudActionsRow}>
-                <TouchableOpacity
-                  style={[styles.cloudActionPrimary, { backgroundColor: theme.text }]}
-                  onPress={handleCloudPush}
-                  disabled={isCloudBusy}
-                  activeOpacity={0.8}
-                >
-                  {isCloudBusy ? (
-                    <ActivityIndicator size="small" color={theme.bg} />
-                  ) : (
-                    <>
-                      <Ionicons name="cloud-upload-outline" size={16} color={theme.bg} />
-                      <Text style={[styles.cloudActionPrimaryText, { color: theme.bg }]}>
-                        Wyślij do chmury
-                      </Text>
-                    </>
-                  )}
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[styles.cloudActionSecondary, { backgroundColor: theme.bgSecondary }]}
-                  onPress={handleCloudPull}
-                  disabled={isCloudBusy}
-                  activeOpacity={0.8}
-                >
-                  <Ionicons name="cloud-download-outline" size={16} color={theme.text} />
-                  <Text style={[styles.cloudActionSecondaryText, { color: theme.text }]}>
-                    Pobierz z chmury
-                  </Text>
-                </TouchableOpacity>
-              </View>
-
-              <TouchableOpacity
-                style={styles.deleteCloudLinkWrap}
-                onPress={handleCloudDelete}
-                disabled={isCloudBusy}
-              >
-                <Text style={styles.deleteCloudLinkText}>
-                  Usuń moje dane z chmury NoSQL
+        {!isCloudLoggedIn && (
+          <View style={[styles.openSection, { borderBottomColor: theme.hairline }]}>
+            <View style={styles.sectionHeaderRow}>
+              <View>
+                <Text style={[styles.sectionEyebrow, { color: '#38BDF8' }]}>
+                  CHMURA KONTA (CLERK)
                 </Text>
-              </TouchableOpacity>
+                <Text style={[styles.sectionHeading, { color: theme.text }]}>
+                  Chcesz połączyć konto z chmurą?
+                </Text>
+              </View>
             </View>
-          ) : (
-            <View style={styles.cloudAuthWrap}>
+
+            <Text style={[styles.sectionLead, { color: theme.textSecondary }]}>
+              Połącz iCloud lub Google, aby automatycznie synchronizować swoje plany i rekordy w bazie NoSQL.
+            </Text>
+
+            <View style={styles.cloudTwoBtnRow}>
               <TouchableOpacity
-                style={[styles.openPrimaryAction, { backgroundColor: theme.text }]}
+                style={[
+                  styles.cloudTwoBtnPrimary,
+                  {
+                    backgroundColor: theme.text,
+                    opacity: busyCloudProvider && busyCloudProvider !== 'apple' ? 0.55 : 1,
+                  },
+                ]}
                 onPress={() => handleCloudProviderSignIn('apple')}
-                disabled={isCloudBusy}
+                disabled={Boolean(busyCloudProvider)}
                 activeOpacity={0.85}
               >
-                {isCloudBusy ? (
+                {busyCloudProvider === 'apple' ? (
                   <ActivityIndicator size="small" color={theme.bg} />
                 ) : (
                   <>
                     <Ionicons name="logo-apple" size={18} color={theme.bg} />
-                    <Text style={[styles.openPrimaryActionText, { color: theme.bg }]}>
-                      Kontynuuj z Apple (iCloud)
-                    </Text>
+                    <Text style={[styles.cloudTwoBtnText, { color: theme.bg }]}>iCloud</Text>
                   </>
                 )}
               </TouchableOpacity>
 
               <TouchableOpacity
                 style={[
-                  styles.openPrimaryAction,
-                  { backgroundColor: theme.bgSecondary, marginTop: 2 },
+                  styles.cloudTwoBtnSecondary,
+                  {
+                    backgroundColor: theme.bgSecondary,
+                    borderColor: theme.border,
+                    opacity: busyCloudProvider && busyCloudProvider !== 'google' ? 0.55 : 1,
+                  },
                 ]}
                 onPress={() => handleCloudProviderSignIn('google')}
-                disabled={isCloudBusy}
+                disabled={Boolean(busyCloudProvider)}
                 activeOpacity={0.85}
               >
-                {isCloudBusy ? (
+                {busyCloudProvider === 'google' ? (
                   <ActivityIndicator size="small" color={theme.text} />
                 ) : (
                   <>
                     <Ionicons name="logo-google" size={16} color={theme.text} />
-                    <Text style={[styles.openPrimaryActionText, { color: theme.text }]}>
-                      Kontynuuj z Google (Clerk)
-                    </Text>
+                    <Text style={[styles.cloudTwoBtnText, { color: theme.text }]}>Google</Text>
                   </>
                 )}
               </TouchableOpacity>
             </View>
-          )}
-        </View>
+          </View>
+        )}
 
         {/* =========================================================
             SECTION 2: ATHLETE PROFILE & GENDER MODEL
@@ -1510,6 +1380,33 @@ const styles = StyleSheet.create({
   },
   cloudAuthWrap: {
     gap: 10,
+  },
+  cloudTwoBtnRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  cloudTwoBtnPrimary: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    borderRadius: 999,
+  },
+  cloudTwoBtnSecondary: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  cloudTwoBtnText: {
+    fontSize: 14,
+    fontWeight: '900',
   },
   providerPillsRow: {
     flexDirection: 'row',

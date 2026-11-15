@@ -50,20 +50,20 @@ interface OnboardingScreenProps {
   onCompleted: (profile: UserProfile) => Promise<void> | void;
 }
 
-const TOTAL_STEPS = 4;
+const TOTAL_STEPS = 5;
 const ONBOARDING_REST_PRESETS = [90, 120, 180];
 
 const STEP_META = [
   {
-    kicker: '01 / 04 · TOŻSAMOŚĆ I SYLWETKA',
+    kicker: '01 / 05 · TOŻSAMOŚĆ I SYLWETKA',
     title: 'Stwórz swój profil',
-    subtitle: 'Wybierz model anatomiczny sylwetki, wpisz parametry startowe lub przywróć konto z chmury.',
+    subtitle: 'Wybierz model anatomiczny sylwetki oraz wpisz imię i parametry startowe.',
     icon: 'barbell-outline' as const,
     preset: 'barbell' as const,
     accent: '#10B981',
   },
   {
-    kicker: '02 / 04 · SUPLEMENTACJA',
+    kicker: '02 / 05 · SUPLEMENTACJA',
     title: 'Dobierz suplementy',
     subtitle: 'Wybierz stosowane suplementy. Dawki przeliczymy automatycznie według masy ciała.',
     icon: 'flame' as const,
@@ -71,7 +71,7 @@ const STEP_META = [
     accent: '#F59E0B',
   },
   {
-    kicker: '03 / 04 · ZDROWIE I ALERTY',
+    kicker: '03 / 05 · ZDROWIE I ALERTY',
     title: 'Regeneracja i budzik przerw',
     subtitle: 'Połącz systemowe Zdrowie oraz włącz alarm końca przerwy działający przy zablokowanym ekranie.',
     icon: 'heart' as const,
@@ -79,12 +79,20 @@ const STEP_META = [
     accent: '#EF4444',
   },
   {
-    kicker: '04 / 04 · PLAN STARTOWY',
+    kicker: '04 / 05 · PLAN STARTOWY',
     title: 'Wybierz bazę treningową',
     subtitle: 'Zacznij od sprawdzonego schematu lub pustego tygodnia gotowego na własną konfigurację.',
     icon: 'trophy' as const,
     preset: 'trophy' as const,
     accent: '#38BDF8',
+  },
+  {
+    kicker: '05 / 05 · KONTO I CHMURA',
+    title: 'Zapisz konto w chmurze',
+    subtitle: 'Wybierz logowanie iCloud lub Gmail (Clerk), aby automatycznie synchronizować dane w chmurze, albo korzystaj lokalnie.',
+    icon: 'cloud-done-outline' as const,
+    preset: 'trophy' as const,
+    accent: '#10B981',
   },
 ];
 
@@ -111,10 +119,8 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
   const [showImport, setShowImport] = useState(false);
   const [importText, setImportText] = useState('');
 
-  // Cloud Sign-in / Restore state on Step 1
-  const [showCloudPanel, setShowCloudPanel] = useState(false);
-  const [isCloudBusy, setIsCloudBusy] = useState(false);
-  const [linkedCloudEmail, setLinkedCloudEmail] = useState<string | null>(null);
+  // Cloud Sign-in state on Final Step (Step 5)
+  const [busyProvider, setBusyProvider] = useState<'apple' | 'google' | null>(null);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -211,15 +217,33 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
     }
   };
 
-  const handleCloudProviderSignIn = async (provider: 'apple' | 'google') => {
-    if (isCloudBusy) return;
+  const applyOnboardingSettings = async () => {
+    await ensureNotificationPermissions(true);
+
+    if (suppReminderEnabled) {
+      await setCreatineReminderEnabled(true);
+    }
+
+    await updateAppSettings({
+      defaultRestSeconds,
+      hapticsEnabled,
+      restEndMultiBuzz: hapticsEnabled,
+      restNotificationsEnabled: hapticsEnabled,
+      creatineRemindersEnabled: suppReminderEnabled,
+      healthSyncEnabled,
+      supplements,
+    });
+  };
+
+  const handleFinishWithCloud = async (provider: 'apple' | 'google') => {
+    if (busyProvider || isSubmitting) return;
     triggerSelectionHaptic();
-    setIsCloudBusy(true);
+    setBusyProvider(provider);
     try {
       const authRes =
         provider === 'apple'
           ? await signInWithAppleCloud(name.trim() || undefined)
-          : await signInWithGoogleCloud();
+          : await signInWithGoogleCloud(name.trim() || undefined);
 
       if (!authRes.ok || !authRes.session) {
         Alert.alert(
@@ -229,19 +253,45 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
         return;
       }
 
-      setLinkedCloudEmail(authRes.session.displayName || authRes.session.email);
+      const session = authRes.session;
 
-      if (!authRes.isNewAccount && authRes.session.backupSummary) {
+      const createAndUploadProfile = async () => {
+        setIsSubmitting(true);
+        try {
+          await applyOnboardingSettings();
+          const profile = await createProfile(
+            name.trim() || session.displayName || 'Sportowiec',
+            {
+              gender,
+              weight: parsedWeight,
+              height: parsedHeight,
+              templateKey,
+              cloudUserId: session.userId,
+              cloudProvider: session.provider,
+              cloudEmail: session.email,
+            }
+          );
+          await pushProfileToCloud(profile.id).catch(() => {});
+          triggerNotificationHaptic('success');
+          await onCompleted(profile);
+        } finally {
+          setIsSubmitting(false);
+        }
+      };
+
+      if (!authRes.isNewAccount && session.backupSummary) {
         Alert.alert(
           'Znaleziono konto w chmurze',
-          `Wykryto zapisany profil "${authRes.session.backupSummary.profileName}" (${authRes.session.backupSummary.plansCount} planów, ${authRes.session.backupSummary.prsCount} rekordów PR). Czy chcesz od razu przywrócić całe konto na ten telefon?`,
+          `Wykryto zapisany profil "${session.backupSummary.profileName}" (${session.backupSummary.plansCount} planów, ${session.backupSummary.prsCount} rekordów PR). Czy przywrócić zapisane dane na ten telefon?`,
           [
             {
-              text: 'Tylko połącz z nowym',
-              style: 'cancel',
+              text: 'Użyj nowej konfiguracji',
+              onPress: () => {
+                createAndUploadProfile();
+              },
             },
             {
-              text: 'Przywróć konto teraz',
+              text: 'Przywróć konto',
               onPress: async () => {
                 try {
                   setIsSubmitting(true);
@@ -250,10 +300,16 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
                     triggerNotificationHaptic('success');
                     await onCompleted(restored.profile);
                   } else {
-                    Alert.alert('Błąd przywracania', restored.error || 'Brak kopii w chmurze.');
+                    Alert.alert(
+                      'Błąd przywracania',
+                      restored.error || 'Nie znaleziono pełnej kopii w chmurze.'
+                    );
                   }
                 } catch (err: any) {
-                  Alert.alert('Błąd przywracania', err?.message || 'Nie udało się pobrać kopii.');
+                  Alert.alert(
+                    'Błąd przywracania',
+                    err?.message || 'Nie udało się pobrać kopii.'
+                  );
                 } finally {
                   setIsSubmitting(false);
                 }
@@ -262,18 +318,34 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
           ]
         );
       } else {
-        triggerNotificationHaptic('success');
-        Alert.alert(
-          'Połączono z chmurą',
-          `Konto ${
-            provider === 'apple' ? 'Apple iCloud' : 'Google (Clerk)'
-          } (${authRes.session.displayName}) zostało powiązane. Po zakończeniu konfiguracji automatycznie zapiszemy Twój profil w bazie NoSQL.`
-        );
+        await createAndUploadProfile();
       }
     } catch (e: any) {
       Alert.alert('Logowanie w chmurze', e?.message || 'Nie udało się połączyć z chmurą.');
     } finally {
-      setIsCloudBusy(false);
+      setBusyProvider(null);
+    }
+  };
+
+  const handleFinishSetupLocal = async () => {
+    if (isSubmitting || busyProvider) return;
+    const trimmed = name.trim() || 'Sportowiec';
+
+    setIsSubmitting(true);
+    try {
+      await applyOnboardingSettings();
+      triggerNotificationHaptic('success');
+      const profile = await createProfile(trimmed, {
+        gender,
+        weight: parsedWeight,
+        height: parsedHeight,
+        templateKey,
+      });
+      await onCompleted(profile);
+    } catch (e: any) {
+      Alert.alert('Błąd', e?.message || 'Nie udało się skonfigurować konta.');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -313,73 +385,6 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
     }
   };
 
-  const handleFinishSetup = async () => {
-    if (isSubmitting) return;
-    const trimmed = name.trim() || 'Sportowiec';
-
-    setIsSubmitting(true);
-    try {
-      await ensureNotificationPermissions(true);
-
-      if (suppReminderEnabled) {
-        await setCreatineReminderEnabled(true);
-      }
-
-      await updateAppSettings({
-        defaultRestSeconds,
-        hapticsEnabled,
-        restEndMultiBuzz: hapticsEnabled,
-        restNotificationsEnabled: hapticsEnabled,
-        creatineRemindersEnabled: suppReminderEnabled,
-        healthSyncEnabled,
-        supplements,
-      });
-
-      triggerNotificationHaptic('success');
-      const profile = await createProfile(trimmed, {
-        gender,
-        weight: parsedWeight,
-        height: parsedHeight,
-        templateKey,
-      });
-
-      if (linkedCloudEmail) {
-        await pushProfileToCloud(profile.id).catch(() => {});
-      }
-
-      await onCompleted(profile);
-    } catch (e: any) {
-      Alert.alert('Błąd', e?.message || 'Nie udało się skonfigurować konta.');
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleSkipBlank = async () => {
-    if (isSubmitting) return;
-    setIsSubmitting(true);
-    try {
-      await ensureNotificationPermissions(true);
-      await updateAppSettings({
-        defaultRestSeconds,
-        hapticsEnabled,
-        restEndMultiBuzz: hapticsEnabled,
-        restNotificationsEnabled: hapticsEnabled,
-        healthSyncEnabled,
-        supplements,
-      });
-      const profile = await createProfile(name.trim() || 'Sportowiec', {
-        gender,
-        templateKey: 'blank',
-      });
-      await onCompleted(profile);
-    } catch (e: any) {
-      Alert.alert('Błąd', e?.message || 'Nie udało się uruchomić czystego profilu.');
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
   const handleImportJson = async () => {
     if (isSubmitting) return;
     if (!importText.trim()) {
@@ -403,7 +408,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
   const meta = STEP_META[step];
   const progressWidth = progressAnim.interpolate({
     inputRange: [1, TOTAL_STEPS],
-    outputRange: ['25%', '100%'],
+    outputRange: ['20%', '100%'],
   });
 
   const enabledSuppCount = supplements.filter((s) => s.enabled).length;
@@ -663,85 +668,6 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
                     />
                   </View>
                 </View>
-              </View>
-
-              {/* Cloud Account Sync / Restore Section */}
-              <View style={[styles.openSection, { borderTopColor: theme.hairline }]}>
-                <TouchableOpacity
-                  style={styles.openExpandHeader}
-                  onPress={() => {
-                    triggerSelectionHaptic();
-                    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-                    setShowCloudPanel((v) => !v);
-                  }}
-                  activeOpacity={0.75}
-                >
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
-                    <Ionicons
-                      name="cloud-done-outline"
-                      size={20}
-                      color={linkedCloudEmail ? '#10B981' : '#38BDF8'}
-                    />
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.expandTitle, { color: theme.text }]}>
-                        {linkedCloudEmail
-                          ? `Połączono z chmurą (${linkedCloudEmail})`
-                          : 'Masz już konto? Zaloguj z chmury (iCloud / Google)'}
-                      </Text>
-                      <Text style={[styles.expandSub, { color: theme.textMuted }]}>
-                        Wygodna synchronizacja konta między telefonami w bazie NoSQL
-                      </Text>
-                    </View>
-                  </View>
-                  <Ionicons
-                    name={showCloudPanel ? 'chevron-up' : 'chevron-forward'}
-                    size={18}
-                    color={theme.textMuted}
-                  />
-                </TouchableOpacity>
-
-                {showCloudPanel && (
-                  <View style={styles.cloudPanelBody}>
-                    <TouchableOpacity
-                      style={[styles.cloudSubmitBtn, { backgroundColor: theme.text }]}
-                      onPress={() => handleCloudProviderSignIn('apple')}
-                      disabled={isCloudBusy}
-                      activeOpacity={0.85}
-                    >
-                      {isCloudBusy ? (
-                        <ActivityIndicator size="small" color={theme.bg} />
-                      ) : (
-                        <>
-                          <Ionicons name="logo-apple" size={18} color={theme.bg} />
-                          <Text style={[styles.cloudSubmitText, { color: theme.bg }]}>
-                            Kontynuuj z Apple (iCloud)
-                          </Text>
-                        </>
-                      )}
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      style={[
-                        styles.cloudSubmitBtn,
-                        { backgroundColor: theme.bgSecondary, marginTop: 4 },
-                      ]}
-                      onPress={() => handleCloudProviderSignIn('google')}
-                      disabled={isCloudBusy}
-                      activeOpacity={0.85}
-                    >
-                      {isCloudBusy ? (
-                        <ActivityIndicator size="small" color={theme.text} />
-                      ) : (
-                        <>
-                          <Ionicons name="logo-google" size={16} color={theme.text} />
-                          <Text style={[styles.cloudSubmitText, { color: theme.text }]}>
-                            Kontynuuj z Google (Clerk)
-                          </Text>
-                        </>
-                      )}
-                    </TouchableOpacity>
-                  </View>
-                )}
               </View>
 
               {/* JSON Manual Import Option */}
@@ -1011,12 +937,114 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
               })}
             </View>
           )}
+          {/* =========================================================
+              STEP 5: ACCOUNT & CLOUD LOGIN (FINAL CONFIGURATOR PAGE)
+             ========================================================= */}
+          {step === 4 && (
+            <View style={styles.openStepFlow}>
+              <View style={[styles.openSection, { borderTopColor: theme.hairline }]}>
+                <Text style={[styles.sectionEyebrow, { color: '#10B981' }]}>
+                  BEZPIECZNY ZAPIS W CHMURZE (CLERK + NOSQL)
+                </Text>
+
+                <Text style={[styles.cloudFinalLead, { color: theme.textSecondary }]}>
+                  Połącz swoje konto Apple iCloud lub Gmail przez Clerk, aby automatycznie zapisywać plany, serię treningów oraz rekordy 1RM i łatwo przenieść profil na kolejny telefon.
+                </Text>
+
+                <View style={styles.cloudChoiceList}>
+                  <TouchableOpacity
+                    style={[
+                      styles.cloudChoiceBtn,
+                      {
+                        backgroundColor: theme.text,
+                        opacity: busyProvider && busyProvider !== 'apple' ? 0.55 : 1,
+                      },
+                    ]}
+                    onPress={() => handleFinishWithCloud('apple')}
+                    disabled={Boolean(busyProvider) || isSubmitting}
+                    activeOpacity={0.85}
+                  >
+                    {busyProvider === 'apple' ? (
+                      <ActivityIndicator size="small" color={theme.bg} />
+                    ) : (
+                      <>
+                        <Ionicons name="logo-apple" size={20} color={theme.bg} />
+                        <Text style={[styles.cloudChoiceText, { color: theme.bg }]}>
+                          Kontynuuj z iCloud
+                        </Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.cloudChoiceBtn,
+                      {
+                        backgroundColor: theme.bgSecondary,
+                        borderWidth: 1,
+                        borderColor: theme.border,
+                        opacity: busyProvider && busyProvider !== 'google' ? 0.55 : 1,
+                      },
+                    ]}
+                    onPress={() => handleFinishWithCloud('google')}
+                    disabled={Boolean(busyProvider) || isSubmitting}
+                    activeOpacity={0.85}
+                  >
+                    {busyProvider === 'google' ? (
+                      <ActivityIndicator size="small" color={theme.text} />
+                    ) : (
+                      <>
+                        <Ionicons name="logo-google" size={18} color={theme.text} />
+                        <Text style={[styles.cloudChoiceText, { color: theme.text }]}>
+                          Kontynuuj z Gmail / Google
+                        </Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+
+                  <View style={[styles.orDividerRow]}>
+                    <View style={[styles.orDividerLine, { backgroundColor: theme.hairline }]} />
+                    <Text style={[styles.orDividerText, { color: theme.textMuted }]}>LUB</Text>
+                    <View style={[styles.orDividerLine, { backgroundColor: theme.hairline }]} />
+                  </View>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.localOnlyBtn,
+                      {
+                        borderColor: theme.border,
+                        opacity: isSubmitting ? 0.6 : 1,
+                      },
+                    ]}
+                    onPress={handleFinishSetupLocal}
+                    disabled={Boolean(busyProvider) || isSubmitting}
+                    activeOpacity={0.78}
+                  >
+                    {isSubmitting && !busyProvider ? (
+                      <ActivityIndicator size="small" color={theme.text} />
+                    ) : (
+                      <>
+                        <Ionicons name="phone-portrait-outline" size={17} color={theme.textSecondary} />
+                        <Text style={[styles.localOnlyBtnText, { color: theme.textSecondary }]}>
+                          Używaj lokalnie bez konta
+                        </Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                </View>
+
+                <Text style={[styles.cloudDisclaimerText, { color: theme.textMuted }]}>
+                  Dane w chmurze służą wyłącznie do wygodnego przechowywania kopii zapasowej Twojego konta. Możesz połączyć konto także później w Ustawieniach.
+                </Text>
+              </View>
+            </View>
+          )}
         </Animated.View>
       </ScrollView>
 
       {/* Open Minimalist Footer */}
-      <View style={[styles.footer, { backgroundColor: theme.bg, borderTopColor: theme.hairline }]}>
-        {step < TOTAL_STEPS - 1 ? (
+      {step < TOTAL_STEPS - 1 && (
+        <View style={[styles.footer, { backgroundColor: theme.bg, borderTopColor: theme.hairline }]}>
           <View style={styles.footerActions}>
             <TouchableOpacity
               style={[styles.primaryBtn, { backgroundColor: theme.primary }]}
@@ -1028,43 +1056,9 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
               </Text>
               <Ionicons name="arrow-forward" size={18} color={theme.primaryText} />
             </TouchableOpacity>
-
-            {step === 0 && (
-              <TouchableOpacity
-                style={styles.skipBtn}
-                onPress={handleSkipBlank}
-                disabled={isSubmitting}
-                activeOpacity={0.7}
-              >
-                <Text style={[styles.skipBtnText, { color: theme.textMuted }]}>
-                  Pomiń kreator (uruchom pusty plan)
-                </Text>
-              </TouchableOpacity>
-            )}
           </View>
-        ) : (
-          <TouchableOpacity
-            style={[
-              styles.primaryBtn,
-              { backgroundColor: theme.primary, opacity: isSubmitting ? 0.65 : 1 },
-            ]}
-            onPress={handleFinishSetup}
-            disabled={isSubmitting}
-            activeOpacity={0.85}
-          >
-            {isSubmitting ? (
-              <ActivityIndicator size="small" color={theme.primaryText} />
-            ) : (
-              <>
-                <Text style={[styles.primaryBtnText, { color: theme.primaryText }]}>
-                  Wejdź do Iron Routine
-                </Text>
-                <Ionicons name="checkmark" size={19} color={theme.primaryText} />
-              </>
-            )}
-          </TouchableOpacity>
-        )}
-      </View>
+        </View>
+      )}
     </KeyboardAvoidingView>
   );
 };
@@ -1268,6 +1262,61 @@ const styles = StyleSheet.create({
     color: '#09090B',
     fontSize: 13,
     fontWeight: '900',
+  },
+  cloudFinalLead: {
+    fontSize: 14,
+    lineHeight: 20,
+    marginBottom: 18,
+  },
+  cloudChoiceList: {
+    gap: 10,
+  },
+  cloudChoiceBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    paddingVertical: 16,
+    borderRadius: 999,
+  },
+  cloudChoiceText: {
+    fontSize: 15,
+    fontWeight: '900',
+    letterSpacing: -0.2,
+  },
+  orDividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginVertical: 4,
+  },
+  orDividerLine: {
+    flex: 1,
+    height: StyleSheet.hairlineWidth,
+  },
+  orDividerText: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1.2,
+  },
+  localOnlyBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+  },
+  localOnlyBtnText: {
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  cloudDisclaimerText: {
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: 18,
   },
   stepHeaderInline: {
     flexDirection: 'row',

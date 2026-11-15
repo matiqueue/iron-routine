@@ -2,6 +2,7 @@ import { AppState, Linking } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   exportProfileBackup,
+  getActiveProfile,
   importProfileBackup,
   updateProfile,
 } from './storage';
@@ -65,82 +66,37 @@ async function getOrCreateAppleICloudIdentity(): Promise<string> {
     await AsyncStorage.setItem(APPLE_ICLOUD_ID_KEY, generated);
     return generated;
   } catch {
-    return `icloud_device_default`;
+    return 'icloud_device_default';
   }
 }
 
 /**
- * 1-Tap Sign in with Apple / iCloud backed by Clerk Backend API + Vercel NoSQL DB.
- * Zero manual email/PIN fields required.
+ * Unified, normalized Clerk Core 3 authentication flow for both iCloud (Apple) and Gmail (Google).
+ * Creates a Clerk handoff attempt on Vercel NoSQL, opens Clerk's `/mobile-auth` portal,
+ * and resolves immediately via `ironroutine://auth` deep link / AppState / polling.
  */
-export async function signInWithAppleCloud(displayName?: string): Promise<{
+export async function signInWithClerkCloud(
+  provider: CloudAuthProvider,
+  displayName?: string
+): Promise<{
   ok: boolean;
   isNewAccount?: boolean;
   session?: CloudSession;
   error?: string;
 }> {
   try {
-    const deviceIdentityId = await getOrCreateAppleICloudIdentity();
-    const res = await fetch(`${CLOUD_API_BASE}/auth`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        provider: 'apple',
-        deviceIdentityId,
-        displayName: displayName?.trim() || 'Apple iCloud',
-      }),
-    });
+    const deviceIdentityId =
+      provider === 'apple' ? await getOrCreateAppleICloudIdentity() : undefined;
 
-    const data = await res.json().catch(() => null);
-    if (!res.ok || !data?.ok || !data?.token || !data?.user) {
-      return {
-        ok: false,
-        error: data?.error || 'Nie udało się połączyć z usługą Apple iCloud / Clerk.',
-      };
-    }
-
-    const session: CloudSession = {
-      token: data.token,
-      userId: data.user.userId,
-      clerkUserId: data.user.clerkUserId || null,
-      email: data.user.email,
-      provider: 'apple',
-      displayName: data.user.displayName || 'Apple iCloud',
-      lastSyncedAt: data.user.lastSyncedAt || null,
-      backupSummary: data.user.backupSummary || null,
-    };
-
-    await saveStoredCloudSession(session);
-    return {
-      ok: true,
-      isNewAccount: Boolean(data.isNewAccount),
-      session,
-    };
-  } catch {
-    return {
-      ok: false,
-      error: 'Brak połączenia z internetem lub serwer chmury jest niedostępny.',
-    };
-  }
-}
-
-/**
- * 1-Tap Sign in with Google via Clerk OAuth handoff (/mobile-auth) + Vercel NoSQL DB.
- * Opens Clerk's Google OAuth screen and automatically resolves when the user completes login.
- */
-export async function signInWithGoogleCloud(): Promise<{
-  ok: boolean;
-  isNewAccount?: boolean;
-  session?: CloudSession;
-  error?: string;
-}> {
-  try {
     const startRes = await fetch(`${CLOUD_API_BASE}/auth`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         action: 'create_attempt',
-        provider: 'google',
+        provider,
+        deviceIdentityId,
+        displayName:
+          displayName?.trim() || (provider === 'apple' ? 'Apple iCloud' : 'Konto Google'),
       }),
     });
 
@@ -148,18 +104,19 @@ export async function signInWithGoogleCloud(): Promise<{
     if (!startRes.ok || !startData?.ok || !startData?.attemptId || !startData?.authUrl) {
       return {
         ok: false,
-        error: startData?.error || 'Nie udało się zainicjować sesji Clerk Google OAuth.',
+        error:
+          startData?.error ||
+          `Nie udało się zainicjować sesji Clerk (${provider === 'apple' ? 'iCloud' : 'Google'}).`,
       };
     }
 
     const { attemptId, authUrl } = startData;
     await Linking.openURL(authUrl);
 
-    // Poll Clerk OAuth completion (up to 90s, accelerating when app comes back to foreground)
     return await new Promise((resolve) => {
       let finished = false;
       let attempts = 0;
-      const maxAttempts = 65;
+      const maxAttempts = 75;
 
       const checkAttempt = async () => {
         if (finished) return;
@@ -174,16 +131,26 @@ export async function signInWithGoogleCloud(): Promise<{
             }),
           });
           const pollData = await pollRes.json().catch(() => null);
-          if (pollData?.ok && pollData?.status === 'completed' && pollData?.token && pollData?.user) {
+          if (
+            pollData?.ok &&
+            pollData?.status === 'completed' &&
+            pollData?.token &&
+            pollData?.user
+          ) {
             finished = true;
             cleanup();
+            const resolvedProvider: CloudAuthProvider =
+              pollData.user.provider === 'apple' ? 'apple' : provider;
             const session: CloudSession = {
               token: pollData.token,
               userId: pollData.user.userId,
               clerkUserId: pollData.user.clerkUserId || null,
               email: pollData.user.email,
-              provider: 'google',
-              displayName: pollData.user.displayName || 'Konto Google',
+              provider: resolvedProvider,
+              displayName:
+                pollData.user.displayName ||
+                displayName?.trim() ||
+                (resolvedProvider === 'apple' ? 'Apple iCloud' : 'Konto Google'),
               lastSyncedAt: pollData.user.lastSyncedAt || null,
               backupSummary: pollData.user.backupSummary || null,
             };
@@ -202,12 +169,12 @@ export async function signInWithGoogleCloud(): Promise<{
           cleanup();
           resolve({
             ok: false,
-            error: 'Przekroczono czas oczekiwania na autoryzację Google w przeglądarce.',
+            error: 'Przekroczono czas oczekiwania na autoryzację Clerk w przeglądarce.',
           });
         }
       };
 
-      const intervalId = setInterval(checkAttempt, 1400);
+      const intervalId = setInterval(checkAttempt, 1200);
       const appStateSub = AppState.addEventListener('change', (nextState) => {
         if (nextState === 'active') {
           checkAttempt();
@@ -226,9 +193,27 @@ export async function signInWithGoogleCloud(): Promise<{
   } catch {
     return {
       ok: false,
-      error: 'Nie udało się otworzyć logowania Google (Clerk OAuth).',
+      error: `Nie udało się otworzyć logowania Clerk (${provider === 'apple' ? 'iCloud' : 'Google'}).`,
     };
   }
+}
+
+export async function signInWithAppleCloud(displayName?: string): Promise<{
+  ok: boolean;
+  isNewAccount?: boolean;
+  session?: CloudSession;
+  error?: string;
+}> {
+  return signInWithClerkCloud('apple', displayName);
+}
+
+export async function signInWithGoogleCloud(displayName?: string): Promise<{
+  ok: boolean;
+  isNewAccount?: boolean;
+  session?: CloudSession;
+  error?: string;
+}> {
+  return signInWithClerkCloud('google', displayName);
 }
 
 export async function pushProfileToCloud(profileId: string): Promise<{
@@ -272,12 +257,16 @@ export async function pushProfileToCloud(profileId: string): Promise<{
     };
     await saveStoredCloudSession(updatedSession);
 
-    await updateProfile(profileId, {
-      cloudUserId: session.userId,
-      cloudProvider: session.provider,
-      cloudEmail: session.email,
-      lastCloudSyncAt: data.syncedAt,
-    }).catch(() => {});
+    await updateProfile(
+      profileId,
+      {
+        cloudUserId: session.userId,
+        cloudProvider: session.provider,
+        cloudEmail: session.email,
+        lastCloudSyncAt: data.syncedAt,
+      },
+      { skipCloudSync: true }
+    ).catch(() => {});
 
     return {
       ok: true,
@@ -330,12 +319,16 @@ export async function pullProfileFromCloud(): Promise<{
 
     const syncedAt = data.syncedAt || new Date().toISOString();
     const updatedProfile =
-      (await updateProfile(importedProfile.id, {
-        cloudUserId: session.userId,
-        cloudProvider: session.provider,
-        cloudEmail: session.email,
-        lastCloudSyncAt: syncedAt,
-      })) || importedProfile;
+      (await updateProfile(
+        importedProfile.id,
+        {
+          cloudUserId: session.userId,
+          cloudProvider: session.provider,
+          cloudEmail: session.email,
+          lastCloudSyncAt: syncedAt,
+        },
+        { skipCloudSync: true }
+      )) || importedProfile;
 
     await saveStoredCloudSession({
       ...session,
@@ -353,6 +346,41 @@ export async function pullProfileFromCloud(): Promise<{
       error: 'Błąd połączenia podczas pobierania profilu z chmury NoSQL.',
     };
   }
+}
+
+let autoSyncTimer: ReturnType<typeof setTimeout> | null = null;
+let autoSyncInFlight = false;
+
+/**
+ * Automatically synchronizes the active profile to the Vercel NoSQL database
+ * whenever local training data, plans, body weight, or profile settings change.
+ */
+export function scheduleAutoCloudSync(explicitProfileId?: string): void {
+  if (autoSyncTimer) {
+    clearTimeout(autoSyncTimer);
+  }
+  autoSyncTimer = setTimeout(async () => {
+    autoSyncTimer = null;
+    if (autoSyncInFlight) return;
+    try {
+      const session = await getStoredCloudSession();
+      if (!session?.token || !session?.userId) return;
+
+      let targetProfileId = explicitProfileId;
+      if (!targetProfileId) {
+        const active = await getActiveProfile();
+        targetProfileId = active?.id;
+      }
+      if (!targetProfileId) return;
+
+      autoSyncInFlight = true;
+      await pushProfileToCloud(targetProfileId);
+    } catch {
+      // Silent background sync
+    } finally {
+      autoSyncInFlight = false;
+    }
+  }, 1500);
 }
 
 export async function deleteCloudAccountData(): Promise<boolean> {

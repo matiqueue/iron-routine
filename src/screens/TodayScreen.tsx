@@ -1,8 +1,7 @@
-import React, { useEffect, useMemo, useRef } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Animated,
-  Easing,
+  LayoutAnimation,
   Platform,
   ScrollView,
   StyleSheet,
@@ -55,36 +54,22 @@ const AnimatedMiniBar: React.FC<{
   color: string;
   trackColor: string;
   delayMs?: number;
-}> = ({ pct, color, trackColor, delayMs = 0 }) => {
-  const anim = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    anim.setValue(0);
-    Animated.timing(anim, {
-      toValue: Math.max(0, Math.min(100, pct)),
-      duration: 600,
-      delay: delayMs,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: false,
-    }).start();
-  }, [pct, delayMs, anim]);
-
+}> = React.memo(({ pct, color, trackColor }) => {
+  const clamped = Math.max(0, Math.min(100, pct));
   return (
     <View style={[styles.miniBarTrack, { backgroundColor: trackColor }]}>
-      <Animated.View
+      <View
         style={[
           styles.miniBarFill,
           {
             backgroundColor: color,
-            width: anim.interpolate({
-              inputRange: [0, 100],
-              outputRange: ['0%', '100%'],
-            }),
+            width: `${clamped}%`,
           },
         ]}
       />
     </View>
   );
-};
+});
 
 export const TodayScreen: React.FC<TodayScreenProps> = ({
   activeProfile,
@@ -105,6 +90,9 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
   onSwitchToPlanTab,
 }) => {
   const { theme, isDark, toggleTheme } = useAppTheme();
+  const [viewportH, setViewportH] = useState(0);
+  const [contentH, setContentH] = useState(0);
+  const [showAllTodayExercises, setShowAllTodayExercises] = useState(false);
 
   const bannerTag = resolveDayBannerTag(currentPlan);
   const tagMeta = getDayBannerTagMeta(bannerTag);
@@ -141,10 +129,19 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
     ? 'rgba(255, 255, 255, 0.11)'
     : 'rgba(24, 24, 27, 0.08)';
 
+  const isScrollNeeded = viewportH <= 0 || contentH > viewportH + 6;
+  const visiblePreviewExercises = showAllTodayExercises
+    ? sessionPreviewExercises
+    : sessionPreviewExercises.slice(0, 2);
+
   return (
     <ScrollView
       style={styles.tabScroll}
       contentContainerStyle={styles.tabContent}
+      onLayout={(e) => setViewportH(e.nativeEvent.layout.height)}
+      onContentSizeChange={(_, h) => setContentH(h)}
+      scrollEnabled={isScrollNeeded}
+      bounces={isScrollNeeded}
       showsVerticalScrollIndicator={false}
     >
       {/* Open Editorial Header with Glassmorphic Action Pills */}
@@ -534,12 +531,42 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
               </View>
 
               <DayExercisePreviewList
-                exercises={sessionPreviewExercises}
+                exercises={visiblePreviewExercises}
                 daySets={dayProgress.sets}
                 bestPRs={bestPRs}
                 skippedIds={skippedIds}
+                compact
                 onPressExercise={onOpenExerciseDetail}
               />
+
+              {sessionPreviewExercises.length > 2 && (
+                <TouchableOpacity
+                  style={[
+                    styles.expandExercisesBtn,
+                    {
+                      backgroundColor: glassSurfaceBg,
+                      borderColor: glassSurfaceBorder,
+                    },
+                  ]}
+                  onPress={() => {
+                    triggerSelectionHaptic();
+                    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                    setShowAllTodayExercises((v) => !v);
+                  }}
+                  activeOpacity={0.78}
+                >
+                  <Text style={[styles.expandExercisesText, { color: theme.text }]}>
+                    {showAllTodayExercises
+                      ? 'Zwiń listę'
+                      : `Pokaż wszystkie ćwiczenia (${sessionPreviewExercises.length})`}
+                  </Text>
+                  <Ionicons
+                    name={showAllTodayExercises ? 'chevron-up' : 'chevron-down'}
+                    size={14}
+                    color={theme.textSecondary}
+                  />
+                </TouchableOpacity>
+              )}
             </View>
           )}
         </>
@@ -832,14 +859,14 @@ const styles = StyleSheet.create({
   },
   tabContent: {
     paddingHorizontal: 18,
-    paddingTop: 14,
-    paddingBottom: 124,
+    paddingTop: 8,
+    paddingBottom: 84,
   },
   topHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingBottom: 12,
+    paddingBottom: 10,
     gap: 10,
   },
   greetingCol: {
@@ -890,8 +917,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 12,
-    marginBottom: 16,
+    paddingVertical: 9,
+    marginBottom: 11,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderBottomWidth: StyleSheet.hairlineWidth,
     gap: 10,
@@ -962,12 +989,12 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     borderWidth: 1,
     overflow: 'hidden',
-    marginBottom: 14,
-    minHeight: 168,
+    marginBottom: 10,
+    minHeight: 148,
     justifyContent: 'flex-end',
   },
   heroInner: {
-    padding: 18,
+    padding: 16,
   },
   heroTagRow: {
     flexDirection: 'row',
@@ -1120,8 +1147,8 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   openSection: {
-    marginTop: 20,
-    paddingTop: 18,
+    marginTop: 14,
+    paddingTop: 14,
     borderTopWidth: StyleSheet.hairlineWidth,
   },
   openSectionHeader: {
@@ -1129,7 +1156,7 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
     justifyContent: 'space-between',
     gap: 10,
-    marginBottom: 14,
+    marginBottom: 10,
   },
   eyebrowWithIcon: {
     flexDirection: 'row',
@@ -1258,6 +1285,20 @@ const styles = StyleSheet.create({
   },
   weekGlassPillText: {
     fontSize: 11.5,
+    fontWeight: '800',
+  },
+  expandExercisesBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    marginTop: 10,
+    paddingVertical: 10,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  expandExercisesText: {
+    fontSize: 12.5,
     fontWeight: '800',
   },
 });

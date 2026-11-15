@@ -27,9 +27,11 @@ import {
   getWorkoutStreak,
   loadDayProgress,
   markWorkoutCompleted,
+  registerCloudAutoSyncTrigger,
   saveSessionExerciseConfig,
   saveSetEntry,
 } from './src/services/storage';
+import { scheduleAutoCloudSync } from './src/services/cloudSync';
 import { getAppSettings, updateAppSettings } from './src/services/settings';
 import { fetchTodayHealthSummary, requestHealthPermissions } from './src/services/health';
 import { triggerNotificationHaptic, triggerSelectionHaptic } from './src/services/haptics';
@@ -161,6 +163,7 @@ function MainApp() {
   }, []);
 
   useEffect(() => {
+    registerCloudAutoSyncTrigger(scheduleAutoCloudSync);
     activateKeepAwakeAsync();
     setupCreatineNotificationCategories();
 
@@ -174,6 +177,8 @@ function MainApp() {
         if (!isActiveWorkoutRef.current) {
           cancelRestFinishedNotification();
         }
+      } else if (nextState === 'background') {
+        scheduleAutoCloudSync();
       }
     });
 

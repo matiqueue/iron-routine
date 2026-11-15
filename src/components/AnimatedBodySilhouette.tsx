@@ -209,7 +209,7 @@ function getMuscleFillStyle(
   };
 }
 
-export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = ({
+export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = React.memo(({
   gender = 'male',
   muscleStatsMap,
   selectedMuscle,
@@ -227,7 +227,6 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = ({
   const flipScaleY = useRef(new Animated.Value(1)).current;
   const flipOpacity = useRef(new Animated.Value(1)).current;
   const floatAnim = useRef(new Animated.Value(0)).current;
-  const detailBarAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     viewSideRef.current = viewSide;
@@ -257,17 +256,6 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = ({
   }, [floatAnim]);
 
   const selectedStat = selectedMuscle ? muscleStatsMap[selectedMuscle] : null;
-  useEffect(() => {
-    detailBarAnim.setValue(0);
-    Animated.timing(detailBarAnim, {
-      toValue: selectedStat
-        ? Math.min(100, Math.round(selectedStat.relativeDevelopmentRatio * 100))
-        : 0,
-      duration: 500,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: false,
-    }).start();
-  }, [selectedMuscle, selectedStat?.relativeDevelopmentRatio, detailBarAnim]);
 
   const rotateToSide = useCallback(
     (targetSide?: SilhouetteViewSide) => {
@@ -702,7 +690,7 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = ({
 
           <View style={styles.focusProgressRow}>
             <View style={[styles.focusTrack, { backgroundColor: theme.bgSecondary }]}>
-              <Animated.View
+              <View
                 style={[
                   styles.focusFill,
                   {
@@ -716,10 +704,10 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = ({
                         : selectedStat.priorityStatus === 'balanced'
                         ? '#10B981'
                         : '#F59E0B',
-                    width: detailBarAnim.interpolate({
-                      inputRange: [0, 100],
-                      outputRange: ['0%', '100%'],
-                    }),
+                    width: `${Math.max(
+                      0,
+                      Math.min(100, Math.round(selectedStat.relativeDevelopmentRatio * 100))
+                    )}%`,
                   },
                 ]}
               />
@@ -761,7 +749,7 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = ({
       )}
     </View>
   );
-};
+});
 
 const styles = StyleSheet.create({
   container: {

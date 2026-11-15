@@ -32,7 +32,7 @@ const TIER_GRADIENTS: Record<RankTier, [string, string, string]> = {
   'S+': ['#F43F5E', '#9F1239', '#FDA4AF'],
 };
 
-export const RankCrestIcon: React.FC<RankCrestIconProps> = ({
+export const RankCrestIcon: React.FC<RankCrestIconProps> = React.memo(({
   tier,
   size = 38,
   progressPct,
@@ -303,7 +303,7 @@ export const RankCrestIcon: React.FC<RankCrestIconProps> = ({
       </Svg>
     </View>
   );
-};
+});
 
 const styles = StyleSheet.create({
   wrap: {
