@@ -29,9 +29,20 @@ const getCategoryShort = (cat: string): string => {
   return MUSCLE_CATEGORY_META.find((m) => m.id === cat)?.label || 'Ogólne';
 };
 
+const CATEGORY_ACCENT_COLOR: Record<string, string> = {
+  chest: '#38BDF8',
+  back: '#10B981',
+  legs: '#F59E0B',
+  shoulders: '#A855F7',
+  arms: '#EC4899',
+  core: '#14B8A6',
+  cardio: '#F97316',
+  other: '#71717A',
+};
+
 /**
- * Clean, scannable athletic exercise list used in Today's block preview and Plan tab.
- * Optimized for narrow iPhone widths (375pt+) without photo clutter.
+ * Open, fluid editorial exercise timeline used in Today's block preview and Plan tab.
+ * Free of heavy card boxes, using glassmorphic index badges, hairline dividers, and category accents.
  */
 export const DayExercisePreviewList: React.FC<DayExercisePreviewListProps> = ({
   exercises,
@@ -42,7 +53,7 @@ export const DayExercisePreviewList: React.FC<DayExercisePreviewListProps> = ({
   showIndex = true,
   compact = false,
 }) => {
-  const { theme } = useAppTheme();
+  const { theme, isDark } = useAppTheme();
   const skippedSet = React.useMemo(() => new Set(skippedIds), [skippedIds]);
 
   return (
@@ -54,132 +65,186 @@ export const DayExercisePreviewList: React.FC<DayExercisePreviewListProps> = ({
         const isSkipped = skippedSet.has(ex.id);
         const isCompleted = !isSkipped && doneCount >= ex.sets && ex.sets > 0;
         const pr = bestPRs[canonicalId] || bestPRs[ex.id];
-        const equipment = ex.equipment || 'Inne';
+        const equipment = ex.equipment || 'Ćwiczenie';
+        const accentColor = CATEGORY_ACCENT_COLOR[ex.category] || '#10B981';
+        const isLast = idx === exercises.length - 1;
+        const progressRatio = ex.sets > 0 ? Math.min(1, doneCount / ex.sets) : 0;
 
         return (
           <TouchableOpacity
             key={`${ex.id}_${idx}`}
-            activeOpacity={0.76}
+            activeOpacity={0.72}
             onPress={() => {
               triggerSelectionHaptic();
               onPressExercise(ex);
             }}
             style={[
-              styles.card,
-              compact && styles.cardCompact,
+              styles.openRow,
+              compact && styles.openRowCompact,
               {
-                backgroundColor: isCompleted ? theme.bgSecondary : theme.card,
-                borderColor: isCompleted ? theme.text : theme.border,
-                opacity: isSkipped ? 0.5 : 1,
+                borderBottomColor: isLast ? 'transparent' : theme.hairline,
+                opacity: isSkipped ? 0.48 : 1,
               },
             ]}
           >
-            {/* Left Index / Status Block */}
+            {/* Left Timeline Column with Glassmorphic Index Badge */}
             {showIndex && (
-              <View
-                style={[
-                  styles.indexBox,
-                  {
-                    backgroundColor: isCompleted ? theme.text : theme.bgTertiary,
-                    borderColor: isCompleted ? theme.text : theme.border,
-                  },
-                ]}
-              >
-                {isCompleted ? (
-                  <Ionicons name="checkmark" size={16} color={theme.bg} />
-                ) : isSkipped ? (
-                  <Ionicons name="remove" size={16} color={theme.textMuted} />
-                ) : (
-                  <Text style={[styles.indexText, { color: theme.textSecondary }]}>
-                    {String(idx + 1).padStart(2, '0')}
-                  </Text>
+              <View style={styles.timelineCol}>
+                <View
+                  style={[
+                    styles.indexGlassBadge,
+                    {
+                      backgroundColor: isCompleted
+                        ? '#10B981'
+                        : isDark
+                        ? 'rgba(39, 39, 42, 0.65)'
+                        : 'rgba(244, 244, 245, 0.85)',
+                      borderColor: isCompleted
+                        ? '#10B981'
+                        : isDark
+                        ? 'rgba(255, 255, 255, 0.12)'
+                        : 'rgba(24, 24, 27, 0.08)',
+                    },
+                  ]}
+                >
+                  {isCompleted ? (
+                    <Ionicons name="checkmark" size={15} color="#09090B" />
+                  ) : isSkipped ? (
+                    <Ionicons name="remove" size={15} color={theme.textMuted} />
+                  ) : (
+                    <Text style={[styles.indexText, { color: theme.text }]}>
+                      {String(idx + 1).padStart(2, '0')}
+                    </Text>
+                  )}
+                </View>
+                {!isLast && (
+                  <View
+                    style={[
+                      styles.timelineLine,
+                      {
+                        backgroundColor: isCompleted
+                          ? 'rgba(16, 185, 129, 0.4)'
+                          : theme.hairline,
+                      },
+                    ]}
+                  />
                 )}
               </View>
             )}
 
-            {/* Middle Content */}
+            {/* Middle Open Content */}
             <View style={styles.content}>
-              <View style={styles.titleRow}>
+              <View style={styles.topHeaderLine}>
                 <Text
                   style={[
                     styles.title,
                     { color: theme.text },
                     isCompleted && styles.titleCompleted,
-                    isSkipped && { textDecorationLine: 'line-through', color: theme.textMuted },
+                    isSkipped && {
+                      textDecorationLine: 'line-through',
+                      color: theme.textMuted,
+                    },
                   ]}
                   numberOfLines={2}
                 >
                   {ex.name}
                 </Text>
-              </View>
 
-              {/* Tag Pills Row */}
-              <View style={styles.pillsRow}>
-                {isSkipped && (
-                  <View style={[styles.metaChip, { backgroundColor: theme.bgTertiary }]}>
-                    <Text style={[styles.metaChipText, { color: theme.textMuted }]}>POMINIĘTE</Text>
-                  </View>
-                )}
-                <View style={[styles.metaChip, { backgroundColor: theme.bgTertiary }]}>
-                  <Text style={[styles.metaChipText, { color: theme.textSecondary }]} numberOfLines={1}>
-                    {equipment} • {getCategoryShort(ex.category)}
-                  </Text>
-                </View>
-
-                {ex.isCustom && (
-                  <View style={[styles.metaChip, { backgroundColor: theme.bgTertiary }]}>
-                    <Text style={[styles.metaChipText, { color: theme.text }]}>WŁASNE</Text>
-                  </View>
-                )}
-
-                {pr && (
-                  <View
-                    style={[
-                      styles.prChip,
-                      { backgroundColor: theme.bgSecondary, borderColor: theme.borderDark },
-                    ]}
-                  >
-                    <Ionicons name="trophy-outline" size={11} color={theme.text} />
-                    <Text style={[styles.prChipText, { color: theme.text }]}>
-                      PR {pr.weight} kg × {pr.reps}
-                    </Text>
-                  </View>
-                )}
-              </View>
-
-              {/* Bottom Spec Row */}
-              <View style={styles.specRow}>
-                <View style={styles.specGroup}>
-                  <Text style={[styles.specHighlight, { color: theme.text }]}>
+                {/* Sets x Reps Glass Pill */}
+                <View
+                  style={[
+                    styles.setsGlassPill,
+                    {
+                      backgroundColor: isDark
+                        ? 'rgba(39, 39, 42, 0.6)'
+                        : 'rgba(244, 244, 245, 0.85)',
+                      borderColor: isDark
+                        ? 'rgba(255, 255, 255, 0.09)'
+                        : 'rgba(24, 24, 27, 0.07)',
+                    },
+                  ]}
+                >
+                  <Text style={[styles.setsPillText, { color: theme.text }]}>
                     {ex.sets} × {ex.reps}
                   </Text>
-                  <Text style={[styles.specMuted, { color: theme.textMuted }]}>powt.</Text>
+                </View>
+              </View>
+
+              {/* Subtle Meta & PR Line */}
+              <View style={styles.metaLine}>
+                <View style={styles.categoryTag}>
+                  <View
+                    style={[styles.categoryDot, { backgroundColor: accentColor }]}
+                  />
+                  <Text
+                    style={[styles.metaText, { color: theme.textSecondary }]}
+                    numberOfLines={1}
+                  >
+                    {getCategoryShort(ex.category)} · {equipment}
+                  </Text>
                 </View>
 
-                <View style={[styles.dotSep, { backgroundColor: theme.borderDark }]} />
+                <View style={[styles.dotSep, { backgroundColor: theme.border }]} />
 
-                <View style={styles.specGroup}>
-                  <Ionicons name="timer-outline" size={13} color={theme.textMuted} />
-                  <Text style={[styles.specMuted, { color: theme.textSecondary }]}>
+                <View style={styles.restInline}>
+                  <Ionicons name="timer-outline" size={12} color={theme.textMuted} />
+                  <Text style={[styles.metaText, { color: theme.textMuted }]}>
                     {formatRestShort(ex.rest)}
                   </Text>
                 </View>
 
-                {doneCount > 0 && !isCompleted && (
+                {pr && (
                   <>
-                    <View style={[styles.dotSep, { backgroundColor: theme.borderDark }]} />
-                    <Text style={[styles.partialText, { color: theme.text }]}>
-                      {doneCount}/{ex.sets} serii
-                    </Text>
+                    <View style={[styles.dotSep, { backgroundColor: theme.border }]} />
+                    <View style={styles.prInline}>
+                      <Ionicons name="trophy-outline" size={11} color="#F59E0B" />
+                      <Text style={[styles.prInlineText, { color: theme.text }]}>
+                        {pr.weight} kg × {pr.reps}
+                      </Text>
+                    </View>
                   </>
                 )}
+
+                {isSkipped && (
+                  <Text style={[styles.skippedTag, { color: theme.textMuted }]}>
+                    POMINIĘTE
+                  </Text>
+                )}
               </View>
+
+              {/* Progress Bar if sets started or completed */}
+              {doneCount > 0 && !isSkipped && (
+                <View style={styles.progressRow}>
+                  <View
+                    style={[
+                      styles.progressTrack,
+                      { backgroundColor: theme.bgSecondary },
+                    ]}
+                  >
+                    <View
+                      style={[
+                        styles.progressFill,
+                        {
+                          width: `${Math.round(progressRatio * 100)}%`,
+                          backgroundColor: isCompleted ? '#10B981' : '#38BDF8',
+                        },
+                      ]}
+                    />
+                  </View>
+                  <Text style={[styles.progressLabel, { color: theme.textSecondary }]}>
+                    {doneCount}/{ex.sets} serii
+                  </Text>
+                </View>
+              )}
             </View>
 
-            {/* Right Action Chevron */}
-            <View style={[styles.chevronWrap, { backgroundColor: theme.bgTertiary }]}>
-              <Ionicons name="chevron-forward" size={15} color={theme.textSecondary} />
-            </View>
+            {/* Right Subtle Chevron */}
+            <Ionicons
+              name="chevron-forward"
+              size={15}
+              color={theme.textMuted}
+              style={{ marginTop: 2 }}
+            />
           </TouchableOpacity>
         );
       })}
@@ -189,43 +254,53 @@ export const DayExercisePreviewList: React.FC<DayExercisePreviewListProps> = ({
 
 const styles = StyleSheet.create({
   container: {
-    gap: 10,
+    marginTop: 2,
   },
-  card: {
+  openRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    padding: 13,
-    borderRadius: 16,
-    borderWidth: 1,
+    alignItems: 'flex-start',
+    paddingVertical: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
     gap: 12,
   },
-  cardCompact: {
+  openRowCompact: {
     paddingVertical: 11,
-    paddingHorizontal: 12,
   },
-  indexBox: {
-    width: 34,
-    height: 34,
+  timelineCol: {
+    alignItems: 'center',
+    alignSelf: 'stretch',
+  },
+  indexGlassBadge: {
+    width: 32,
+    height: 32,
     borderRadius: 11,
-    borderWidth: StyleSheet.hairlineWidth,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,
   },
   indexText: {
-    fontSize: 12,
+    fontSize: 11.5,
     fontWeight: '800',
     fontVariant: ['tabular-nums'],
-    letterSpacing: 0.4,
+    letterSpacing: 0.3,
+  },
+  timelineLine: {
+    width: 1.5,
+    flex: 1,
+    marginTop: 6,
+    borderRadius: 1,
   },
   content: {
     flex: 1,
     minWidth: 0,
     gap: 6,
   },
-  titleRow: {
+  topHeaderLine: {
     flexDirection: 'row',
     alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 8,
   },
   title: {
     flex: 1,
@@ -235,76 +310,84 @@ const styles = StyleSheet.create({
     letterSpacing: -0.2,
   },
   titleCompleted: {
-    opacity: 0.78,
+    opacity: 0.72,
   },
-  pillsRow: {
+  setsGlassPill: {
+    paddingHorizontal: 9,
+    paddingVertical: 3.5,
+    borderRadius: 999,
+    borderWidth: 1,
+    flexShrink: 0,
+  },
+  setsPillText: {
+    fontSize: 11.5,
+    fontWeight: '800',
+    fontVariant: ['tabular-nums'],
+  },
+  metaLine: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     alignItems: 'center',
     gap: 6,
   },
-  metaChip: {
-    paddingHorizontal: 7,
-    paddingVertical: 3,
-    borderRadius: 6,
-    maxWidth: '100%',
-  },
-  metaChipText: {
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  prChip: {
+  categoryTag: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 7,
-    paddingVertical: 2.5,
-    borderRadius: 6,
-    borderWidth: StyleSheet.hairlineWidth,
+    gap: 5,
   },
-  prChipText: {
-    fontSize: 11,
-    fontWeight: '700',
-    fontVariant: ['tabular-nums'],
+  categoryDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
   },
-  specRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    alignItems: 'center',
-    gap: 8,
-    marginTop: 1,
-  },
-  specGroup: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  specHighlight: {
-    fontSize: 13,
-    fontWeight: '800',
-    fontVariant: ['tabular-nums'],
-  },
-  specMuted: {
+  metaText: {
     fontSize: 12,
     fontWeight: '600',
-    fontVariant: ['tabular-nums'],
   },
   dotSep: {
     width: 3,
     height: 3,
     borderRadius: 2,
   },
-  partialText: {
-    fontSize: 12,
-    fontWeight: '800',
+  restInline: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+  },
+  prInline: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  prInlineText: {
+    fontSize: 11.5,
+    fontWeight: '700',
     fontVariant: ['tabular-nums'],
   },
-  chevronWrap: {
-    width: 28,
-    height: 28,
-    borderRadius: 9,
+  skippedTag: {
+    fontSize: 10.5,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  progressRow: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
+    gap: 8,
+    marginTop: 2,
+  },
+  progressTrack: {
+    flex: 1,
+    height: 4,
+    borderRadius: 999,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: 4,
+    borderRadius: 999,
+  },
+  progressLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    fontVariant: ['tabular-nums'],
   },
 });

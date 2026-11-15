@@ -6,6 +6,7 @@ import {
   Easing,
   KeyboardAvoidingView,
   LayoutAnimation,
+  PanResponder,
   Platform,
   ScrollView,
   StyleSheet,
@@ -191,16 +192,23 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
   focusedExercise,
   onClearFocusedExercise,
 }) => {
-  const { theme } = useAppTheme();
+  const { theme, isDark } = useAppTheme();
   const effectiveProfileId = activeProfile?.id || profileId || 'default';
 
   // Top sub-view navigation + animated sliding pill thumb
   const [subView, setSubView] = useState<SubViewTab>('physique');
+  const subViewRef = useRef<SubViewTab>('physique');
   const [navBarWidth, setNavBarWidth] = useState(0);
+  const navBarWidthRef = useRef(0);
+  const dragStartIndexRef = useRef(0);
   const navThumbAnim = useRef(new Animated.Value(0)).current;
   const navScaleAnim = useRef(new Animated.Value(1)).current;
   const viewFadeAnim = useRef(new Animated.Value(1)).current;
   const viewSlideAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    subViewRef.current = subView;
+  }, [subView]);
 
   // Silhouette & muscle states
   const [muscleSortMode, setMuscleSortMode] = useState<'priority' | 'rank'>('rank');
@@ -305,51 +313,141 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
     }
   }, [focusedExercise, openExerciseDetail, onClearFocusedExercise]);
 
-  const handleSwitchSubView = (next: SubViewTab) => {
-    if (next === subView) return;
-    const targetIdx = SUB_TABS.findIndex((t) => t.id === next);
-    try {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    } catch {}
+  const handleSwitchSubView = useCallback(
+    (next: SubViewTab, fromDrag = false) => {
+      if (next === subViewRef.current) return;
+      const targetIdx = SUB_TABS.findIndex((t) => t.id === next);
+      try {
+        if (fromDrag) {
+          Haptics.selectionAsync();
+        } else {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        }
+      } catch {}
 
-    viewFadeAnim.setValue(0);
-    viewSlideAnim.setValue(10);
-    setSubView(next);
+      subViewRef.current = next;
+      viewFadeAnim.setValue(0);
+      viewSlideAnim.setValue(8);
+      setSubView(next);
 
-    Animated.parallel([
-      Animated.spring(navThumbAnim, {
-        toValue: targetIdx,
-        friction: 7,
-        tension: 85,
-        useNativeDriver: true,
-      }),
-      Animated.sequence([
-        Animated.timing(navScaleAnim, {
-          toValue: 0.94,
-          duration: 85,
-          useNativeDriver: true,
-        }),
-        Animated.spring(navScaleAnim, {
+      const animations: Animated.CompositeAnimation[] = [
+        Animated.timing(viewFadeAnim, {
           toValue: 1,
-          friction: 5,
-          tension: 110,
+          duration: 190,
+          easing: Easing.out(Easing.cubic),
           useNativeDriver: true,
         }),
-      ]),
-      Animated.timing(viewFadeAnim, {
-        toValue: 1,
-        duration: 210,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
+        Animated.spring(viewSlideAnim, {
+          toValue: 0,
+          friction: 8,
+          tension: 70,
+          useNativeDriver: true,
+        }),
+      ];
+
+      if (!fromDrag) {
+        animations.push(
+          Animated.spring(navThumbAnim, {
+            toValue: targetIdx,
+            friction: 7,
+            tension: 85,
+            useNativeDriver: true,
+          }),
+          Animated.sequence([
+            Animated.timing(navScaleAnim, {
+              toValue: 0.94,
+              duration: 85,
+              useNativeDriver: true,
+            }),
+            Animated.spring(navScaleAnim, {
+              toValue: 1,
+              friction: 5,
+              tension: 110,
+              useNativeDriver: true,
+            }),
+          ])
+        );
+      }
+
+      Animated.parallel(animations).start();
+    },
+    [navScaleAnim, navThumbAnim, viewFadeAnim, viewSlideAnim]
+  );
+
+  const navPanResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => false,
+        onMoveShouldSetPanResponder: (_, gestureState) =>
+          Math.abs(gestureState.dx) > 4 &&
+          Math.abs(gestureState.dx) > Math.abs(gestureState.dy),
+        onMoveShouldSetPanResponderCapture: (_, gestureState) =>
+          Math.abs(gestureState.dx) > 5 &&
+          Math.abs(gestureState.dx) > Math.abs(gestureState.dy),
+        onPanResponderGrant: () => {
+          dragStartIndexRef.current = SUB_TABS.findIndex(
+            (t) => t.id === subViewRef.current
+          );
+          try {
+            Haptics.selectionAsync();
+          } catch {}
+          Animated.spring(navScaleAnim, {
+            toValue: 0.96,
+            friction: 7,
+            tension: 120,
+            useNativeDriver: true,
+          }).start();
+        },
+        onPanResponderMove: (_, gestureState) => {
+          const totalW = navBarWidthRef.current;
+          const slotW = totalW > 6 ? (totalW - 6) / 3 : 74;
+          const rawIdx = dragStartIndexRef.current + gestureState.dx / slotW;
+          const clampedIdx = Math.max(0, Math.min(SUB_TABS.length - 1, rawIdx));
+          navThumbAnim.setValue(clampedIdx);
+
+          const nearestIdx = Math.round(clampedIdx);
+          const candidate = SUB_TABS[nearestIdx]?.id;
+          if (candidate && candidate !== subViewRef.current) {
+            handleSwitchSubView(candidate, true);
+          }
+        },
+        onPanResponderRelease: () => {
+          const finalIdx = SUB_TABS.findIndex((t) => t.id === subViewRef.current);
+          Animated.parallel([
+            Animated.spring(navThumbAnim, {
+              toValue: finalIdx,
+              friction: 7,
+              tension: 90,
+              useNativeDriver: true,
+            }),
+            Animated.spring(navScaleAnim, {
+              toValue: 1,
+              friction: 6,
+              tension: 110,
+              useNativeDriver: true,
+            }),
+          ]).start();
+        },
+        onPanResponderTerminate: () => {
+          const finalIdx = SUB_TABS.findIndex((t) => t.id === subViewRef.current);
+          Animated.parallel([
+            Animated.spring(navThumbAnim, {
+              toValue: finalIdx,
+              friction: 7,
+              tension: 90,
+              useNativeDriver: true,
+            }),
+            Animated.spring(navScaleAnim, {
+              toValue: 1,
+              friction: 6,
+              tension: 110,
+              useNativeDriver: true,
+            }),
+          ]).start();
+        },
       }),
-      Animated.spring(viewSlideAnim, {
-        toValue: 0,
-        friction: 8,
-        tension: 65,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  };
+    [handleSwitchSubView, navScaleAnim, navThumbAnim]
+  );
 
   const handleSwitchSortMode = (mode: 'rank' | 'priority') => {
     if (mode === muscleSortMode) return;
@@ -733,19 +831,29 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
 
   return (
     <View style={[styles.container, { backgroundColor: theme.bg }]}>
-      {/* Open Editorial Header with Spring-Animated Segmented Pill Switcher */}
+      {/* Open Editorial Header with Interactive Drag-Slide & Tap Glass Pill Switcher */}
       <View style={[styles.header, { borderBottomColor: theme.hairline }]}>
         <View style={styles.headerTopRow}>
-          <View>
-            <Text style={[styles.title, { color: theme.text }]}>Osiągi</Text>
-            <Text style={[styles.subtitle, { color: theme.textMuted }]}>
-              Anatomia · Rangi F-S+ · Progresja
-            </Text>
-          </View>
+          <Text style={[styles.title, { color: theme.text }]}>Osiągi</Text>
 
           <View
-            style={[styles.navPills, { backgroundColor: theme.bgSecondary }]}
-            onLayout={(e) => setNavBarWidth(e.nativeEvent.layout.width)}
+            {...navPanResponder.panHandlers}
+            style={[
+              styles.navPills,
+              {
+                backgroundColor: isDark
+                  ? 'rgba(39, 39, 42, 0.65)'
+                  : 'rgba(244, 244, 245, 0.85)',
+                borderColor: isDark
+                  ? 'rgba(255, 255, 255, 0.1)'
+                  : 'rgba(24, 24, 27, 0.08)',
+              },
+            ]}
+            onLayout={(e) => {
+              const w = e.nativeEvent.layout.width;
+              navBarWidthRef.current = w;
+              setNavBarWidth(w);
+            }}
           >
             {navBarWidth > 0 && (
               <Animated.View
@@ -770,7 +878,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                   key={tab.id}
                   style={[styles.navPillBtn, { width: pillSlotWidth || undefined }]}
                   onPress={() => handleSwitchSubView(tab.id)}
-                  activeOpacity={0.8}
+                  activeOpacity={0.85}
                 >
                   <Ionicons
                     name={tab.icon}
@@ -782,6 +890,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                       styles.navPillText,
                       { color: active ? theme.bg : theme.textMuted },
                     ]}
+                    numberOfLines={1}
                   >
                     {tab.label}
                   </Text>
@@ -1940,19 +2049,19 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   title: {
-    fontSize: 32,
+    fontSize: 30,
     fontWeight: '900',
     letterSpacing: -0.7,
-  },
-  subtitle: {
-    fontSize: 13,
-    marginTop: 2,
+    flexShrink: 0,
   },
   navPills: {
     position: 'relative',
     flexDirection: 'row',
+    flex: 1,
+    maxWidth: 236,
     borderRadius: 999,
     padding: 3,
+    borderWidth: 1,
     overflow: 'hidden',
   },
   navPillAnimatedThumb: {
@@ -1967,14 +2076,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 4,
-    paddingHorizontal: 10,
+    paddingHorizontal: 6,
     paddingVertical: 7,
     borderRadius: 999,
     zIndex: 2,
   },
   navPillText: {
-    fontSize: 12,
+    fontSize: 11.5,
     fontWeight: '700',
+    letterSpacing: -0.1,
   },
   scroll: {
     flex: 1,

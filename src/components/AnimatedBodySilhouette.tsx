@@ -227,7 +227,6 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = ({
   const flipScaleY = useRef(new Animated.Value(1)).current;
   const flipOpacity = useRef(new Animated.Value(1)).current;
   const floatAnim = useRef(new Animated.Value(0)).current;
-  const hintPulseAnim = useRef(new Animated.Value(0)).current;
   const detailBarAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -251,29 +250,11 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = ({
         }),
       ])
     );
-    const hintLoop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(hintPulseAnim, {
-          toValue: 1,
-          duration: 1400,
-          easing: Easing.inOut(Easing.quad),
-          useNativeDriver: true,
-        }),
-        Animated.timing(hintPulseAnim, {
-          toValue: 0,
-          duration: 1400,
-          easing: Easing.inOut(Easing.quad),
-          useNativeDriver: true,
-        }),
-      ])
-    );
     floatLoop.start();
-    hintLoop.start();
     return () => {
       floatLoop.stop();
-      hintLoop.stop();
     };
-  }, [floatAnim, hintPulseAnim]);
+  }, [floatAnim]);
 
   const selectedStat = selectedMuscle ? muscleStatsMap[selectedMuscle] : null;
   useEffect(() => {
@@ -439,16 +420,6 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = ({
     outputRange: [0, -3],
   });
 
-  const leftArrowShift = hintPulseAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, -4],
-  });
-
-  const rightArrowShift = hintPulseAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, 4],
-  });
-
   const inertFill = isDark ? '#27272A' : '#E4E4E7';
   const outlineStroke = isDark ? '#52525B' : '#A1A1AA';
 
@@ -511,7 +482,17 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = ({
           </Text>
         </View>
         <TouchableOpacity
-          style={[styles.quickFlipChip, { backgroundColor: theme.bgSecondary }]}
+          style={[
+            styles.quickFlipChip,
+            {
+              backgroundColor: isDark
+                ? 'rgba(39, 39, 42, 0.55)'
+                : 'rgba(244, 244, 245, 0.78)',
+              borderColor: isDark
+                ? 'rgba(255, 255, 255, 0.1)'
+                : 'rgba(24, 24, 27, 0.08)',
+            },
+          ]}
           onPress={() => rotateToSide()}
           activeOpacity={0.75}
         >
@@ -654,24 +635,6 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = ({
             ) : null}
           </Svg>
         </Animated.View>
-
-        {/* Animated Swipe Prompt */}
-        <TouchableOpacity
-          style={styles.swipePromptBtn}
-          onPress={() => rotateToSide()}
-          activeOpacity={0.7}
-        >
-          <Animated.View style={{ transform: [{ translateX: leftArrowShift }] }}>
-            <Ionicons name="chevron-back" size={14} color={theme.textMuted} />
-          </Animated.View>
-          <Ionicons name="sync-outline" size={13} color={theme.textSecondary} />
-          <Text style={[styles.swipePromptText, { color: theme.textSecondary }]}>
-            Przesuń w bok, aby obrócić ({viewSide === 'front' ? 'Pokaż tył' : 'Pokaż przód'})
-          </Text>
-          <Animated.View style={{ transform: [{ translateX: rightArrowShift }] }}>
-            <Ionicons name="chevron-forward" size={14} color={theme.textMuted} />
-          </Animated.View>
-        </TouchableOpacity>
       </View>
 
       {/* Minimalist Open Legend Strip */}
@@ -830,9 +793,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+    paddingHorizontal: 11,
+    paddingVertical: 6,
     borderRadius: 999,
+    borderWidth: 1,
   },
   sideCounterText: {
     fontSize: 11,
@@ -846,20 +810,6 @@ const styles = StyleSheet.create({
   stageWrap: {
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  swipePromptBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    marginTop: 2,
-  },
-  swipePromptText: {
-    fontSize: 12,
-    fontWeight: '700',
-    letterSpacing: 0.2,
   },
   legendRow: {
     flexDirection: 'row',
