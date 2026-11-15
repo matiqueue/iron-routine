@@ -5,6 +5,7 @@ import {
   Animated,
   Easing,
   KeyboardAvoidingView,
+  LayoutAnimation,
   Platform,
   ScrollView,
   StyleSheet,
@@ -13,14 +14,20 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import Svg, { Path } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
 import { useAppTheme } from '../context/ThemeContext';
 import {
   PlanTemplateKey,
   SupplementItem,
+  UserGender,
   UserProfile,
 } from '../types/workout';
 import { PLAN_TEMPLATE_OPTIONS } from '../data/exerciseLibrary';
+import {
+  BODY_OUTLINE_FEMALE_FRONT,
+  BODY_OUTLINE_FRONT,
+} from '../data/bodySilhouettePaths';
 import { DEFAULT_SUPPLEMENTS } from '../data/supplements';
 import { createProfile, importProfileBackup } from '../services/storage';
 import { updateAppSettings } from '../services/settings';
@@ -29,6 +36,12 @@ import {
   ensureNotificationPermissions,
   setCreatineReminderEnabled,
 } from '../services/notifications';
+import {
+  CloudProvider,
+  pullProfileFromCloud,
+  pushProfileToCloud,
+  signInWithCloudAccount,
+} from '../services/cloudSync';
 import { triggerNotificationHaptic, triggerSelectionHaptic } from '../services/haptics';
 import { AnimatedIcon } from './AnimatedIcon';
 import { SupplementConfigurator } from './SupplementConfigurator';
@@ -42,36 +55,36 @@ const ONBOARDING_REST_PRESETS = [90, 120, 180];
 
 const STEP_META = [
   {
-    kicker: 'KROK 1 Z 4 · PROFIL',
-    title: 'Poznajmy Twoje parametry',
-    subtitle: 'Jedno konto zbiera wspólne rekordy PR i postępy niezależnie od tego, ile planów stworzysz.',
+    kicker: '01 / 04 · TOŻSAMOŚĆ I SYLWETKA',
+    title: 'Stwórz swój profil',
+    subtitle: 'Wybierz model anatomiczny sylwetki, wpisz parametry startowe lub przywróć konto z chmury.',
     icon: 'barbell-outline' as const,
     preset: 'barbell' as const,
-    accent: undefined,
+    accent: '#10B981',
   },
   {
-    kicker: 'KROK 2 Z 4 · SUPLEMENTACJA',
-    title: 'Dobierz suplementy i dawki',
-    subtitle: 'Wybierz z listy lub dodaj własne. Dawkę możemy wyliczać automatycznie wg masy ciała.',
+    kicker: '02 / 04 · SUPLEMENTACJA',
+    title: 'Dobierz suplementy',
+    subtitle: 'Wybierz stosowane suplementy. Dawki przeliczymy automatycznie według masy ciała.',
     icon: 'flame' as const,
     preset: 'flame' as const,
     accent: '#F59E0B',
   },
   {
-    kicker: 'KROK 3 Z 4 · ZDROWIE I ALERTY',
-    title: 'Regeneracja, sen i przerwy',
-    subtitle: 'Połącz systemowe Zdrowie oraz ustaw alarm końca przerwy działający również przy wygaszonym ekranie.',
+    kicker: '03 / 04 · ZDROWIE I ALERTY',
+    title: 'Regeneracja i budzik przerw',
+    subtitle: 'Połącz systemowe Zdrowie oraz włącz alarm końca przerwy działający przy zablokowanym ekranie.',
     icon: 'heart' as const,
     preset: 'heart' as const,
     accent: '#EF4444',
   },
   {
-    kicker: 'KROK 4 Z 4 · PLAN STARTOWY',
+    kicker: '04 / 04 · PLAN STARTOWY',
     title: 'Wybierz bazę treningową',
-    subtitle: 'Zacznij od gotowego schematu lub pustego szkieletu. W każdej chwili dodasz kolejne plany.',
+    subtitle: 'Zacznij od sprawdzonego schematu lub pustego tygodnia gotowego na własną konfigurację.',
     icon: 'trophy' as const,
     preset: 'trophy' as const,
-    accent: '#F59E0B',
+    accent: '#38BDF8',
   },
 ];
 
@@ -80,6 +93,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
 
   const [step, setStep] = useState(0);
   const [name, setName] = useState('');
+  const [gender, setGender] = useState<UserGender>('male');
   const [weightText, setWeightText] = useState('');
   const [heightText, setHeightText] = useState('');
   const [supplements, setSupplements] = useState<SupplementItem[]>(() =>
@@ -96,6 +110,15 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
     useState<Exclude<PlanTemplateKey, 'clone_current'>>('fbw3');
   const [showImport, setShowImport] = useState(false);
   const [importText, setImportText] = useState('');
+
+  // Cloud Sign-in / Restore state on Step 1
+  const [showCloudPanel, setShowCloudPanel] = useState(false);
+  const [cloudProvider, setCloudProvider] = useState<CloudProvider>('apple');
+  const [cloudEmail, setCloudEmail] = useState('');
+  const [cloudPin, setCloudPin] = useState('');
+  const [isCloudBusy, setIsCloudBusy] = useState(false);
+  const [linkedCloudEmail, setLinkedCloudEmail] = useState<string | null>(null);
+
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const scrollRef = useRef<any>(null);
@@ -103,15 +126,29 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
   const stepSlide = useRef(new Animated.Value(0)).current;
   const progressAnim = useRef(new Animated.Value(1)).current;
   const heroScale = useRef(new Animated.Value(1)).current;
+  const genderFlip = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     Animated.timing(progressAnim, {
       toValue: step + 1,
-      duration: 280,
+      duration: 320,
       easing: Easing.out(Easing.cubic),
       useNativeDriver: false,
     }).start();
   }, [step, progressAnim]);
+
+  const handleSelectGender = (nextGender: UserGender) => {
+    if (nextGender === gender) return;
+    triggerSelectionHaptic();
+    genderFlip.setValue(0.2);
+    setGender(nextGender);
+    Animated.spring(genderFlip, {
+      toValue: 1,
+      friction: 6,
+      tension: 80,
+      useNativeDriver: true,
+    }).start();
+  };
 
   const parsedWeight = (() => {
     const num = parseFloat(weightText.replace(',', '.'));
@@ -129,18 +166,18 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
 
     Animated.timing(stepFade, {
       toValue: 0,
-      duration: 130,
+      duration: 140,
       useNativeDriver: true,
     }).start(() => {
       setStep(nextStep);
-      stepSlide.setValue(dir * 32);
-      heroScale.setValue(0.92);
+      stepSlide.setValue(dir * 28);
+      heroScale.setValue(0.94);
       scrollRef.current?.scrollTo({ y: 0, animated: false });
 
       Animated.parallel([
         Animated.timing(stepFade, {
           toValue: 1,
-          duration: 220,
+          duration: 240,
           easing: Easing.out(Easing.cubic),
           useNativeDriver: true,
         }),
@@ -163,7 +200,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
   const handleNextStep = () => {
     if (step === 0 && !name.trim()) {
       triggerNotificationHaptic('warning');
-      Alert.alert('Podaj imię', 'Wpisz swoje imię lub pseudonim, abyśmy mogli utworzyć Twój profil.');
+      Alert.alert('Podaj imię', 'Wpisz swoje imię lub pseudonim, aby utworzyć profil.');
       return;
     }
     if (step < TOTAL_STEPS - 1) {
@@ -174,6 +211,59 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
   const handlePrevStep = () => {
     if (step > 0) {
       animateToStep(step - 1);
+    }
+  };
+
+  const handleCloudSignInOrRestore = async () => {
+    if (isCloudBusy) return;
+    setIsCloudBusy(true);
+    try {
+      const authRes = await signInWithCloudAccount({
+        provider: cloudProvider,
+        email: cloudEmail,
+        secretPin: cloudPin,
+        displayName: name.trim() || undefined,
+      });
+
+      setLinkedCloudEmail(authRes.session.email);
+
+      if (!authRes.isNewAccount && authRes.session.backupSummary) {
+        Alert.alert(
+          'Znaleziono konto w chmurze',
+          `Wykryto zapisany profil "${authRes.session.backupSummary.profileName}" (${authRes.session.backupSummary.plansCount} planów, ${authRes.session.backupSummary.prsCount} rekordów PR). Czy chcesz od razu przywrócić całe konto na ten telefon?`,
+          [
+            {
+              text: 'Tylko połącz z nowym',
+              style: 'cancel',
+            },
+            {
+              text: 'Przywróć konto teraz',
+              onPress: async () => {
+                try {
+                  setIsSubmitting(true);
+                  const restored = await pullProfileFromCloud('create_new');
+                  triggerNotificationHaptic('success');
+                  await onCompleted(restored.profile);
+                } catch (err: any) {
+                  Alert.alert('Błąd przywracania', err?.message || 'Nie udało się pobrać kopii.');
+                } finally {
+                  setIsSubmitting(false);
+                }
+              },
+            },
+          ]
+        );
+      } else {
+        triggerNotificationHaptic('success');
+        Alert.alert(
+          'Połączono z chmurą',
+          `Twoje konto (${authRes.session.email}) zostało aktywowane. Po zakończeniu konfiguracji automatycznie zsynchronizujemy Twój profil w chmurze.`
+        );
+      }
+    } catch (e: any) {
+      Alert.alert('Logowanie w chmurze', e?.message || 'Nie udało się połączyć z chmurą.');
+    } finally {
+      setIsCloudBusy(false);
     }
   };
 
@@ -195,7 +285,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
         Alert.alert(
           'Brak dostępu',
           Platform.OS === 'ios'
-            ? 'Możesz włączyć uprawnienia Apple Health później w Ustawieniach lub bezpośrednio w aplikacji Zdrowie.'
+            ? 'Możesz włączyć uprawnienia Apple Health później w Ustawieniach lub w aplikacji Zdrowie.'
             : 'Możesz włączyć uprawnienia Health Connect później w Ustawieniach.'
         );
       }
@@ -237,10 +327,16 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
 
       triggerNotificationHaptic('success');
       const profile = await createProfile(trimmed, {
+        gender,
         weight: parsedWeight,
         height: parsedHeight,
         templateKey,
       });
+
+      if (linkedCloudEmail) {
+        await pushProfileToCloud(profile.id).catch(() => {});
+      }
+
       await onCompleted(profile);
     } catch (e: any) {
       Alert.alert('Błąd', e?.message || 'Nie udało się skonfigurować konta.');
@@ -262,7 +358,10 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
         healthSyncEnabled,
         supplements,
       });
-      const profile = await createProfile(name.trim() || 'Sportowiec', { templateKey: 'blank' });
+      const profile = await createProfile(name.trim() || 'Sportowiec', {
+        gender,
+        templateKey: 'blank',
+      });
       await onCompleted(profile);
     } catch (e: any) {
       Alert.alert('Błąd', e?.message || 'Nie udało się uruchomić czystego profilu.');
@@ -304,13 +403,13 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
       style={[styles.container, { backgroundColor: theme.bg }]}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      {/* Fixed Animated Wizard Header */}
+      {/* Open Editorial Header */}
       <View style={[styles.headerShell, { borderBottomColor: theme.hairline }]}>
         <View style={styles.topRow}>
           <View style={styles.brandRow}>
             {step > 0 ? (
               <TouchableOpacity
-                style={[styles.navIconBtn, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}
+                style={[styles.navIconBtn, { backgroundColor: theme.bgSecondary }]}
                 onPress={handlePrevStep}
                 activeOpacity={0.75}
                 accessibilityLabel="Wstecz"
@@ -318,7 +417,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
                 <Ionicons name="arrow-back" size={18} color={theme.text} />
               </TouchableOpacity>
             ) : (
-              <View style={[styles.navIconBtn, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
+              <View style={[styles.navIconBtn, { backgroundColor: theme.bgSecondary }]}>
                 <AnimatedIcon name="barbell-outline" preset="barbell" size={18} color={theme.text} active />
               </View>
             )}
@@ -327,14 +426,14 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
               <Text style={[styles.brandTitle, { color: theme.text }]} numberOfLines={1}>
                 IRON ROUTINE
               </Text>
-              <Text style={[styles.brandSub, { color: theme.textMuted }]} numberOfLines={1}>
+              <Text style={[styles.brandSub, { color: meta.accent }]} numberOfLines={1}>
                 {meta.kicker}
               </Text>
             </View>
           </View>
 
           <TouchableOpacity
-            style={[styles.navIconBtn, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}
+            style={[styles.navIconBtn, { backgroundColor: theme.bgSecondary }]}
             onPress={() => {
               triggerSelectionHaptic();
               toggleTheme();
@@ -356,27 +455,13 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
             <Animated.View
               style={[
                 styles.progressFill,
-                { backgroundColor: theme.text, width: progressWidth },
+                { backgroundColor: meta.accent, width: progressWidth },
               ]}
             />
           </View>
-          <View style={styles.dotsRow}>
-            {Array.from({ length: TOTAL_STEPS }).map((_, idx) => {
-              const passedOrCurrent = idx <= step;
-              return (
-                <View
-                  key={idx}
-                  style={[
-                    styles.stepDot,
-                    {
-                      backgroundColor: passedOrCurrent ? theme.text : theme.bgTertiary,
-                      borderColor: passedOrCurrent ? theme.text : theme.border,
-                    },
-                  ]}
-                />
-              );
-            })}
-          </View>
+          <Text style={[styles.stepFractionText, { color: theme.textMuted }]}>
+            0{step + 1} / 0{TOTAL_STEPS}
+          </Text>
         </View>
       </View>
 
@@ -392,53 +477,156 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
             transform: [{ translateX: stepSlide }],
           }}
         >
-          {/* Step Hero Banner */}
+          {/* Open Editorial Hero Block */}
           <Animated.View style={[styles.heroBlock, { transform: [{ scale: heroScale }] }]}>
-            <View
-              style={[
-                styles.heroBadge,
-                { backgroundColor: theme.bgSecondary, borderColor: theme.border },
-              ]}
-            >
-              <AnimatedIcon
-                name={meta.icon}
-                preset={meta.preset}
-                size={22}
-                color={meta.accent || theme.text}
-                active
-              />
-            </View>
-
             <Text style={[styles.heroHeadline, { color: theme.text }]}>{meta.title}</Text>
             <Text style={[styles.heroCopy, { color: theme.textSecondary }]}>{meta.subtitle}</Text>
           </Animated.View>
 
-          {/* STEP 1: Profile & Body Parameters */}
+          {/* =========================================================
+              STEP 1: IDENTITY, GENDER SILHOUETTE & CLOUD RESTORE
+             ========================================================= */}
           {step === 0 && (
-            <>
-              <View style={[styles.card, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
-                <Text style={[styles.kicker, { color: theme.textMuted }]}>DANE OSOBOWE (1 PROFIL)</Text>
-                <TextInput
-                  style={[
-                    styles.input,
-                    { backgroundColor: theme.card, borderColor: theme.border, color: theme.text },
-                  ]}
-                  placeholder="Twoje imię lub ksywka..."
-                  placeholderTextColor={theme.textMuted}
-                  value={name}
-                  onChangeText={setName}
-                  returnKeyType="done"
-                />
+            <View style={styles.openStepFlow}>
+              {/* Open Gender & Anatomical Model Picker */}
+              <View style={[styles.openSection, { borderTopColor: theme.hairline }]}>
+                <Text style={[styles.sectionEyebrow, { color: theme.textMuted }]}>
+                  MODEL ANATOMICZNY SYLWETKI
+                </Text>
 
-                <View style={styles.twoCols}>
-                  <View style={{ flex: 1, minWidth: 0 }}>
-                    <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>Waga (kg)</Text>
+                <View style={styles.genderShowcaseRow}>
+                  <View style={styles.genderPillsCol}>
+                    {(
+                      [
+                        {
+                          id: 'male',
+                          label: 'Mężczyzna',
+                          sub: 'Sylwetka męska w zakładce Osiągi',
+                          icon: 'male-outline' as const,
+                        },
+                        {
+                          id: 'female',
+                          label: 'Kobieta',
+                          sub: 'Sylwetka kobieca w zakładce Osiągi',
+                          icon: 'female-outline' as const,
+                        },
+                      ] as const
+                    ).map((g) => {
+                      const active = gender === g.id;
+                      return (
+                        <TouchableOpacity
+                          key={g.id}
+                          style={[
+                            styles.genderOptionRow,
+                            {
+                              backgroundColor: active ? theme.text : theme.bgSecondary,
+                            },
+                          ]}
+                          onPress={() => handleSelectGender(g.id)}
+                          activeOpacity={0.8}
+                        >
+                          <Ionicons
+                            name={g.icon}
+                            size={18}
+                            color={active ? theme.bg : theme.textSecondary}
+                          />
+                          <View style={{ flex: 1 }}>
+                            <Text
+                              style={[
+                                styles.genderOptionTitle,
+                                { color: active ? theme.bg : theme.text },
+                              ]}
+                            >
+                              {g.label}
+                            </Text>
+                            <Text
+                              style={[
+                                styles.genderOptionSub,
+                                {
+                                  color: active ? theme.bg : theme.textMuted,
+                                  opacity: active ? 0.8 : 1,
+                                },
+                              ]}
+                            >
+                              {g.sub}
+                            </Text>
+                          </View>
+                          {active && (
+                            <Ionicons name="checkmark-circle" size={18} color={theme.bg} />
+                          )}
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+
+                  {/* Live Animated Silhouette Preview */}
+                  <Animated.View
+                    style={[
+                      styles.silhouetteMiniPreview,
+                      {
+                        transform: [{ scaleX: genderFlip }],
+                      },
+                    ]}
+                  >
+                    <Svg
+                      width={78}
+                      height={145}
+                      viewBox={
+                        gender === 'female'
+                          ? '-50 50 734 1390'
+                          : '0 80 724 1320'
+                      }
+                    >
+                      <Path
+                        d={
+                          gender === 'female'
+                            ? BODY_OUTLINE_FEMALE_FRONT
+                            : BODY_OUTLINE_FRONT
+                        }
+                        fill={isDark ? 'rgba(16, 185, 129, 0.12)' : 'rgba(16, 185, 129, 0.08)'}
+                        stroke="#10B981"
+                        strokeWidth={14}
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </Svg>
+                  </Animated.View>
+                </View>
+              </View>
+
+              {/* Open Name & Body Metrics Fields */}
+              <View style={[styles.openSection, { borderTopColor: theme.hairline }]}>
+                <Text style={[styles.sectionEyebrow, { color: theme.textMuted }]}>
+                  TWOJE PARAMETRY
+                </Text>
+
+                <View style={[styles.underlineInputGroup, { borderBottomColor: theme.hairline }]}>
+                  <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>
+                    Imię lub pseudonim
+                  </Text>
+                  <TextInput
+                    style={[styles.openBigInput, { color: theme.text }]}
+                    placeholder="np. Szymon, Kasia..."
+                    placeholderTextColor={theme.textMuted}
+                    value={name}
+                    onChangeText={setName}
+                    returnKeyType="done"
+                  />
+                </View>
+
+                <View style={styles.twoColsOpen}>
+                  <View
+                    style={[
+                      styles.underlineInputGroup,
+                      { flex: 1, borderBottomColor: theme.hairline },
+                    ]}
+                  >
+                    <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>
+                      Masa ciała (kg)
+                    </Text>
                     <TextInput
-                      style={[
-                        styles.input,
-                        { backgroundColor: theme.card, borderColor: theme.border, color: theme.text },
-                      ]}
-                      placeholder="np. 78"
+                      style={[styles.openBigInput, { color: theme.text }]}
+                      placeholder="np. 76.5"
                       placeholderTextColor={theme.textMuted}
                       keyboardType="decimal-pad"
                       value={weightText}
@@ -446,14 +634,18 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
                     />
                   </View>
 
-                  <View style={{ flex: 1, minWidth: 0 }}>
-                    <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>Wzrost (cm)</Text>
+                  <View
+                    style={[
+                      styles.underlineInputGroup,
+                      { flex: 1, borderBottomColor: theme.hairline },
+                    ]}
+                  >
+                    <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>
+                      Wzrost (cm)
+                    </Text>
                     <TextInput
-                      style={[
-                        styles.input,
-                        { backgroundColor: theme.card, borderColor: theme.border, color: theme.text },
-                      ]}
-                      placeholder="np. 180"
+                      style={[styles.openBigInput, { color: theme.text }]}
+                      placeholder="np. 178"
                       placeholderTextColor={theme.textMuted}
                       keyboardType="number-pad"
                       value={heightText}
@@ -461,86 +653,219 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
                     />
                   </View>
                 </View>
-
-                <Text style={[styles.helperHint, { color: theme.textMuted }]}>
-                  Wagę wykorzystamy m.in. do automatycznego przeliczania dawek suplementów (g/kg) i statystyk.
-                </Text>
               </View>
 
-              {/* JSON Import Option */}
-              <TouchableOpacity
-                style={[styles.importToggle, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}
-                onPress={() => {
-                  triggerSelectionHaptic();
-                  setShowImport((v) => !v);
-                }}
-                activeOpacity={0.75}
-              >
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1, minWidth: 0 }}>
-                  <Ionicons name="download-outline" size={18} color={theme.text} />
-                  <Text style={[styles.importToggleText, { color: theme.text, flexShrink: 1 }]} numberOfLines={1}>
-                    Importuj JSON
-                  </Text>
-                </View>
-                <Ionicons
-                  name={showImport ? 'chevron-up' : 'chevron-down'}
-                  size={18}
-                  color={theme.textMuted}
-                />
-              </TouchableOpacity>
-
-              {showImport && (
-                <View style={[styles.card, { backgroundColor: theme.bgSecondary, borderColor: theme.border, marginTop: 10 }]}>
-                  <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>
-                    Wklej zawartość wyeksportowanego pliku JSON:
-                  </Text>
-                  <TextInput
-                    style={[
-                      styles.importTextArea,
-                      { backgroundColor: theme.card, borderColor: theme.border, color: theme.text },
-                    ]}
-                    placeholder='{"app":"iron-routine",...}'
-                    placeholderTextColor={theme.textMuted}
-                    value={importText}
-                    onChangeText={setImportText}
-                    multiline
-                    textAlignVertical="top"
+              {/* Cloud Account Sync / Restore Section */}
+              <View style={[styles.openSection, { borderTopColor: theme.hairline }]}>
+                <TouchableOpacity
+                  style={styles.openExpandHeader}
+                  onPress={() => {
+                    triggerSelectionHaptic();
+                    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                    setShowCloudPanel((v) => !v);
+                  }}
+                  activeOpacity={0.75}
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
+                    <Ionicons
+                      name="cloud-done-outline"
+                      size={20}
+                      color={linkedCloudEmail ? '#10B981' : '#38BDF8'}
+                    />
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.expandTitle, { color: theme.text }]}>
+                        {linkedCloudEmail
+                          ? `Połączono z chmurą (${linkedCloudEmail})`
+                          : 'Masz już konto? Zaloguj z chmury (iCloud / Google)'}
+                      </Text>
+                      <Text style={[styles.expandSub, { color: theme.textMuted }]}>
+                        Wygodna synchronizacja konta między telefonami w bazie NoSQL
+                      </Text>
+                    </View>
+                  </View>
+                  <Ionicons
+                    name={showCloudPanel ? 'chevron-up' : 'chevron-forward'}
+                    size={18}
+                    color={theme.textMuted}
                   />
-                  <TouchableOpacity
-                    style={[styles.primaryBtn, { backgroundColor: theme.primary }]}
-                    onPress={handleImportJson}
-                    disabled={isSubmitting}
-                    activeOpacity={0.8}
-                  >
-                    <Ionicons name="cloud-download-outline" size={18} color={theme.primaryText} />
-                    <Text style={[styles.primaryBtnText, { color: theme.primaryText }]}>
-                      Zaimportuj profil i plany
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              )}
-            </>
-          )}
+                </TouchableOpacity>
 
-          {/* STEP 2: Supplementation & Dosing */}
-          {step === 1 && (
-            <View style={[styles.card, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
-              <View style={styles.stepHeaderInline}>
-                <Text style={[styles.kicker, { color: theme.textMuted, marginBottom: 0 }]}>
-                  TWOJE SUPLEMENTY ({enabledSuppCount} WYBRANE)
-                </Text>
-                {parsedWeight ? (
-                  <View style={[styles.weightTag, { backgroundColor: theme.card, borderColor: theme.border }]}>
-                    <Text style={[styles.weightTagText, { color: theme.text }]}>
-                      {parsedWeight} kg m.c.
+                {showCloudPanel && (
+                  <View style={styles.cloudPanelBody}>
+                    <View style={styles.providerRow}>
+                      <TouchableOpacity
+                        style={[
+                          styles.providerBtn,
+                          {
+                            backgroundColor:
+                              cloudProvider === 'apple' ? theme.text : theme.bgSecondary,
+                          },
+                        ]}
+                        onPress={() => setCloudProvider('apple')}
+                        activeOpacity={0.8}
+                      >
+                        <Ionicons
+                          name="logo-apple"
+                          size={16}
+                          color={cloudProvider === 'apple' ? theme.bg : theme.text}
+                        />
+                        <Text
+                          style={[
+                            styles.providerBtnText,
+                            { color: cloudProvider === 'apple' ? theme.bg : theme.text },
+                          ]}
+                        >
+                          Apple iCloud
+                        </Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={[
+                          styles.providerBtn,
+                          {
+                            backgroundColor:
+                              cloudProvider === 'google' ? theme.text : theme.bgSecondary,
+                          },
+                        ]}
+                        onPress={() => setCloudProvider('google')}
+                        activeOpacity={0.8}
+                      >
+                        <Ionicons
+                          name="logo-google"
+                          size={15}
+                          color={cloudProvider === 'google' ? theme.bg : theme.text}
+                        />
+                        <Text
+                          style={[
+                            styles.providerBtnText,
+                            { color: cloudProvider === 'google' ? theme.bg : theme.text },
+                          ]}
+                        >
+                          Google
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+
+                    <TextInput
+                      style={[
+                        styles.cloudInput,
+                        { backgroundColor: theme.bgSecondary, color: theme.text },
+                      ]}
+                      placeholder={
+                        cloudProvider === 'apple'
+                          ? 'Adres e-mail Apple ID (iCloud)...'
+                          : 'Adres e-mail konta Google...'
+                      }
+                      placeholderTextColor={theme.textMuted}
+                      autoCapitalize="none"
+                      keyboardType="email-address"
+                      value={cloudEmail}
+                      onChangeText={setCloudEmail}
+                    />
+
+                    <TextInput
+                      style={[
+                        styles.cloudInput,
+                        { backgroundColor: theme.bgSecondary, color: theme.text },
+                      ]}
+                      placeholder="Twój klucz / PIN chmury (min. 4 znaki)..."
+                      placeholderTextColor={theme.textMuted}
+                      secureTextEntry
+                      value={cloudPin}
+                      onChangeText={setCloudPin}
+                    />
+
+                    <TouchableOpacity
+                      style={[styles.cloudSubmitBtn, { backgroundColor: '#38BDF8' }]}
+                      onPress={handleCloudSignInOrRestore}
+                      disabled={isCloudBusy}
+                      activeOpacity={0.85}
+                    >
+                      {isCloudBusy ? (
+                        <ActivityIndicator size="small" color="#09090B" />
+                      ) : (
+                        <>
+                          <Ionicons name="cloud-download-outline" size={17} color="#09090B" />
+                          <Text style={styles.cloudSubmitText}>
+                            Połącz lub przywróć konto z chmury
+                          </Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </View>
+
+              {/* JSON Manual Import Option */}
+              <View style={[styles.openSection, { borderTopColor: theme.hairline }]}>
+                <TouchableOpacity
+                  style={styles.openExpandHeader}
+                  onPress={() => {
+                    triggerSelectionHaptic();
+                    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                    setShowImport((v) => !v);
+                  }}
+                  activeOpacity={0.75}
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
+                    <Ionicons name="code-slash-outline" size={18} color={theme.textSecondary} />
+                    <Text style={[styles.expandTitle, { color: theme.textSecondary }]}>
+                      Importuj ręcznie z pliku JSON
                     </Text>
                   </View>
+                  <Ionicons
+                    name={showImport ? 'chevron-up' : 'chevron-forward'}
+                    size={16}
+                    color={theme.textMuted}
+                  />
+                </TouchableOpacity>
+
+                {showImport && (
+                  <View style={styles.cloudPanelBody}>
+                    <TextInput
+                      style={[
+                        styles.importTextArea,
+                        { backgroundColor: theme.bgSecondary, color: theme.text },
+                      ]}
+                      placeholder='{"app":"iron-routine",...}'
+                      placeholderTextColor={theme.textMuted}
+                      value={importText}
+                      onChangeText={setImportText}
+                      multiline
+                      textAlignVertical="top"
+                    />
+                    <TouchableOpacity
+                      style={[styles.primaryBtn, { backgroundColor: theme.primary }]}
+                      onPress={handleImportJson}
+                      disabled={isSubmitting}
+                      activeOpacity={0.8}
+                    >
+                      <Ionicons name="download-outline" size={18} color={theme.primaryText} />
+                      <Text style={[styles.primaryBtnText, { color: theme.primaryText }]}>
+                        Zaimportuj profil i plany
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </View>
+            </View>
+          )}
+
+          {/* =========================================================
+              STEP 2: SUPPLEMENTATION (OPEN FLOW)
+             ========================================================= */}
+          {step === 1 && (
+            <View style={[styles.openSection, { borderTopColor: theme.hairline }]}>
+              <View style={styles.stepHeaderInline}>
+                <Text style={[styles.sectionEyebrow, { color: '#F59E0B', marginBottom: 0 }]}>
+                  WYBRANE SUPLEMENTY ({enabledSuppCount})
+                </Text>
+                {parsedWeight ? (
+                  <Text style={[styles.weightInlineText, { color: theme.textSecondary }]}>
+                    Przelicznik wg {parsedWeight} kg m.c.
+                  </Text>
                 ) : null}
               </View>
-
-              <Text style={[styles.suppNote, { color: theme.textSecondary }]}>
-                Zamiast sztywnej dawki wybierz tryb zalecany, przelicznik na kg masy ciała lub własną gramaturę.
-              </Text>
 
               <SupplementConfigurator
                 supplements={supplements}
@@ -551,24 +876,21 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
             </View>
           )}
 
-          {/* STEP 3: Health Integration & Alarm/Haptics */}
+          {/* =========================================================
+              STEP 3: HEALTH INTEGRATION & REST TIMER ALERTS (OPEN FLOW)
+             ========================================================= */}
           {step === 2 && (
-            <>
-              <View style={[styles.card, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
-                <Text style={[styles.kicker, { color: theme.textMuted }]}>
-                  INTEGRACJA ZE ZDROWIEM
+            <View style={styles.openStepFlow}>
+              <View style={[styles.openSection, { borderTopColor: theme.hairline }]}>
+                <Text style={[styles.sectionEyebrow, { color: '#EF4444' }]}>
+                  SYSTEMOWE ZDROWIE
                 </Text>
+
                 <TouchableOpacity
-                  style={[
-                    styles.healthConnectCard,
-                    {
-                      backgroundColor: theme.card,
-                      borderColor: healthSyncEnabled ? '#10B981' : theme.border,
-                    },
-                  ]}
+                  style={styles.openInteractiveRow}
                   onPress={handleConnectHealth}
                   disabled={isConnectingHealth}
-                  activeOpacity={0.8}
+                  activeOpacity={0.75}
                 >
                   <View style={styles.healthIconWrap}>
                     <AnimatedIcon name="heart" preset="heart" size={20} color="#EF4444" active />
@@ -578,7 +900,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
                       {Platform.OS === 'ios' ? 'Apple Health (Zdrowie)' : 'Health Connect'}
                     </Text>
                     <Text style={[styles.optionSub, { color: theme.textMuted }]}>
-                      Pobieraj automatycznie kroki, czas snu i aktywne kalorie do wskazówek treningowych.
+                      Automatyczny odczyt kroków, snu i aktywnych kalorii
                     </Text>
                   </View>
 
@@ -589,19 +911,26 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
                       style={[
                         styles.statusPill,
                         {
-                          backgroundColor: healthSyncEnabled ? '#10B981' : theme.primary,
+                          backgroundColor: healthSyncEnabled ? '#10B981' : theme.bgSecondary,
                         },
                       ]}
                     >
-                      <Text style={[styles.statusPillText, { color: healthSyncEnabled ? '#FFFFFF' : theme.primaryText }]}>
-                        {healthSyncEnabled ? 'Połączono' : 'Połącz'}
+                      <Text
+                        style={[
+                          styles.statusPillText,
+                          { color: healthSyncEnabled ? '#FFFFFF' : theme.text },
+                        ]}
+                      >
+                        {healthSyncEnabled ? 'Aktywne' : 'Połącz'}
                       </Text>
                     </View>
                   )}
                 </TouchableOpacity>
+              </View>
 
-                <Text style={[styles.kicker, { color: theme.textMuted, marginTop: 18 }]}>
-                  PRZERWY I POWIADOMIENIA
+              <View style={[styles.openSection, { borderTopColor: theme.hairline }]}>
+                <Text style={[styles.sectionEyebrow, { color: theme.textMuted }]}>
+                  DOMYŚLNY CZAS PRZERWY MIĘDZY SERIAMI
                 </Text>
 
                 <View style={styles.restPresetsRow}>
@@ -613,8 +942,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
                         style={[
                           styles.prefPill,
                           {
-                            backgroundColor: active ? theme.primary : theme.card,
-                            borderColor: active ? theme.primary : theme.border,
+                            backgroundColor: active ? theme.text : theme.bgSecondary,
                           },
                         ]}
                         onPress={() => {
@@ -623,8 +951,13 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
                         }}
                         activeOpacity={0.75}
                       >
-                        <Text style={[styles.prefPillText, { color: active ? theme.primaryText : theme.text }]}>
-                          Przerwa {secs}s
+                        <Text
+                          style={[
+                            styles.prefPillText,
+                            { color: active ? theme.bg : theme.text },
+                          ]}
+                        >
+                          {secs} sekund
                         </Text>
                       </TouchableOpacity>
                     );
@@ -632,115 +965,108 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
                 </View>
 
                 <TouchableOpacity
-                  style={[styles.toggleRow, { backgroundColor: theme.card, borderColor: theme.border }]}
+                  style={[
+                    styles.openToggleLine,
+                    { borderTopColor: theme.hairline, borderBottomColor: theme.hairline },
+                  ]}
                   onPress={handleToggleAlarmAndHaptics}
-                  activeOpacity={0.78}
+                  activeOpacity={0.75}
                 >
                   <View style={{ flex: 1, minWidth: 0 }}>
                     <Text style={[styles.optionTitle, { color: theme.text }]}>
-                      Alarm i wibracje końca przerwy
+                      Budzik i wibracje końca przerwy
                     </Text>
                     <Text style={[styles.optionSub, { color: theme.textMuted }]}>
-                      Wielokrotny sygnał dźwiękowy i alert na ekranie blokady przy wyłączonej aplikacji
+                      Wielokrotny sygnał dźwiękowy na ekranie blokady przy wyłączonej aplikacji
                     </Text>
                   </View>
                   <Ionicons
                     name={hapticsEnabled ? 'checkmark-circle' : 'ellipse-outline'}
                     size={24}
-                    color={hapticsEnabled ? theme.text : theme.textMuted}
+                    color={hapticsEnabled ? '#10B981' : theme.textMuted}
                   />
                 </TouchableOpacity>
 
                 <TouchableOpacity
-                  style={[styles.toggleRow, { backgroundColor: theme.card, borderColor: theme.border }]}
+                  style={[styles.openToggleLine, { borderBottomColor: theme.hairline }]}
                   onPress={() => {
                     triggerSelectionHaptic();
                     setSuppReminderEnabled((v) => !v);
                   }}
-                  activeOpacity={0.78}
+                  activeOpacity={0.75}
                 >
                   <View style={{ flex: 1, minWidth: 0 }}>
                     <Text style={[styles.optionTitle, { color: theme.text }]}>
-                      Przypomnienie o suplementacji
+                      Codzienne przypomnienie o suplementach
                     </Text>
                     <Text style={[styles.optionSub, { color: theme.textMuted }]}>
-                      Codzienne przypomnienie wieczorne z Twoją wybraną listą dawek
+                      Wieczorne powiadomienie z listą Twoich dawek
                     </Text>
                   </View>
                   <Ionicons
                     name={suppReminderEnabled ? 'checkmark-circle' : 'ellipse-outline'}
                     size={24}
-                    color={suppReminderEnabled ? theme.text : theme.textMuted}
+                    color={suppReminderEnabled ? '#10B981' : theme.textMuted}
                   />
                 </TouchableOpacity>
               </View>
-            </>
+            </View>
           )}
 
-          {/* STEP 4: Starter Plan Selection */}
+          {/* =========================================================
+              STEP 4: STARTER PLAN SELECTION (OPEN EDITORIAL LIST)
+             ========================================================= */}
           {step === 3 && (
-            <View style={[styles.card, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
-              <Text style={[styles.kicker, { color: theme.textMuted }]}>PIERWSZY PLAN TRENINGOWY</Text>
-              <View style={styles.templatesWrap}>
-                {PLAN_TEMPLATE_OPTIONS.map((tpl) => {
-                  const selected = templateKey === tpl.id;
-                  return (
-                    <TouchableOpacity
-                      key={tpl.id}
-                      style={[
-                        styles.templateCard,
-                        {
-                          backgroundColor: selected ? theme.primary : theme.card,
-                          borderColor: selected ? theme.primary : theme.border,
-                        },
-                      ]}
-                      onPress={() => {
-                        triggerSelectionHaptic();
-                        setTemplateKey(tpl.id as Exclude<PlanTemplateKey, 'clone_current'>);
-                      }}
-                      activeOpacity={0.78}
-                    >
-                      <View style={styles.templateTop}>
-                        <Text
-                          style={[
-                            styles.templateTitle,
-                            { color: selected ? theme.primaryText : theme.text },
-                          ]}
-                        >
-                          {tpl.label}
-                        </Text>
-                        <Ionicons
-                          name={selected ? 'checkmark-circle' : 'ellipse-outline'}
-                          size={20}
-                          color={selected ? theme.primaryText : theme.textMuted}
-                        />
-                      </View>
-                      <Text
-                        style={[
-                          styles.templateSub,
-                          { color: selected ? theme.primaryText : theme.textSecondary, opacity: selected ? 0.9 : 1 },
-                        ]}
-                      >
+            <View style={[styles.openSection, { borderTopColor: theme.hairline }]}>
+              <Text style={[styles.sectionEyebrow, { color: '#38BDF8' }]}>
+                SCHEMAT TRENINGOWY NA START
+              </Text>
+
+              {PLAN_TEMPLATE_OPTIONS.map((tpl) => {
+                const selected = templateKey === tpl.id;
+                return (
+                  <TouchableOpacity
+                    key={tpl.id}
+                    style={[
+                      styles.openTemplateRow,
+                      {
+                        borderBottomColor: theme.hairline,
+                        borderLeftColor: selected ? '#38BDF8' : 'transparent',
+                        borderLeftWidth: selected ? 3 : 0,
+                        paddingLeft: selected ? 14 : 0,
+                      },
+                    ]}
+                    onPress={() => {
+                      triggerSelectionHaptic();
+                      setTemplateKey(tpl.id as Exclude<PlanTemplateKey, 'clone_current'>);
+                    }}
+                    activeOpacity={0.75}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.templateTitle, { color: theme.text }]}>
+                        {tpl.label}
+                      </Text>
+                      <Text style={[styles.templateSub, { color: '#38BDF8' }]}>
                         {tpl.subtitle}
                       </Text>
-                      <Text
-                        style={[
-                          styles.templateDesc,
-                          { color: selected ? theme.primaryText : theme.textMuted, opacity: selected ? 0.8 : 1 },
-                        ]}
-                      >
+                      <Text style={[styles.templateDesc, { color: theme.textSecondary }]}>
                         {tpl.summary}
                       </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
+                    </View>
+                    <Ionicons
+                      name={selected ? 'checkmark-circle' : 'ellipse-outline'}
+                      size={22}
+                      color={selected ? '#38BDF8' : theme.textMuted}
+                    />
+                  </TouchableOpacity>
+                );
+              })}
             </View>
           )}
         </Animated.View>
       </ScrollView>
 
-      {/* Fixed Bottom Action Footer */}
+      {/* Open Minimalist Footer */}
       <View style={[styles.footer, { backgroundColor: theme.bg, borderTopColor: theme.hairline }]}>
         {step < TOTAL_STEPS - 1 ? (
           <View style={styles.footerActions}>
@@ -750,7 +1076,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
               activeOpacity={0.85}
             >
               <Text style={[styles.primaryBtnText, { color: theme.primaryText }]}>
-                Dalej ({step + 1}/{TOTAL_STEPS})
+                Kontynuuj ({step + 1}/{TOTAL_STEPS})
               </Text>
               <Ionicons name="arrow-forward" size={18} color={theme.primaryText} />
             </TouchableOpacity>
@@ -763,7 +1089,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
                 activeOpacity={0.7}
               >
                 <Text style={[styles.skipBtnText, { color: theme.textMuted }]}>
-                  Pomiń konfigurację (pusty plan)
+                  Pomiń kreator (uruchom pusty plan)
                 </Text>
               </TouchableOpacity>
             )}
@@ -783,7 +1109,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
             ) : (
               <>
                 <Text style={[styles.primaryBtnText, { color: theme.primaryText }]}>
-                  Rozpocznij z Iron Routine
+                  Wejdź do Iron Routine
                 </Text>
                 <Ionicons name="checkmark" size={19} color={theme.primaryText} />
               </>
@@ -814,27 +1140,26 @@ const styles = StyleSheet.create({
   brandRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 11,
+    gap: 12,
     flex: 1,
     minWidth: 0,
   },
   navIconBtn: {
     width: 38,
     height: 38,
-    borderRadius: 12,
-    borderWidth: 1,
+    borderRadius: 999,
     justifyContent: 'center',
     alignItems: 'center',
   },
   brandTitle: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '900',
-    letterSpacing: 1.4,
+    letterSpacing: 1.5,
   },
   brandSub: {
     fontSize: 10,
     fontWeight: '800',
-    letterSpacing: 0.9,
+    letterSpacing: 1.1,
     marginTop: 2,
   },
   progressRow: {
@@ -844,7 +1169,7 @@ const styles = StyleSheet.create({
   },
   progressTrack: {
     flex: 1,
-    height: 6,
+    height: 4,
     borderRadius: 99,
     overflow: 'hidden',
   },
@@ -852,122 +1177,178 @@ const styles = StyleSheet.create({
     height: '100%',
     borderRadius: 99,
   },
-  dotsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-  },
-  stepDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    borderWidth: 1,
+  stepFractionText: {
+    fontSize: 11,
+    fontWeight: '800',
+    fontVariant: ['tabular-nums'],
   },
   scrollContent: {
     paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 28,
+    paddingTop: 22,
+    paddingBottom: 36,
   },
   heroBlock: {
     marginBottom: 18,
   },
-  heroBadge: {
-    width: 48,
-    height: 48,
-    borderRadius: 15,
-    borderWidth: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 14,
-  },
   heroHeadline: {
-    fontSize: 26,
+    fontSize: 30,
     fontWeight: '900',
-    letterSpacing: -0.5,
-    lineHeight: 32,
+    letterSpacing: -0.8,
+    lineHeight: 35,
     marginBottom: 6,
   },
   heroCopy: {
     fontSize: 14,
     lineHeight: 20,
   },
-  card: {
-    borderRadius: 20,
-    borderWidth: 1,
-    padding: 16,
-    marginBottom: 14,
+  openStepFlow: {
+    gap: 4,
   },
-  kicker: {
-    fontSize: 11,
+  openSection: {
+    paddingVertical: 16,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  sectionEyebrow: {
+    fontSize: 10,
     fontWeight: '800',
-    letterSpacing: 0.8,
+    letterSpacing: 1.2,
+    marginBottom: 12,
+  },
+  genderShowcaseRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+  },
+  genderPillsCol: {
+    flex: 1,
+    gap: 8,
+  },
+  genderOptionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 14,
+  },
+  genderOptionTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  genderOptionSub: {
+    fontSize: 11,
+    marginTop: 1,
+  },
+  silhouetteMiniPreview: {
+    width: 86,
+    height: 150,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  underlineInputGroup: {
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
     marginBottom: 10,
   },
   fieldLabel: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '700',
-    marginBottom: 6,
+    letterSpacing: 0.4,
+    marginBottom: 4,
   },
-  input: {
-    borderRadius: 12,
-    borderWidth: 1,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 15,
-    fontWeight: '600',
-    marginBottom: 12,
+  openBigInput: {
+    fontSize: 20,
+    fontWeight: '800',
+    paddingVertical: 4,
   },
-  twoCols: {
+  twoColsOpen: {
     flexDirection: 'row',
+    gap: 18,
+  },
+  openExpandHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+    paddingVertical: 4,
+  },
+  expandTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  expandSub: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  cloudPanelBody: {
+    marginTop: 14,
     gap: 10,
   },
-  helperHint: {
-    fontSize: 12,
-    lineHeight: 17,
-    marginTop: -2,
+  providerRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  providerBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    paddingVertical: 11,
+    borderRadius: 999,
+  },
+  providerBtnText: {
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  cloudInput: {
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  cloudSubmitBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 13,
+    borderRadius: 999,
+  },
+  cloudSubmitText: {
+    color: '#09090B',
+    fontSize: 13,
+    fontWeight: '900',
   },
   stepHeaderInline: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 8,
-    marginBottom: 8,
-  },
-  weightTag: {
-    paddingHorizontal: 9,
-    paddingVertical: 4,
-    borderRadius: 8,
-    borderWidth: 1,
-  },
-  weightTagText: {
-    fontSize: 11,
-    fontWeight: '800',
-  },
-  suppNote: {
-    fontSize: 12,
-    lineHeight: 17,
     marginBottom: 12,
   },
-  healthConnectCard: {
-    borderRadius: 14,
-    borderWidth: 1,
-    padding: 13,
+  weightInlineText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  openInteractiveRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
+    paddingVertical: 6,
   },
   healthIconWrap: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
+    width: 38,
+    height: 38,
+    borderRadius: 999,
     backgroundColor: 'rgba(239, 68, 68, 0.12)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   statusPill: {
-    paddingHorizontal: 11,
-    paddingVertical: 6,
-    borderRadius: 9,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 999,
   },
   statusPillText: {
     fontSize: 12,
@@ -976,13 +1357,12 @@ const styles = StyleSheet.create({
   restPresetsRow: {
     flexDirection: 'row',
     gap: 8,
-    marginBottom: 12,
+    marginBottom: 16,
   },
   prefPill: {
     flex: 1,
-    borderWidth: 1,
-    borderRadius: 11,
-    paddingVertical: 10,
+    borderRadius: 999,
+    paddingVertical: 11,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -990,75 +1370,51 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '800',
   },
-  toggleRow: {
-    borderWidth: 1,
-    borderRadius: 14,
-    paddingHorizontal: 13,
-    paddingVertical: 12,
+  openToggleLine: {
+    paddingVertical: 14,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderBottomWidth: StyleSheet.hairlineWidth,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 10,
-    marginBottom: 10,
+    gap: 12,
   },
   optionTitle: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '800',
   },
   optionSub: {
     fontSize: 12,
-    lineHeight: 16,
+    lineHeight: 17,
     marginTop: 2,
   },
-  templatesWrap: {
-    gap: 10,
-  },
-  templateCard: {
-    borderRadius: 15,
-    borderWidth: 1,
-    paddingHorizontal: 15,
-    paddingVertical: 13,
-  },
-  templateTop: {
+  openTemplateRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 8,
+    gap: 12,
+    paddingVertical: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
   templateTitle: {
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: '900',
   },
   templateSub: {
     fontSize: 12,
-    fontWeight: '700',
-    marginTop: 3,
+    fontWeight: '800',
+    marginTop: 2,
   },
   templateDesc: {
     fontSize: 12,
     lineHeight: 17,
     marginTop: 4,
   },
-  importToggle: {
-    borderRadius: 16,
-    borderWidth: 1,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  importToggleText: {
-    fontSize: 14,
-    fontWeight: '700',
-  },
   importTextArea: {
     borderRadius: 12,
-    borderWidth: 1,
     padding: 12,
     minHeight: 100,
     fontSize: 12,
-    marginBottom: 12,
   },
   footer: {
     paddingHorizontal: 20,
@@ -1074,7 +1430,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    borderRadius: 15,
+    borderRadius: 999,
     paddingVertical: 15,
   },
   primaryBtnText: {

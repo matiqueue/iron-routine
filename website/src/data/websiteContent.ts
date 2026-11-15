@@ -35,8 +35,8 @@ export interface SplinePointData {
 }
 
 export const HERO_METRICS = [
-  { value: '100%', label: 'Offline (AsyncStorage + JSON)' },
-  { value: '0 PLN', label: 'Zero kont, reklam i chmury' },
+  { value: 'NoSQL', label: 'Szyfrowana chmura kont (iCloud / Google)' },
+  { value: '125+', label: 'Unikalnych ćwiczeń i 19 partii F-S+' },
   { value: '1:N', label: 'Jeden profil, wiele planów PR' },
   { value: '0.1s', label: 'Pauza Dynamic Island i alarm' },
 ] as const;

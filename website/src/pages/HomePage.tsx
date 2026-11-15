@@ -120,7 +120,7 @@ export function HomePage() {
                   IRON ROUTINE {APP_VERSION}
                 </span>
                 <span className="h-1 w-1 rounded-full bg-zinc-600" />
-                <span className="font-mono text-[11px] text-zinc-400">PURE AMOLED • OFFLINE</span>
+                <span className="font-mono text-[11px] text-zinc-400">PURE AMOLED • CLOUD NOSQL SYNC</span>
               </div>
 
               <h1 className="mt-7 font-display text-4xl font-extrabold leading-[1.04] tracking-tight text-white sm:text-6xl">
@@ -130,8 +130,9 @@ export function HomePage() {
 
               <p className="mt-6 max-w-xl text-base leading-relaxed text-zinc-400 sm:text-lg">
                 Monochromatyczny dziennik siłowy na iOS i Androida stworzony pod prawdziwe
-                serie na siłowni. Jeden profil, wiele planów ze wspólną historią rekordów 1RM,
-                Apple HealthKit oraz alarm przerw zsynchronizowany z Dynamic Island.
+                serie na siłowni. Jeden profil (model męski i kobiecy), spektrum rang F–S+,
+                wspólna historia rekordów 1RM oraz szyfrowana synchronizacja konta w chmurze NoSQL
+                wyłącznie do wygodnego przenoszenia danych między telefonami.
               </p>
 
               <div className="mt-8 flex flex-wrap items-center gap-3">

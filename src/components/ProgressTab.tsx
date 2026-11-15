@@ -23,6 +23,7 @@ import {
   Exercise,
   MuscleSubGroupId,
   PRRecord,
+  RankTier,
   UserProfile,
   WeightEntry,
   WorkoutHistoryEntry,
@@ -35,6 +36,8 @@ import {
 import {
   getExerciseRankMeta,
   MUSCLE_SUBGROUPS,
+  RANK_TIERS,
+  RANK_TIER_MAP,
   resolveExerciseMuscles,
 } from '../data/muscleMap';
 import { mergeAllExercises, WORKOUT_PLAN } from '../data/planData';
@@ -58,7 +61,6 @@ import {
 import {
   AnimatedBodySilhouette,
   EnrichedExerciseRankStat,
-  SilhouetteColorMode,
 } from './AnimatedBodySilhouette';
 import { BottomSheetScrollView, InteractiveBottomSheet } from './InteractiveBottomSheet';
 
@@ -122,6 +124,56 @@ const AnimatedFillBar: React.FC<{
   );
 };
 
+const AnimatedVerticalSpectrumBar: React.FC<{
+  pct: number;
+  color: string;
+  trackColor: string;
+  isSelected: boolean;
+  delayMs?: number;
+}> = ({ pct, color, trackColor, isSelected, delayMs = 0 }) => {
+  const anim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    anim.setValue(0);
+    const timing = Animated.timing(anim, {
+      toValue: Math.max(8, Math.min(100, pct)),
+      duration: 620,
+      delay: delayMs,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    });
+    timing.start();
+    return () => timing.stop();
+  }, [pct, delayMs, anim]);
+
+  return (
+    <View
+      style={[
+        styles.spectrumColTrack,
+        {
+          backgroundColor: trackColor,
+          borderColor: isSelected ? color : 'transparent',
+          borderWidth: isSelected ? 1.5 : 0,
+        },
+      ]}
+    >
+      <Animated.View
+        style={[
+          styles.spectrumColFill,
+          {
+            backgroundColor: color,
+            opacity: isSelected ? 1 : 0.85,
+            height: anim.interpolate({
+              inputRange: [0, 100],
+              outputRange: ['0%', '100%'],
+            }),
+          },
+        ]}
+      />
+    </View>
+  );
+};
+
 export const ProgressTab: React.FC<ProgressTabProps> = ({
   activeProfile,
   activePlan,
@@ -141,7 +193,8 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
   const viewSlideAnim = useRef(new Animated.Value(0)).current;
 
   // Silhouette & muscle states
-  const [colorMode, setColorMode] = useState<SilhouetteColorMode>('priority');
+  const [muscleSortMode, setMuscleSortMode] = useState<'priority' | 'rank'>('rank');
+  const [selectedRankTier, setSelectedRankTier] = useState<RankTier | null>(null);
   const [selectedMuscle, setSelectedMuscle] = useState<MuscleSubGroupId | null>(null);
   const [expandedMuscleId, setExpandedMuscleId] = useState<MuscleSubGroupId | null>(null);
   const [physiqueReport, setPhysiqueReport] = useState<PhysiqueAnalyticsReport | null>(null);
@@ -409,13 +462,17 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
 
   const orderedMuscleList = useMemo(() => {
     if (!physiqueReport) return [];
-    const list = [...physiqueReport.muscleStatsList];
-    if (colorMode === 'priority') {
+    let list = [...physiqueReport.muscleStatsList];
+    if (selectedRankTier) {
+      list = list.filter((m) => m.rank === selectedRankTier);
+    }
+    if (muscleSortMode === 'priority') {
       const priorityOrder: Record<MuscleRankStat['priorityStatus'], number> = {
-        neglected: 0,
-        lagging: 1,
-        balanced: 2,
-        dominant: 3,
+        untrained: 0,
+        neglected: 1,
+        lagging: 2,
+        balanced: 3,
+        dominant: 4,
       };
       return list.sort((a, b) => {
         if (priorityOrder[a.priorityStatus] !== priorityOrder[b.priorityStatus]) {
@@ -425,7 +482,25 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
       });
     }
     return list.sort((a, b) => b.effectiveSetsTotal - a.effectiveSetsTotal);
-  }, [physiqueReport, colorMode]);
+  }, [physiqueReport, muscleSortMode, selectedRankTier]);
+
+  const tierDistribution = useMemo(() => {
+    const counts: Record<RankTier, number> = {
+      F: 0,
+      E: 0,
+      D: 0,
+      C: 0,
+      B: 0,
+      A: 0,
+      S: 0,
+      'S+': 0,
+    };
+    if (!physiqueReport) return counts;
+    for (const m of physiqueReport.muscleStatsList) {
+      counts[m.rank] = (counts[m.rank] || 0) + 1;
+    }
+    return counts;
+  }, [physiqueReport]);
 
   const filterByRange = <T extends { date: string }>(items: T[], range: ChartRange): T[] => {
     if (range === 'all') return items;
@@ -701,12 +776,11 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                 </View>
               </View>
 
-              {/* Open 2D Animated Anatomical Silhouette */}
+              {/* Open 2D Animated Anatomical Silhouette (Swipe to Rotate, Gender-aware) */}
               {physiqueReport && (
                 <AnimatedBodySilhouette
+                  gender={activeProfile?.gender || 'male'}
                   muscleStatsMap={physiqueReport.muscleStats}
-                  colorMode={colorMode}
-                  onChangeColorMode={setColorMode}
                   selectedMuscle={selectedMuscle}
                   onSelectMuscle={handleSelectMuscle}
                   selectedMuscleExercises={
@@ -716,12 +790,139 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                 />
               )}
 
+              {/* Open Interactive Rank Spectrum & Ladder (F -> S+) */}
+              {physiqueReport && (
+                <View style={[styles.openSection, { borderTopColor: theme.hairline }]}>
+                  <View style={styles.openSectionHeader}>
+                    <View>
+                      <Text style={[styles.sectionEyebrow, { color: physiqueReport.overallRankMeta.color }]}>
+                        SPEKTRUM PROGRESJI (F - S+)
+                      </Text>
+                      <Text style={[styles.sectionHeading, { color: theme.text }]}>
+                        Drabina rang sylwetki
+                      </Text>
+                    </View>
+                    {selectedRankTier ? (
+                      <TouchableOpacity
+                        onPress={() => {
+                          try {
+                            Haptics.selectionAsync();
+                          } catch {}
+                          LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                          setSelectedRankTier(null);
+                        }}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={[styles.sectionRightMeta, { color: theme.text }]}>
+                          Pokaż wszystkie ({physiqueReport.muscleStatsList.length})
+                        </Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <Text style={[styles.sectionRightMeta, { color: theme.textMuted }]}>
+                        Dotknij rangi, by filtrować
+                      </Text>
+                    )}
+                  </View>
+
+                  {/* 8-Column Interactive Spectrum Chart */}
+                  <View style={styles.spectrumGridRow}>
+                    {RANK_TIERS.map((tierObj, idx) => {
+                      const count = tierDistribution[tierObj.tier] || 0;
+                      const isSelected = selectedRankTier === tierObj.tier;
+                      const heightPct =
+                        count === 0
+                          ? 10
+                          : Math.min(100, Math.max(22, Math.round((count / 10) * 100)));
+
+                      return (
+                        <TouchableOpacity
+                          key={tierObj.tier}
+                          style={styles.spectrumColWrap}
+                          onPress={() => {
+                            try {
+                              Haptics.selectionAsync();
+                            } catch {}
+                            LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                            setSelectedRankTier(
+                              selectedRankTier === tierObj.tier ? null : tierObj.tier
+                            );
+                          }}
+                          activeOpacity={0.75}
+                        >
+                          <Text
+                            style={[
+                              styles.spectrumCountLabel,
+                              {
+                                color: count > 0 ? theme.text : theme.textMuted,
+                                opacity: count > 0 ? 1 : 0.45,
+                              },
+                            ]}
+                          >
+                            {count}
+                          </Text>
+
+                          <AnimatedVerticalSpectrumBar
+                            pct={heightPct}
+                            color={count > 0 ? tierObj.color : theme.border}
+                            trackColor={theme.bgSecondary}
+                            isSelected={isSelected}
+                            delayMs={idx * 45}
+                          />
+
+                          <Text
+                            style={[
+                              styles.spectrumTierLetter,
+                              {
+                                color: isSelected || count > 0 ? tierObj.color : theme.textMuted,
+                                transform: [{ scale: isSelected ? 1.15 : 1 }],
+                              },
+                            ]}
+                          >
+                            {tierObj.tier}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+
+                  {/* Selected Tier Info Strip */}
+                  {selectedRankTier ? (
+                    <View
+                      style={[
+                        styles.tierSpotlightRow,
+                        {
+                          borderLeftColor: RANK_TIER_MAP[selectedRankTier].color,
+                          backgroundColor: theme.bgSecondary,
+                        },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.tierSpotlightLetter,
+                          { color: RANK_TIER_MAP[selectedRankTier].color },
+                        ]}
+                      >
+                        {selectedRankTier}
+                      </Text>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.tierSpotlightTitle, { color: theme.text }]}>
+                          {RANK_TIER_MAP[selectedRankTier].title} · {tierDistribution[selectedRankTier]} z 19 partii
+                        </Text>
+                        <Text style={[styles.tierSpotlightSub, { color: theme.textSecondary }]}>
+                          {RANK_TIER_MAP[selectedRankTier].subtitle} (od {RANK_TIER_MAP[selectedRankTier].minMuscleSets} serii partii / {RANK_TIER_MAP[selectedRankTier].minExerciseSets} serii ćwiczenia)
+                        </Text>
+                      </View>
+                    </View>
+                  ) : null}
+                </View>
+              )}
+
               {/* Open Coach Priority Section ("Co teraz robić") */}
               {physiqueReport && physiqueReport.topPriorities.length > 0 && (
                 <View style={[styles.openSection, { borderTopColor: theme.hairline }]}>
                   <View style={styles.openSectionHeader}>
                     <View>
-                      <Text style={[styles.sectionEyebrow, { color: '#F43F5E' }]}>
+                      <Text style={[styles.sectionEyebrow, { color: '#F59E0B' }]}>
                         REKOMENDACJA TRENINGOWA
                       </Text>
                       <Text style={[styles.sectionHeading, { color: theme.text }]}>
@@ -737,7 +938,9 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                     const isFocused = selectedMuscle === stat.muscleId;
                     const topEx = (exercisesByMuscle[stat.muscleId] || [])[0];
                     const dotColor =
-                      stat.priorityStatus === 'neglected' ? '#F43F5E' : '#F59E0B';
+                      stat.priorityStatus === 'untrained'
+                        ? '#71717A'
+                        : '#F59E0B';
 
                     return (
                       <TouchableOpacity
@@ -762,8 +965,8 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                                 { color: dotColor },
                               ]}
                             >
-                              {stat.priorityStatus === 'neglected'
-                                ? 'Brak aktywności'
+                              {stat.priorityStatus === 'untrained'
+                                ? 'Brak serii (0)'
                                 : `${Math.round(stat.relativeDevelopmentRatio * 100)}% normy`}
                             </Text>
                           </View>
@@ -797,96 +1000,131 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                 <View style={styles.openSectionHeader}>
                   <View>
                     <Text style={[styles.sectionEyebrow, { color: theme.textMuted }]}>
-                      WSZYSTKIE PARTIE (19)
+                      {selectedRankTier
+                        ? `FILTR RANGI ${selectedRankTier} (${orderedMuscleList.length})`
+                        : 'WSZYSTKIE PARTIE (19)'}
                     </Text>
                     <Text style={[styles.sectionHeading, { color: theme.text }]}>
                       Rangi rozwoju mięśni
                     </Text>
                   </View>
-                  <Text style={[styles.sectionRightMeta, { color: theme.textMuted }]}>
-                    Dotknij po ćwiczenia
-                  </Text>
+
+                  <View style={[styles.sortPillsRow, { backgroundColor: theme.bgSecondary }]}>
+                    <TouchableOpacity
+                      style={[
+                        styles.sortMiniPill,
+                        muscleSortMode === 'rank' && { backgroundColor: theme.text },
+                      ]}
+                      onPress={() => setMuscleSortMode('rank')}
+                      activeOpacity={0.75}
+                    >
+                      <Text
+                        style={[
+                          styles.sortMiniText,
+                          { color: muscleSortMode === 'rank' ? theme.bg : theme.textMuted },
+                        ]}
+                      >
+                        Wg rangi
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[
+                        styles.sortMiniPill,
+                        muscleSortMode === 'priority' && { backgroundColor: theme.text },
+                      ]}
+                      onPress={() => setMuscleSortMode('priority')}
+                      activeOpacity={0.75}
+                    >
+                      <Text
+                        style={[
+                          styles.sortMiniText,
+                          { color: muscleSortMode === 'priority' ? theme.bg : theme.textMuted },
+                        ]}
+                      >
+                        Braki
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
 
-                {orderedMuscleList.map((stat, idx) => {
-                  const isExpanded = expandedMuscleId === stat.muscleId;
-                  const muscleExList = exercisesByMuscle[stat.muscleId] || [];
-                  const barColor =
-                    colorMode === 'priority'
-                      ? stat.priorityStatus === 'neglected'
-                        ? '#F43F5E'
-                        : stat.priorityStatus === 'lagging'
-                        ? '#F59E0B'
-                        : stat.priorityStatus === 'dominant'
-                        ? '#38BDF8'
-                        : '#10B981'
-                      : stat.rankMeta.color;
+                {orderedMuscleList.length === 0 ? (
+                  <Text style={[styles.inlineEmptyText, { color: theme.textMuted }]}>
+                    Brak partii mięśniowych w wybranej randze {selectedRankTier}.
+                  </Text>
+                ) : (
+                  orderedMuscleList.map((stat, idx) => {
+                    const isExpanded = expandedMuscleId === stat.muscleId;
+                    const muscleExList = exercisesByMuscle[stat.muscleId] || [];
+                    const barColor =
+                      stat.effectiveSetsTotal === 0
+                        ? '#71717A'
+                        : stat.rankMeta.color;
 
-                  return (
-                    <View
-                      key={stat.muscleId}
-                      style={[
-                        styles.muscleOpenRowWrap,
-                        { borderBottomColor: theme.hairline },
-                      ]}
-                    >
-                      <TouchableOpacity
-                        style={styles.muscleOpenRow}
-                        onPress={() => handleToggleMuscleRow(stat.muscleId)}
-                        activeOpacity={0.7}
+                    return (
+                      <View
+                        key={stat.muscleId}
+                        style={[
+                          styles.muscleOpenRowWrap,
+                          { borderBottomColor: theme.hairline },
+                        ]}
                       >
-                        <View style={styles.muscleRankCol}>
-                          <Text
-                            style={[
-                              styles.muscleRankLetter,
-                              { color: stat.rankMeta.color },
-                            ]}
-                          >
-                            {stat.rank}
-                          </Text>
-                        </View>
-
-                        <View style={styles.muscleMiddleCol}>
-                          <View style={styles.muscleRowHeaderLine}>
-                            <Text style={[styles.muscleRowTitle, { color: theme.text }]}>
-                              {stat.meta.label}
-                            </Text>
+                        <TouchableOpacity
+                          style={styles.muscleOpenRow}
+                          onPress={() => handleToggleMuscleRow(stat.muscleId)}
+                          activeOpacity={0.7}
+                        >
+                          <View style={styles.muscleRankCol}>
                             <Text
                               style={[
-                                styles.muscleRowSets,
-                                { color: theme.textSecondary },
+                                styles.muscleRankLetter,
+                                { color: stat.rankMeta.color },
                               ]}
                             >
-                              {Math.round(stat.effectiveSetsTotal)} serii
-                              {stat.nextTier ? ` (+${stat.setsToNext} do ${stat.nextTier})` : ''}
+                              {stat.rank}
                             </Text>
                           </View>
 
-                          <AnimatedFillBar
-                            pct={stat.progressPct}
-                            color={barColor}
-                            trackColor={theme.bgSecondary}
-                            height={5}
-                            delayMs={Math.min(idx * 25, 300)}
+                          <View style={styles.muscleMiddleCol}>
+                            <View style={styles.muscleRowHeaderLine}>
+                              <Text style={[styles.muscleRowTitle, { color: theme.text }]}>
+                                {stat.meta.label}
+                              </Text>
+                              <Text
+                                style={[
+                                  styles.muscleRowSets,
+                                  { color: theme.textSecondary },
+                                ]}
+                              >
+                                {Math.round(stat.effectiveSetsTotal)} serii
+                                {stat.nextTier ? ` (+${stat.setsToNext} do ${stat.nextTier})` : ''}
+                              </Text>
+                            </View>
+
+                            <AnimatedFillBar
+                              pct={stat.progressPct}
+                              color={barColor}
+                              trackColor={theme.bgSecondary}
+                              height={5}
+                              delayMs={Math.min(idx * 25, 300)}
+                            />
+                          </View>
+
+                          <Ionicons
+                            name={isExpanded ? 'chevron-up' : 'chevron-forward'}
+                            size={16}
+                            color={theme.textMuted}
                           />
-                        </View>
+                        </TouchableOpacity>
 
-                        <Ionicons
-                          name={isExpanded ? 'chevron-up' : 'chevron-forward'}
-                          size={16}
-                          color={theme.textMuted}
-                        />
-                      </TouchableOpacity>
-
-                      {/* Smooth Inline Expanded Exercises for this Muscle */}
-                      {isExpanded && (
-                        <View style={styles.inlineExerciseList}>
-                          {muscleExList.length === 0 ? (
-                            <Text style={[styles.inlineEmptyText, { color: theme.textMuted }]}>
-                              Brak przypisanych ćwiczeń w bazie
-                            </Text>
-                          ) : (
-                            muscleExList.map((exStat) => {
+                        {/* Smooth Inline Expanded Exercises for this Muscle */}
+                        {isExpanded && (
+                          <View style={styles.inlineExerciseList}>
+                            {muscleExList.length === 0 ? (
+                              <Text style={[styles.inlineEmptyText, { color: theme.textMuted }]}>
+                                Brak przypisanych ćwiczeń w bazie
+                              </Text>
+                            ) : (
+                              muscleExList.map((exStat) => {
                               const pr = bestPRs[exStat.exerciseId];
                               return (
                                 <TouchableOpacity
@@ -935,7 +1173,8 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                       )}
                     </View>
                   );
-                })}
+                })
+                )}
               </View>
             </View>
           )}
@@ -2050,5 +2289,78 @@ const styles = StyleSheet.create({
     marginTop: 18,
     paddingTop: 14,
     gap: 8,
+  },
+  spectrumGridRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    gap: 6,
+    paddingTop: 8,
+    paddingBottom: 4,
+  },
+  spectrumColWrap: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 6,
+  },
+  spectrumCountLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    fontVariant: ['tabular-nums'],
+  },
+  spectrumColTrack: {
+    width: '100%',
+    maxWidth: 32,
+    height: 78,
+    borderRadius: 10,
+    justifyContent: 'flex-end',
+    overflow: 'hidden',
+  },
+  spectrumColFill: {
+    width: '100%',
+    borderRadius: 10,
+  },
+  spectrumTierLetter: {
+    fontSize: 14,
+    fontWeight: '900',
+    letterSpacing: -0.3,
+  },
+  tierSpotlightRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginTop: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderLeftWidth: 3,
+    borderRadius: 10,
+  },
+  tierSpotlightLetter: {
+    fontSize: 26,
+    fontWeight: '900',
+  },
+  tierSpotlightTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  tierSpotlightSub: {
+    fontSize: 11,
+    marginTop: 2,
+    lineHeight: 15,
+  },
+  sortPillsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 999,
+    padding: 2,
+  },
+  sortMiniPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+  },
+  sortMiniText: {
+    fontSize: 11,
+    fontWeight: '700',
   },
 });

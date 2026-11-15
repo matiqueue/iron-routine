@@ -149,14 +149,21 @@ export interface DayProgress {
   sessionConfig?: SessionExerciseConfig;
 }
 
+export type UserGender = 'male' | 'female';
+
 export interface UserProfile {
   id: string;
   name: string;
   isOwner?: boolean;
   createdAt: string;
   avatarColor?: string;
+  gender?: UserGender;
   height?: number; // in cm (e.g. 180)
   weight?: number; // in kg (e.g. 60.1)
+  cloudUserId?: string;
+  cloudProvider?: 'apple' | 'google';
+  cloudEmail?: string;
+  lastCloudSyncAt?: string;
 }
 
 export interface WeightEntry {

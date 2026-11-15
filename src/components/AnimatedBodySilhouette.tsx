@@ -1,7 +1,8 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
   Easing,
+  PanResponder,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -11,28 +12,30 @@ import Svg, { Circle, Defs, G, LinearGradient, Path, Stop } from 'react-native-s
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useAppTheme } from '../context/ThemeContext';
-import { Exercise, MuscleSubGroupId } from '../types/workout';
+import { Exercise, MuscleSubGroupId, UserGender } from '../types/workout';
 import {
   BODY_BACK_PARTS,
+  BODY_FEMALE_BACK_PARTS,
+  BODY_FEMALE_FRONT_PARTS,
   BODY_FRONT_PARTS,
   BODY_OUTLINE_BACK,
+  BODY_OUTLINE_FEMALE_BACK,
+  BODY_OUTLINE_FEMALE_FRONT,
   BODY_OUTLINE_FRONT,
   BodyPartVector,
 } from '../data/bodySilhouettePaths';
 import { MUSCLE_SUBGROUP_MAP } from '../data/muscleMap';
 import { ExerciseRankStat, MuscleRankStat } from '../services/muscleAnalytics';
 
-export type SilhouetteColorMode = 'priority' | 'ranks';
-export type SilhouetteViewSide = 'both' | 'front' | 'back';
+export type SilhouetteViewSide = 'front' | 'back';
 
 export interface EnrichedExerciseRankStat extends ExerciseRankStat {
   exercise: Exercise;
 }
 
 interface AnimatedBodySilhouetteProps {
+  gender?: UserGender;
   muscleStatsMap: Record<MuscleSubGroupId, MuscleRankStat>;
-  colorMode: SilhouetteColorMode;
-  onChangeColorMode: (mode: SilhouetteColorMode) => void;
   selectedMuscle: MuscleSubGroupId | null;
   onSelectMuscle: (muscle: MuscleSubGroupId | null) => void;
   selectedMuscleExercises?: EnrichedExerciseRankStat[];
@@ -56,8 +59,7 @@ function resolveMuscleIdForPath(
   side: 'front' | 'back',
   slug: string,
   pathIndex: number,
-  muscleStatsMap: Record<MuscleSubGroupId, MuscleRankStat>,
-  colorMode: SilhouetteColorMode
+  muscleStatsMap: Record<MuscleSubGroupId, MuscleRankStat>
 ): MuscleSubGroupId | null {
   if (INERT_SLUGS.has(slug)) return null;
 
@@ -67,11 +69,6 @@ function resolveMuscleIdForPath(
         const upper = muscleStatsMap.upper_chest;
         const mid = muscleStatsMap.mid_lower_chest;
         if (!upper || !mid) return 'mid_lower_chest';
-        if (colorMode === 'priority') {
-          return upper.relativeDevelopmentRatio <= mid.relativeDevelopmentRatio
-            ? 'upper_chest'
-            : 'mid_lower_chest';
-        }
         return upper.effectiveSetsTotal > mid.effectiveSetsTotal
           ? 'upper_chest'
           : 'mid_lower_chest';
@@ -80,11 +77,6 @@ function resolveMuscleIdForPath(
         const front = muscleStatsMap.front_delts;
         const sideDelt = muscleStatsMap.side_delts;
         if (!front || !sideDelt) return 'side_delts';
-        if (colorMode === 'priority') {
-          return sideDelt.relativeDevelopmentRatio <= front.relativeDevelopmentRatio
-            ? 'side_delts'
-            : 'front_delts';
-        }
         return sideDelt.effectiveSetsTotal >= front.effectiveSetsTotal
           ? 'side_delts'
           : 'front_delts';
@@ -141,7 +133,6 @@ function resolveMuscleIdForPath(
 
 function getMuscleFillStyle(
   stat: MuscleRankStat | undefined,
-  colorMode: SilhouetteColorMode,
   isSelected: boolean,
   hasAnySelection: boolean,
   isDark: boolean
@@ -149,10 +140,19 @@ function getMuscleFillStyle(
   const baseEmpty = isDark ? '#27272A' : '#E4E4E7';
   const baseStroke = isDark ? '#18181B' : '#FAFAFA';
 
-  if (!stat) {
+  // Untrained muscles (0 sets) are ALWAYS neutral gray, never red!
+  if (!stat || stat.effectiveSetsTotal <= 0 || stat.priorityStatus === 'untrained') {
+    if (hasAnySelection && isSelected) {
+      return {
+        fill: isDark ? '#52525B' : '#A1A1AA',
+        fillOpacity: 0.95,
+        stroke: isDark ? '#FFFFFF' : '#09090B',
+        strokeWidth: 3.2,
+      };
+    }
     return {
       fill: baseEmpty,
-      fillOpacity: 0.7,
+      fillOpacity: hasAnySelection ? 0.35 : 0.78,
       stroke: baseStroke,
       strokeWidth: 1,
     };
@@ -161,28 +161,15 @@ function getMuscleFillStyle(
   let fill = baseEmpty;
   let fillOpacity = 0.88;
 
-  if (colorMode === 'priority') {
-    if (stat.priorityStatus === 'neglected') {
-      fill = '#F43F5E';
-      fillOpacity = 0.92;
-    } else if (stat.priorityStatus === 'lagging') {
-      fill = '#F59E0B';
-      fillOpacity = 0.86;
-    } else if (stat.priorityStatus === 'balanced') {
-      fill = '#10B981';
-      fillOpacity = isDark ? 0.55 : 0.65;
-    } else {
-      fill = '#38BDF8';
-      fillOpacity = isDark ? 0.65 : 0.75;
-    }
+  if (stat.priorityStatus === 'neglected' || stat.priorityStatus === 'lagging') {
+    fill = '#F59E0B';
+    fillOpacity = 0.88;
+  } else if (stat.priorityStatus === 'balanced') {
+    fill = '#10B981';
+    fillOpacity = isDark ? 0.72 : 0.78;
   } else {
-    if (stat.rank === 'F') {
-      fill = isDark ? '#27272A' : '#D4D4D8';
-      fillOpacity = 0.65;
-    } else {
-      fill = stat.rankMeta.color;
-      fillOpacity = 0.9;
-    }
+    fill = '#38BDF8';
+    fillOpacity = isDark ? 0.85 : 0.88;
   }
 
   if (hasAnySelection) {
@@ -196,7 +183,7 @@ function getMuscleFillStyle(
     }
     return {
       fill,
-      fillOpacity: Math.max(0.22, fillOpacity * 0.38),
+      fillOpacity: Math.max(0.24, fillOpacity * 0.4),
       stroke: baseStroke,
       strokeWidth: 0.8,
     };
@@ -211,92 +198,188 @@ function getMuscleFillStyle(
 }
 
 export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = ({
+  gender = 'male',
   muscleStatsMap,
-  colorMode,
-  onChangeColorMode,
   selectedMuscle,
   onSelectMuscle,
   selectedMuscleExercises = [],
   onPressExercise,
 }) => {
   const { theme, isDark } = useAppTheme();
-  const [viewSide, setViewSide] = useState<SilhouetteViewSide>('both');
+  const [viewSide, setViewSide] = useState<SilhouetteViewSide>('front');
+  const viewSideRef = useRef<SilhouetteViewSide>('front');
+  const isAnimatingRef = useRef(false);
 
   // Animations
-  const flipAnim = useRef(new Animated.Value(1)).current;
-  const slideAnim = useRef(new Animated.Value(0)).current;
+  const flipScaleX = useRef(new Animated.Value(1)).current;
+  const flipOpacity = useRef(new Animated.Value(1)).current;
+  const dragOffsetX = useRef(new Animated.Value(0)).current;
   const floatAnim = useRef(new Animated.Value(0)).current;
+  const hintPulseAnim = useRef(new Animated.Value(0)).current;
   const detailBarAnim = useRef(new Animated.Value(0)).current;
 
-  // Gentle continuous breathing animation for the silhouette
   useEffect(() => {
-    const loop = Animated.loop(
+    viewSideRef.current = viewSide;
+  }, [viewSide]);
+
+  // Gentle continuous breathing + swipe arrow nudge animation
+  useEffect(() => {
+    const floatLoop = Animated.loop(
       Animated.sequence([
         Animated.timing(floatAnim, {
           toValue: 1,
-          duration: 2400,
+          duration: 2500,
           easing: Easing.inOut(Easing.sin),
           useNativeDriver: true,
         }),
         Animated.timing(floatAnim, {
           toValue: 0,
-          duration: 2400,
+          duration: 2500,
           easing: Easing.inOut(Easing.sin),
           useNativeDriver: true,
         }),
       ])
     );
-    loop.start();
-    return () => loop.stop();
-  }, [floatAnim]);
+    const hintLoop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(hintPulseAnim, {
+          toValue: 1,
+          duration: 1400,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }),
+        Animated.timing(hintPulseAnim, {
+          toValue: 0,
+          duration: 1400,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    floatLoop.start();
+    hintLoop.start();
+    return () => {
+      floatLoop.stop();
+      hintLoop.stop();
+    };
+  }, [floatAnim, hintPulseAnim]);
 
   const selectedStat = selectedMuscle ? muscleStatsMap[selectedMuscle] : null;
   useEffect(() => {
     detailBarAnim.setValue(0);
     Animated.timing(detailBarAnim, {
-      toValue: selectedStat ? selectedStat.progressPct : 0,
-      duration: 520,
+      toValue: selectedStat ? Math.min(100, Math.round(selectedStat.relativeDevelopmentRatio * 100)) : 0,
+      duration: 500,
       easing: Easing.out(Easing.cubic),
       useNativeDriver: false,
     }).start();
-  }, [selectedMuscle, selectedStat?.progressPct, detailBarAnim]);
+  }, [selectedMuscle, selectedStat?.relativeDevelopmentRatio, detailBarAnim]);
 
+  const rotateToSide = useCallback(
+    (targetSide?: SilhouetteViewSide) => {
+      if (isAnimatingRef.current) return;
+      const current = viewSideRef.current;
+      const next = targetSide || (current === 'front' ? 'back' : 'front');
+      if (next === current) return;
+
+      isAnimatingRef.current = true;
+      try {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      } catch {}
+
+      Animated.parallel([
+        Animated.timing(flipScaleX, {
+          toValue: 0.08,
+          duration: 135,
+          easing: Easing.in(Easing.quad),
+          useNativeDriver: true,
+        }),
+        Animated.timing(flipOpacity, {
+          toValue: 0.35,
+          duration: 135,
+          useNativeDriver: true,
+        }),
+      ]).start(() => {
+        viewSideRef.current = next;
+        setViewSide(next);
+        dragOffsetX.setValue(0);
+
+        Animated.parallel([
+          Animated.spring(flipScaleX, {
+            toValue: 1,
+            friction: 6,
+            tension: 75,
+            useNativeDriver: true,
+          }),
+          Animated.timing(flipOpacity, {
+            toValue: 1,
+            duration: 180,
+            easing: Easing.out(Easing.cubic),
+            useNativeDriver: true,
+          }),
+        ]).start(() => {
+          isAnimatingRef.current = false;
+        });
+      });
+    },
+    [dragOffsetX, flipOpacity, flipScaleX]
+  );
+
+  // Auto-flip when user selects a muscle from the list that belongs to the opposite side
   useEffect(() => {
-    if (!selectedMuscle || viewSide === 'both') return;
+    if (!selectedMuscle) return;
     const meta = MUSCLE_SUBGROUP_MAP[selectedMuscle];
     if (!meta) return;
-    if (meta.side === 'front' && viewSide === 'back') {
-      triggerSideTransition('front');
-    } else if (meta.side === 'back' && viewSide === 'front') {
-      triggerSideTransition('back');
+    if (meta.side === 'front' && viewSideRef.current === 'back') {
+      rotateToSide('front');
+    } else if (meta.side === 'back' && viewSideRef.current === 'front') {
+      rotateToSide('back');
     }
-  }, [selectedMuscle]);
+  }, [selectedMuscle, rotateToSide]);
 
-  const triggerSideTransition = (nextSide: SilhouetteViewSide) => {
-    if (nextSide === viewSide) return;
-    try {
-      Haptics.selectionAsync();
-    } catch {}
-
-    flipAnim.setValue(0.84);
-    slideAnim.setValue(10);
-    setViewSide(nextSide);
-
-    Animated.parallel([
-      Animated.spring(flipAnim, {
-        toValue: 1,
-        friction: 7,
-        tension: 65,
-        useNativeDriver: true,
+  const panResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onMoveShouldSetPanResponder: (_, gestureState) =>
+          Math.abs(gestureState.dx) > 12 &&
+          Math.abs(gestureState.dx) > Math.abs(gestureState.dy) * 1.2,
+        onPanResponderMove: (_, gestureState) => {
+          const clampedDx = Math.max(-48, Math.min(48, gestureState.dx * 0.45));
+          dragOffsetX.setValue(clampedDx);
+          const scalePreview = Math.max(0.76, 1 - Math.abs(gestureState.dx) / 280);
+          flipScaleX.setValue(scalePreview);
+        },
+        onPanResponderRelease: (_, gestureState) => {
+          if (Math.abs(gestureState.dx) > 28 || Math.abs(gestureState.vx) > 0.35) {
+            rotateToSide();
+          } else {
+            Animated.parallel([
+              Animated.spring(dragOffsetX, {
+                toValue: 0,
+                useNativeDriver: true,
+              }),
+              Animated.spring(flipScaleX, {
+                toValue: 1,
+                useNativeDriver: true,
+              }),
+            ]).start();
+          }
+        },
+        onPanResponderTerminate: () => {
+          Animated.parallel([
+            Animated.spring(dragOffsetX, {
+              toValue: 0,
+              useNativeDriver: true,
+            }),
+            Animated.spring(flipScaleX, {
+              toValue: 1,
+              useNativeDriver: true,
+            }),
+          ]).start();
+        },
       }),
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: 220,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }),
-    ]).start();
-  };
+    [dragOffsetX, flipScaleX, rotateToSide]
+  );
 
   const handleMusclePress = (muscleId: MuscleSubGroupId | null) => {
     if (!muscleId) return;
@@ -330,271 +413,223 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = ({
     outputRange: [0, -4],
   });
 
+  const leftArrowShift = hintPulseAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, -4],
+  });
+
+  const rightArrowShift = hintPulseAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, 4],
+  });
+
   const inertFill = isDark ? '#18181B' : '#F4F4F5';
   const outlineStroke = isDark ? '#3F3F46' : '#D4D4D8';
 
-  const renderSingleBody = (side: 'front' | 'back', svgWidth: number, svgHeight: number) => {
-    const parts: BodyPartVector[] = side === 'front' ? BODY_FRONT_PARTS : BODY_BACK_PARTS;
-    const viewBox = side === 'front' ? '0 80 724 1320' : '724 80 724 1320';
-    const outlinePath = side === 'front' ? BODY_OUTLINE_FRONT : BODY_OUTLINE_BACK;
-    const centerX = side === 'front' ? 362 : 1086;
+  const isFemale = gender === 'female';
+  const parts: BodyPartVector[] =
+    viewSide === 'front'
+      ? isFemale
+        ? BODY_FEMALE_FRONT_PARTS
+        : BODY_FRONT_PARTS
+      : isFemale
+      ? BODY_FEMALE_BACK_PARTS
+      : BODY_BACK_PARTS;
 
-    return (
-      <View style={styles.singleBodyCol}>
-        <Svg width={svgWidth} height={svgHeight} viewBox={viewBox}>
-          <Defs>
-            <LinearGradient id={`glow-${side}`} x1="0" y1="0" x2="0" y2="1">
-              <Stop
-                offset="0%"
-                stopColor={colorMode === 'priority' ? '#F43F5E' : theme.text}
-                stopOpacity={isDark ? 0.08 : 0.05}
-              />
-              <Stop
-                offset="100%"
-                stopColor={colorMode === 'priority' ? '#F59E0B' : theme.text}
-                stopOpacity={0.0}
-              />
-            </LinearGradient>
-          </Defs>
+  const viewBox =
+    viewSide === 'front'
+      ? isFemale
+        ? '-50 50 734 1390'
+        : '0 80 724 1320'
+      : isFemale
+      ? '756 50 774 1390'
+      : '724 80 724 1320';
 
-          <Circle cx={centerX} cy={540} r={250} fill={`url(#glow-${side})`} />
+  const outlinePath =
+    viewSide === 'front'
+      ? isFemale
+        ? BODY_OUTLINE_FEMALE_FRONT
+        : BODY_OUTLINE_FRONT
+      : isFemale
+      ? BODY_OUTLINE_FEMALE_BACK
+      : BODY_OUTLINE_BACK;
 
-          {parts.map((part) => {
-            const isInert = INERT_SLUGS.has(part.slug);
-            const allSides: Array<{ key: string; list: string[] }> = [
-              { key: 'common', list: part.path.common || [] },
-              { key: 'left', list: part.path.left || [] },
-              { key: 'right', list: part.path.right || [] },
-            ];
+  const centerX =
+    viewSide === 'front'
+      ? isFemale
+        ? 317
+        : 362
+      : isFemale
+      ? 1143
+      : 1086;
 
-            return (
-              <G key={`${side}-${part.slug}`}>
-                {allSides.map(({ key, list }) =>
-                  list.map((d, idx) => {
-                    if (isInert) {
-                      return (
-                        <Path
-                          key={`${side}-${part.slug}-${key}-${idx}`}
-                          d={d}
-                          fill={inertFill}
-                          fillOpacity={0.65}
-                        />
-                      );
-                    }
-
-                    const muscleId = resolveMuscleIdForPath(
-                      side,
-                      part.slug,
-                      idx,
-                      muscleStatsMap,
-                      colorMode
-                    );
-
-                    const isSelected = Boolean(
-                      selectedMuscle &&
-                        (selectedMuscle === muscleId ||
-                          (part.slug === 'chest' &&
-                            (selectedMuscle === 'upper_chest' ||
-                              selectedMuscle === 'mid_lower_chest')) ||
-                          (side === 'front' &&
-                            part.slug === 'deltoids' &&
-                            (selectedMuscle === 'front_delts' ||
-                              selectedMuscle === 'side_delts')))
-                    );
-
-                    const stat =
-                      selectedMuscle && isSelected
-                        ? muscleStatsMap[selectedMuscle]
-                        : muscleId
-                        ? muscleStatsMap[muscleId]
-                        : undefined;
-
-                    const style = getMuscleFillStyle(
-                      stat,
-                      colorMode,
-                      isSelected,
-                      Boolean(selectedMuscle),
-                      isDark
-                    );
-
-                    return (
-                      <Path
-                        key={`${side}-${part.slug}-${key}-${idx}`}
-                        d={d}
-                        fill={style.fill}
-                        fillOpacity={style.fillOpacity}
-                        stroke={style.stroke}
-                        strokeWidth={style.strokeWidth}
-                        onPress={() => handleMusclePress(muscleId)}
-                      />
-                    );
-                  })
-                )}
-              </G>
-            );
-          })}
-
-          {outlinePath ? (
-            <Path
-              d={outlinePath}
-              fill="none"
-              stroke={outlineStroke}
-              strokeWidth={2.2}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              pointerEvents="none"
-            />
-          ) : null}
-        </Svg>
-
-        <Text style={[styles.sideCaption, { color: theme.textMuted }]}>
-          {side === 'front' ? 'PRZÓD' : 'TYŁ'}
-        </Text>
-      </View>
-    );
-  };
-
-  const priorityLegend = useMemo(
+  const activityLegend = useMemo(
     () => [
-      { label: 'Brak / Pilne', color: '#F43F5E' },
-      { label: 'Odstaje', color: '#F59E0B' },
+      { label: 'Brak serii (0)', color: isDark ? '#3F3F46' : '#D4D4D8' },
+      { label: 'Niska objętość', color: '#F59E0B' },
       { label: 'W balansie', color: '#10B981' },
       { label: 'Dominuje', color: '#38BDF8' },
     ],
-    []
-  );
-
-  const rankLegend = useMemo(
-    () => [
-      { label: 'F-E', color: '#71717A' },
-      { label: 'D', color: '#38BDF8' },
-      { label: 'C', color: '#10B981' },
-      { label: 'B-A', color: '#F59E0B' },
-      { label: 'S / S+', color: '#A855F7' },
-    ],
-    []
+    [isDark]
   );
 
   return (
     <View style={styles.container}>
-      {/* Top Minimalist Controls Row (No heavy borders) */}
-      <View style={styles.controlsRow}>
-        <View style={[styles.pillGroup, { backgroundColor: theme.bgSecondary }]}>
-          <TouchableOpacity
-            style={[
-              styles.pillBtn,
-              colorMode === 'priority' && { backgroundColor: theme.text },
-            ]}
-            onPress={() => {
-              try {
-                Haptics.selectionAsync();
-              } catch {}
-              onChangeColorMode('priority');
-            }}
-            activeOpacity={0.75}
-          >
-            <View
-              style={[
-                styles.liveDot,
-                { backgroundColor: colorMode === 'priority' ? '#F43F5E' : theme.textMuted },
-              ]}
-            />
-            <Text
-              style={[
-                styles.pillBtnText,
-                { color: colorMode === 'priority' ? theme.bg : theme.textMuted },
-              ]}
-            >
-              Co teraz robić
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              styles.pillBtn,
-              colorMode === 'ranks' && { backgroundColor: theme.text },
-            ]}
-            onPress={() => {
-              try {
-                Haptics.selectionAsync();
-              } catch {}
-              onChangeColorMode('ranks');
-            }}
-            activeOpacity={0.75}
-          >
-            <Text
-              style={[
-                styles.pillBtnText,
-                { color: colorMode === 'ranks' ? theme.bg : theme.textMuted },
-              ]}
-            >
-              Rangi F-S+
-            </Text>
-          </TouchableOpacity>
+      {/* Minimalist Side Status Header */}
+      <View style={styles.sideHeaderRow}>
+        <View style={styles.sideTagWrap}>
+          <View style={[styles.liveDot, { backgroundColor: '#10B981' }]} />
+          <Text style={[styles.sideTagText, { color: theme.text }]}>
+            {viewSide === 'front' ? 'PRZÓD SYLWETKI' : 'TYŁ SYLWETKI'}
+          </Text>
         </View>
-
-        <View style={[styles.pillGroup, { backgroundColor: theme.bgSecondary }]}>
-          {(
-            [
-              { id: 'both', label: 'Oba' },
-              { id: 'front', label: 'Przód' },
-              { id: 'back', label: 'Tył' },
-            ] as const
-          ).map((item) => {
-            const active = viewSide === item.id;
-            return (
-              <TouchableOpacity
-                key={item.id}
-                style={[styles.sideBtn, active && { backgroundColor: theme.card }]}
-                onPress={() => triggerSideTransition(item.id)}
-                activeOpacity={0.75}
-              >
-                <Text
-                  style={[
-                    styles.sideBtnText,
-                    { color: active ? theme.text : theme.textMuted },
-                  ]}
-                >
-                  {item.label}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
+        <Text style={[styles.sideCounterText, { color: theme.textMuted }]}>
+          {isFemale ? 'Model Kobiecy' : 'Model Męski'} · {viewSide === 'front' ? '1 / 2' : '2 / 2'}
+        </Text>
       </View>
 
-      {/* Open Animated Silhouette Stage */}
-      <Animated.View
-        style={[
-          styles.stageWrap,
-          {
-            opacity: flipAnim,
-            transform: [
-              { scaleX: flipAnim },
-              { translateY: Animated.add(slideAnim, translateY) },
-            ],
-          },
-        ]}
-      >
-        {viewSide === 'both' ? (
-          <View style={styles.dualStageRow}>
-            {renderSingleBody('front', 158, 305)}
-            {renderSingleBody('back', 158, 305)}
-          </View>
-        ) : viewSide === 'front' ? (
-          <View style={styles.singleStageCenter}>
-            {renderSingleBody('front', 215, 390)}
-          </View>
-        ) : (
-          <View style={styles.singleStageCenter}>
-            {renderSingleBody('back', 215, 390)}
-          </View>
-        )}
-      </Animated.View>
+      {/* Interactive Swipe-to-Rotate Silhouette Stage */}
+      <View {...panResponder.panHandlers} style={styles.swipeZone}>
+        <Animated.View
+          style={[
+            styles.stageWrap,
+            {
+              opacity: flipOpacity,
+              transform: [
+                { translateX: dragOffsetX },
+                { scaleX: flipScaleX },
+                { translateY },
+              ],
+            },
+          ]}
+        >
+          <Svg width={235} height={410} viewBox={viewBox}>
+            <Defs>
+              <LinearGradient id={`glow-${viewSide}`} x1="0" y1="0" x2="0" y2="1">
+                <Stop
+                  offset="0%"
+                  stopColor="#10B981"
+                  stopOpacity={isDark ? 0.09 : 0.05}
+                />
+                <Stop
+                  offset="100%"
+                  stopColor="#38BDF8"
+                  stopOpacity={0.0}
+                />
+              </LinearGradient>
+            </Defs>
+
+            <Circle cx={centerX} cy={540} r={260} fill={`url(#glow-${viewSide})`} />
+
+            {parts.map((part) => {
+              const isInert = INERT_SLUGS.has(part.slug);
+              const allSides: Array<{ key: string; list: string[] }> = [
+                { key: 'common', list: part.path.common || [] },
+                { key: 'left', list: part.path.left || [] },
+                { key: 'right', list: part.path.right || [] },
+              ];
+
+              return (
+                <G key={`${viewSide}-${part.slug}`}>
+                  {allSides.map(({ key, list }) =>
+                    list.map((d, idx) => {
+                      if (isInert) {
+                        return (
+                          <Path
+                            key={`${viewSide}-${part.slug}-${key}-${idx}`}
+                            d={d}
+                            fill={inertFill}
+                            fillOpacity={0.65}
+                          />
+                        );
+                      }
+
+                      const muscleId = resolveMuscleIdForPath(
+                        viewSide,
+                        part.slug,
+                        idx,
+                        muscleStatsMap
+                      );
+
+                      const isSelected = Boolean(
+                        selectedMuscle &&
+                          (selectedMuscle === muscleId ||
+                            (part.slug === 'chest' &&
+                              (selectedMuscle === 'upper_chest' ||
+                                selectedMuscle === 'mid_lower_chest')) ||
+                            (viewSide === 'front' &&
+                              part.slug === 'deltoids' &&
+                              (selectedMuscle === 'front_delts' ||
+                                selectedMuscle === 'side_delts')))
+                      );
+
+                      const stat =
+                        selectedMuscle && isSelected
+                          ? muscleStatsMap[selectedMuscle]
+                          : muscleId
+                          ? muscleStatsMap[muscleId]
+                          : undefined;
+
+                      const style = getMuscleFillStyle(
+                        stat,
+                        isSelected,
+                        Boolean(selectedMuscle),
+                        isDark
+                      );
+
+                      return (
+                        <Path
+                          key={`${viewSide}-${part.slug}-${key}-${idx}`}
+                          d={d}
+                          fill={style.fill}
+                          fillOpacity={style.fillOpacity}
+                          stroke={style.stroke}
+                          strokeWidth={style.strokeWidth}
+                          onPress={() => handleMusclePress(muscleId)}
+                        />
+                      );
+                    })
+                  )}
+                </G>
+              );
+            })}
+
+            {outlinePath ? (
+              <Path
+                d={outlinePath}
+                fill="none"
+                stroke={outlineStroke}
+                strokeWidth={2.2}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                pointerEvents="none"
+              />
+            ) : null}
+          </Svg>
+        </Animated.View>
+
+        {/* Animated Swipe Prompt */}
+        <TouchableOpacity
+          style={styles.swipePromptBtn}
+          onPress={() => rotateToSide()}
+          activeOpacity={0.7}
+        >
+          <Animated.View style={{ transform: [{ translateX: leftArrowShift }] }}>
+            <Ionicons name="chevron-back" size={14} color={theme.textMuted} />
+          </Animated.View>
+          <Ionicons name="sync-outline" size={13} color={theme.textSecondary} />
+          <Text style={[styles.swipePromptText, { color: theme.textSecondary }]}>
+            Przesuń w bok, aby obrócić ({viewSide === 'front' ? 'Pokaż tył' : 'Pokaż przód'})
+          </Text>
+          <Animated.View style={{ transform: [{ translateX: rightArrowShift }] }}>
+            <Ionicons name="chevron-forward" size={14} color={theme.textMuted} />
+          </Animated.View>
+        </TouchableOpacity>
+      </View>
 
       {/* Minimalist Open Legend Strip */}
       <View style={styles.legendRow}>
-        {(colorMode === 'priority' ? priorityLegend : rankLegend).map((item) => (
+        {activityLegend.map((item) => (
           <View key={item.label} style={styles.legendItem}>
             <View style={[styles.legendSwatch, { backgroundColor: item.color }]} />
             <Text style={[styles.legendText, { color: theme.textSecondary }]}>
@@ -610,7 +645,16 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = ({
           style={[
             styles.focusStrip,
             {
-              borderLeftColor: selectedStat.rankMeta.color,
+              borderLeftColor:
+                selectedStat.effectiveSetsTotal === 0
+                  ? isDark
+                    ? '#52525B'
+                    : '#A1A1AA'
+                  : selectedStat.priorityStatus === 'dominant'
+                  ? '#38BDF8'
+                  : selectedStat.priorityStatus === 'balanced'
+                  ? '#10B981'
+                  : '#F59E0B',
               borderTopColor: theme.hairline,
               borderBottomColor: theme.hairline,
             },
@@ -618,20 +662,12 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = ({
         >
           <View style={styles.focusHeaderRow}>
             <View style={styles.focusTitleWrap}>
-              <Text
-                style={[
-                  styles.focusRankLetter,
-                  { color: selectedStat.rankMeta.color },
-                ]}
-              >
-                {selectedStat.rank}
-              </Text>
               <View style={{ flex: 1 }}>
                 <Text style={[styles.focusMuscleName, { color: theme.text }]}>
                   {selectedStat.meta.label}
                 </Text>
                 <Text style={[styles.focusStatusSub, { color: theme.textMuted }]}>
-                  {selectedStat.rankMeta.title} · {selectedStat.statusLabel}
+                  {selectedStat.statusLabel} · {Math.round(selectedStat.effectiveSetsTotal)} serii łącznie ({Math.round(selectedStat.effectiveSets30d)} w 30 dni)
                 </Text>
               </View>
             </View>
@@ -650,7 +686,16 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = ({
                 style={[
                   styles.focusFill,
                   {
-                    backgroundColor: selectedStat.rankMeta.color,
+                    backgroundColor:
+                      selectedStat.effectiveSetsTotal === 0
+                        ? isDark
+                          ? '#52525B'
+                          : '#A1A1AA'
+                        : selectedStat.priorityStatus === 'dominant'
+                        ? '#38BDF8'
+                        : selectedStat.priorityStatus === 'balanced'
+                        ? '#10B981'
+                        : '#F59E0B',
                     width: detailBarAnim.interpolate({
                       inputRange: [0, 100],
                       outputRange: ['0%', '100%'],
@@ -660,8 +705,7 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = ({
               />
             </View>
             <Text style={[styles.focusSetsText, { color: theme.textSecondary }]}>
-              {Math.round(selectedStat.effectiveSetsTotal)} serii
-              {selectedStat.nextTier ? ` (+${selectedStat.setsToNext} do ${selectedStat.nextTier})` : ''}
+              {Math.round(selectedStat.relativeDevelopmentRatio * 100)}% balansu
             </Text>
           </View>
 
@@ -675,18 +719,13 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = ({
                   activeOpacity={0.7}
                 >
                   <Text
-                    style={[
-                      styles.focusExRank,
-                      { color: exStat.rankMeta.color },
-                    ]}
-                  >
-                    {exStat.rank}
-                  </Text>
-                  <Text
                     style={[styles.focusExName, { color: theme.text }]}
                     numberOfLines={1}
                   >
                     {exStat.exercise.name}
+                  </Text>
+                  <Text style={[styles.focusExSets, { color: theme.textMuted }]}>
+                    {exStat.totalSets} serii
                   </Text>
                   <Ionicons name="chevron-forward" size={12} color={theme.textMuted} />
                 </TouchableOpacity>
@@ -696,7 +735,7 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = ({
         </View>
       ) : (
         <Text style={[styles.tapHint, { color: theme.textMuted }]}>
-          Dotknij dowolnego mięśnia na sylwetce, aby sprawdzić rangę i ćwiczenia
+          Dotknij dowolnego mięśnia na sylwetce, aby zobaczyć bilans objętości i ćwiczenia
         </Text>
       )}
     </View>
@@ -705,68 +744,56 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = ({
 
 const styles = StyleSheet.create({
   container: {
-    paddingTop: 6,
+    paddingTop: 4,
     paddingBottom: 10,
   },
-  controlsRow: {
+  sideHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 8,
-    marginBottom: 12,
+    marginBottom: 4,
   },
-  pillGroup: {
+  sideTagWrap: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: 999,
-    padding: 3,
-  },
-  pillBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 999,
+    gap: 7,
   },
   liveDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
+    width: 7,
+    height: 7,
+    borderRadius: 4,
   },
-  pillBtnText: {
-    fontSize: 12,
+  sideTagText: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1.1,
+  },
+  sideCounterText: {
+    fontSize: 11,
     fontWeight: '700',
   },
-  sideBtn: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-  },
-  sideBtnText: {
-    fontSize: 12,
-    fontWeight: '700',
+  swipeZone: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 4,
   },
   stageWrap: {
-    paddingVertical: 6,
-  },
-  dualStageRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-around',
-  },
-  singleStageCenter: {
     alignItems: 'center',
     justifyContent: 'center',
   },
-  singleBodyCol: {
+  swipePromptBtn: {
+    flexDirection: 'row',
     alignItems: 'center',
-  },
-  sideCaption: {
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 1.4,
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
     marginTop: 2,
+  },
+  swipePromptText: {
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.2,
   },
   legendRow: {
     flexDirection: 'row',
@@ -774,7 +801,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 14,
-    marginTop: 8,
+    marginTop: 4,
     marginBottom: 8,
   },
   legendItem: {
@@ -818,12 +845,6 @@ const styles = StyleSheet.create({
     gap: 12,
     flex: 1,
   },
-  focusRankLetter: {
-    fontSize: 28,
-    fontWeight: '900',
-    letterSpacing: -0.8,
-    fontVariant: ['tabular-nums'],
-  },
   focusMuscleName: {
     fontSize: 16,
     fontWeight: '800',
@@ -831,7 +852,7 @@ const styles = StyleSheet.create({
   },
   focusStatusSub: {
     fontSize: 12,
-    marginTop: 1,
+    marginTop: 2,
   },
   focusProgressRow: {
     flexDirection: 'row',
@@ -867,13 +888,13 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     maxWidth: '100%',
   },
-  focusExRank: {
-    fontSize: 12,
-    fontWeight: '900',
-  },
   focusExName: {
     fontSize: 12,
     fontWeight: '600',
     flexShrink: 1,
+  },
+  focusExSets: {
+    fontSize: 11,
+    fontWeight: '700',
   },
 });

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  LayoutAnimation,
   Linking,
   Platform,
   ScrollView,
@@ -15,7 +16,13 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAppTheme } from '../context/ThemeContext';
-import { AppSettings, HealthDailySummary, SupplementItem, UserProfile } from '../types/workout';
+import {
+  AppSettings,
+  HealthDailySummary,
+  SupplementItem,
+  UserGender,
+  UserProfile,
+} from '../types/workout';
 import {
   DEFAULT_APP_SETTINGS,
   getAppSettings,
@@ -43,6 +50,16 @@ import {
   resetAllAppData,
   updateProfile,
 } from '../services/storage';
+import {
+  CloudAccountSession,
+  CloudProvider,
+  deleteCloudAccountData,
+  getCloudSession,
+  pullProfileFromCloud,
+  pushProfileToCloud,
+  signInWithCloudAccount,
+  signOutCloudAccount,
+} from '../services/cloudSync';
 import { EXERCISE_LIBRARY } from '../data/exerciseLibrary';
 import { ExerciseLibraryModal } from '../components/ExerciseLibraryModal';
 import { InteractiveBottomSheet } from '../components/InteractiveBottomSheet';
@@ -80,6 +97,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_APP_SETTINGS);
   const [nameInput, setNameInput] = useState(activeProfile.name || '');
+  const [genderInput, setGenderInput] = useState<UserGender>(activeProfile.gender || 'male');
   const [heightInput, setHeightInput] = useState(
     activeProfile.height ? String(activeProfile.height) : ''
   );
@@ -87,6 +105,13 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
     activeProfile.weight ? String(activeProfile.weight) : ''
   );
   const [isSavingProfile, setIsSavingProfile] = useState(false);
+
+  // Cloud Sync state
+  const [cloudSession, setCloudSession] = useState<CloudAccountSession | null>(null);
+  const [cloudProvider, setCloudProvider] = useState<CloudProvider>('apple');
+  const [cloudEmail, setCloudEmail] = useState('');
+  const [cloudPin, setCloudPin] = useState('');
+  const [isCloudBusy, setIsCloudBusy] = useState(false);
 
   const [customCount, setCustomCount] = useState(0);
   const [showExerciseLibrary, setShowExerciseLibrary] = useState(false);
@@ -102,19 +127,32 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 
   useEffect(() => {
     setNameInput(activeProfile.name || '');
+    setGenderInput(activeProfile.gender || 'male');
     setHeightInput(activeProfile.height ? String(activeProfile.height) : '');
     setWeightInput(activeProfile.weight ? String(activeProfile.weight) : '');
-  }, [activeProfile.id, activeProfile.name, activeProfile.height, activeProfile.weight]);
+  }, [
+    activeProfile.id,
+    activeProfile.name,
+    activeProfile.gender,
+    activeProfile.height,
+    activeProfile.weight,
+  ]);
 
   const loadMeta = async () => {
-    const [loadedSettings, custom, permSummary] = await Promise.all([
+    const [loadedSettings, custom, permSummary, session] = await Promise.all([
       getAppSettings(),
       getCustomExercises(),
       getNotificationPermissionSummary(),
+      getCloudSession(),
     ]);
     setSettings(loadedSettings);
     setCustomCount(custom.length);
     setNotifPerm(permSummary);
+    setCloudSession(session);
+    if (session) {
+      setCloudProvider(session.provider);
+      setCloudEmail(session.email);
+    }
     if (loadedSettings.healthSyncEnabled) {
       const h = await fetchTodayHealthSummary();
       setHealthSummary(h);
@@ -140,6 +178,131 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 
   const handleSupplementsChange = async (nextSupps: SupplementItem[]) => {
     await handlePatchSettings({ supplements: nextSupps }, true);
+  };
+
+  const handleToggleGender = async (nextGender: UserGender) => {
+    if (nextGender === genderInput) return;
+    triggerSelectionHaptic();
+    setGenderInput(nextGender);
+    try {
+      const updated = await updateProfile(activeProfile.id, { gender: nextGender });
+      onProfileUpdated(updated);
+    } catch {}
+  };
+
+  const handleCloudSignIn = async () => {
+    if (isCloudBusy) return;
+    setIsCloudBusy(true);
+    try {
+      const res = await signInWithCloudAccount({
+        provider: cloudProvider,
+        email: cloudEmail,
+        secretPin: cloudPin,
+        displayName: nameInput.trim() || activeProfile.name,
+      });
+      setCloudSession(res.session);
+      setCloudPin('');
+      triggerNotificationHaptic('success');
+
+      if (res.isNewAccount) {
+        const pushRes = await pushProfileToCloud(activeProfile.id);
+        setCloudSession(pushRes.session);
+        Alert.alert(
+          'Konto w chmurze utworzone',
+          `Twój profil oraz plany zostały zaszyfrowane i zapisane w chmurze NoSQL (${res.session.email}).`
+        );
+      } else {
+        Alert.alert(
+          'Połączono z chmurą',
+          `Zalogowano jako ${res.session.email}. Możesz teraz wysłać bieżący stan na serwer lub pobrać zapisaną kopię.`
+        );
+      }
+    } catch (e: any) {
+      Alert.alert('Logowanie w chmurze', e?.message || 'Nie udało się połączyć z chmurą.');
+    } finally {
+      setIsCloudBusy(false);
+    }
+  };
+
+  const handleCloudPush = async () => {
+    if (isCloudBusy) return;
+    setIsCloudBusy(true);
+    try {
+      const res = await pushProfileToCloud(activeProfile.id);
+      setCloudSession(res.session);
+      triggerNotificationHaptic('success');
+      Alert.alert(
+        'Zsynchronizowano z chmurą',
+        'Twoje plany, historia sesji i rekordy 1RM zostały bezpiecznie zapisane w chmurze NoSQL.'
+      );
+    } catch (e: any) {
+      Alert.alert('Błąd synchronizacji', e?.message || 'Nie udało się zapisać danych w chmurze.');
+    } finally {
+      setIsCloudBusy(false);
+    }
+  };
+
+  const handleCloudPull = async () => {
+    if (isCloudBusy) return;
+    Alert.alert(
+      'Pobrać konto z chmury?',
+      'Dane na tym telefonie zostaną zaktualizowane kopią zapisaną w chmurze NoSQL.',
+      [
+        { text: 'Anuluj', style: 'cancel' },
+        {
+          text: 'Pobierz i zastąp',
+          onPress: async () => {
+            setIsCloudBusy(true);
+            try {
+              const res = await pullProfileFromCloud('overwrite_active');
+              await onDataImported();
+              await loadMeta();
+              triggerNotificationHaptic('success');
+              Alert.alert(
+                'Pobrano z chmury',
+                `Załadowano profil "${res.profile.name}" (${res.plansCount} planów, ${res.prsCount} rekordów PR).`
+              );
+            } catch (e: any) {
+              Alert.alert('Błąd pobierania', e?.message || 'Nie udało się pobrać kopii z chmury.');
+            } finally {
+              setIsCloudBusy(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleCloudSignOut = async () => {
+    triggerSelectionHaptic();
+    await signOutCloudAccount();
+    setCloudSession(null);
+    setCloudPin('');
+  };
+
+  const handleCloudDelete = () => {
+    Alert.alert(
+      'Usunąć dane z chmury?',
+      'Twoja kopia zapasowa w bazie NoSQL zostanie trwale usunięta z serwera. Dane lokalne na telefonie pozostaną nienaruszone.',
+      [
+        { text: 'Anuluj', style: 'cancel' },
+        {
+          text: 'Usuń z chmury',
+          style: 'destructive',
+          onPress: async () => {
+            setIsCloudBusy(true);
+            try {
+              await deleteCloudAccountData();
+              setCloudSession(null);
+              setCloudPin('');
+              Alert.alert('Usunięto', 'Twoje dane zostały usunięte z chmury.');
+            } finally {
+              setIsCloudBusy(false);
+            }
+          },
+        },
+      ]
+    );
   };
 
   const handleToggleHealthSync = async (enabled: boolean) => {
@@ -199,6 +362,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
     try {
       const updated = await updateProfile(activeProfile.id, {
         name: cleanName,
+        gender: genderInput,
         height: !isNaN(parsedHeight) && parsedHeight > 50 ? parsedHeight : undefined,
         weight: !isNaN(parsedWeight) && parsedWeight > 20 ? parsedWeight : undefined,
       });
@@ -300,77 +464,334 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 
   return (
     <View style={[styles.container, { backgroundColor: theme.bg }]}>
+      {/* Open Editorial Header */}
+      <View style={[styles.header, { borderBottomColor: theme.hairline }]}>
+        <Text style={[styles.headerTitle, { color: theme.text }]}>Ustawienia</Text>
+        <Text style={[styles.headerSub, { color: theme.textMuted }]}>
+          Profil · Synchronizacja NoSQL · Zdrowie · Baza ćwiczeń
+        </Text>
+      </View>
+
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
-        {/* Header */}
-        <View style={styles.header}>
-          <Text style={[styles.headerEyebrow, { color: theme.textMuted }]}>SYSTEM I PREFERENCJE</Text>
-          <Text style={[styles.headerTitle, { color: theme.text }]}>USTAWIENIA</Text>
-          <Text style={[styles.headerSub, { color: theme.textSecondary }]}>
-            Jeden profil na urządzenie. Wszystkie rekordy i postępy są automatycznie przypisane do konta.
-          </Text>
-        </View>
-
-        {/* SECTION 1: PROFILE */}
-        <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
-          <View style={styles.cardHeaderRow}>
-            <View style={styles.cardTitleGroup}>
-              <Ionicons name="person-outline" size={16} color={theme.text} />
-              <Text style={[styles.cardTitle, { color: theme.text }]}>PROFIL SPORTOWCA</Text>
+        {/* =========================================================
+            SECTION 1: CLOUD ACCOUNT & NOSQL SYNC (GOOGLE / ICLOUD)
+           ========================================================= */}
+        <View style={[styles.openSection, { borderBottomColor: theme.hairline }]}>
+          <View style={styles.sectionHeaderRow}>
+            <View>
+              <Text style={[styles.sectionEyebrow, { color: '#38BDF8' }]}>
+                CHMURA NOSQL (VERCEL)
+              </Text>
+              <Text style={[styles.sectionHeading, { color: theme.text }]}>
+                Synchronizacja konta
+              </Text>
             </View>
-            <View style={[styles.badgeChip, { backgroundColor: theme.primary }]}>
-              <Text style={[styles.badgeChipText, { color: theme.primaryText }]}>AKTYWNY</Text>
+            <View
+              style={[
+                styles.statusBadge,
+                {
+                  backgroundColor: cloudSession
+                    ? 'rgba(16, 185, 129, 0.14)'
+                    : theme.bgSecondary,
+                },
+              ]}
+            >
+              <View
+                style={[
+                  styles.statusDot,
+                  { backgroundColor: cloudSession ? '#10B981' : theme.textMuted },
+                ]}
+              />
+              <Text
+                style={[
+                  styles.statusBadgeText,
+                  { color: cloudSession ? '#10B981' : theme.textMuted },
+                ]}
+              >
+                {cloudSession ? 'Połączono' : 'Lokalnie'}
+              </Text>
             </View>
           </View>
 
-          <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>IMIĘ / NAZWA</Text>
-          <TextInput
-            style={[
-              styles.input,
-              { backgroundColor: theme.bg, borderColor: theme.border, color: theme.text },
-            ]}
-            value={nameInput}
-            onChangeText={setNameInput}
-            placeholder="Twoje imię"
-            placeholderTextColor={theme.textMuted}
-          />
+          <Text style={[styles.sectionLead, { color: theme.textSecondary }]}>
+            Zaloguj się przez Apple iCloud lub Google, aby bezpiecznie przechowywać zaszyfrowaną kopię JSON w chmurze i jednym kliknięciem przenieść konto na nowy telefon.
+          </Text>
 
-          <View style={styles.twoColRow}>
-            <View style={styles.col}>
-              <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>WZROST (CM)</Text>
+          {cloudSession ? (
+            <View style={styles.cloudConnectedWrap}>
+              <View style={[styles.cloudAccountBar, { backgroundColor: theme.bgSecondary }]}>
+                <Ionicons
+                  name={cloudSession.provider === 'apple' ? 'logo-apple' : 'logo-google'}
+                  size={20}
+                  color={theme.text}
+                />
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.cloudEmailTitle, { color: theme.text }]}>
+                    {cloudSession.email}
+                  </Text>
+                  <Text style={[styles.cloudSyncSub, { color: theme.textMuted }]}>
+                    {cloudSession.lastSyncedAt
+                      ? `Ostatnia synchronizacja: ${new Date(
+                          cloudSession.lastSyncedAt
+                        ).toLocaleString('pl-PL')}`
+                      : 'Gotowe do pierwszej synchronizacji'}
+                  </Text>
+                </View>
+                <TouchableOpacity onPress={handleCloudSignOut} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <Text style={[styles.signOutLink, { color: theme.textSecondary }]}>Wyloguj</Text>
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.cloudActionsRow}>
+                <TouchableOpacity
+                  style={[styles.cloudActionPrimary, { backgroundColor: theme.text }]}
+                  onPress={handleCloudPush}
+                  disabled={isCloudBusy}
+                  activeOpacity={0.8}
+                >
+                  {isCloudBusy ? (
+                    <ActivityIndicator size="small" color={theme.bg} />
+                  ) : (
+                    <>
+                      <Ionicons name="cloud-upload-outline" size={16} color={theme.bg} />
+                      <Text style={[styles.cloudActionPrimaryText, { color: theme.bg }]}>
+                        Wyślij do chmury
+                      </Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.cloudActionSecondary, { backgroundColor: theme.bgSecondary }]}
+                  onPress={handleCloudPull}
+                  disabled={isCloudBusy}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="cloud-download-outline" size={16} color={theme.text} />
+                  <Text style={[styles.cloudActionSecondaryText, { color: theme.text }]}>
+                    Pobierz z chmury
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              <TouchableOpacity
+                style={styles.deleteCloudLinkWrap}
+                onPress={handleCloudDelete}
+                disabled={isCloudBusy}
+              >
+                <Text style={styles.deleteCloudLinkText}>
+                  Usuń moje dane z chmury NoSQL
+                </Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={styles.cloudAuthWrap}>
+              <View style={styles.providerPillsRow}>
+                <TouchableOpacity
+                  style={[
+                    styles.providerPill,
+                    {
+                      backgroundColor:
+                        cloudProvider === 'apple' ? theme.text : theme.bgSecondary,
+                    },
+                  ]}
+                  onPress={() => setCloudProvider('apple')}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons
+                    name="logo-apple"
+                    size={16}
+                    color={cloudProvider === 'apple' ? theme.bg : theme.text}
+                  />
+                  <Text
+                    style={[
+                      styles.providerPillText,
+                      { color: cloudProvider === 'apple' ? theme.bg : theme.text },
+                    ]}
+                  >
+                    Apple iCloud
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[
+                    styles.providerPill,
+                    {
+                      backgroundColor:
+                        cloudProvider === 'google' ? theme.text : theme.bgSecondary,
+                    },
+                  ]}
+                  onPress={() => setCloudProvider('google')}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons
+                    name="logo-google"
+                    size={15}
+                    color={cloudProvider === 'google' ? theme.bg : theme.text}
+                  />
+                  <Text
+                    style={[
+                      styles.providerPillText,
+                      { color: cloudProvider === 'google' ? theme.bg : theme.text },
+                    ]}
+                  >
+                    Google
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
               <TextInput
                 style={[
-                  styles.input,
-                  { backgroundColor: theme.bg, borderColor: theme.border, color: theme.text },
+                  styles.openInputBox,
+                  { backgroundColor: theme.bgSecondary, color: theme.text },
                 ]}
+                placeholder={
+                  cloudProvider === 'apple'
+                    ? 'Adres e-mail Apple ID (iCloud)...'
+                    : 'Adres e-mail Google...'
+                }
+                placeholderTextColor={theme.textMuted}
+                autoCapitalize="none"
+                keyboardType="email-address"
+                value={cloudEmail}
+                onChangeText={setCloudEmail}
+              />
+
+              <TextInput
+                style={[
+                  styles.openInputBox,
+                  { backgroundColor: theme.bgSecondary, color: theme.text },
+                ]}
+                placeholder="Klucz zabezpieczający / PIN chmury (min. 4 znaki)..."
+                placeholderTextColor={theme.textMuted}
+                secureTextEntry
+                value={cloudPin}
+                onChangeText={setCloudPin}
+              />
+
+              <TouchableOpacity
+                style={[styles.openPrimaryAction, { backgroundColor: theme.text }]}
+                onPress={handleCloudSignIn}
+                disabled={isCloudBusy}
+                activeOpacity={0.85}
+              >
+                {isCloudBusy ? (
+                  <ActivityIndicator size="small" color={theme.bg} />
+                ) : (
+                  <>
+                    <Ionicons
+                      name={cloudProvider === 'apple' ? 'logo-apple' : 'logo-google'}
+                      size={16}
+                      color={theme.bg}
+                    />
+                    <Text style={[styles.openPrimaryActionText, { color: theme.bg }]}>
+                      Połącz konto {cloudProvider === 'apple' ? 'Apple iCloud' : 'Google'}
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+
+        {/* =========================================================
+            SECTION 2: ATHLETE PROFILE & GENDER MODEL
+           ========================================================= */}
+        <View style={[styles.openSection, { borderBottomColor: theme.hairline }]}>
+          <View style={styles.sectionHeaderRow}>
+            <View>
+              <Text style={[styles.sectionEyebrow, { color: theme.textMuted }]}>
+                TOŻSAMOŚĆ I ANATOMIA
+              </Text>
+              <Text style={[styles.sectionHeading, { color: theme.text }]}>
+                Profil sportowca
+              </Text>
+            </View>
+          </View>
+
+          <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>
+            MODEL SYLWETKI W OSIĄGACH
+          </Text>
+          <View style={styles.providerPillsRow}>
+            {(
+              [
+                { id: 'male', label: 'Mężczyzna', icon: 'male-outline' as const },
+                { id: 'female', label: 'Kobieta', icon: 'female-outline' as const },
+              ] as const
+            ).map((g) => {
+              const active = genderInput === g.id;
+              return (
+                <TouchableOpacity
+                  key={g.id}
+                  style={[
+                    styles.providerPill,
+                    {
+                      backgroundColor: active ? theme.text : theme.bgSecondary,
+                    },
+                  ]}
+                  onPress={() => handleToggleGender(g.id)}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons
+                    name={g.icon}
+                    size={16}
+                    color={active ? theme.bg : theme.text}
+                  />
+                  <Text
+                    style={[
+                      styles.providerPillText,
+                      { color: active ? theme.bg : theme.text },
+                    ]}
+                  >
+                    {g.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          <View style={[styles.underlineField, { borderBottomColor: theme.hairline }]}>
+            <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>IMIĘ / PSEUDONIM</Text>
+            <TextInput
+              style={[styles.underlineInput, { color: theme.text }]}
+              value={nameInput}
+              onChangeText={setNameInput}
+              placeholder="Twoje imię"
+              placeholderTextColor={theme.textMuted}
+            />
+          </View>
+
+          <View style={styles.twoColRow}>
+            <View style={[styles.underlineField, { flex: 1, borderBottomColor: theme.hairline }]}>
+              <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>WZROST (CM)</Text>
+              <TextInput
+                style={[styles.underlineInput, { color: theme.text }]}
                 value={heightInput}
                 onChangeText={setHeightInput}
                 keyboardType="number-pad"
-                placeholder="np. 180"
+                placeholder="180"
                 placeholderTextColor={theme.textMuted}
               />
             </View>
-            <View style={styles.col}>
-              <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>WAGA STARTOWA (KG)</Text>
+            <View style={[styles.underlineField, { flex: 1, borderBottomColor: theme.hairline }]}>
+              <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>MASA CIAŁA (KG)</Text>
               <TextInput
-                style={[
-                  styles.input,
-                  { backgroundColor: theme.bg, borderColor: theme.border, color: theme.text },
-                ]}
+                style={[styles.underlineInput, { color: theme.text }]}
                 value={weightInput}
                 onChangeText={setWeightInput}
                 keyboardType="decimal-pad"
-                placeholder="np. 82.5"
+                placeholder="80.0"
                 placeholderTextColor={theme.textMuted}
               />
             </View>
           </View>
 
           <TouchableOpacity
-            style={[styles.primaryBtn, { backgroundColor: theme.primary }]}
+            style={[styles.openPrimaryAction, { backgroundColor: theme.primary, marginTop: 8 }]}
             onPress={handleSaveProfile}
             disabled={isSavingProfile}
             activeOpacity={0.85}
@@ -378,31 +799,37 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             {isSavingProfile ? (
               <ActivityIndicator size="small" color={theme.primaryText} />
             ) : (
-              <Text style={[styles.primaryBtnText, { color: theme.primaryText }]}>
-                ZAPISZ DANE PROFILU
+              <Text style={[styles.openPrimaryActionText, { color: theme.primaryText }]}>
+                Zapisz parametry profilu
               </Text>
             )}
           </TouchableOpacity>
         </View>
 
-        {/* SECTION 2: HAPTICS & REST */}
-        <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
-          <View style={styles.cardHeaderRow}>
-            <View style={styles.cardTitleGroup}>
-              <Ionicons name="pulse-outline" size={16} color={theme.text} />
-              <Text style={[styles.cardTitle, { color: theme.text }]}>HAPTYKA I PRZERWA</Text>
+        {/* =========================================================
+            SECTION 3: HAPTICS & REST TIMER
+           ========================================================= */}
+        <View style={[styles.openSection, { borderBottomColor: theme.hairline }]}>
+          <View style={styles.sectionHeaderRow}>
+            <View>
+              <Text style={[styles.sectionEyebrow, { color: theme.textMuted }]}>
+                CZAS I CZUCIE
+              </Text>
+              <Text style={[styles.sectionHeading, { color: theme.text }]}>
+                Haptyka i przerwy
+              </Text>
             </View>
             <TouchableOpacity
-              style={[styles.testPillBtn, { borderColor: theme.border }]}
+              style={[styles.smallActionPill, { backgroundColor: theme.bgSecondary }]}
               onPress={() => triggerImpactHaptic('heavy')}
               activeOpacity={0.75}
             >
-              <Ionicons name="radio-outline" size={12} color={theme.text} />
-              <Text style={[styles.testPillText, { color: theme.text }]}>Testuj</Text>
+              <Ionicons name="radio-outline" size={13} color={theme.text} />
+              <Text style={[styles.smallActionPillText, { color: theme.text }]}>Testuj</Text>
             </TouchableOpacity>
           </View>
 
-          <View style={styles.switchRow}>
+          <View style={[styles.openSwitchLine, { borderBottomColor: theme.hairline }]}>
             <View style={styles.switchLabelWrap}>
               <Text style={[styles.rowTitle, { color: theme.text }]}>Wibracje haptyczne</Text>
               <Text style={[styles.rowSub, { color: theme.textSecondary }]}>
@@ -421,9 +848,9 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             />
           </View>
 
-          <View style={[styles.divider, { backgroundColor: theme.hairline }]} />
-
-          <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>SIŁA WIBRACJI</Text>
+          <Text style={[styles.fieldLabel, { color: theme.textMuted, marginTop: 14 }]}>
+            SIŁA WIBRACJI
+          </Text>
           <View style={[styles.segmentRow, { opacity: settings.hapticsEnabled ? 1 : 0.45 }]}>
             {INTENSITY_OPTIONS.map((opt) => {
               const active = settings.hapticsIntensity === opt.value;
@@ -434,8 +861,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                   style={[
                     styles.segmentBtn,
                     {
-                      backgroundColor: active ? theme.primary : theme.bg,
-                      borderColor: active ? theme.primary : theme.border,
+                      backgroundColor: active ? theme.text : theme.bgSecondary,
                     },
                   ]}
                   onPress={async () => {
@@ -449,7 +875,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                   <Text
                     style={[
                       styles.segmentText,
-                      { color: active ? theme.primaryText : theme.text },
+                      { color: active ? theme.bg : theme.text },
                     ]}
                     numberOfLines={1}
                   >
@@ -460,9 +886,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             })}
           </View>
 
-          <View style={[styles.divider, { backgroundColor: theme.hairline }]} />
-
-          <View style={styles.switchRow}>
+          <View style={[styles.openSwitchLine, { borderBottomColor: theme.hairline, marginTop: 8 }]}>
             <View style={styles.switchLabelWrap}>
               <Text style={[styles.rowTitle, { color: theme.text }]}>Potrójny sygnał w tle</Text>
               <Text style={[styles.rowSub, { color: theme.textSecondary }]}>
@@ -478,9 +902,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             />
           </View>
 
-          <View style={[styles.divider, { backgroundColor: theme.hairline }]} />
-
-          <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>
+          <Text style={[styles.fieldLabel, { color: theme.textMuted, marginTop: 14 }]}>
             DOMYŚLNA PRZERWA NOWYCH ĆWICZEŃ
           </Text>
           <View style={styles.segmentRow}>
@@ -492,8 +914,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                   style={[
                     styles.segmentBtn,
                     {
-                      backgroundColor: active ? theme.primary : theme.bg,
-                      borderColor: active ? theme.primary : theme.border,
+                      backgroundColor: active ? theme.text : theme.bgSecondary,
                     },
                   ]}
                   onPress={() => {
@@ -505,7 +926,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                   <Text
                     style={[
                       styles.segmentText,
-                      { color: active ? theme.primaryText : theme.text },
+                      { color: active ? theme.bg : theme.text },
                     ]}
                   >
                     {secs}s
@@ -516,15 +937,21 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           </View>
         </View>
 
-        {/* SECTION 3: NOTIFICATIONS & REMINDERS */}
-        <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
-          <View style={styles.cardHeaderRow}>
-            <View style={styles.cardTitleGroup}>
-              <Ionicons name="notifications-outline" size={16} color={theme.text} />
-              <Text style={[styles.cardTitle, { color: theme.text }]}>POWIADOMIENIA I PRZYPOMNIENIA</Text>
+        {/* =========================================================
+            SECTION 4: NOTIFICATIONS & REMINDERS
+           ========================================================= */}
+        <View style={[styles.openSection, { borderBottomColor: theme.hairline }]}>
+          <View style={styles.sectionHeaderRow}>
+            <View>
+              <Text style={[styles.sectionEyebrow, { color: theme.textMuted }]}>
+                ALERTY SYSTEMOWE
+              </Text>
+              <Text style={[styles.sectionHeading, { color: theme.text }]}>
+                Powiadomienia i przypomnienia
+              </Text>
             </View>
             <TouchableOpacity
-              style={[styles.testPillBtn, { borderColor: theme.border }]}
+              style={[styles.smallActionPill, { backgroundColor: theme.bgSecondary }]}
               onPress={async () => {
                 triggerSelectionHaptic();
                 const res = await scheduleTestRestNotification();
@@ -547,16 +974,18 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               }}
               activeOpacity={0.75}
             >
-              <Ionicons name="notifications" size={12} color={theme.text} />
-              <Text style={[styles.testPillText, { color: theme.text }]}>Test w tle (5s)</Text>
+              <Ionicons name="notifications-outline" size={13} color={theme.text} />
+              <Text style={[styles.smallActionPillText, { color: theme.text }]}>Test (5s)</Text>
             </TouchableOpacity>
           </View>
 
-          <View style={styles.switchRow}>
+          <View style={[styles.openSwitchLine, { borderBottomColor: theme.hairline }]}>
             <View style={styles.switchLabelWrap}>
-              <Text style={[styles.rowTitle, { color: theme.text }]}>Alarm końca przerwy poza aplikacją</Text>
+              <Text style={[styles.rowTitle, { color: theme.text }]}>
+                Alarm końca przerwy poza aplikacją
+              </Text>
               <Text style={[styles.rowSub, { color: theme.textSecondary }]}>
-                Wysyła lokalny alarm z dźwiękiem i systemową wibracją gdy wyjdziesz z apki
+                Lokalny alarm z dźwiękiem i wibracją gdy wyjdziesz z aplikacji
               </Text>
             </View>
             <Switch
@@ -575,24 +1004,24 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 
           {notifPerm && (!notifPerm.granted || !notifPerm.allowsSound) && (
             <TouchableOpacity
-              style={[styles.permWarnBox, { backgroundColor: theme.bg, borderColor: '#F59E0B' }]}
+              style={[styles.permWarnBox, { backgroundColor: theme.bgSecondary }]}
               onPress={() => Linking.openSettings()}
               activeOpacity={0.8}
             >
               <Ionicons name="warning-outline" size={16} color="#F59E0B" />
               <Text style={[styles.permWarnText, { color: theme.text }]}>
-                System blokuje dźwięk lub alerty powiadomień. Dotknij tutaj, aby włączyć uprawnienia w Ustawieniach systemu.
+                System blokuje dźwięk lub alerty powiadomień. Dotknij, aby otworzyć Ustawienia.
               </Text>
             </TouchableOpacity>
           )}
 
-          <View style={[styles.divider, { backgroundColor: theme.hairline }]} />
-
-          <View style={styles.switchRow}>
+          <View style={[styles.openSwitchLine, { borderBottomColor: theme.hairline }]}>
             <View style={styles.switchLabelWrap}>
-              <Text style={[styles.rowTitle, { color: theme.text }]}>Przypomnienia o suplementach</Text>
+              <Text style={[styles.rowTitle, { color: theme.text }]}>
+                Przypomnienia o suplementach
+              </Text>
               <Text style={[styles.rowSub, { color: theme.textSecondary }]}>
-                Poranne oraz awaryjne wieczorne przypomnienie wg Twojego zestawu
+                Poranne oraz wieczorne przypomnienie o Twojej liście dawek
               </Text>
             </View>
             <Switch
@@ -605,11 +1034,11 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 
           {settings.creatineRemindersEnabled && (
             <View style={styles.hoursGrid}>
-              <View style={[styles.hourBox, { backgroundColor: theme.bg, borderColor: theme.border }]}>
+              <View style={[styles.hourBox, { backgroundColor: theme.bgSecondary }]}>
                 <Text style={[styles.hourLabel, { color: theme.textMuted }]}>RANO</Text>
                 <View style={styles.hourControls}>
                   <TouchableOpacity
-                    style={[styles.hourBtn, { borderColor: theme.border }]}
+                    style={[styles.hourBtn, { backgroundColor: theme.bg }]}
                     onPress={() => {
                       const next = Math.max(6, settings.creatineMorningHour - 1);
                       handlePatchSettings({ creatineMorningHour: next }, true);
@@ -621,7 +1050,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                     {String(settings.creatineMorningHour).padStart(2, '0')}:00
                   </Text>
                   <TouchableOpacity
-                    style={[styles.hourBtn, { borderColor: theme.border }]}
+                    style={[styles.hourBtn, { backgroundColor: theme.bg }]}
                     onPress={() => {
                       const next = Math.min(14, settings.creatineMorningHour + 1);
                       handlePatchSettings({ creatineMorningHour: next }, true);
@@ -632,11 +1061,11 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                 </View>
               </View>
 
-              <View style={[styles.hourBox, { backgroundColor: theme.bg, borderColor: theme.border }]}>
+              <View style={[styles.hourBox, { backgroundColor: theme.bgSecondary }]}>
                 <Text style={[styles.hourLabel, { color: theme.textMuted }]}>WIECZÓR</Text>
                 <View style={styles.hourControls}>
                   <TouchableOpacity
-                    style={[styles.hourBtn, { borderColor: theme.border }]}
+                    style={[styles.hourBtn, { backgroundColor: theme.bg }]}
                     onPress={() => {
                       const next = Math.max(17, settings.creatineEveningHour - 1);
                       handlePatchSettings({ creatineEveningHour: next }, true);
@@ -648,7 +1077,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                     {String(settings.creatineEveningHour).padStart(2, '0')}:00
                   </Text>
                   <TouchableOpacity
-                    style={[styles.hourBtn, { borderColor: theme.border }]}
+                    style={[styles.hourBtn, { backgroundColor: theme.bg }]}
                     onPress={() => {
                       const next = Math.min(23, settings.creatineEveningHour + 1);
                       handlePatchSettings({ creatineEveningHour: next }, true);
@@ -661,9 +1090,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             </View>
           )}
 
-          <View style={[styles.divider, { backgroundColor: theme.hairline }]} />
-
-          <View style={styles.switchRow}>
+          <View style={styles.openSwitchLine}>
             <View style={styles.switchLabelWrap}>
               <Text style={[styles.rowTitle, { color: theme.text }]}>Codzienne ważenie</Text>
               <Text style={[styles.rowSub, { color: theme.textSecondary }]}>
@@ -679,11 +1106,11 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           </View>
 
           {settings.weightReminderEnabled && (
-            <View style={[styles.hourSingleRow, { backgroundColor: theme.bg, borderColor: theme.border }]}>
+            <View style={[styles.hourSingleRow, { backgroundColor: theme.bgSecondary }]}>
               <Text style={[styles.hourLabel, { color: theme.textMuted }]}>GODZINA WAŻENIA</Text>
               <View style={styles.hourControls}>
                 <TouchableOpacity
-                  style={[styles.hourBtn, { borderColor: theme.border }]}
+                  style={[styles.hourBtn, { backgroundColor: theme.bg }]}
                   onPress={() => {
                     const next = Math.max(5, settings.weightReminderHour - 1);
                     handlePatchSettings({ weightReminderHour: next }, true);
@@ -695,7 +1122,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                   {String(settings.weightReminderHour).padStart(2, '0')}:00
                 </Text>
                 <TouchableOpacity
-                  style={[styles.hourBtn, { borderColor: theme.border }]}
+                  style={[styles.hourBtn, { backgroundColor: theme.bg }]}
                   onPress={() => {
                     const next = Math.min(12, settings.weightReminderHour + 1);
                     handlePatchSettings({ weightReminderHour: next }, true);
@@ -708,33 +1135,40 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           )}
         </View>
 
-        {/* SECTION 3B: SUPPLEMENTS & DOSING */}
-        <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
-          <View style={styles.cardHeaderRow}>
-            <View style={styles.cardTitleGroup}>
-              <Ionicons name="flask-outline" size={16} color={theme.text} />
-              <Text style={[styles.cardTitle, { color: theme.text }]}>SUPLEMENTACJA I DAWKI</Text>
+        {/* =========================================================
+            SECTION 5: SUPPLEMENTS & HEALTH INTEGRATION
+           ========================================================= */}
+        <View style={[styles.openSection, { borderBottomColor: theme.hairline }]}>
+          <View style={styles.sectionHeaderRow}>
+            <View>
+              <Text style={[styles.sectionEyebrow, { color: '#F59E0B' }]}>
+                REGENERACJA I ZDROWIE
+              </Text>
+              <Text style={[styles.sectionHeading, { color: theme.text }]}>
+                Suplementacja i {Platform.OS === 'ios' ? 'Apple Health' : 'Health Connect'}
+              </Text>
             </View>
             <TouchableOpacity
-              style={[styles.testPillBtn, { borderColor: theme.border }]}
+              style={[styles.smallActionPill, { backgroundColor: theme.bgSecondary }]}
               onPress={() => {
                 triggerSelectionHaptic();
+                LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
                 setShowSuppEditor((p) => !p);
               }}
               activeOpacity={0.75}
             >
-              <Text style={[styles.testPillText, { color: theme.text }]}>
-                {showSuppEditor ? 'Zwiń' : 'Edytuj'}
+              <Text style={[styles.smallActionPillText, { color: theme.text }]}>
+                {showSuppEditor ? 'Zwiń' : 'Dawki'}
               </Text>
             </TouchableOpacity>
           </View>
 
-          <Text style={[styles.rowSub, { color: theme.textSecondary, marginTop: 0 }]}>
+          <Text style={[styles.sectionLead, { color: theme.textSecondary }]}>
             {buildActiveSupplementsSummary(settings.supplements, activeProfile.weight)}
           </Text>
 
           {showSuppEditor && (
-            <View style={{ marginTop: 12 }}>
+            <View style={{ marginTop: 12, marginBottom: 8 }}>
               <SupplementConfigurator
                 supplements={settings.supplements}
                 weightKg={activeProfile.weight}
@@ -742,43 +1176,24 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               />
             </View>
           )}
-        </View>
 
-        {/* SECTION 3C: HEALTH INTEGRATION (APPLE HEALTH / HEALTH CONNECT) */}
-        <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
-          <View style={styles.cardHeaderRow}>
-            <View style={styles.cardTitleGroup}>
+          <View style={[styles.openSwitchLine, { borderTopColor: theme.hairline, borderTopWidth: StyleSheet.hairlineWidth, marginTop: 10 }]}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
               <AnimatedIcon
                 name="heart"
                 preset="heart"
-                size={16}
+                size={18}
                 color={settings.healthSyncEnabled ? '#EF4444' : theme.text}
                 active={settings.healthSyncEnabled}
               />
-              <Text style={[styles.cardTitle, { color: theme.text }]}>
-                {Platform.OS === 'ios' ? 'APPLE HEALTH' : 'HEALTH CONNECT'}
-              </Text>
-            </View>
-            {settings.healthSyncEnabled && (
-              <TouchableOpacity
-                style={[styles.testPillBtn, { borderColor: theme.border }]}
-                onPress={handleRefreshHealth}
-                disabled={isSyncingHealth}
-              >
-                <Ionicons name="refresh-outline" size={12} color={theme.text} />
-                <Text style={[styles.testPillText, { color: theme.text }]}>Odśwież</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-
-          <View style={styles.switchRow}>
-            <View style={styles.switchLabelWrap}>
-              <Text style={[styles.rowTitle, { color: theme.text }]}>
-                Synchronizuj kroki i sen
-              </Text>
-              <Text style={[styles.rowSub, { color: theme.textSecondary }]}>
-                Pobiera kroki, czas snu i spaloną energię do inteligentnych wskazówek dnia
-              </Text>
+              <View style={styles.switchLabelWrap}>
+                <Text style={[styles.rowTitle, { color: theme.text }]}>
+                  Synchronizuj kroki i sen ({Platform.OS === 'ios' ? 'Apple Health' : 'Health Connect'})
+                </Text>
+                <Text style={[styles.rowSub, { color: theme.textSecondary }]}>
+                  Pobiera kroki, czas snu i aktywne kalorie do wskazówek dnia
+                </Text>
+              </View>
             </View>
             <Switch
               value={settings.healthSyncEnabled}
@@ -790,8 +1205,8 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           </View>
 
           {settings.healthSyncEnabled && healthSummary?.authorized && (
-            <View style={[styles.healthPillRow, { borderTopColor: theme.hairline }]}>
-              <View style={[styles.healthChip, { backgroundColor: theme.bg, borderColor: theme.border }]}>
+            <View style={styles.healthPillRow}>
+              <View style={[styles.healthChip, { backgroundColor: theme.bgSecondary }]}>
                 <Ionicons name="footsteps-outline" size={13} color={theme.text} />
                 <Text style={[styles.healthChipText, { color: theme.text }]}>
                   {healthSummary.steps !== null
@@ -799,26 +1214,40 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                     : '- kroków'}
                 </Text>
               </View>
-              <View style={[styles.healthChip, { backgroundColor: theme.bg, borderColor: theme.border }]}>
+              <View style={[styles.healthChip, { backgroundColor: theme.bgSecondary }]}>
                 <Ionicons name="moon-outline" size={13} color={theme.text} />
                 <Text style={[styles.healthChipText, { color: theme.text }]}>
                   {healthSummary.sleepHours !== null ? `${healthSummary.sleepHours} h snu` : '- h snu'}
                 </Text>
               </View>
+              <TouchableOpacity
+                style={[styles.healthChip, { backgroundColor: theme.bgSecondary }]}
+                onPress={handleRefreshHealth}
+                disabled={isSyncingHealth}
+              >
+                <Ionicons name="refresh-outline" size={13} color={theme.text} />
+                <Text style={[styles.healthChipText, { color: theme.text }]}>Odśwież</Text>
+              </TouchableOpacity>
             </View>
           )}
         </View>
 
-        {/* SECTION 4: APPEARANCE & EXERCISE DATABASE */}
-        <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
-          <View style={styles.cardHeaderRow}>
-            <View style={styles.cardTitleGroup}>
-              <Ionicons name="barbell-outline" size={16} color={theme.text} />
-              <Text style={[styles.cardTitle, { color: theme.text }]}>WYGLĄD I BAZA ĆWICZEŃ</Text>
+        {/* =========================================================
+            SECTION 6: APPEARANCE, EXERCISE LIBRARY & LOCAL JSON
+           ========================================================= */}
+        <View style={[styles.openSection, { borderBottomColor: theme.hairline }]}>
+          <View style={styles.sectionHeaderRow}>
+            <View>
+              <Text style={[styles.sectionEyebrow, { color: theme.textMuted }]}>
+                PERSONALIZACJA I DANE
+              </Text>
+              <Text style={[styles.sectionHeading, { color: theme.text }]}>
+                Wygląd, baza ćwiczeń i JSON
+              </Text>
             </View>
           </View>
 
-          <View style={styles.switchRow}>
+          <View style={[styles.openSwitchLine, { borderBottomColor: theme.hairline }]}>
             <View style={styles.switchLabelWrap}>
               <Text style={[styles.rowTitle, { color: theme.text }]}>Tryb ciemny</Text>
               <Text style={[styles.rowSub, { color: theme.textSecondary }]}>
@@ -836,10 +1265,8 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             />
           </View>
 
-          <View style={[styles.divider, { backgroundColor: theme.hairline }]} />
-
           <TouchableOpacity
-            style={styles.actionRow}
+            style={[styles.openActionLine, { borderBottomColor: theme.hairline }]}
             onPress={() => {
               triggerSelectionHaptic();
               setShowExerciseLibrary(true);
@@ -852,70 +1279,56 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                 {EXERCISE_LIBRARY.length} bazowych + {customCount} własnych ćwiczeń
               </Text>
             </View>
-            <View style={[styles.actionPill, { backgroundColor: theme.primary }]}>
-              <Text style={[styles.actionPillText, { color: theme.primaryText }]}>Otwórz</Text>
-              <Ionicons name="chevron-forward" size={14} color={theme.primaryText} />
+            <View style={[styles.smallActionPill, { backgroundColor: theme.text }]}>
+              <Text style={[styles.smallActionPillText, { color: theme.bg }]}>Otwórz</Text>
+              <Ionicons name="chevron-forward" size={13} color={theme.bg} />
             </View>
           </TouchableOpacity>
-        </View>
-
-        {/* SECTION 5: BACKUP / SEED & RESET */}
-        <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
-          <View style={styles.cardHeaderRow}>
-            <View style={styles.cardTitleGroup}>
-              <Ionicons name="folder-open-outline" size={16} color={theme.text} />
-              <Text style={[styles.cardTitle, { color: theme.text }]}>KOPIA ZAPASOWA I SEED</Text>
-            </View>
-          </View>
 
           <View style={styles.ioButtonsRow}>
             <TouchableOpacity
-              style={[styles.secondaryBtn, { backgroundColor: theme.bg, borderColor: theme.border }]}
+              style={[styles.cloudActionSecondary, { backgroundColor: theme.bgSecondary }]}
               onPress={handleExportJson}
               disabled={isBusyIO}
               activeOpacity={0.75}
             >
               <Ionicons name="share-outline" size={16} color={theme.text} />
-              <Text style={[styles.secondaryBtnText, { color: theme.text }]}>Eksportuj JSON</Text>
+              <Text style={[styles.cloudActionSecondaryText, { color: theme.text }]}>
+                Eksportuj JSON
+              </Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.secondaryBtn, { backgroundColor: theme.bg, borderColor: theme.border }]}
+              style={[styles.cloudActionSecondary, { backgroundColor: theme.bgSecondary }]}
               onPress={() => setShowImportSheet(true)}
               disabled={isBusyIO}
               activeOpacity={0.75}
             >
               <Ionicons name="download-outline" size={16} color={theme.text} />
-              <Text style={[styles.secondaryBtnText, { color: theme.text }]}>Importuj JSON</Text>
+              <Text style={[styles.cloudActionSecondaryText, { color: theme.text }]}>
+                Importuj JSON
+              </Text>
             </TouchableOpacity>
           </View>
-
-          <View style={[styles.divider, { backgroundColor: theme.hairline }]} />
-
-          <TouchableOpacity
-            style={[styles.dangerBtn, { borderColor: '#EF4444' }]}
-            onPress={handleConfirmResetApp}
-            activeOpacity={0.75}
-          >
-            <Ionicons name="trash-outline" size={16} color="#EF4444" />
-            <Text style={styles.dangerBtnText}>WYZERUJ APLIKACJĘ (NOWY PROFIL)</Text>
-          </TouchableOpacity>
         </View>
 
-        {/* SECTION 6: MAIN CONTRIBUTOR & SUPPORT */}
-        <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
-          <View style={styles.cardHeaderRow}>
-            <View style={styles.cardTitleGroup}>
-              <Ionicons name="code-slash-outline" size={16} color={theme.text} />
-              <Text style={[styles.cardTitle, { color: theme.text }]}>TWÓRCA I WSPARCIE</Text>
-            </View>
-            <View style={[styles.badgeChip, { backgroundColor: theme.bgSecondary, borderWidth: 1, borderColor: theme.border }]}>
-              <Text style={[styles.badgeChipText, { color: theme.text }]}>MAIN CONTRIBUTOR</Text>
+        {/* =========================================================
+            SECTION 7: MAIN CONTRIBUTOR & RESET
+           ========================================================= */}
+        <View style={styles.openSection}>
+          <View style={styles.sectionHeaderRow}>
+            <View>
+              <Text style={[styles.sectionEyebrow, { color: theme.textMuted }]}>
+                MAIN CONTRIBUTOR
+              </Text>
+              <Text style={[styles.sectionHeading, { color: theme.text }]}>
+                Twórca i wsparcie projektu
+              </Text>
             </View>
           </View>
 
           <TouchableOpacity
-            style={styles.actionRow}
+            style={[styles.openActionLine, { borderBottomColor: theme.hairline }]}
             onPress={() => {
               triggerSelectionHaptic();
               Linking.openURL('https://github.com/matiqueue').catch(() => {});
@@ -925,16 +1338,14 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             <View style={styles.switchLabelWrap}>
               <Text style={[styles.rowTitle, { color: theme.text }]}>Matique (@matiqueue)</Text>
               <Text style={[styles.rowSub, { color: theme.textSecondary }]}>
-                Kod źródłowy, nowe wydania i feedback na GitHub
+                Kod źródłowy, nowe wydania i zgłoszenia na GitHub
               </Text>
             </View>
-            <View style={[styles.actionPill, { backgroundColor: theme.bgSecondary, borderWidth: 1, borderColor: theme.border }]}>
+            <View style={[styles.smallActionPill, { backgroundColor: theme.bgSecondary }]}>
               <Ionicons name="logo-github" size={14} color={theme.text} />
-              <Text style={[styles.actionPillText, { color: theme.text }]}>GitHub</Text>
+              <Text style={[styles.smallActionPillText, { color: theme.text }]}>GitHub</Text>
             </View>
           </TouchableOpacity>
-
-          <View style={[styles.divider, { backgroundColor: theme.hairline }]} />
 
           <TouchableOpacity
             style={[styles.coffeeBtn, { backgroundColor: '#F59E0B' }]}
@@ -947,6 +1358,15 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             <Ionicons name="cafe-outline" size={18} color="#09090B" />
             <Text style={styles.coffeeBtnText}>Buy Me a Coffee · Wesprzyj autora</Text>
             <Ionicons name="open-outline" size={15} color="#09090B" />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.resetDangerWrap}
+            onPress={handleConfirmResetApp}
+            activeOpacity={0.75}
+          >
+            <Ionicons name="trash-outline" size={15} color="#EF4444" />
+            <Text style={styles.resetDangerText}>Wyzeruj dane lokalne na tym urządzeniu</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -978,7 +1398,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           <TextInput
             style={[
               styles.jsonInput,
-              { backgroundColor: theme.bg, borderColor: theme.border, color: theme.text },
+              { backgroundColor: theme.bgSecondary, color: theme.text },
             ]}
             multiline
             textAlignVertical="top"
@@ -991,27 +1411,27 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           />
 
           <TouchableOpacity
-            style={[styles.primaryBtn, { backgroundColor: theme.primary, marginTop: 14 }]}
+            style={[styles.openPrimaryAction, { backgroundColor: theme.primary, marginTop: 14 }]}
             onPress={handleImportPlansOnly}
             disabled={isBusyIO}
             activeOpacity={0.85}
           >
-            <Text style={[styles.primaryBtnText, { color: theme.primaryText }]}>
-              DODAJ PLANY DO OBECNEGO PROFILU
+            <Text style={[styles.openPrimaryActionText, { color: theme.primaryText }]}>
+              Dodaj plany do obecnego profilu
             </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
             style={[
-              styles.secondaryBtn,
-              { backgroundColor: theme.card, borderColor: theme.border, marginTop: 10, width: '100%' },
+              styles.cloudActionSecondary,
+              { backgroundColor: theme.bgSecondary, marginTop: 10, width: '100%' },
             ]}
             onPress={handleImportFullBackup}
             disabled={isBusyIO}
             activeOpacity={0.8}
           >
             <Ionicons name="refresh-outline" size={16} color={theme.text} />
-            <Text style={[styles.secondaryBtnText, { color: theme.text }]}>
+            <Text style={[styles.cloudActionSecondaryText, { color: theme.text }]}>
               Przywróć pełny backup (z rekordami)
             </Text>
           </TouchableOpacity>
@@ -1022,139 +1442,235 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  scrollContent: {
-    paddingHorizontal: 18,
-    paddingTop: 14,
-    paddingBottom: 120,
-    gap: 14,
+  container: {
+    flex: 1,
   },
   header: {
-    marginBottom: 4,
-  },
-  headerEyebrow: {
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 1.4,
+    paddingHorizontal: 20,
+    paddingTop: 10,
+    paddingBottom: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
   headerTitle: {
     fontSize: 28,
     fontWeight: '900',
-    letterSpacing: -0.5,
-    marginTop: 2,
+    letterSpacing: -0.6,
   },
   headerSub: {
-    fontSize: 13,
-    fontWeight: '500',
-    lineHeight: 18,
-    marginTop: 4,
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 2,
   },
-  card: {
-    borderRadius: 20,
-    borderWidth: 1,
-    padding: 16,
+  scrollContent: {
+    paddingHorizontal: 20,
+    paddingBottom: 130,
   },
-  cardHeaderRow: {
+  openSection: {
+    paddingVertical: 22,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  sectionHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 8,
+    gap: 10,
+    marginBottom: 8,
+  },
+  sectionEyebrow: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1.2,
+    marginBottom: 2,
+  },
+  sectionHeading: {
+    fontSize: 20,
+    fontWeight: '900',
+    letterSpacing: -0.4,
+  },
+  sectionLead: {
+    fontSize: 13,
+    lineHeight: 19,
     marginBottom: 14,
   },
-  cardTitleGroup: {
+  statusBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    flex: 1,
-    minWidth: 0,
-  },
-  cardTitle: {
-    fontSize: 12,
-    fontWeight: '900',
-    letterSpacing: 0.9,
-    flexShrink: 1,
-  },
-  badgeChip: {
-    borderRadius: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-  },
-  badgeChipText: {
-    fontSize: 9,
-    fontWeight: '900',
-    letterSpacing: 0.8,
-  },
-  testPillBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    borderWidth: 1,
-    borderRadius: 10,
+    gap: 6,
     paddingHorizontal: 10,
     paddingVertical: 5,
+    borderRadius: 999,
   },
-  testPillText: {
+  statusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  statusBadgeText: {
     fontSize: 11,
+    fontWeight: '800',
+  },
+  cloudConnectedWrap: {
+    gap: 12,
+  },
+  cloudAccountBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 14,
+  },
+  cloudEmailTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  cloudSyncSub: {
+    fontSize: 11,
+    marginTop: 2,
+  },
+  signOutLink: {
+    fontSize: 12,
     fontWeight: '700',
+  },
+  cloudActionsRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  cloudActionPrimary: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    paddingVertical: 13,
+    borderRadius: 999,
+  },
+  cloudActionPrimaryText: {
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  cloudActionSecondary: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    paddingVertical: 13,
+    borderRadius: 999,
+  },
+  cloudActionSecondaryText: {
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  deleteCloudLinkWrap: {
+    alignItems: 'center',
+    paddingTop: 2,
+  },
+  deleteCloudLinkText: {
+    color: '#EF4444',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  cloudAuthWrap: {
+    gap: 10,
+  },
+  providerPillsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 4,
+  },
+  providerPill: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    paddingVertical: 11,
+    borderRadius: 999,
+  },
+  providerPillText: {
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  openInputBox: {
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  openPrimaryAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderRadius: 999,
+    paddingVertical: 14,
+  },
+  openPrimaryActionText: {
+    fontSize: 14,
+    fontWeight: '900',
   },
   fieldLabel: {
     fontSize: 10,
     fontWeight: '800',
-    letterSpacing: 0.8,
+    letterSpacing: 0.9,
     marginBottom: 6,
   },
-  input: {
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 11,
-    fontSize: 15,
-    fontWeight: '600',
-    marginBottom: 10,
+  underlineField: {
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    marginBottom: 8,
+  },
+  underlineInput: {
+    fontSize: 18,
+    fontWeight: '800',
+    paddingVertical: 2,
   },
   twoColRow: {
     flexDirection: 'row',
-    gap: 10,
+    gap: 16,
   },
-  col: {
-    flex: 1,
-    minWidth: 0,
-  },
-  primaryBtn: {
-    borderRadius: 14,
-    paddingVertical: 13,
+  smallActionPill: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 4,
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
   },
-  primaryBtnText: {
-    fontSize: 13,
-    fontWeight: '900',
-    letterSpacing: 0.7,
+  smallActionPillText: {
+    fontSize: 12,
+    fontWeight: '800',
   },
-  switchRow: {
+  openSwitchLine: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 12,
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  openActionLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    paddingVertical: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
   switchLabelWrap: {
     flex: 1,
     minWidth: 0,
   },
   rowTitle: {
-    fontSize: 14,
-    fontWeight: '700',
+    fontSize: 15,
+    fontWeight: '800',
   },
   rowSub: {
     fontSize: 12,
-    fontWeight: '500',
+    lineHeight: 17,
     marginTop: 2,
-    lineHeight: 16,
-  },
-  divider: {
-    height: 1,
-    marginVertical: 12,
   },
   segmentRow: {
     flexDirection: 'row',
@@ -1164,8 +1680,7 @@ const styles = StyleSheet.create({
   segmentBtn: {
     flex: 1,
     minWidth: 68,
-    borderWidth: 1,
-    borderRadius: 12,
+    borderRadius: 999,
     paddingVertical: 10,
     paddingHorizontal: 8,
     alignItems: 'center',
@@ -1178,14 +1693,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 10,
-    marginTop: 12,
+    marginVertical: 10,
   },
   hourBox: {
     flex: 1,
     minWidth: 140,
-    borderWidth: 1,
     borderRadius: 14,
-    padding: 10,
+    padding: 12,
     alignItems: 'center',
     gap: 8,
   },
@@ -1193,11 +1707,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    borderWidth: 1,
     borderRadius: 14,
-    paddingHorizontal: 12,
+    paddingHorizontal: 14,
     paddingVertical: 10,
-    marginTop: 12,
+    marginTop: 8,
     gap: 10,
   },
   hourLabel: {
@@ -1213,8 +1726,7 @@ const styles = StyleSheet.create({
   hourBtn: {
     width: 30,
     height: 30,
-    borderRadius: 9,
-    borderWidth: 1,
+    borderRadius: 999,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1225,84 +1737,24 @@ const styles = StyleSheet.create({
     minWidth: 46,
     textAlign: 'center',
   },
-  actionRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
-  },
-  actionPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  actionPillText: {
-    fontSize: 12,
-    fontWeight: '800',
-  },
   ioButtonsRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
     gap: 10,
-  },
-  secondaryBtn: {
-    flex: 1,
-    minWidth: 135,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 10,
-  },
-  secondaryBtnText: {
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  dangerBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingVertical: 12,
-  },
-  dangerBtnText: {
-    color: '#EF4444',
-    fontSize: 12,
-    fontWeight: '900',
-    letterSpacing: 0.7,
-  },
-  jsonInput: {
-    borderWidth: 1,
-    borderRadius: 14,
-    padding: 12,
-    minHeight: 220,
-    fontSize: 12,
-    fontFamily: 'Courier',
+    marginTop: 14,
   },
   healthPillRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
-    paddingTop: 12,
-    marginTop: 12,
-    borderTopWidth: StyleSheet.hairlineWidth,
+    marginTop: 10,
   },
   healthChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
-    borderWidth: 1,
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    gap: 6,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
   },
   healthChipText: {
     fontSize: 12,
@@ -1312,10 +1764,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    borderWidth: 1,
     borderRadius: 12,
-    padding: 10,
-    marginTop: 10,
+    padding: 12,
+    marginVertical: 8,
   },
   permWarnText: {
     flex: 1,
@@ -1328,15 +1779,35 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    borderRadius: 14,
-    paddingVertical: 13,
-    paddingHorizontal: 14,
-    marginTop: 2,
+    borderRadius: 999,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    marginTop: 16,
   },
   coffeeBtnText: {
     color: '#09090B',
     fontSize: 13,
     fontWeight: '900',
     letterSpacing: 0.2,
+  },
+  resetDangerWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 16,
+    marginTop: 8,
+  },
+  resetDangerText: {
+    color: '#EF4444',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  jsonInput: {
+    borderRadius: 14,
+    padding: 14,
+    minHeight: 220,
+    fontSize: 12,
+    fontFamily: 'Courier',
   },
 });

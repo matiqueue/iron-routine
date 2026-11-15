@@ -87,8 +87,8 @@ export function Footer() {
               </RouteLink>
             ))}
           </div>
-          <span className="font-mono text-[11px] text-zinc-600">
-            100% OFFLINE • MONOCHROME EDITION
+          <span className="font-mono text-[11px] text-zinc-500">
+            SZYFROWANA CHMURA NOSQL (TYLKO PRZECHOWYWANIE KONTA) • MONOCHROME EDITION
           </span>
         </div>
       </div>
