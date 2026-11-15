@@ -49,3 +49,4 @@ seeds/
 .vercel
 website/.vercel
 
+.env*
