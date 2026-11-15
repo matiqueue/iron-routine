@@ -51,14 +51,14 @@ import {
   updateProfile,
 } from '../services/storage';
 import {
-  CloudAccountSession,
-  CloudProvider,
+  clearStoredCloudSession,
+  CloudSession,
   deleteCloudAccountData,
-  getCloudSession,
+  getStoredCloudSession,
   pullProfileFromCloud,
   pushProfileToCloud,
-  signInWithCloudAccount,
-  signOutCloudAccount,
+  signInWithAppleCloud,
+  signInWithGoogleCloud,
 } from '../services/cloudSync';
 import { EXERCISE_LIBRARY } from '../data/exerciseLibrary';
 import { ExerciseLibraryModal } from '../components/ExerciseLibraryModal';
@@ -106,11 +106,8 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   );
   const [isSavingProfile, setIsSavingProfile] = useState(false);
 
-  // Cloud Sync state
-  const [cloudSession, setCloudSession] = useState<CloudAccountSession | null>(null);
-  const [cloudProvider, setCloudProvider] = useState<CloudProvider>('apple');
-  const [cloudEmail, setCloudEmail] = useState('');
-  const [cloudPin, setCloudPin] = useState('');
+  // Cloud Sync state (Clerk + Vercel NoSQL)
+  const [cloudSession, setCloudSession] = useState<CloudSession | null>(null);
   const [isCloudBusy, setIsCloudBusy] = useState(false);
 
   const [customCount, setCustomCount] = useState(0);
@@ -143,16 +140,12 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
       getAppSettings(),
       getCustomExercises(),
       getNotificationPermissionSummary(),
-      getCloudSession(),
+      getStoredCloudSession(),
     ]);
     setSettings(loadedSettings);
     setCustomCount(custom.length);
     setNotifPerm(permSummary);
     setCloudSession(session);
-    if (session) {
-      setCloudProvider(session.provider);
-      setCloudEmail(session.email);
-    }
     if (loadedSettings.healthSyncEnabled) {
       const h = await fetchTodayHealthSummary();
       setHealthSummary(h);
@@ -190,33 +183,36 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
     } catch {}
   };
 
-  const handleCloudSignIn = async () => {
+  const handleCloudProviderSignIn = async (provider: 'apple' | 'google') => {
     if (isCloudBusy) return;
+    triggerSelectionHaptic();
     setIsCloudBusy(true);
     try {
-      const res = await signInWithCloudAccount({
-        provider: cloudProvider,
-        email: cloudEmail,
-        secretPin: cloudPin,
-        displayName: nameInput.trim() || activeProfile.name,
-      });
+      const res =
+        provider === 'apple'
+          ? await signInWithAppleCloud(nameInput.trim() || activeProfile.name)
+          : await signInWithGoogleCloud();
+
+      if (!res.ok || !res.session) {
+        Alert.alert('Logowanie w chmurze', res.error || 'Nie udało się połączyć konta.');
+        return;
+      }
+
       setCloudSession(res.session);
-      setCloudPin('');
       triggerNotificationHaptic('success');
 
-      if (res.isNewAccount) {
-        const pushRes = await pushProfileToCloud(activeProfile.id);
-        setCloudSession(pushRes.session);
-        Alert.alert(
-          'Konto w chmurze utworzone',
-          `Twój profil oraz plany zostały zaszyfrowane i zapisane w chmurze NoSQL (${res.session.email}).`
-        );
-      } else {
-        Alert.alert(
-          'Połączono z chmurą',
-          `Zalogowano jako ${res.session.email}. Możesz teraz wysłać bieżący stan na serwer lub pobrać zapisaną kopię.`
-        );
+      const pushRes = await pushProfileToCloud(activeProfile.id);
+      if (pushRes.ok) {
+        const refreshed = await getStoredCloudSession();
+        if (refreshed) setCloudSession(refreshed);
       }
+
+      Alert.alert(
+        'Połączono konto',
+        `Zalogowano przez ${
+          res.session.provider === 'apple' ? 'Apple iCloud' : 'Google (Clerk)'
+        } (${res.session.displayName}) i zsynchronizowano dane z bazą NoSQL.`
+      );
     } catch (e: any) {
       Alert.alert('Logowanie w chmurze', e?.message || 'Nie udało się połączyć z chmurą.');
     } finally {
@@ -229,7 +225,12 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
     setIsCloudBusy(true);
     try {
       const res = await pushProfileToCloud(activeProfile.id);
-      setCloudSession(res.session);
+      if (!res.ok) {
+        Alert.alert('Błąd synchronizacji', res.error || 'Nie udało się zapisać danych w chmurze.');
+        return;
+      }
+      const refreshed = await getStoredCloudSession();
+      if (refreshed) setCloudSession(refreshed);
       triggerNotificationHaptic('success');
       Alert.alert(
         'Zsynchronizowano z chmurą',
@@ -254,13 +255,17 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           onPress: async () => {
             setIsCloudBusy(true);
             try {
-              const res = await pullProfileFromCloud('overwrite_active');
+              const res = await pullProfileFromCloud();
+              if (!res.ok || !res.profile) {
+                Alert.alert('Błąd pobierania', res.error || 'Brak zapisanej kopii w chmurze.');
+                return;
+              }
               await onDataImported();
               await loadMeta();
               triggerNotificationHaptic('success');
               Alert.alert(
                 'Pobrano z chmury',
-                `Załadowano profil "${res.profile.name}" (${res.plansCount} planów, ${res.prsCount} rekordów PR).`
+                `Załadowano profil "${res.profile.name}" z bazy NoSQL.`
               );
             } catch (e: any) {
               Alert.alert('Błąd pobierania', e?.message || 'Nie udało się pobrać kopii z chmury.');
@@ -275,9 +280,8 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 
   const handleCloudSignOut = async () => {
     triggerSelectionHaptic();
-    await signOutCloudAccount();
+    await clearStoredCloudSession();
     setCloudSession(null);
-    setCloudPin('');
   };
 
   const handleCloudDelete = () => {
@@ -294,7 +298,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             try {
               await deleteCloudAccountData();
               setCloudSession(null);
-              setCloudPin('');
               Alert.alert('Usunięto', 'Twoje dane zostały usunięte z chmury.');
             } finally {
               setIsCloudBusy(false);
@@ -590,92 +593,9 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             </View>
           ) : (
             <View style={styles.cloudAuthWrap}>
-              <View style={styles.providerPillsRow}>
-                <TouchableOpacity
-                  style={[
-                    styles.providerPill,
-                    {
-                      backgroundColor:
-                        cloudProvider === 'apple' ? theme.text : theme.bgSecondary,
-                    },
-                  ]}
-                  onPress={() => setCloudProvider('apple')}
-                  activeOpacity={0.8}
-                >
-                  <Ionicons
-                    name="logo-apple"
-                    size={16}
-                    color={cloudProvider === 'apple' ? theme.bg : theme.text}
-                  />
-                  <Text
-                    style={[
-                      styles.providerPillText,
-                      { color: cloudProvider === 'apple' ? theme.bg : theme.text },
-                    ]}
-                  >
-                    Apple iCloud
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[
-                    styles.providerPill,
-                    {
-                      backgroundColor:
-                        cloudProvider === 'google' ? theme.text : theme.bgSecondary,
-                    },
-                  ]}
-                  onPress={() => setCloudProvider('google')}
-                  activeOpacity={0.8}
-                >
-                  <Ionicons
-                    name="logo-google"
-                    size={15}
-                    color={cloudProvider === 'google' ? theme.bg : theme.text}
-                  />
-                  <Text
-                    style={[
-                      styles.providerPillText,
-                      { color: cloudProvider === 'google' ? theme.bg : theme.text },
-                    ]}
-                  >
-                    Google
-                  </Text>
-                </TouchableOpacity>
-              </View>
-
-              <TextInput
-                style={[
-                  styles.openInputBox,
-                  { backgroundColor: theme.bgSecondary, color: theme.text },
-                ]}
-                placeholder={
-                  cloudProvider === 'apple'
-                    ? 'Adres e-mail Apple ID (iCloud)...'
-                    : 'Adres e-mail Google...'
-                }
-                placeholderTextColor={theme.textMuted}
-                autoCapitalize="none"
-                keyboardType="email-address"
-                value={cloudEmail}
-                onChangeText={setCloudEmail}
-              />
-
-              <TextInput
-                style={[
-                  styles.openInputBox,
-                  { backgroundColor: theme.bgSecondary, color: theme.text },
-                ]}
-                placeholder="Klucz zabezpieczający / PIN chmury (min. 4 znaki)..."
-                placeholderTextColor={theme.textMuted}
-                secureTextEntry
-                value={cloudPin}
-                onChangeText={setCloudPin}
-              />
-
               <TouchableOpacity
                 style={[styles.openPrimaryAction, { backgroundColor: theme.text }]}
-                onPress={handleCloudSignIn}
+                onPress={() => handleCloudProviderSignIn('apple')}
                 disabled={isCloudBusy}
                 activeOpacity={0.85}
               >
@@ -683,13 +603,30 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                   <ActivityIndicator size="small" color={theme.bg} />
                 ) : (
                   <>
-                    <Ionicons
-                      name={cloudProvider === 'apple' ? 'logo-apple' : 'logo-google'}
-                      size={16}
-                      color={theme.bg}
-                    />
+                    <Ionicons name="logo-apple" size={18} color={theme.bg} />
                     <Text style={[styles.openPrimaryActionText, { color: theme.bg }]}>
-                      Połącz konto {cloudProvider === 'apple' ? 'Apple iCloud' : 'Google'}
+                      Kontynuuj z Apple (iCloud)
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.openPrimaryAction,
+                  { backgroundColor: theme.bgSecondary, marginTop: 2 },
+                ]}
+                onPress={() => handleCloudProviderSignIn('google')}
+                disabled={isCloudBusy}
+                activeOpacity={0.85}
+              >
+                {isCloudBusy ? (
+                  <ActivityIndicator size="small" color={theme.text} />
+                ) : (
+                  <>
+                    <Ionicons name="logo-google" size={16} color={theme.text} />
+                    <Text style={[styles.openPrimaryActionText, { color: theme.text }]}>
+                      Kontynuuj z Google (Clerk)
                     </Text>
                   </>
                 )}

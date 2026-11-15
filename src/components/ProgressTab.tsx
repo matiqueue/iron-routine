@@ -62,6 +62,7 @@ import {
   AnimatedBodySilhouette,
   EnrichedExerciseRankStat,
 } from './AnimatedBodySilhouette';
+import { RankCrestIcon } from './RankCrestIcon';
 import { BottomSheetScrollView, InteractiveBottomSheet } from './InteractiveBottomSheet';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
@@ -79,6 +80,12 @@ export interface ProgressTabProps {
 
 type SubViewTab = 'physique' | 'exercises' | 'journal';
 type ChartRange = '7d' | '30d' | 'all';
+
+const SUB_TABS: Array<{ id: SubViewTab; label: string; icon: keyof typeof Ionicons.glyphMap }> = [
+  { id: 'physique', label: 'Sylwetka', icon: 'body-outline' },
+  { id: 'exercises', label: 'Ćwiczenia', icon: 'barbell-outline' },
+  { id: 'journal', label: 'Dziennik', icon: 'pulse-outline' },
+];
 
 /**
  * Smoothly animated horizontal progress bar that fills on mount/update.
@@ -136,7 +143,7 @@ const AnimatedVerticalSpectrumBar: React.FC<{
   useEffect(() => {
     anim.setValue(0);
     const timing = Animated.timing(anim, {
-      toValue: Math.max(8, Math.min(100, pct)),
+      toValue: Math.max(10, Math.min(100, pct)),
       duration: 620,
       delay: delayMs,
       easing: Easing.out(Easing.cubic),
@@ -187,13 +194,17 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
   const { theme } = useAppTheme();
   const effectiveProfileId = activeProfile?.id || profileId || 'default';
 
-  // Top sub-view navigation
+  // Top sub-view navigation + animated sliding pill thumb
   const [subView, setSubView] = useState<SubViewTab>('physique');
+  const [navBarWidth, setNavBarWidth] = useState(0);
+  const navThumbAnim = useRef(new Animated.Value(0)).current;
+  const navScaleAnim = useRef(new Animated.Value(1)).current;
   const viewFadeAnim = useRef(new Animated.Value(1)).current;
   const viewSlideAnim = useRef(new Animated.Value(0)).current;
 
   // Silhouette & muscle states
   const [muscleSortMode, setMuscleSortMode] = useState<'priority' | 'rank'>('rank');
+  const sortThumbAnim = useRef(new Animated.Value(0)).current;
   const [selectedRankTier, setSelectedRankTier] = useState<RankTier | null>(null);
   const [selectedMuscle, setSelectedMuscle] = useState<MuscleSubGroupId | null>(null);
   const [expandedMuscleId, setExpandedMuscleId] = useState<MuscleSubGroupId | null>(null);
@@ -296,14 +307,35 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
 
   const handleSwitchSubView = (next: SubViewTab) => {
     if (next === subView) return;
+    const targetIdx = SUB_TABS.findIndex((t) => t.id === next);
     try {
-      Haptics.selectionAsync();
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     } catch {}
+
     viewFadeAnim.setValue(0);
-    viewSlideAnim.setValue(12);
+    viewSlideAnim.setValue(10);
     setSubView(next);
 
     Animated.parallel([
+      Animated.spring(navThumbAnim, {
+        toValue: targetIdx,
+        friction: 7,
+        tension: 85,
+        useNativeDriver: true,
+      }),
+      Animated.sequence([
+        Animated.timing(navScaleAnim, {
+          toValue: 0.94,
+          duration: 85,
+          useNativeDriver: true,
+        }),
+        Animated.spring(navScaleAnim, {
+          toValue: 1,
+          friction: 5,
+          tension: 110,
+          useNativeDriver: true,
+        }),
+      ]),
       Animated.timing(viewFadeAnim, {
         toValue: 1,
         duration: 210,
@@ -317,6 +349,21 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
         useNativeDriver: true,
       }),
     ]).start();
+  };
+
+  const handleSwitchSortMode = (mode: 'rank' | 'priority') => {
+    if (mode === muscleSortMode) return;
+    try {
+      Haptics.selectionAsync();
+    } catch {}
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setMuscleSortMode(mode);
+    Animated.spring(sortThumbAnim, {
+      toValue: mode === 'rank' ? 0 : 1,
+      friction: 7,
+      tension: 85,
+      useNativeDriver: true,
+    }).start();
   };
 
   const handleSelectMuscle = (muscleId: MuscleSubGroupId | null) => {
@@ -502,6 +549,24 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
     return counts;
   }, [physiqueReport]);
 
+  // Muscles closest to unlocking their next rank emblem
+  const closestToRankUp = useMemo(() => {
+    if (!physiqueReport) return [];
+    return [...physiqueReport.muscleStatsList]
+      .filter((m) => m.nextTier !== null)
+      .sort((a, b) => {
+        if (b.progressPct !== a.progressPct) return b.progressPct - a.progressPct;
+        return a.setsToNext - b.setsToNext;
+      })
+      .slice(0, 3);
+  }, [physiqueReport]);
+
+  const overallAverageProgress = useMemo(() => {
+    if (!physiqueReport || physiqueReport.muscleStatsList.length === 0) return 0;
+    const sum = physiqueReport.muscleStatsList.reduce((acc, m) => acc + m.progressPct, 0);
+    return Math.round(sum / physiqueReport.muscleStatsList.length);
+  }, [physiqueReport]);
+
   const filterByRange = <T extends { date: string }>(items: T[], range: ChartRange): T[] => {
     if (range === 'all') return items;
     const days = range === '7d' ? 7 : 30;
@@ -660,9 +725,15 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
       ? physiqueReport.exerciseStats[selectedExerciseCanonicalId]
       : null;
 
+  const pillSlotWidth = navBarWidth > 6 ? (navBarWidth - 6) / 3 : 78;
+  const thumbTranslateX = navThumbAnim.interpolate({
+    inputRange: [0, 1, 2],
+    outputRange: [0, pillSlotWidth, pillSlotWidth * 2],
+  });
+
   return (
     <View style={[styles.container, { backgroundColor: theme.bg }]}>
-      {/* Open Editorial Header */}
+      {/* Open Editorial Header with Spring-Animated Segmented Pill Switcher */}
       <View style={[styles.header, { borderBottomColor: theme.hairline }]}>
         <View style={styles.headerTopRow}>
           <View>
@@ -672,25 +743,40 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
             </Text>
           </View>
 
-          <View style={[styles.navPills, { backgroundColor: theme.bgSecondary }]}>
-            {(
-              [
-                { id: 'physique', label: 'Sylwetka' },
-                { id: 'exercises', label: 'Ćwiczenia' },
-                { id: 'journal', label: 'Dziennik' },
-              ] as const
-            ).map((tab) => {
+          <View
+            style={[styles.navPills, { backgroundColor: theme.bgSecondary }]}
+            onLayout={(e) => setNavBarWidth(e.nativeEvent.layout.width)}
+          >
+            {navBarWidth > 0 && (
+              <Animated.View
+                pointerEvents="none"
+                style={[
+                  styles.navPillAnimatedThumb,
+                  {
+                    width: pillSlotWidth,
+                    backgroundColor: theme.text,
+                    transform: [
+                      { translateX: thumbTranslateX },
+                      { scale: navScaleAnim },
+                    ],
+                  },
+                ]}
+              />
+            )}
+            {SUB_TABS.map((tab) => {
               const active = subView === tab.id;
               return (
                 <TouchableOpacity
                   key={tab.id}
-                  style={[
-                    styles.navPillBtn,
-                    active && { backgroundColor: theme.text },
-                  ]}
+                  style={[styles.navPillBtn, { width: pillSlotWidth || undefined }]}
                   onPress={() => handleSwitchSubView(tab.id)}
-                  activeOpacity={0.75}
+                  activeOpacity={0.8}
                 >
+                  <Ionicons
+                    name={tab.icon}
+                    size={12}
+                    color={active ? theme.bg : theme.textMuted}
+                  />
                   <Text
                     style={[
                       styles.navPillText,
@@ -723,56 +809,63 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
              ========================================================= */}
           {subView === 'physique' && (
             <View style={styles.openPage}>
-              {/* Open Borderless Hero Metric Strip */}
-              <View style={[styles.heroMetricsStrip, { borderBottomColor: theme.hairline }]}>
-                <View style={styles.heroMetricItem}>
-                  <Text
-                    style={[
-                      styles.heroRankBig,
-                      {
-                        color:
-                          physiqueReport?.overallRankMeta.color || theme.text,
-                      },
-                    ]}
-                  >
-                    {physiqueReport?.overallRank || 'F'}
-                  </Text>
-                  <Text style={[styles.heroMetricLabel, { color: theme.textMuted }]}>
-                    Ranga ogólna
-                  </Text>
+              {/* Open Hero Rank Showcase & Telemetry Strip */}
+              <View style={[styles.heroShowcaseWrap, { borderBottomColor: theme.hairline }]}>
+                <View style={styles.heroCrestBlock}>
+                  <RankCrestIcon
+                    tier={physiqueReport?.overallRank || 'F'}
+                    size={58}
+                    progressPct={overallAverageProgress}
+                  />
+                  <View style={styles.heroCrestTextCol}>
+                    <Text style={[styles.heroCrestEyebrow, { color: theme.textMuted }]}>
+                      RANGA OGÓLNA
+                    </Text>
+                    <Text style={[styles.heroCrestTitle, { color: theme.text }]}>
+                      {physiqueReport?.overallRankMeta.title || 'Nowicjusz'}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.heroCrestSub,
+                        { color: physiqueReport?.overallRankMeta.color || theme.textSecondary },
+                      ]}
+                    >
+                      Śr. postęp tieru: {overallAverageProgress}%
+                    </Text>
+                  </View>
                 </View>
 
-                <View style={[styles.verticalHairline, { backgroundColor: theme.hairline }]} />
+                <View style={styles.heroStatsRightRow}>
+                  <View style={styles.heroMetricItem}>
+                    <Text style={[styles.heroMetricValue, { color: theme.text }]}>
+                      {physiqueReport?.balanceScorePct ?? 100}%
+                    </Text>
+                    <Text style={[styles.heroMetricLabel, { color: theme.textMuted }]}>
+                      Balans
+                    </Text>
+                  </View>
 
-                <View style={styles.heroMetricItem}>
-                  <Text style={[styles.heroMetricValue, { color: theme.text }]}>
-                    {physiqueReport?.balanceScorePct ?? 100}%
-                  </Text>
-                  <Text style={[styles.heroMetricLabel, { color: theme.textMuted }]}>
-                    Balans ciała
-                  </Text>
-                </View>
+                  <View style={[styles.verticalHairline, { backgroundColor: theme.hairline }]} />
 
-                <View style={[styles.verticalHairline, { backgroundColor: theme.hairline }]} />
+                  <View style={styles.heroMetricItem}>
+                    <Text style={[styles.heroMetricValue, { color: theme.text }]}>
+                      {physiqueReport?.totalLifetimeSets ?? 0}
+                    </Text>
+                    <Text style={[styles.heroMetricLabel, { color: theme.textMuted }]}>
+                      Serie
+                    </Text>
+                  </View>
 
-                <View style={styles.heroMetricItem}>
-                  <Text style={[styles.heroMetricValue, { color: theme.text }]}>
-                    {physiqueReport?.totalLifetimeSets ?? 0}
-                  </Text>
-                  <Text style={[styles.heroMetricLabel, { color: theme.textMuted }]}>
-                    Serie łącznie
-                  </Text>
-                </View>
+                  <View style={[styles.verticalHairline, { backgroundColor: theme.hairline }]} />
 
-                <View style={[styles.verticalHairline, { backgroundColor: theme.hairline }]} />
-
-                <View style={styles.heroMetricItem}>
-                  <Text style={[styles.heroMetricValue, { color: theme.text }]}>
-                    {Object.keys(bestPRs).length}
-                  </Text>
-                  <Text style={[styles.heroMetricLabel, { color: theme.textMuted }]}>
-                    Rekordy PR
-                  </Text>
+                  <View style={styles.heroMetricItem}>
+                    <Text style={[styles.heroMetricValue, { color: theme.text }]}>
+                      {Object.keys(bestPRs).length}
+                    </Text>
+                    <Text style={[styles.heroMetricLabel, { color: theme.textMuted }]}>
+                      Rekordy
+                    </Text>
+                  </View>
                 </View>
               </View>
 
@@ -790,16 +883,21 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                 />
               )}
 
-              {/* Open Interactive Rank Spectrum & Ladder (F -> S+) */}
+              {/* Open Interactive Rank Evolution & Emblems (F -> S+) */}
               {physiqueReport && (
                 <View style={[styles.openSection, { borderTopColor: theme.hairline }]}>
                   <View style={styles.openSectionHeader}>
                     <View>
-                      <Text style={[styles.sectionEyebrow, { color: physiqueReport.overallRankMeta.color }]}>
-                        SPEKTRUM PROGRESJI (F - S+)
+                      <Text
+                        style={[
+                          styles.sectionEyebrow,
+                          { color: physiqueReport.overallRankMeta.color },
+                        ]}
+                      >
+                        EMBLEMATY PROGRESJI (F - S+)
                       </Text>
                       <Text style={[styles.sectionHeading, { color: theme.text }]}>
-                        Drabina rang sylwetki
+                        Drabina rang i odznak
                       </Text>
                     </View>
                     {selectedRankTier ? (
@@ -819,25 +917,31 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                       </TouchableOpacity>
                     ) : (
                       <Text style={[styles.sectionRightMeta, { color: theme.textMuted }]}>
-                        Dotknij rangi, by filtrować
+                        Dotknij odznaki, by filtrować
                       </Text>
                     )}
                   </View>
 
-                  {/* 8-Column Interactive Spectrum Chart */}
+                  {/* 8-Column Interactive Emblem + Spectrum Chart */}
                   <View style={styles.spectrumGridRow}>
                     {RANK_TIERS.map((tierObj, idx) => {
                       const count = tierDistribution[tierObj.tier] || 0;
                       const isSelected = selectedRankTier === tierObj.tier;
                       const heightPct =
                         count === 0
-                          ? 10
-                          : Math.min(100, Math.max(22, Math.round((count / 10) * 100)));
+                          ? 12
+                          : Math.min(100, Math.max(24, Math.round((count / 10) * 100)));
 
                       return (
                         <TouchableOpacity
                           key={tierObj.tier}
-                          style={styles.spectrumColWrap}
+                          style={[
+                            styles.spectrumColWrap,
+                            isSelected && {
+                              backgroundColor: `${tierObj.color}14`,
+                              borderRadius: 14,
+                            },
+                          ]}
                           onPress={() => {
                             try {
                               Haptics.selectionAsync();
@@ -863,23 +967,18 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
 
                           <AnimatedVerticalSpectrumBar
                             pct={heightPct}
-                            color={count > 0 ? tierObj.color : theme.border}
+                            color={count > 0 || isSelected ? tierObj.color : theme.border}
                             trackColor={theme.bgSecondary}
                             isSelected={isSelected}
-                            delayMs={idx * 45}
+                            delayMs={idx * 40}
                           />
 
-                          <Text
-                            style={[
-                              styles.spectrumTierLetter,
-                              {
-                                color: isSelected || count > 0 ? tierObj.color : theme.textMuted,
-                                transform: [{ scale: isSelected ? 1.15 : 1 }],
-                              },
-                            ]}
-                          >
-                            {tierObj.tier}
-                          </Text>
+                          <RankCrestIcon
+                            tier={tierObj.tier}
+                            size={34}
+                            isSelected={isSelected}
+                            dimmed={count === 0 && !isSelected}
+                          />
                         </TouchableOpacity>
                       );
                     })}
@@ -896,24 +995,71 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                         },
                       ]}
                     >
-                      <Text
-                        style={[
-                          styles.tierSpotlightLetter,
-                          { color: RANK_TIER_MAP[selectedRankTier].color },
-                        ]}
-                      >
-                        {selectedRankTier}
-                      </Text>
+                      <RankCrestIcon tier={selectedRankTier} size={46} isSelected />
                       <View style={{ flex: 1 }}>
                         <Text style={[styles.tierSpotlightTitle, { color: theme.text }]}>
-                          {RANK_TIER_MAP[selectedRankTier].title} · {tierDistribution[selectedRankTier]} z 19 partii
+                          Ranga {selectedRankTier} ({RANK_TIER_MAP[selectedRankTier].title}) ·{' '}
+                          {tierDistribution[selectedRankTier]} z 19 partii
                         </Text>
                         <Text style={[styles.tierSpotlightSub, { color: theme.textSecondary }]}>
-                          {RANK_TIER_MAP[selectedRankTier].subtitle} (od {RANK_TIER_MAP[selectedRankTier].minMuscleSets} serii partii / {RANK_TIER_MAP[selectedRankTier].minExerciseSets} serii ćwiczenia)
+                          {RANK_TIER_MAP[selectedRankTier].subtitle} · próg: od{' '}
+                          {RANK_TIER_MAP[selectedRankTier].minMuscleSets} serii partii ({RANK_TIER_MAP[selectedRankTier].minExerciseSets} serii ćwiczenia)
                         </Text>
                       </View>
                     </View>
                   ) : null}
+
+                  {/* Closest to Rank-Up Milestone Strip ("Najbliżej awansu") */}
+                  {closestToRankUp.length > 0 && (
+                    <View style={[styles.milestoneBlock, { borderTopColor: theme.hairline }]}>
+                      <View style={styles.milestoneHeaderRow}>
+                        <Ionicons name="sparkles-outline" size={13} color="#10B981" />
+                        <Text style={[styles.milestoneHeaderTitle, { color: theme.textSecondary }]}>
+                          NAJBLIŻEJ KOLEJNEJ RANGI
+                        </Text>
+                      </View>
+
+                      {closestToRankUp.map((mStat, i) => (
+                        <TouchableOpacity
+                          key={mStat.muscleId}
+                          style={styles.milestoneRow}
+                          onPress={() => handleSelectMuscle(mStat.muscleId)}
+                          activeOpacity={0.75}
+                        >
+                          <RankCrestIcon tier={mStat.rank} size={28} />
+                          <View style={{ flex: 1, gap: 4 }}>
+                            <View style={styles.milestoneTextLine}>
+                              <Text style={[styles.milestoneMuscleName, { color: theme.text }]}>
+                                {mStat.meta.label}
+                              </Text>
+                              <Text style={[styles.milestoneRemaining, { color: theme.textMuted }]}>
+                                jeszcze {mStat.setsToNext} serii ({mStat.progressPct}%)
+                              </Text>
+                            </View>
+                            <AnimatedFillBar
+                              pct={mStat.progressPct}
+                              color={
+                                mStat.nextTier
+                                  ? RANK_TIER_MAP[mStat.nextTier].color
+                                  : mStat.rankMeta.color
+                              }
+                              trackColor={theme.bgSecondary}
+                              height={4}
+                              delayMs={i * 60}
+                            />
+                          </View>
+                          <Ionicons
+                            name="arrow-forward"
+                            size={12}
+                            color={theme.textMuted}
+                          />
+                          {mStat.nextTier && (
+                            <RankCrestIcon tier={mStat.nextTier} size={28} />
+                          )}
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  )}
                 </View>
               )}
 
@@ -981,14 +1127,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                           </Text>
                         </View>
 
-                        <Text
-                          style={[
-                            styles.priorityRankChar,
-                            { color: stat.rankMeta.color },
-                          ]}
-                        >
-                          {stat.rank}
-                        </Text>
+                        <RankCrestIcon tier={stat.rank} size={34} />
                       </TouchableOpacity>
                     );
                   })}
@@ -1010,12 +1149,26 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                   </View>
 
                   <View style={[styles.sortPillsRow, { backgroundColor: theme.bgSecondary }]}>
-                    <TouchableOpacity
+                    <Animated.View
+                      pointerEvents="none"
                       style={[
-                        styles.sortMiniPill,
-                        muscleSortMode === 'rank' && { backgroundColor: theme.text },
+                        styles.sortAnimatedThumb,
+                        {
+                          backgroundColor: theme.text,
+                          transform: [
+                            {
+                              translateX: sortThumbAnim.interpolate({
+                                inputRange: [0, 1],
+                                outputRange: [0, 68],
+                              }),
+                            },
+                          ],
+                        },
                       ]}
-                      onPress={() => setMuscleSortMode('rank')}
+                    />
+                    <TouchableOpacity
+                      style={styles.sortMiniPill}
+                      onPress={() => handleSwitchSortMode('rank')}
                       activeOpacity={0.75}
                     >
                       <Text
@@ -1028,11 +1181,8 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                       </Text>
                     </TouchableOpacity>
                     <TouchableOpacity
-                      style={[
-                        styles.sortMiniPill,
-                        muscleSortMode === 'priority' && { backgroundColor: theme.text },
-                      ]}
-                      onPress={() => setMuscleSortMode('priority')}
+                      style={styles.sortMiniPill}
+                      onPress={() => handleSwitchSortMode('priority')}
                       activeOpacity={0.75}
                     >
                       <Text
@@ -1073,16 +1223,11 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                           onPress={() => handleToggleMuscleRow(stat.muscleId)}
                           activeOpacity={0.7}
                         >
-                          <View style={styles.muscleRankCol}>
-                            <Text
-                              style={[
-                                styles.muscleRankLetter,
-                                { color: stat.rankMeta.color },
-                              ]}
-                            >
-                              {stat.rank}
-                            </Text>
-                          </View>
+                          <RankCrestIcon
+                            tier={stat.rank}
+                            size={38}
+                            progressPct={stat.progressPct}
+                          />
 
                           <View style={styles.muscleMiddleCol}>
                             <View style={styles.muscleRowHeaderLine}>
@@ -1096,7 +1241,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                                 ]}
                               >
                                 {Math.round(stat.effectiveSetsTotal)} serii
-                                {stat.nextTier ? ` (+${stat.setsToNext} do ${stat.nextTier})` : ''}
+                                {stat.nextTier ? ` (+${stat.setsToNext} → ${stat.nextTier})` : ' (MAX)'}
                               </Text>
                             </View>
 
@@ -1125,55 +1270,48 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                               </Text>
                             ) : (
                               muscleExList.map((exStat) => {
-                              const pr = bestPRs[exStat.exerciseId];
-                              return (
-                                <TouchableOpacity
-                                  key={exStat.exerciseId}
-                                  style={styles.inlineExerciseRow}
-                                  onPress={() => openExerciseDetail(exStat.exercise)}
-                                  activeOpacity={0.7}
-                                >
-                                  <Text
-                                    style={[
-                                      styles.inlineExRank,
-                                      { color: exStat.rankMeta.color },
-                                    ]}
+                                const pr = bestPRs[exStat.exerciseId];
+                                return (
+                                  <TouchableOpacity
+                                    key={exStat.exerciseId}
+                                    style={styles.inlineExerciseRow}
+                                    onPress={() => openExerciseDetail(exStat.exercise)}
+                                    activeOpacity={0.7}
                                   >
-                                    {exStat.rank}
-                                  </Text>
-                                  <View style={{ flex: 1 }}>
-                                    <Text
-                                      style={[styles.inlineExName, { color: theme.text }]}
-                                      numberOfLines={1}
-                                    >
-                                      {exStat.exercise.name}
-                                    </Text>
-                                    <Text
-                                      style={[
-                                        styles.inlineExSub,
-                                        { color: theme.textMuted },
-                                      ]}
-                                    >
-                                      {exStat.totalSets} serii
-                                      {pr
-                                        ? ` · PR ${pr.weight} kg × ${pr.reps}`
-                                        : ' · Brak PR'}
-                                    </Text>
-                                  </View>
-                                  <Ionicons
-                                    name="stats-chart-outline"
-                                    size={14}
-                                    color={theme.textSecondary}
-                                  />
-                                </TouchableOpacity>
-                              );
-                            })
-                          )}
-                        </View>
-                      )}
-                    </View>
-                  );
-                })
+                                    <RankCrestIcon tier={exStat.rank} size={26} />
+                                    <View style={{ flex: 1 }}>
+                                      <Text
+                                        style={[styles.inlineExName, { color: theme.text }]}
+                                        numberOfLines={1}
+                                      >
+                                        {exStat.exercise.name}
+                                      </Text>
+                                      <Text
+                                        style={[
+                                          styles.inlineExSub,
+                                          { color: theme.textMuted },
+                                        ]}
+                                      >
+                                        {exStat.totalSets} serii
+                                        {pr
+                                          ? ` · PR ${pr.weight} kg × ${pr.reps}`
+                                          : ' · Brak PR'}
+                                      </Text>
+                                    </View>
+                                    <Ionicons
+                                      name="stats-chart-outline"
+                                      size={14}
+                                      color={theme.textSecondary}
+                                    />
+                                  </TouchableOpacity>
+                                );
+                              })
+                            )}
+                          </View>
+                        )}
+                      </View>
+                    );
+                  })
                 )}
               </View>
             </View>
@@ -1275,14 +1413,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                   >
                     <View style={styles.openGroupHeader}>
                       <View style={styles.openGroupTitleWrap}>
-                        <Text
-                          style={[
-                            styles.openGroupRank,
-                            { color: mStat?.rankMeta.color || theme.textMuted },
-                          ]}
-                        >
-                          {mStat?.rank || 'F'}
-                        </Text>
+                        <RankCrestIcon tier={mStat?.rank || 'F'} size={30} />
                         <Text style={[styles.openGroupTitle, { color: theme.text }]}>
                           {mGroup.label}
                         </Text>
@@ -1304,14 +1435,11 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                           onPress={() => openExerciseDetail(exStat.exercise)}
                           activeOpacity={0.7}
                         >
-                          <Text
-                            style={[
-                              styles.openExRankLetter,
-                              { color: exStat.rankMeta.color },
-                            ]}
-                          >
-                            {exStat.rank}
-                          </Text>
+                          <RankCrestIcon
+                            tier={exStat.rank}
+                            size={34}
+                            progressPct={exStat.progressPct}
+                          />
 
                           <View style={styles.openExBody}>
                             <View style={styles.openExTopLine}>
@@ -1638,14 +1766,11 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                 ]}
               >
                 <View style={styles.sheetRankTop}>
-                  <Text
-                    style={[
-                      styles.sheetRankBig,
-                      { color: selectedExerciseRankStat.rankMeta.color },
-                    ]}
-                  >
-                    {selectedExerciseRankStat.rank}
-                  </Text>
+                  <RankCrestIcon
+                    tier={selectedExerciseRankStat.rank}
+                    size={54}
+                    progressPct={selectedExerciseRankStat.progressPct}
+                  />
                   <View style={{ flex: 1 }}>
                     <Text style={[styles.sheetRankTitle, { color: theme.text }]}>
                       {selectedExerciseRankStat.rankMeta.title}
@@ -1824,14 +1949,28 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   navPills: {
+    position: 'relative',
     flexDirection: 'row',
     borderRadius: 999,
     padding: 3,
+    overflow: 'hidden',
+  },
+  navPillAnimatedThumb: {
+    position: 'absolute',
+    top: 3,
+    bottom: 3,
+    left: 3,
+    borderRadius: 999,
   },
   navPillBtn: {
-    paddingHorizontal: 11,
-    paddingVertical: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
     borderRadius: 999,
+    zIndex: 2,
   },
   navPillText: {
     fontSize: 12,
@@ -1847,37 +1986,64 @@ const styles = StyleSheet.create({
   openPage: {
     paddingTop: 6,
   },
-  heroMetricsStrip: {
+  heroShowcaseWrap: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingVertical: 14,
     borderBottomWidth: StyleSheet.hairlineWidth,
     marginBottom: 8,
+    gap: 10,
+  },
+  heroCrestBlock: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flex: 1.15,
+  },
+  heroCrestTextCol: {
+    flex: 1,
+  },
+  heroCrestEyebrow: {
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 1,
+  },
+  heroCrestTitle: {
+    fontSize: 16,
+    fontWeight: '900',
+    letterSpacing: -0.3,
+    marginTop: 1,
+  },
+  heroCrestSub: {
+    fontSize: 11,
+    fontWeight: '700',
+    marginTop: 2,
+  },
+  heroStatsRightRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    flex: 1,
   },
   heroMetricItem: {
     flex: 1,
     alignItems: 'center',
   },
-  heroRankBig: {
-    fontSize: 24,
-    fontWeight: '900',
-    letterSpacing: -0.6,
-  },
   heroMetricValue: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '900',
     fontVariant: ['tabular-nums'],
     letterSpacing: -0.4,
   },
   heroMetricLabel: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '600',
     marginTop: 2,
   },
   verticalHairline: {
     width: StyleSheet.hairlineWidth,
-    height: 28,
+    height: 26,
   },
   openSection: {
     marginTop: 22,
@@ -1908,6 +2074,90 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
   },
+  spectrumGridRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    paddingVertical: 10,
+    gap: 4,
+  },
+  spectrumColWrap: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 6,
+    gap: 6,
+  },
+  spectrumCountLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    fontVariant: ['tabular-nums'],
+  },
+  spectrumColTrack: {
+    width: 14,
+    height: 68,
+    borderRadius: 999,
+    justifyContent: 'flex-end',
+    overflow: 'hidden',
+  },
+  spectrumColFill: {
+    width: '100%',
+    borderRadius: 999,
+  },
+  tierSpotlightRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginTop: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderLeftWidth: 3,
+    borderRadius: 12,
+  },
+  tierSpotlightTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    letterSpacing: -0.2,
+  },
+  tierSpotlightSub: {
+    fontSize: 12,
+    marginTop: 2,
+    lineHeight: 17,
+  },
+  milestoneBlock: {
+    marginTop: 14,
+    paddingTop: 14,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    gap: 10,
+  },
+  milestoneHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  milestoneHeaderTitle: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1,
+  },
+  milestoneRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 4,
+  },
+  milestoneTextLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  milestoneMuscleName: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  milestoneRemaining: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
   priorityOpenRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1936,10 +2186,32 @@ const styles = StyleSheet.create({
   priorityHint: {
     fontSize: 12,
   },
-  priorityRankChar: {
-    fontSize: 20,
-    fontWeight: '900',
-    fontVariant: ['tabular-nums'],
+  sortPillsRow: {
+    position: 'relative',
+    flexDirection: 'row',
+    borderRadius: 999,
+    padding: 2,
+    overflow: 'hidden',
+  },
+  sortAnimatedThumb: {
+    position: 'absolute',
+    top: 2,
+    bottom: 2,
+    left: 2,
+    width: 68,
+    borderRadius: 999,
+  },
+  sortMiniPill: {
+    width: 68,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 5,
+    borderRadius: 999,
+    zIndex: 2,
+  },
+  sortMiniText: {
+    fontSize: 11,
+    fontWeight: '700',
   },
   muscleOpenRowWrap: {
     borderBottomWidth: StyleSheet.hairlineWidth,
@@ -1949,15 +2221,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
     paddingVertical: 13,
-  },
-  muscleRankCol: {
-    width: 32,
-    alignItems: 'center',
-  },
-  muscleRankLetter: {
-    fontSize: 20,
-    fontWeight: '900',
-    letterSpacing: -0.5,
   },
   muscleMiddleCol: {
     flex: 1,
@@ -1999,11 +2262,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
     paddingVertical: 6,
-  },
-  inlineExRank: {
-    width: 24,
-    fontSize: 14,
-    fontWeight: '900',
   },
   inlineExName: {
     fontSize: 14,
@@ -2058,10 +2316,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
   },
-  openGroupRank: {
-    fontSize: 18,
-    fontWeight: '900',
-  },
   openGroupTitle: {
     fontSize: 17,
     fontWeight: '800',
@@ -2077,12 +2331,6 @@ const styles = StyleSheet.create({
     gap: 12,
     paddingVertical: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  openExRankLetter: {
-    width: 28,
-    fontSize: 18,
-    fontWeight: '900',
-    textAlign: 'center',
   },
   openExBody: {
     flex: 1,
@@ -2111,11 +2359,11 @@ const styles = StyleSheet.create({
   },
   openExMeta: {
     fontSize: 11,
+    fontWeight: '500',
   },
   openExPR: {
     fontSize: 11,
     fontWeight: '700',
-    fontVariant: ['tabular-nums'],
   },
   weightHeroRow: {
     flexDirection: 'row',
@@ -2123,10 +2371,9 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   weightHeroBig: {
-    fontSize: 28,
+    fontSize: 30,
     fontWeight: '900',
-    letterSpacing: -0.6,
-    fontVariant: ['tabular-nums'],
+    letterSpacing: -0.8,
   },
   weightDeltaText: {
     fontSize: 13,
@@ -2138,34 +2385,32 @@ const styles = StyleSheet.create({
     padding: 2,
   },
   rangePillBtn: {
-    paddingHorizontal: 9,
+    paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 999,
   },
   rangePillText: {
     fontSize: 11,
-    fontWeight: '700',
+    fontWeight: '800',
   },
   openChartWrap: {
-    marginVertical: 8,
-  },
-  emptyChartOpen: {
-    height: 100,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  emptyChartText: {
-    fontSize: 12,
+    marginVertical: 10,
   },
   chartAxisLabels: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: 2,
+    marginTop: 4,
   },
   chartAxisText: {
     fontSize: 11,
     fontWeight: '600',
-    fontVariant: ['tabular-nums'],
+  },
+  emptyChartOpen: {
+    paddingVertical: 32,
+    alignItems: 'center',
+  },
+  emptyChartText: {
+    fontSize: 13,
   },
   inlineInputRow: {
     flexDirection: 'row',
@@ -2176,17 +2421,16 @@ const styles = StyleSheet.create({
   },
   inlineInput: {
     flex: 1,
+    borderRadius: 12,
     paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 999,
-    fontSize: 13,
+    paddingVertical: 11,
+    fontSize: 14,
+    fontWeight: '600',
   },
   inlineActionBtn: {
+    borderRadius: 12,
     paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 999,
-    alignItems: 'center',
-    justifyContent: 'center',
+    paddingVertical: 11,
   },
   inlineActionBtnText: {
     fontSize: 13,
@@ -2200,17 +2444,16 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   simpleLogDate: {
-    fontSize: 12,
+    fontSize: 13,
   },
   simpleLogRight: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 12,
   },
   simpleLogVal: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '700',
-    fontVariant: ['tabular-nums'],
   },
   dotsGrid: {
     flexDirection: 'row',
@@ -2220,19 +2463,18 @@ const styles = StyleSheet.create({
   },
   dayDotBox: {
     width: (SCREEN_WIDTH - 40 - 6 * 8) / 7,
-    height: 34,
+    height: 36,
     borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
   },
   dayDotLabel: {
     fontSize: 12,
-    fontWeight: '700',
-    fontVariant: ['tabular-nums'],
+    fontWeight: '800',
   },
   emptyLineText: {
     fontSize: 13,
-    paddingVertical: 8,
+    paddingVertical: 10,
   },
   workoutLogRow: {
     flexDirection: 'row',
@@ -2242,7 +2484,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   workoutLogTitle: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '700',
   },
   workoutLogSub: {
@@ -2250,9 +2492,8 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   workoutLogSets: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '700',
-    fontVariant: ['tabular-nums'],
   },
   sheetScrollContent: {
     paddingHorizontal: 20,
@@ -2268,12 +2509,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
   },
-  sheetRankBig: {
-    fontSize: 34,
-    fontWeight: '900',
-  },
   sheetRankTitle: {
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: '800',
   },
   sheetRankSub: {
@@ -2281,86 +2518,12 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   sheetSetsCount: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '800',
-    fontVariant: ['tabular-nums'],
   },
   sheetSection: {
     marginTop: 18,
     paddingTop: 14,
-    gap: 8,
-  },
-  spectrumGridRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    justifyContent: 'space-between',
-    gap: 6,
-    paddingTop: 8,
-    paddingBottom: 4,
-  },
-  spectrumColWrap: {
-    flex: 1,
-    alignItems: 'center',
-    gap: 6,
-  },
-  spectrumCountLabel: {
-    fontSize: 11,
-    fontWeight: '800',
-    fontVariant: ['tabular-nums'],
-  },
-  spectrumColTrack: {
-    width: '100%',
-    maxWidth: 32,
-    height: 78,
-    borderRadius: 10,
-    justifyContent: 'flex-end',
-    overflow: 'hidden',
-  },
-  spectrumColFill: {
-    width: '100%',
-    borderRadius: 10,
-  },
-  spectrumTierLetter: {
-    fontSize: 14,
-    fontWeight: '900',
-    letterSpacing: -0.3,
-  },
-  tierSpotlightRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    marginTop: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderLeftWidth: 3,
-    borderRadius: 10,
-  },
-  tierSpotlightLetter: {
-    fontSize: 26,
-    fontWeight: '900',
-  },
-  tierSpotlightTitle: {
-    fontSize: 13,
-    fontWeight: '800',
-  },
-  tierSpotlightSub: {
-    fontSize: 11,
-    marginTop: 2,
-    lineHeight: 15,
-  },
-  sortPillsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: 999,
-    padding: 2,
-  },
-  sortMiniPill: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 999,
-  },
-  sortMiniText: {
-    fontSize: 11,
-    fontWeight: '700',
+    borderTopWidth: StyleSheet.hairlineWidth,
   },
 });

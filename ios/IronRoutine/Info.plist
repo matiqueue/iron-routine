@@ -28,6 +28,7 @@
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>com.matique.ironroutine</string>
+				<string>ironroutine</string>
 			</array>
 		</dict>
 	</array>

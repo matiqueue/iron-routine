@@ -6,7 +6,7 @@ import {
   saveCloudBackupJson,
   saveCloudUser,
   verifyCloudToken,
-} from '../_lib/cloudStore';
+} from '../_lib/cloudStore.js';
 
 function extractBearerToken(request: Request): string | null {
   const auth = request.headers.get('authorization') || request.headers.get('Authorization') || '';

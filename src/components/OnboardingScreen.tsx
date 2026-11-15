@@ -37,10 +37,10 @@ import {
   setCreatineReminderEnabled,
 } from '../services/notifications';
 import {
-  CloudProvider,
   pullProfileFromCloud,
   pushProfileToCloud,
-  signInWithCloudAccount,
+  signInWithAppleCloud,
+  signInWithGoogleCloud,
 } from '../services/cloudSync';
 import { triggerNotificationHaptic, triggerSelectionHaptic } from '../services/haptics';
 import { AnimatedIcon } from './AnimatedIcon';
@@ -113,9 +113,6 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
 
   // Cloud Sign-in / Restore state on Step 1
   const [showCloudPanel, setShowCloudPanel] = useState(false);
-  const [cloudProvider, setCloudProvider] = useState<CloudProvider>('apple');
-  const [cloudEmail, setCloudEmail] = useState('');
-  const [cloudPin, setCloudPin] = useState('');
   const [isCloudBusy, setIsCloudBusy] = useState(false);
   const [linkedCloudEmail, setLinkedCloudEmail] = useState<string | null>(null);
 
@@ -214,18 +211,25 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
     }
   };
 
-  const handleCloudSignInOrRestore = async () => {
+  const handleCloudProviderSignIn = async (provider: 'apple' | 'google') => {
     if (isCloudBusy) return;
+    triggerSelectionHaptic();
     setIsCloudBusy(true);
     try {
-      const authRes = await signInWithCloudAccount({
-        provider: cloudProvider,
-        email: cloudEmail,
-        secretPin: cloudPin,
-        displayName: name.trim() || undefined,
-      });
+      const authRes =
+        provider === 'apple'
+          ? await signInWithAppleCloud(name.trim() || undefined)
+          : await signInWithGoogleCloud();
 
-      setLinkedCloudEmail(authRes.session.email);
+      if (!authRes.ok || !authRes.session) {
+        Alert.alert(
+          'Logowanie w chmurze',
+          authRes.error || 'Nie udało się połączyć z kontem w chmurze.'
+        );
+        return;
+      }
+
+      setLinkedCloudEmail(authRes.session.displayName || authRes.session.email);
 
       if (!authRes.isNewAccount && authRes.session.backupSummary) {
         Alert.alert(
@@ -241,9 +245,13 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
               onPress: async () => {
                 try {
                   setIsSubmitting(true);
-                  const restored = await pullProfileFromCloud('create_new');
-                  triggerNotificationHaptic('success');
-                  await onCompleted(restored.profile);
+                  const restored = await pullProfileFromCloud();
+                  if (restored.ok && restored.profile) {
+                    triggerNotificationHaptic('success');
+                    await onCompleted(restored.profile);
+                  } else {
+                    Alert.alert('Błąd przywracania', restored.error || 'Brak kopii w chmurze.');
+                  }
                 } catch (err: any) {
                   Alert.alert('Błąd przywracania', err?.message || 'Nie udało się pobrać kopii.');
                 } finally {
@@ -257,7 +265,9 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
         triggerNotificationHaptic('success');
         Alert.alert(
           'Połączono z chmurą',
-          `Twoje konto (${authRes.session.email}) zostało aktywowane. Po zakończeniu konfiguracji automatycznie zsynchronizujemy Twój profil w chmurze.`
+          `Konto ${
+            provider === 'apple' ? 'Apple iCloud' : 'Google (Clerk)'
+          } (${authRes.session.displayName}) zostało powiązane. Po zakończeniu konfiguracji automatycznie zapiszemy Twój profil w bazie NoSQL.`
         );
       }
     } catch (e: any) {
@@ -573,8 +583,8 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
                       height={145}
                       viewBox={
                         gender === 'female'
-                          ? '-50 50 734 1390'
-                          : '0 80 724 1320'
+                          ? '-50.5 15 740 1445'
+                          : '-11.2 80 724 1320'
                       }
                     >
                       <Path
@@ -692,102 +702,40 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
 
                 {showCloudPanel && (
                   <View style={styles.cloudPanelBody}>
-                    <View style={styles.providerRow}>
-                      <TouchableOpacity
-                        style={[
-                          styles.providerBtn,
-                          {
-                            backgroundColor:
-                              cloudProvider === 'apple' ? theme.text : theme.bgSecondary,
-                          },
-                        ]}
-                        onPress={() => setCloudProvider('apple')}
-                        activeOpacity={0.8}
-                      >
-                        <Ionicons
-                          name="logo-apple"
-                          size={16}
-                          color={cloudProvider === 'apple' ? theme.bg : theme.text}
-                        />
-                        <Text
-                          style={[
-                            styles.providerBtnText,
-                            { color: cloudProvider === 'apple' ? theme.bg : theme.text },
-                          ]}
-                        >
-                          Apple iCloud
-                        </Text>
-                      </TouchableOpacity>
-
-                      <TouchableOpacity
-                        style={[
-                          styles.providerBtn,
-                          {
-                            backgroundColor:
-                              cloudProvider === 'google' ? theme.text : theme.bgSecondary,
-                          },
-                        ]}
-                        onPress={() => setCloudProvider('google')}
-                        activeOpacity={0.8}
-                      >
-                        <Ionicons
-                          name="logo-google"
-                          size={15}
-                          color={cloudProvider === 'google' ? theme.bg : theme.text}
-                        />
-                        <Text
-                          style={[
-                            styles.providerBtnText,
-                            { color: cloudProvider === 'google' ? theme.bg : theme.text },
-                          ]}
-                        >
-                          Google
-                        </Text>
-                      </TouchableOpacity>
-                    </View>
-
-                    <TextInput
-                      style={[
-                        styles.cloudInput,
-                        { backgroundColor: theme.bgSecondary, color: theme.text },
-                      ]}
-                      placeholder={
-                        cloudProvider === 'apple'
-                          ? 'Adres e-mail Apple ID (iCloud)...'
-                          : 'Adres e-mail konta Google...'
-                      }
-                      placeholderTextColor={theme.textMuted}
-                      autoCapitalize="none"
-                      keyboardType="email-address"
-                      value={cloudEmail}
-                      onChangeText={setCloudEmail}
-                    />
-
-                    <TextInput
-                      style={[
-                        styles.cloudInput,
-                        { backgroundColor: theme.bgSecondary, color: theme.text },
-                      ]}
-                      placeholder="Twój klucz / PIN chmury (min. 4 znaki)..."
-                      placeholderTextColor={theme.textMuted}
-                      secureTextEntry
-                      value={cloudPin}
-                      onChangeText={setCloudPin}
-                    />
-
                     <TouchableOpacity
-                      style={[styles.cloudSubmitBtn, { backgroundColor: '#38BDF8' }]}
-                      onPress={handleCloudSignInOrRestore}
+                      style={[styles.cloudSubmitBtn, { backgroundColor: theme.text }]}
+                      onPress={() => handleCloudProviderSignIn('apple')}
                       disabled={isCloudBusy}
                       activeOpacity={0.85}
                     >
                       {isCloudBusy ? (
-                        <ActivityIndicator size="small" color="#09090B" />
+                        <ActivityIndicator size="small" color={theme.bg} />
                       ) : (
                         <>
-                          <Ionicons name="cloud-download-outline" size={17} color="#09090B" />
-                          <Text style={styles.cloudSubmitText}>
-                            Połącz lub przywróć konto z chmury
+                          <Ionicons name="logo-apple" size={18} color={theme.bg} />
+                          <Text style={[styles.cloudSubmitText, { color: theme.bg }]}>
+                            Kontynuuj z Apple (iCloud)
+                          </Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[
+                        styles.cloudSubmitBtn,
+                        { backgroundColor: theme.bgSecondary, marginTop: 4 },
+                      ]}
+                      onPress={() => handleCloudProviderSignIn('google')}
+                      disabled={isCloudBusy}
+                      activeOpacity={0.85}
+                    >
+                      {isCloudBusy ? (
+                        <ActivityIndicator size="small" color={theme.text} />
+                      ) : (
+                        <>
+                          <Ionicons name="logo-google" size={16} color={theme.text} />
+                          <Text style={[styles.cloudSubmitText, { color: theme.text }]}>
+                            Kontynuuj z Google (Clerk)
                           </Text>
                         </>
                       )}

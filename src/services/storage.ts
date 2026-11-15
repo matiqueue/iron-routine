@@ -169,8 +169,23 @@ async function applyLocalDeviceSeedIfNeeded(): Promise<void> {
 
 // ==================== PROFILE MANAGEMENT ====================
 
+const ONE_TIME_RESET_KEY = '@iron_routine_fresh_reset_v2_4';
+let resetCheckedInMemory = false;
+
+async function ensureOneTimeDeviceReset(): Promise<void> {
+  if (resetCheckedInMemory) return;
+  resetCheckedInMemory = true;
+  try {
+    const done = await AsyncStorage.getItem(ONE_TIME_RESET_KEY);
+    if (done === '1') return;
+    await AsyncStorage.clear();
+    await AsyncStorage.setItem(ONE_TIME_RESET_KEY, '1');
+  } catch {}
+}
+
 export async function getProfiles(): Promise<UserProfile[]> {
   try {
+    await ensureOneTimeDeviceReset();
     await applyLocalDeviceSeedIfNeeded();
     const raw = await AsyncStorage.getItem(STORAGE_KEYS.PROFILES);
     if (!raw) return [];

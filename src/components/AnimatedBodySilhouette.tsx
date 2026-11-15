@@ -8,7 +8,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import Svg, { Circle, Defs, G, LinearGradient, Path, Stop } from 'react-native-svg';
+import Svg, { Circle, Defs, G, Line, LinearGradient, Path, Stop } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useAppTheme } from '../context/ThemeContext';
@@ -26,6 +26,7 @@ import {
 } from '../data/bodySilhouettePaths';
 import { MUSCLE_SUBGROUP_MAP } from '../data/muscleMap';
 import { ExerciseRankStat, MuscleRankStat } from '../services/muscleAnalytics';
+import { RankCrestIcon } from './RankCrestIcon';
 
 export type SilhouetteViewSide = 'front' | 'back';
 
@@ -136,64 +137,75 @@ function getMuscleFillStyle(
   isSelected: boolean,
   hasAnySelection: boolean,
   isDark: boolean
-): { fill: string; fillOpacity: number; stroke: string; strokeWidth: number } {
-  const baseEmpty = isDark ? '#27272A' : '#E4E4E7';
-  const baseStroke = isDark ? '#18181B' : '#FAFAFA';
+): {
+  fill: string;
+  fillOpacity: number;
+  stroke: string;
+  strokeWidth: number;
+  strokeOpacity: number;
+} {
+  const baseEmpty = isDark ? '#3F3F46' : '#D4D4D8';
+  const baseStroke = isDark ? '#27272A' : '#E4E4E7';
 
-  // Untrained muscles (0 sets) are ALWAYS neutral gray, never red!
+  // Untrained muscles (0 sets) are ALWAYS translucent neutral gray
   if (!stat || stat.effectiveSetsTotal <= 0 || stat.priorityStatus === 'untrained') {
     if (hasAnySelection && isSelected) {
       return {
-        fill: isDark ? '#52525B' : '#A1A1AA',
-        fillOpacity: 0.95,
-        stroke: isDark ? '#FFFFFF' : '#09090B',
-        strokeWidth: 3.2,
+        fill: isDark ? '#71717A' : '#A1A1AA',
+        fillOpacity: 0.62,
+        stroke: isDark ? '#FAFAFA' : '#18181B',
+        strokeWidth: 2.6,
+        strokeOpacity: 0.9,
       };
     }
     return {
       fill: baseEmpty,
-      fillOpacity: hasAnySelection ? 0.35 : 0.78,
+      fillOpacity: hasAnySelection ? 0.18 : isDark ? 0.3 : 0.42,
       stroke: baseStroke,
       strokeWidth: 1,
+      strokeOpacity: 0.55,
     };
   }
 
   let fill = baseEmpty;
-  let fillOpacity = 0.88;
+  let fillOpacity = isDark ? 0.48 : 0.54;
 
   if (stat.priorityStatus === 'neglected' || stat.priorityStatus === 'lagging') {
     fill = '#F59E0B';
-    fillOpacity = 0.88;
+    fillOpacity = isDark ? 0.5 : 0.56;
   } else if (stat.priorityStatus === 'balanced') {
     fill = '#10B981';
-    fillOpacity = isDark ? 0.72 : 0.78;
+    fillOpacity = isDark ? 0.46 : 0.52;
   } else {
     fill = '#38BDF8';
-    fillOpacity = isDark ? 0.85 : 0.88;
+    fillOpacity = isDark ? 0.52 : 0.58;
   }
 
   if (hasAnySelection) {
     if (isSelected) {
       return {
         fill,
-        fillOpacity: 1,
+        fillOpacity: 0.74,
         stroke: isDark ? '#FFFFFF' : '#09090B',
-        strokeWidth: 3.5,
+        strokeWidth: 2.8,
+        strokeOpacity: 0.95,
       };
     }
     return {
       fill,
-      fillOpacity: Math.max(0.24, fillOpacity * 0.4),
+      fillOpacity: 0.2,
       stroke: baseStroke,
-      strokeWidth: 0.8,
+      strokeWidth: 0.9,
+      strokeOpacity: 0.4,
     };
   }
 
   return {
     fill,
     fillOpacity,
-    stroke: baseStroke,
-    strokeWidth: 1.2,
+    stroke: fill,
+    strokeWidth: 1.15,
+    strokeOpacity: 0.65,
   };
 }
 
@@ -210,10 +222,10 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = ({
   const viewSideRef = useRef<SilhouetteViewSide>('front');
   const isAnimatingRef = useRef(false);
 
-  // Animations
+  // Stationary in-place axis rotation animations (ZERO horizontal translation!)
   const flipScaleX = useRef(new Animated.Value(1)).current;
+  const flipScaleY = useRef(new Animated.Value(1)).current;
   const flipOpacity = useRef(new Animated.Value(1)).current;
-  const dragOffsetX = useRef(new Animated.Value(0)).current;
   const floatAnim = useRef(new Animated.Value(0)).current;
   const hintPulseAnim = useRef(new Animated.Value(0)).current;
   const detailBarAnim = useRef(new Animated.Value(0)).current;
@@ -222,19 +234,18 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = ({
     viewSideRef.current = viewSide;
   }, [viewSide]);
 
-  // Gentle continuous breathing + swipe arrow nudge animation
   useEffect(() => {
     const floatLoop = Animated.loop(
       Animated.sequence([
         Animated.timing(floatAnim, {
           toValue: 1,
-          duration: 2500,
+          duration: 2600,
           easing: Easing.inOut(Easing.sin),
           useNativeDriver: true,
         }),
         Animated.timing(floatAnim, {
           toValue: 0,
-          duration: 2500,
+          duration: 2600,
           easing: Easing.inOut(Easing.sin),
           useNativeDriver: true,
         }),
@@ -268,7 +279,9 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = ({
   useEffect(() => {
     detailBarAnim.setValue(0);
     Animated.timing(detailBarAnim, {
-      toValue: selectedStat ? Math.min(100, Math.round(selectedStat.relativeDevelopmentRatio * 100)) : 0,
+      toValue: selectedStat
+        ? Math.min(100, Math.round(selectedStat.relativeDevelopmentRatio * 100))
+        : 0,
       duration: 500,
       easing: Easing.out(Easing.cubic),
       useNativeDriver: false,
@@ -287,33 +300,46 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = ({
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       } catch {}
 
+      // Phase 1: Rotate in-place around central vertical spine to 90deg edge
       Animated.parallel([
         Animated.timing(flipScaleX, {
-          toValue: 0.08,
-          duration: 135,
+          toValue: 0.03,
+          duration: 140,
+          easing: Easing.in(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.timing(flipScaleY, {
+          toValue: 0.975,
+          duration: 140,
           easing: Easing.in(Easing.quad),
           useNativeDriver: true,
         }),
         Animated.timing(flipOpacity, {
-          toValue: 0.35,
-          duration: 135,
+          toValue: 0.45,
+          duration: 140,
           useNativeDriver: true,
         }),
       ]).start(() => {
         viewSideRef.current = next;
         setViewSide(next);
-        dragOffsetX.setValue(0);
 
+        // Phase 2: Unfold smoothly in the exact same spot
         Animated.parallel([
           Animated.spring(flipScaleX, {
             toValue: 1,
-            friction: 6,
-            tension: 75,
+            friction: 7,
+            tension: 82,
+            useNativeDriver: true,
+          }),
+          Animated.spring(flipScaleY, {
+            toValue: 1,
+            friction: 7,
+            tension: 82,
             useNativeDriver: true,
           }),
           Animated.timing(flipOpacity, {
             toValue: 1,
-            duration: 180,
+            duration: 170,
             easing: Easing.out(Easing.cubic),
             useNativeDriver: true,
           }),
@@ -322,7 +348,7 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = ({
         });
       });
     },
-    [dragOffsetX, flipOpacity, flipScaleX]
+    [flipOpacity, flipScaleX, flipScaleY]
   );
 
   // Auto-flip when user selects a muscle from the list that belongs to the opposite side
@@ -341,24 +367,24 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = ({
     () =>
       PanResponder.create({
         onMoveShouldSetPanResponder: (_, gestureState) =>
-          Math.abs(gestureState.dx) > 12 &&
-          Math.abs(gestureState.dx) > Math.abs(gestureState.dy) * 1.2,
+          Math.abs(gestureState.dx) > 10 &&
+          Math.abs(gestureState.dx) > Math.abs(gestureState.dy) * 1.15,
         onPanResponderMove: (_, gestureState) => {
-          const clampedDx = Math.max(-48, Math.min(48, gestureState.dx * 0.45));
-          dragOffsetX.setValue(clampedDx);
-          const scalePreview = Math.max(0.76, 1 - Math.abs(gestureState.dx) / 280);
-          flipScaleX.setValue(scalePreview);
+          // Rotate strictly in place around central vertical spine (no horizontal shift!)
+          const progress = Math.min(1, Math.abs(gestureState.dx) / 140);
+          flipScaleX.setValue(Math.max(0.28, 1 - progress * 0.72));
+          flipScaleY.setValue(1 - progress * 0.02);
         },
         onPanResponderRelease: (_, gestureState) => {
-          if (Math.abs(gestureState.dx) > 28 || Math.abs(gestureState.vx) > 0.35) {
+          if (Math.abs(gestureState.dx) > 24 || Math.abs(gestureState.vx) > 0.3) {
             rotateToSide();
           } else {
             Animated.parallel([
-              Animated.spring(dragOffsetX, {
-                toValue: 0,
+              Animated.spring(flipScaleX, {
+                toValue: 1,
                 useNativeDriver: true,
               }),
-              Animated.spring(flipScaleX, {
+              Animated.spring(flipScaleY, {
                 toValue: 1,
                 useNativeDriver: true,
               }),
@@ -367,18 +393,18 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = ({
         },
         onPanResponderTerminate: () => {
           Animated.parallel([
-            Animated.spring(dragOffsetX, {
-              toValue: 0,
+            Animated.spring(flipScaleX, {
+              toValue: 1,
               useNativeDriver: true,
             }),
-            Animated.spring(flipScaleX, {
+            Animated.spring(flipScaleY, {
               toValue: 1,
               useNativeDriver: true,
             }),
           ]).start();
         },
       }),
-    [dragOffsetX, flipScaleX, rotateToSide]
+    [flipScaleX, flipScaleY, rotateToSide]
   );
 
   const handleMusclePress = (muscleId: MuscleSubGroupId | null) => {
@@ -410,7 +436,7 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = ({
 
   const translateY = floatAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: [0, -4],
+    outputRange: [0, -3],
   });
 
   const leftArrowShift = hintPulseAnim.interpolate({
@@ -423,8 +449,8 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = ({
     outputRange: [0, 4],
   });
 
-  const inertFill = isDark ? '#18181B' : '#F4F4F5';
-  const outlineStroke = isDark ? '#3F3F46' : '#D4D4D8';
+  const inertFill = isDark ? '#27272A' : '#E4E4E7';
+  const outlineStroke = isDark ? '#52525B' : '#A1A1AA';
 
   const isFemale = gender === 'female';
   const parts: BodyPartVector[] =
@@ -436,14 +462,15 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = ({
       ? BODY_FEMALE_BACK_PARTS
       : BODY_BACK_PARTS;
 
+  // Exact midline-aligned viewBoxes so Front and Back stand in the exact same pixel position!
   const viewBox =
     viewSide === 'front'
       ? isFemale
-        ? '-50 50 734 1390'
-        : '0 80 724 1320'
+        ? '-50.5 15 740 1445'
+        : '-11.2 80 724 1320'
       : isFemale
-      ? '756 50 774 1390'
-      : '724 80 724 1320';
+      ? '773.5 15 740 1445'
+      : '724.6 80 724 1320';
 
   const outlinePath =
     viewSide === 'front'
@@ -457,11 +484,11 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = ({
   const centerX =
     viewSide === 'front'
       ? isFemale
-        ? 317
-        : 362
+        ? 319.5
+        : 350.8
       : isFemale
-      ? 1143
-      : 1086;
+      ? 1143.5
+      : 1086.6;
 
   const activityLegend = useMemo(
     () => [
@@ -475,7 +502,7 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = ({
 
   return (
     <View style={styles.container}>
-      {/* Minimalist Side Status Header */}
+      {/* Minimalist Side Status Header (no gender label!) */}
       <View style={styles.sideHeaderRow}>
         <View style={styles.sideTagWrap}>
           <View style={[styles.liveDot, { backgroundColor: '#10B981' }]} />
@@ -483,12 +510,19 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = ({
             {viewSide === 'front' ? 'PRZÓD SYLWETKI' : 'TYŁ SYLWETKI'}
           </Text>
         </View>
-        <Text style={[styles.sideCounterText, { color: theme.textMuted }]}>
-          {isFemale ? 'Model Kobiecy' : 'Model Męski'} · {viewSide === 'front' ? '1 / 2' : '2 / 2'}
-        </Text>
+        <TouchableOpacity
+          style={[styles.quickFlipChip, { backgroundColor: theme.bgSecondary }]}
+          onPress={() => rotateToSide()}
+          activeOpacity={0.75}
+        >
+          <Ionicons name="sync-outline" size={12} color={theme.textSecondary} />
+          <Text style={[styles.sideCounterText, { color: theme.textSecondary }]}>
+            {viewSide === 'front' ? 'Widok 1/2' : 'Widok 2/2'}
+          </Text>
+        </TouchableOpacity>
       </View>
 
-      {/* Interactive Swipe-to-Rotate Silhouette Stage */}
+      {/* Interactive Swipe-to-Rotate Silhouette Stage (Locked on Central Axis) */}
       <View {...panResponder.panHandlers} style={styles.swipeZone}>
         <Animated.View
           style={[
@@ -496,20 +530,20 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = ({
             {
               opacity: flipOpacity,
               transform: [
-                { translateX: dragOffsetX },
                 { scaleX: flipScaleX },
+                { scaleY: flipScaleY },
                 { translateY },
               ],
             },
           ]}
         >
-          <Svg width={235} height={410} viewBox={viewBox}>
+          <Svg width={240} height={415} viewBox={viewBox}>
             <Defs>
               <LinearGradient id={`glow-${viewSide}`} x1="0" y1="0" x2="0" y2="1">
                 <Stop
                   offset="0%"
                   stopColor="#10B981"
-                  stopOpacity={isDark ? 0.09 : 0.05}
+                  stopOpacity={isDark ? 0.11 : 0.06}
                 />
                 <Stop
                   offset="100%"
@@ -519,7 +553,18 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = ({
               </LinearGradient>
             </Defs>
 
-            <Circle cx={centerX} cy={540} r={260} fill={`url(#glow-${viewSide})`} />
+            {/* Subtle Central Axis Reference Line & Ambient Aura */}
+            <Line
+              x1={centerX}
+              y1={120}
+              x2={centerX}
+              y2={1380}
+              stroke={isDark ? '#27272A' : '#E4E4E7'}
+              strokeWidth={1.5}
+              strokeDasharray="6 10"
+              strokeOpacity={0.45}
+            />
+            <Circle cx={centerX} cy={560} r={275} fill={`url(#glow-${viewSide})`} />
 
             {parts.map((part) => {
               const isInert = INERT_SLUGS.has(part.slug);
@@ -539,7 +584,7 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = ({
                             key={`${viewSide}-${part.slug}-${key}-${idx}`}
                             d={d}
                             fill={inertFill}
-                            fillOpacity={0.65}
+                            fillOpacity={isDark ? 0.38 : 0.52}
                           />
                         );
                       }
@@ -585,6 +630,7 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = ({
                           fillOpacity={style.fillOpacity}
                           stroke={style.stroke}
                           strokeWidth={style.strokeWidth}
+                          strokeOpacity={style.strokeOpacity}
                           onPress={() => handleMusclePress(muscleId)}
                         />
                       );
@@ -599,7 +645,8 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = ({
                 d={outlinePath}
                 fill="none"
                 stroke={outlineStroke}
-                strokeWidth={2.2}
+                strokeWidth={2.1}
+                strokeOpacity={isDark ? 0.72 : 0.85}
                 strokeLinecap="round"
                 strokeLinejoin="round"
                 pointerEvents="none"
@@ -631,7 +678,12 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = ({
       <View style={styles.legendRow}>
         {activityLegend.map((item) => (
           <View key={item.label} style={styles.legendItem}>
-            <View style={[styles.legendSwatch, { backgroundColor: item.color }]} />
+            <View
+              style={[
+                styles.legendSwatch,
+                { backgroundColor: item.color, opacity: 0.72 },
+              ]}
+            />
             <Text style={[styles.legendText, { color: theme.textSecondary }]}>
               {item.label}
             </Text>
@@ -662,6 +714,11 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = ({
         >
           <View style={styles.focusHeaderRow}>
             <View style={styles.focusTitleWrap}>
+              <RankCrestIcon
+                tier={selectedStat.rank}
+                size={40}
+                progressPct={selectedStat.progressPct}
+              />
               <View style={{ flex: 1 }}>
                 <Text style={[styles.focusMuscleName, { color: theme.text }]}>
                   {selectedStat.meta.label}
@@ -718,6 +775,7 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = ({
                   onPress={() => onPressExercise?.(exStat.exercise)}
                   activeOpacity={0.7}
                 >
+                  <RankCrestIcon tier={exStat.rank} size={22} />
                   <Text
                     style={[styles.focusExName, { color: theme.text }]}
                     numberOfLines={1}
@@ -768,6 +826,14 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: 1.1,
   },
+  quickFlipChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+  },
   sideCounterText: {
     fontSize: 11,
     fontWeight: '700',
@@ -798,11 +864,10 @@ const styles = StyleSheet.create({
   legendRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    alignItems: 'center',
     justifyContent: 'center',
     gap: 14,
-    marginTop: 4,
-    marginBottom: 8,
+    marginTop: 6,
+    marginBottom: 12,
   },
   legendItem: {
     flexDirection: 'row',
@@ -810,8 +875,8 @@ const styles = StyleSheet.create({
     gap: 5,
   },
   legendSwatch: {
-    width: 7,
-    height: 7,
+    width: 8,
+    height: 8,
     borderRadius: 4,
   },
   legendText: {
@@ -819,12 +884,13 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   tapHint: {
-    fontSize: 12,
     textAlign: 'center',
-    marginTop: 2,
+    fontSize: 12,
+    fontWeight: '500',
+    paddingVertical: 6,
   },
   focusStrip: {
-    marginTop: 10,
+    marginTop: 6,
     paddingVertical: 14,
     paddingLeft: 14,
     paddingRight: 4,
@@ -848,10 +914,11 @@ const styles = StyleSheet.create({
   focusMuscleName: {
     fontSize: 16,
     fontWeight: '800',
-    letterSpacing: -0.2,
+    letterSpacing: -0.3,
   },
   focusStatusSub: {
     fontSize: 12,
+    fontWeight: '500',
     marginTop: 2,
   },
   focusProgressRow: {
@@ -862,39 +929,41 @@ const styles = StyleSheet.create({
   focusTrack: {
     flex: 1,
     height: 6,
-    borderRadius: 999,
+    borderRadius: 3,
     overflow: 'hidden',
   },
   focusFill: {
-    height: '100%',
-    borderRadius: 999,
+    height: 6,
+    borderRadius: 3,
   },
   focusSetsText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '700',
-    fontVariant: ['tabular-nums'],
+    minWidth: 74,
+    textAlign: 'right',
   },
   focusExercisesWrap: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 6,
+    gap: 8,
+    marginTop: 2,
   },
   focusExPill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    paddingHorizontal: 10,
     paddingVertical: 6,
+    paddingHorizontal: 10,
     borderRadius: 999,
     maxWidth: '100%',
   },
   focusExName: {
     fontSize: 12,
-    fontWeight: '600',
+    fontWeight: '700',
     flexShrink: 1,
   },
   focusExSets: {
     fontSize: 11,
-    fontWeight: '700',
+    fontWeight: '600',
   },
 });
