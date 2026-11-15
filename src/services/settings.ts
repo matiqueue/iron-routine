@@ -5,6 +5,7 @@ import { DEFAULT_SUPPLEMENTS, mergeWithDefaultSupplements } from '../data/supple
 const SETTINGS_STORAGE_KEY = '@iron_routine_app_settings';
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
+  language: 'pl',
   hapticsEnabled: true,
   hapticsIntensity: 'strong',
   restEndMultiBuzz: true,

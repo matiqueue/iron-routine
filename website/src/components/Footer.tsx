@@ -40,7 +40,7 @@ export function Footer() {
                 rel="noopener noreferrer"
                 className="font-semibold text-white underline decoration-zinc-600 underline-offset-4 transition-colors hover:decoration-white"
               >
-                Matique (@matiqueue)
+                matique (@matiqueue)
               </a>
             </p>
           </div>

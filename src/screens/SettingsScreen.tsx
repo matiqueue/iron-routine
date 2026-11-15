@@ -16,6 +16,8 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAppTheme } from '../context/ThemeContext';
+import { useLanguage } from '../context/LanguageContext';
+import { LanguageSwitcher } from '../components/LanguageSwitcher';
 import {
   AppSettings,
   HealthDailySummary,
@@ -45,6 +47,7 @@ import { buildActiveSupplementsSummary } from '../data/supplements';
 import {
   exportProfileBackup,
   getCustomExercises,
+  getFavoriteExerciseIds,
   importPlansFromSeedOrBackupJson,
   importProfileBackup,
   resetAllAppData,
@@ -92,6 +95,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   onAppReset,
 }) => {
   const { theme, isDark, toggleTheme } = useAppTheme();
+  const { t } = useLanguage();
 
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_APP_SETTINGS);
   const [nameInput, setNameInput] = useState(activeProfile.name || '');
@@ -109,6 +113,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   const [busyCloudProvider, setBusyCloudProvider] = useState<'apple' | 'google' | null>(null);
 
   const [customCount, setCustomCount] = useState(0);
+  const [favoriteCount, setFavoriteCount] = useState(0);
   const [showExerciseLibrary, setShowExerciseLibrary] = useState(false);
   const [showSuppEditor, setShowSuppEditor] = useState(false);
 
@@ -134,14 +139,16 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   ]);
 
   const loadMeta = async () => {
-    const [loadedSettings, custom, permSummary, session] = await Promise.all([
+    const [loadedSettings, custom, favorites, permSummary, session] = await Promise.all([
       getAppSettings(),
       getCustomExercises(),
+      getFavoriteExerciseIds(),
       getNotificationPermissionSummary(),
       getStoredCloudSession(),
     ]);
     setSettings(loadedSettings);
     setCustomCount(custom.length);
+    setFavoriteCount(favorites.length);
     setNotifPerm(permSummary);
     setCloudSession(session);
     if (loadedSettings.healthSyncEnabled) {
@@ -433,11 +440,14 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   return (
     <View style={[styles.container, { backgroundColor: theme.bg }]}>
       {/* Open Editorial Header */}
-      <View style={[styles.header, { borderBottomColor: theme.hairline }]}>
-        <Text style={[styles.headerTitle, { color: theme.text }]}>Ustawienia</Text>
-        <Text style={[styles.headerSub, { color: theme.textMuted }]}>
-          Profil · Zdrowie · Suplementacja · Baza ćwiczeń
-        </Text>
+      <View style={[styles.header, { borderBottomColor: theme.hairline, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }]}>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text style={[styles.headerTitle, { color: theme.text }]}>{t('settingsTitle')}</Text>
+          <Text style={[styles.headerSub, { color: theme.textMuted }]}>
+            {t('settingsSectionProfile')} · {t('settingsSectionSupps')}
+          </Text>
+        </View>
+        <LanguageSwitcher variant="pill" />
       </View>
 
       <ScrollView
@@ -617,7 +627,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                 <ActivityIndicator size="small" color={theme.primaryText} />
               ) : (
                 <Text style={[styles.openPrimaryActionText, { color: theme.primaryText }]}>
-                  Zapisz parametry profilu
+                  {t('settingsProfileSave')}
                 </Text>
               )}
             </TouchableOpacity>
@@ -1057,19 +1067,21 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           <View style={styles.sectionHeaderRow}>
             <View>
               <Text style={[styles.sectionEyebrow, { color: theme.textMuted }]}>
-                PERSONALIZACJA I DANE
+                {t('settingsSectionAppearance')}
               </Text>
               <Text style={[styles.sectionHeading, { color: theme.text }]}>
-                Wygląd, baza ćwiczeń i JSON
+                {t('settingsAppearanceHeading')}
               </Text>
             </View>
           </View>
 
+          <LanguageSwitcher variant="row" />
+
           <View style={[styles.openSwitchLine, { borderBottomColor: theme.hairline }]}>
             <View style={styles.switchLabelWrap}>
-              <Text style={[styles.rowTitle, { color: theme.text }]}>Tryb ciemny</Text>
+              <Text style={[styles.rowTitle, { color: theme.text }]}>{t('settingsDarkMode')}</Text>
               <Text style={[styles.rowSub, { color: theme.textSecondary }]}>
-                Monochromatyczny interfejs z wysokim kontrastem
+                {t('settingsDarkModeSub')}
               </Text>
             </View>
             <Switch
@@ -1092,13 +1104,17 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             activeOpacity={0.75}
           >
             <View style={styles.switchLabelWrap}>
-              <Text style={[styles.rowTitle, { color: theme.text }]}>Baza i własne ćwiczenia</Text>
+              <Text style={[styles.rowTitle, { color: theme.text }]}>{t('settingsExerciseDb')}</Text>
               <Text style={[styles.rowSub, { color: theme.textSecondary }]}>
-                {EXERCISE_LIBRARY.length} bazowych + {customCount} własnych ćwiczeń
+                {t('settingsExerciseDbSub', {
+                  base: EXERCISE_LIBRARY.length,
+                  custom: customCount,
+                  fav: favoriteCount,
+                })}
               </Text>
             </View>
             <View style={[styles.smallActionPill, { backgroundColor: theme.text }]}>
-              <Text style={[styles.smallActionPillText, { color: theme.bg }]}>Otwórz</Text>
+              <Text style={[styles.smallActionPillText, { color: theme.bg }]}>{t('open')}</Text>
               <Ionicons name="chevron-forward" size={13} color={theme.bg} />
             </View>
           </TouchableOpacity>
@@ -1112,7 +1128,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             >
               <Ionicons name="share-outline" size={16} color={theme.text} />
               <Text style={[styles.cloudActionSecondaryText, { color: theme.text }]}>
-                Eksportuj JSON
+                {t('settingsExportJson')}
               </Text>
             </TouchableOpacity>
 
@@ -1124,7 +1140,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             >
               <Ionicons name="download-outline" size={16} color={theme.text} />
               <Text style={[styles.cloudActionSecondaryText, { color: theme.text }]}>
-                Importuj JSON
+                {t('settingsImportJson')}
               </Text>
             </TouchableOpacity>
           </View>
@@ -1154,7 +1170,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             activeOpacity={0.75}
           >
             <View style={styles.switchLabelWrap}>
-              <Text style={[styles.rowTitle, { color: theme.text }]}>Matique (@matiqueue)</Text>
+              <Text style={[styles.rowTitle, { color: theme.text }]}>matique (@matiqueue)</Text>
               <Text style={[styles.rowSub, { color: theme.textSecondary }]}>
                 Kod źródłowy, nowe wydania i zgłoszenia na GitHub
               </Text>

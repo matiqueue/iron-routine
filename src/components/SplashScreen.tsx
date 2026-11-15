@@ -8,6 +8,7 @@ import {
 } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import { useAppTheme } from '../context/ThemeContext';
+import { useLanguage } from '../context/LanguageContext';
 
 interface SplashScreenProps {
   onFinish: () => void;
@@ -15,6 +16,7 @@ interface SplashScreenProps {
 
 export const SplashScreen: React.FC<SplashScreenProps> = ({ onFinish }) => {
   const { theme } = useAppTheme();
+  const { t } = useLanguage();
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const progressAnim = useRef(new Animated.Value(0)).current;
   const [percent, setPercent] = useState(0);
@@ -73,7 +75,7 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onFinish }) => {
 
         <Text style={[styles.title, { color: theme.text }]}>IRON ROUTINE</Text>
         <Text style={[styles.subtitle, { color: theme.textMuted }]}>
-          TWOJA RUTYNA • 100% OFFLINE
+          {t('splashSubtitle')}
         </Text>
 
         <View style={styles.progressArea}>
@@ -81,7 +83,7 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onFinish }) => {
             <Animated.View style={[styles.bar, { width: barWidth, backgroundColor: theme.text }]} />
           </View>
           <View style={styles.metaRow}>
-            <Text style={[styles.statusText, { color: theme.textMuted }]}>Wczytywanie...</Text>
+            <Text style={[styles.statusText, { color: theme.textMuted }]}>{t('loading')}</Text>
             <Text style={[styles.percentText, { color: theme.text }]}>{percent}%</Text>
           </View>
         </View>

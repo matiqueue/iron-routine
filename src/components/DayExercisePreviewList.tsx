@@ -2,8 +2,10 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAppTheme } from '../context/ThemeContext';
+import { useLanguage } from '../context/LanguageContext';
 import { Exercise, PRRecord, SetEntry } from '../types/workout';
-import { MUSCLE_CATEGORY_META, resolveCanonicalExerciseId } from '../data/exerciseLibrary';
+import { resolveCanonicalExerciseId } from '../data/exerciseLibrary';
+import { resolveExerciseMuscles } from '../data/muscleMap';
 import { triggerSelectionHaptic } from '../services/haptics';
 
 interface DayExercisePreviewListProps {
@@ -23,10 +25,6 @@ const formatRestShort = (seconds: number): string => {
   if (mins === 0) return `${secs}s`;
   if (secs === 0) return `${mins} min`;
   return `${mins}m ${secs}s`;
-};
-
-const getCategoryShort = (cat: string): string => {
-  return MUSCLE_CATEGORY_META.find((m) => m.id === cat)?.label || 'Ogólne';
 };
 
 const CATEGORY_ACCENT_COLOR: Record<string, string> = {
@@ -54,6 +52,7 @@ export const DayExercisePreviewList: React.FC<DayExercisePreviewListProps> = ({
   compact = false,
 }) => {
   const { theme, isDark } = useAppTheme();
+  const { muscleLabel, equipmentLabel } = useLanguage();
   const skippedSet = React.useMemo(() => new Set(skippedIds), [skippedIds]);
 
   return (
@@ -65,7 +64,12 @@ export const DayExercisePreviewList: React.FC<DayExercisePreviewListProps> = ({
         const isSkipped = skippedSet.has(ex.id);
         const isCompleted = !isSkipped && doneCount >= ex.sets && ex.sets > 0;
         const pr = bestPRs[canonicalId] || bestPRs[ex.id];
-        const equipment = ex.equipment || 'Ćwiczenie';
+        const equipment = ex.equipment ? equipmentLabel(ex.equipment) : '';
+        const anatomy = resolveExerciseMuscles(ex);
+        const musclesSummary = [
+          muscleLabel(anatomy.primary, true),
+          ...anatomy.secondary.filter((s) => s.weight >= 0.3).slice(0, 2).map((s) => muscleLabel(s.muscle, true)),
+        ].join(' + ');
         const accentColor = CATEGORY_ACCENT_COLOR[ex.category] || '#10B981';
         const isLast = idx === exercises.length - 1;
         const progressRatio = ex.sets > 0 ? Math.min(1, doneCount / ex.sets) : 0;
@@ -180,7 +184,7 @@ export const DayExercisePreviewList: React.FC<DayExercisePreviewListProps> = ({
                     style={[styles.metaText, { color: theme.textSecondary }]}
                     numberOfLines={1}
                   >
-                    {getCategoryShort(ex.category)} · {equipment}
+                    {musclesSummary}{equipment ? ` · ${equipment}` : ''}
                   </Text>
                 </View>
 

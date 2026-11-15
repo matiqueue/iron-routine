@@ -11,6 +11,8 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAppTheme } from '../context/ThemeContext';
+import { useLanguage } from '../context/LanguageContext';
+import { TranslationKey } from '../i18n/translations';
 import { triggerSelectionHaptic } from '../services/haptics';
 
 export type AppTabKey = 'today' | 'plan' | 'progress' | 'settings';
@@ -22,18 +24,19 @@ interface BottomTabBarProps {
 
 const TABS: {
   key: AppTabKey;
-  label: string;
+  labelKey: TranslationKey;
   iconActive: keyof typeof Ionicons.glyphMap;
   iconInactive: keyof typeof Ionicons.glyphMap;
 }[] = [
-  { key: 'today', label: 'Trening', iconActive: 'barbell', iconInactive: 'barbell-outline' },
-  { key: 'plan', label: 'Plan', iconActive: 'calendar', iconInactive: 'calendar-outline' },
-  { key: 'progress', label: 'Osiągi', iconActive: 'analytics', iconInactive: 'analytics-outline' },
-  { key: 'settings', label: 'Ustawienia', iconActive: 'settings', iconInactive: 'settings-outline' },
+  { key: 'today', labelKey: 'tabToday', iconActive: 'barbell', iconInactive: 'barbell-outline' },
+  { key: 'plan', labelKey: 'tabPlan', iconActive: 'calendar', iconInactive: 'calendar-outline' },
+  { key: 'progress', labelKey: 'tabProgress', iconActive: 'analytics', iconInactive: 'analytics-outline' },
+  { key: 'settings', labelKey: 'tabSettings', iconActive: 'settings', iconInactive: 'settings-outline' },
 ];
 
 export const BottomTabBar: React.FC<BottomTabBarProps> = ({ activeTab, onSelectTab }) => {
   const { theme, isDark } = useAppTheme();
+  const { t } = useLanguage();
   const insets = useSafeAreaInsets();
   const bottomOffset = Math.max(insets.bottom > 0 ? insets.bottom - 4 : 10, Platform.OS === 'ios' ? 14 : 10);
 
@@ -254,7 +257,7 @@ export const BottomTabBar: React.FC<BottomTabBarProps> = ({ activeTab, onSelectT
                 ]}
                 numberOfLines={1}
               >
-                {tab.label}
+                {t(tab.labelKey)}
               </Text>
             </TouchableOpacity>
           );

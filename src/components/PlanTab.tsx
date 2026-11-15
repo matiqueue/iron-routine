@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAppTheme } from '../context/ThemeContext';
+import { useLanguage } from '../context/LanguageContext';
 import { DAYS_OF_WEEK, WORKOUT_PLAN } from '../data/planData';
 import { getDayBannerTagMeta, resolveDayBannerTag } from '../data/dayTags';
 import { Exercise, DayPlan, PRRecord, WorkoutPlan } from '../types/workout';
@@ -46,6 +47,7 @@ export const PlanTab: React.FC<PlanTabProps> = ({
   onStartWorkoutForDay,
 }) => {
   const { theme } = useAppTheme();
+  const { t, dayLabel } = useLanguage();
   const [selectedDayId, setSelectedDayId] = useState<string>('mon');
   const [modalExercise, setModalExercise] = useState<Exercise | null>(null);
   const [editingDay, setEditingDay] = useState(false);
@@ -99,9 +101,9 @@ export const PlanTab: React.FC<PlanTabProps> = ({
       <View style={styles.header}>
         <View style={styles.headerTopRow}>
           <View style={{ flex: 1, minWidth: 0 }}>
-            <Text style={[styles.title, { color: theme.text }]}>Plan treningowy</Text>
+            <Text style={[styles.title, { color: theme.text }]}>{t('planTitle')}</Text>
             <Text style={[styles.subtitle, { color: theme.textMuted }]} numberOfLines={1}>
-              Rozkład tygodnia • Technika • Konfigurator
+              {t('planManageBtn')} · {t('technique')}
             </Text>
           </View>
 
@@ -117,7 +119,7 @@ export const PlanTab: React.FC<PlanTabProps> = ({
             activeOpacity={0.75}
           >
             <Ionicons name="barbell-outline" size={16} color={theme.text} />
-            <Text style={[styles.libraryBtnText, { color: theme.text }]}>Baza</Text>
+            <Text style={[styles.libraryBtnText, { color: theme.text }]}>{t('planLibraryBtn')}</Text>
           </TouchableOpacity>
         </View>
 
@@ -155,7 +157,7 @@ export const PlanTab: React.FC<PlanTabProps> = ({
             activeOpacity={0.75}
           >
             <Ionicons name="create-outline" size={15} color={theme.text} />
-            <Text style={[styles.editDayHeaderBtnText, { color: theme.text }]}>Edytuj dzień</Text>
+            <Text style={[styles.editDayHeaderBtnText, { color: theme.text }]}>{t('planEditDayBtn')}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -191,7 +193,7 @@ export const PlanTab: React.FC<PlanTabProps> = ({
                     { color: isSelected ? theme.primaryText : theme.text },
                   ]}
                 >
-                  {day.short}
+                  {dayLabel(day.id, true)}
                 </Text>
                 <Text
                   style={[

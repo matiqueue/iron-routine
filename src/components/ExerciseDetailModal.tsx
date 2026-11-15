@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -9,7 +9,11 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAppTheme } from '../context/ThemeContext';
+import { useLanguage } from '../context/LanguageContext';
 import { Exercise } from '../types/workout';
+import { resolveExerciseMuscles } from '../data/muscleMap';
+import { resolveCanonicalExerciseId } from '../data/exerciseLibrary';
+import { getFavoriteExerciseIds, toggleFavoriteExercise } from '../services/storage';
 import { BottomSheetScrollView, InteractiveBottomSheet } from './InteractiveBottomSheet';
 
 interface ExerciseDetailModalProps {
@@ -26,17 +30,34 @@ export const ExerciseDetailModal: React.FC<ExerciseDetailModalProps> = ({
   onOpenPR,
 }) => {
   const { theme } = useAppTheme();
+  const { t, muscleLabel, categoryLabel } = useLanguage();
   const [imageLoading, setImageLoading] = useState(true);
   const [imageError, setImageError] = useState(false);
+  const [favoriteIds, setFavoriteIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (visible) {
+      getFavoriteExerciseIds().then(setFavoriteIds).catch(() => {});
+    }
+  }, [visible]);
 
   if (!exercise) return null;
+
+  const anatomy = resolveExerciseMuscles(exercise);
+  const cid = resolveCanonicalExerciseId(exercise.id, exercise.name);
+  const isFav = favoriteIds.includes(exercise.id) || favoriteIds.includes(cid);
+
+  const handleToggleFavorite = async () => {
+    const next = await toggleFavoriteExercise(exercise);
+    setFavoriteIds(next);
+  };
 
   return (
     <InteractiveBottomSheet
       visible={visible}
       onClose={onClose}
       title={exercise.name}
-      subtitle={`${exercise.category.toUpperCase()} • ${exercise.sets} serie × ${exercise.reps} • ${exercise.rest}s odpoczynku`}
+      subtitle={`${categoryLabel(exercise.category).toUpperCase()} • ${exercise.sets} ${t('sets')} × ${exercise.reps} • ${exercise.rest}s ${t('rest').toLowerCase()}`}
       initialHeightPercent={0.88}
     >
       <BottomSheetScrollView
@@ -89,10 +110,28 @@ export const ExerciseDetailModal: React.FC<ExerciseDetailModalProps> = ({
             ]}
           >
             <Text style={[styles.categoryBadgeText, { color: theme.primaryText }]}>
-              {exercise.category.toUpperCase()}
+              {muscleLabel(anatomy.primary).toUpperCase()}
               {exercise.equipment ? ` • ${exercise.equipment.toUpperCase()}` : ''}
             </Text>
           </View>
+
+          <TouchableOpacity
+            style={[
+              styles.favFloatingBtn,
+              {
+                backgroundColor: isFav ? 'rgba(239, 68, 68, 0.16)' : theme.card,
+                borderColor: isFav ? 'rgba(239, 68, 68, 0.5)' : theme.border,
+              },
+            ]}
+            onPress={handleToggleFavorite}
+            activeOpacity={0.78}
+          >
+            <Ionicons
+              name={isFav ? 'heart' : 'heart-outline'}
+              size={18}
+              color={isFav ? '#EF4444' : theme.text}
+            />
+          </TouchableOpacity>
         </View>
 
         {/* Content Body */}
@@ -100,25 +139,75 @@ export const ExerciseDetailModal: React.FC<ExerciseDetailModalProps> = ({
           {/* Minimal metrics strip */}
           <View style={[styles.statsStrip, { borderColor: theme.border, backgroundColor: theme.bgSecondary }]}>
             <View style={styles.statBox}>
-              <Text style={[styles.statLabel, { color: theme.textMuted }]}>SERIE</Text>
+              <Text style={[styles.statLabel, { color: theme.textMuted }]}>{t('sets').toUpperCase()}</Text>
               <Text style={[styles.statVal, { color: theme.text }]}>{exercise.sets}</Text>
             </View>
             <View style={[styles.divider, { backgroundColor: theme.border }]} />
             <View style={styles.statBox}>
-              <Text style={[styles.statLabel, { color: theme.textMuted }]}>POWTÓRZENIA</Text>
+              <Text style={[styles.statLabel, { color: theme.textMuted }]}>{t('reps').toUpperCase()}</Text>
               <Text style={[styles.statVal, { color: theme.text }]}>{exercise.reps}</Text>
             </View>
             <View style={[styles.divider, { backgroundColor: theme.border }]} />
             <View style={styles.statBox}>
-              <Text style={[styles.statLabel, { color: theme.textMuted }]}>PRZERWA</Text>
+              <Text style={[styles.statLabel, { color: theme.textMuted }]}>{t('rest').toUpperCase()}</Text>
               <Text style={[styles.statVal, { color: theme.text }]}>{exercise.rest}s</Text>
+            </View>
+          </View>
+
+          {/* Involved Muscles Anatomy Breakdown */}
+          <View style={styles.section}>
+            <Text style={[styles.sectionTitle, { color: theme.text }]}>
+              {t('involvedMuscles')}
+            </Text>
+            <View style={[styles.anatomyList, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
+              <View style={styles.anatomyRow}>
+                <View style={styles.anatomyLabelCol}>
+                  <Text style={[styles.anatomyPrimaryName, { color: theme.text }]}>
+                    {muscleLabel(anatomy.primary)}
+                  </Text>
+                  <Text style={[styles.anatomyRole, { color: '#10B981' }]}>
+                    {t('primaryMuscle')}
+                  </Text>
+                </View>
+                <View style={styles.anatomyBarCol}>
+                  <View style={[styles.anatomyTrack, { backgroundColor: theme.bgTertiary }]}>
+                    <View style={[styles.anatomyFill, { width: '100%', backgroundColor: '#10B981' }]} />
+                  </View>
+                  <Text style={[styles.anatomyPct, { color: theme.text }]}>100%</Text>
+                </View>
+              </View>
+
+              {anatomy.secondary.map((sec) => {
+                const pct = Math.min(95, Math.max(15, Math.round(sec.weight * 100)));
+                return (
+                  <View
+                    key={sec.muscle}
+                    style={[styles.anatomyRow, { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: theme.hairline, paddingTop: 8 }]}
+                  >
+                    <View style={styles.anatomyLabelCol}>
+                      <Text style={[styles.anatomySecName, { color: theme.textSecondary }]}>
+                        {muscleLabel(sec.muscle)}
+                      </Text>
+                      <Text style={[styles.anatomyRole, { color: theme.textMuted }]}>
+                        {t('secondaryMuscles')}
+                      </Text>
+                    </View>
+                    <View style={styles.anatomyBarCol}>
+                      <View style={[styles.anatomyTrack, { backgroundColor: theme.bgTertiary }]}>
+                        <View style={[styles.anatomyFill, { width: `${pct}%`, backgroundColor: '#38BDF8' }]} />
+                      </View>
+                      <Text style={[styles.anatomyPct, { color: theme.textSecondary }]}>{pct}%</Text>
+                    </View>
+                  </View>
+                );
+              })}
             </View>
           </View>
 
           {/* Technique section */}
           {exercise.description ? (
             <View style={styles.section}>
-              <Text style={[styles.sectionTitle, { color: theme.text }]}>Prawidłowa technika</Text>
+              <Text style={[styles.sectionTitle, { color: theme.text }]}>{t('technique')}</Text>
               <Text style={[styles.descText, { color: theme.textSecondary }]}>
                 {exercise.description}
               </Text>
@@ -207,6 +296,67 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '800',
     letterSpacing: 0.5,
+  },
+  favFloatingBtn: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  anatomyList: {
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 12,
+    gap: 8,
+  },
+  anatomyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  anatomyLabelCol: {
+    flex: 1,
+  },
+  anatomyPrimaryName: {
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  anatomySecName: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  anatomyRole: {
+    fontSize: 10,
+    fontWeight: '700',
+    marginTop: 1,
+  },
+  anatomyBarCol: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    width: 118,
+  },
+  anatomyTrack: {
+    flex: 1,
+    height: 6,
+    borderRadius: 999,
+    overflow: 'hidden',
+  },
+  anatomyFill: {
+    height: '100%',
+    borderRadius: 999,
+  },
+  anatomyPct: {
+    width: 34,
+    textAlign: 'right',
+    fontSize: 11,
+    fontWeight: '800',
   },
   body: {
     padding: 20,

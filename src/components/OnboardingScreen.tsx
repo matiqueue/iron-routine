@@ -6,6 +6,7 @@ import {
   Easing,
   KeyboardAvoidingView,
   LayoutAnimation,
+  Modal,
   Platform,
   ScrollView,
   StyleSheet,
@@ -17,19 +18,36 @@ import {
 import Svg, { Circle, Defs, Path, Pattern, Rect } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
 import { useAppTheme } from '../context/ThemeContext';
+import { useLanguage } from '../context/LanguageContext';
+import { PLAN_MODE_LOCALE } from '../i18n/translations';
 import {
+  DayPlan,
+  Exercise,
   PlanTemplateKey,
   SupplementItem,
   UserGender,
   UserProfile,
 } from '../types/workout';
-import { PLAN_TEMPLATE_OPTIONS } from '../data/exerciseLibrary';
+import {
+  buildPlanDaysFromTemplate,
+  cloneExercise,
+  EXERCISE_LIBRARY,
+  getAlternativeExercisesFor,
+  PLAN_TEMPLATE_OPTIONS,
+  resolveCanonicalExerciseId,
+} from '../data/exerciseLibrary';
+import { resolveExerciseMuscles } from '../data/muscleMap';
 import {
   BODY_OUTLINE_FEMALE_FRONT,
   BODY_OUTLINE_FRONT,
 } from '../data/bodySilhouettePaths';
 import { DEFAULT_SUPPLEMENTS } from '../data/supplements';
-import { createProfile, importProfileBackup } from '../services/storage';
+import {
+  createProfile,
+  getFavoriteExerciseIds,
+  importProfileBackup,
+  toggleFavoriteExercise,
+} from '../services/storage';
 import { updateAppSettings } from '../services/settings';
 import { requestHealthPermissions } from '../services/health';
 import {
@@ -45,105 +63,56 @@ import {
 import { triggerNotificationHaptic, triggerSelectionHaptic } from '../services/haptics';
 import { AnimatedIcon } from './AnimatedIcon';
 import { SupplementConfigurator } from './SupplementConfigurator';
+import { LanguageSwitcher } from './LanguageSwitcher';
 
 interface OnboardingScreenProps {
   onCompleted: (profile: UserProfile) => Promise<void> | void;
 }
 
-const TOTAL_STEPS = 5;
+const TOTAL_STEPS = 6;
 const ONBOARDING_REST_PRESETS = [90, 120, 180];
-const WEEK_SHORT_LABELS = ['Pn', 'Wt', 'Śr', 'Cz', 'Pt', 'Sb', 'Nd'];
+const WEEK_DAY_IDS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
 
 const PLAN_VISUAL_META: Record<
   Exclude<PlanTemplateKey, 'clone_current'>,
   {
-    badge: string;
     accent: string;
-    freq: string;
     duration: string;
-    focus: string;
     dayCodes: string[];
   }
 > = {
   fbw3: {
-    badge: 'POLECANY NA START',
     accent: '#10B981',
-    freq: '3 dni / tydz.',
     duration: '~55 min',
-    focus: 'Siła i baza',
     dayCodes: ['T', '·', 'T', '·', 'T', '·', '·'],
   },
   upper_lower: {
-    badge: 'BALANS OBJĘTOŚCI',
     accent: '#38BDF8',
-    freq: '4 dni / tydz.',
     duration: '~60 min',
-    focus: 'Hipertrofia',
     dayCodes: ['G', 'D', '·', 'G', 'D', '·', '·'],
   },
   ppl: {
-    badge: 'WYSOKA OBJĘTOŚĆ',
     accent: '#A855F7',
-    freq: '6 dni / tydz.',
     duration: '~65 min',
-    focus: 'Maks. progres',
     dayCodes: ['P', 'P', 'L', 'P', 'P', 'L', '·'],
   },
+  split4: {
+    accent: '#EC4899',
+    duration: '~60 min',
+    dayCodes: ['K', 'P', '·', 'N', 'B', '·', '·'],
+  },
   blank: {
-    badge: 'PEŁNA SWOBODA',
     accent: '#F59E0B',
-    freq: 'Własny rytm',
-    duration: 'Dowolny',
-    focus: 'Od zera',
+    duration: 'Own',
     dayCodes: ['+', '+', '+', '+', '+', '+', '+'],
   },
 };
 
-const STEP_META = [
-  {
-    kicker: '01 / 05 · TOŻSAMOŚĆ I SYLWETKA',
-    title: 'Stwórz swój profil',
-    subtitle: 'Wybierz model anatomiczny sylwetki oraz wpisz imię i parametry startowe.',
-    icon: 'barbell-outline' as const,
-    preset: 'barbell' as const,
-    accent: '#10B981',
-  },
-  {
-    kicker: '02 / 05 · SUPLEMENTACJA',
-    title: 'Dobierz suplementy',
-    subtitle: 'Wybierz stosowane suplementy. Dawki przeliczymy automatycznie według masy ciała.',
-    icon: 'flame' as const,
-    preset: 'flame' as const,
-    accent: '#F59E0B',
-  },
-  {
-    kicker: '03 / 05 · ZDROWIE I ALERTY',
-    title: 'Regeneracja i budzik przerw',
-    subtitle: 'Połącz systemowe Zdrowie oraz włącz alarm końca przerwy działający przy zablokowanym ekranie.',
-    icon: 'heart' as const,
-    preset: 'heart' as const,
-    accent: '#EF4444',
-  },
-  {
-    kicker: '04 / 05 · PLAN STARTOWY',
-    title: 'Wybierz bazę treningową',
-    subtitle: 'Zacznij od sprawdzonego schematu lub pustego tygodnia gotowego na własną konfigurację.',
-    icon: 'trophy' as const,
-    preset: 'trophy' as const,
-    accent: '#38BDF8',
-  },
-  {
-    kicker: '05 / 05 · KONTO I CHMURA',
-    title: 'Zapisz konto w chmurze',
-    subtitle: 'Wybierz logowanie iCloud lub Gmail (Clerk), aby automatycznie synchronizować dane w chmurze, albo korzystaj lokalnie.',
-    icon: 'cloud-done-outline' as const,
-    preset: 'trophy' as const,
-    accent: '#10B981',
-  },
-];
+const STEP_ACCENTS = ['#10B981', '#F59E0B', '#EF4444', '#38BDF8', '#A855F7', '#10B981'];
 
 export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted }) => {
   const { theme, isDark, toggleTheme } = useAppTheme();
+  const { language, t, muscleLabel, equipmentLabel, dayLabel } = useLanguage();
 
   const [showWelcomeIntro, setShowWelcomeIntro] = useState(true);
   const [step, setStep] = useState(0);
@@ -164,13 +133,83 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
 
   const [templateKey, setTemplateKey] =
     useState<Exclude<PlanTemplateKey, 'clone_current'>>('fbw3');
+  const [customDays, setCustomDays] = useState<DayPlan[]>(() =>
+    buildPlanDaysFromTemplate('fbw3')
+  );
+  const [selectedPreviewDayId, setSelectedPreviewDayId] = useState<string>('mon');
+  const [swapTarget, setSwapTarget] = useState<{
+    dayId: string;
+    exIndex: number | null; // null = add new exercise to day
+    currentExercise: Exercise | null;
+  } | null>(null);
+  const [swapSearch, setSwapSearch] = useState('');
+  const [showAllInSwap, setShowAllInSwap] = useState(false);
+  const [favoriteIds, setFavoriteIds] = useState<string[]>([]);
+
   const [showImport, setShowImport] = useState(false);
   const [importText, setImportText] = useState('');
 
-  // Cloud Sign-in state on Final Step (Step 5)
+  // Cloud Sign-in state on Final Step (Step 6)
   const [busyProvider, setBusyProvider] = useState<'apple' | 'google' | null>(null);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    getFavoriteExerciseIds().then(setFavoriteIds).catch(() => {});
+  }, []);
+
+  const handleSelectTrainingMode = (nextKey: Exclude<PlanTemplateKey, 'clone_current'>) => {
+    triggerSelectionHaptic();
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setTemplateKey(nextKey);
+    const nextDays = buildPlanDaysFromTemplate(nextKey);
+    setCustomDays(nextDays);
+    const firstWorkout = nextDays.find((d) => d.type === 'workout') || nextDays[0];
+    if (firstWorkout) setSelectedPreviewDayId(firstWorkout.id);
+  };
+
+  const handleToggleSwapFavorite = async (ex: Exercise) => {
+    const next = await toggleFavoriteExercise(ex);
+    setFavoriteIds(next);
+  };
+
+  const handleConfirmSwapOrAdd = (picked: Exercise) => {
+    if (!swapTarget) return;
+    triggerSelectionHaptic();
+    const cloned = cloneExercise(picked);
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setCustomDays((prev) =>
+      prev.map((d) => {
+        if (d.id !== swapTarget.dayId) return d;
+        const list = [...(d.exercises || [])];
+        if (swapTarget.exIndex !== null && swapTarget.exIndex >= 0 && swapTarget.exIndex < list.length) {
+          list[swapTarget.exIndex] = cloned;
+        } else {
+          list.push(cloned);
+        }
+        return {
+          ...d,
+          type: 'workout',
+          exercises: list,
+        };
+      })
+    );
+    setSwapTarget(null);
+    setSwapSearch('');
+    setShowAllInSwap(false);
+  };
+
+  const handleRemoveProposedExercise = (dayId: string, exIndex: number) => {
+    triggerSelectionHaptic();
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setCustomDays((prev) =>
+      prev.map((d) => {
+        if (d.id !== dayId) return d;
+        const nextList = (d.exercises || []).filter((_, i) => i !== exIndex);
+        return { ...d, exercises: nextList };
+      })
+    );
+  };
 
   const scrollRef = useRef<any>(null);
   const stepFade = useRef(new Animated.Value(1)).current;
@@ -425,6 +464,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
               weight: parsedWeight,
               height: parsedHeight,
               templateKey,
+              customDays,
               cloudUserId: session.userId,
               cloudProvider: session.provider,
               cloudEmail: session.email,
@@ -499,6 +539,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
         weight: parsedWeight,
         height: parsedHeight,
         templateKey,
+        customDays,
       });
       await onCompleted(profile);
     } catch (e: any) {
@@ -564,9 +605,49 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
     }
   };
 
-  const meta = STEP_META[step];
+  const localizedSteps = [
+    {
+      kicker: t('step1Kicker'),
+      title: t('step1Title'),
+      subtitle: t('step1Subtitle'),
+      accent: STEP_ACCENTS[0],
+    },
+    {
+      kicker: t('step2Kicker'),
+      title: t('step2Title'),
+      subtitle: t('step2Subtitle'),
+      accent: STEP_ACCENTS[1],
+    },
+    {
+      kicker: t('step3Kicker'),
+      title: t('step3Title'),
+      subtitle: t('step3Subtitle'),
+      accent: STEP_ACCENTS[2],
+    },
+    {
+      kicker: t('step4Kicker'),
+      title: t('step4Title'),
+      subtitle: t('step4Subtitle'),
+      accent: STEP_ACCENTS[3],
+    },
+    {
+      kicker: t('step5Kicker'),
+      title: t('step5Title'),
+      subtitle: t('step5Subtitle'),
+      accent: STEP_ACCENTS[4],
+    },
+    {
+      kicker: t('step6Kicker'),
+      title: t('step6Title'),
+      subtitle: t('step6Subtitle'),
+      accent: STEP_ACCENTS[5],
+    },
+  ];
+  const meta = localizedSteps[step] || localizedSteps[0];
   const enabledSuppCount = supplements.filter((s) => s.enabled).length;
   const selectedPlanMeta = PLAN_VISUAL_META[templateKey] || PLAN_VISUAL_META.fbw3;
+  const modeStrings = PLAN_MODE_LOCALE[language] || PLAN_MODE_LOCALE.pl;
+  const selectedModeCopy = modeStrings[templateKey] || modeStrings.fbw3;
   const welcomeSpinDeg = welcomeRingSpin.interpolate({
     inputRange: [0, 1],
     outputRange: ['0deg', '360deg'],
@@ -609,24 +690,28 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
               ]}
             >
               <View style={styles.welcomeLiveDot} />
-              <Text style={styles.welcomePillText}>IRON ROUTINE · KONFIGURACJA</Text>
+              <Text style={styles.welcomePillText}>IRON ROUTINE</Text>
             </View>
 
-            <TouchableOpacity
-              style={[styles.navIconBtn, { backgroundColor: theme.bgSecondary }]}
-              onPress={() => {
-                triggerSelectionHaptic();
-                toggleTheme();
-              }}
-              activeOpacity={0.75}
-              accessibilityLabel="Przełącz motyw"
-            >
-              <Ionicons
-                name={isDark ? 'sunny-outline' : 'moon-outline'}
-                size={18}
-                color={theme.text}
-              />
-            </TouchableOpacity>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <LanguageSwitcher variant="pill" />
+
+              <TouchableOpacity
+                style={[styles.navIconBtn, { backgroundColor: theme.bgSecondary }]}
+                onPress={() => {
+                  triggerSelectionHaptic();
+                  toggleTheme();
+                }}
+                activeOpacity={0.75}
+                accessibilityLabel="Toggle theme"
+              >
+                <Ionicons
+                  name={isDark ? 'sunny-outline' : 'moon-outline'}
+                  size={18}
+                  color={theme.text}
+                />
+              </TouchableOpacity>
+            </View>
           </View>
 
           <View style={styles.welcomeCenter}>
@@ -695,10 +780,10 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
               }}
             >
               <Text style={[styles.welcomeHeadline, { color: theme.text }]}>
-                Witaj na siłowni.{'\n'}Zacznij mądrze.
+                {t('welcomeHeadline')}
               </Text>
               <Text style={[styles.welcomeSub, { color: theme.textSecondary }]}>
-                W minutę dopasujemy model sylwetki, dawkowanie suplementów, budzik przerw oraz plan startowy.
+                {t('welcomeSub')}
               </Text>
             </Animated.View>
 
@@ -716,30 +801,30 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
               <View style={styles.welcomeHighlightCell}>
                 <Ionicons name="body-outline" size={18} color="#10B981" />
                 <Text style={[styles.welcomeHighlightTitle, { color: theme.text }]}>
-                  Anatomia
+                  {t('welcomeFeatAnatomy')}
                 </Text>
                 <Text style={[styles.welcomeHighlightSub, { color: theme.textMuted }]}>
-                  Rangi F do S+
+                  {t('welcomeFeatAnatomySub')}
                 </Text>
               </View>
               <View style={[styles.welcomeCellDivider, { backgroundColor: theme.hairline }]} />
               <View style={styles.welcomeHighlightCell}>
                 <Ionicons name="timer-outline" size={18} color="#38BDF8" />
                 <Text style={[styles.welcomeHighlightTitle, { color: theme.text }]}>
-                  Przerwy
+                  {t('welcomeFeatRest')}
                 </Text>
                 <Text style={[styles.welcomeHighlightSub, { color: theme.textMuted }]}>
-                  Live Activity
+                  {t('welcomeFeatRestSub')}
                 </Text>
               </View>
               <View style={[styles.welcomeCellDivider, { backgroundColor: theme.hairline }]} />
               <View style={styles.welcomeHighlightCell}>
                 <Ionicons name="cloud-done-outline" size={18} color="#A855F7" />
                 <Text style={[styles.welcomeHighlightTitle, { color: theme.text }]}>
-                  Chmura
+                  {t('welcomeFeatCloud')}
                 </Text>
                 <Text style={[styles.welcomeHighlightSub, { color: theme.textMuted }]}>
-                  iCloud i Gmail
+                  {t('welcomeFeatCloudSub')}
                 </Text>
               </View>
             </Animated.View>
@@ -752,7 +837,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
               activeOpacity={0.86}
             >
               <Text style={[styles.primaryBtnText, { color: theme.primaryText }]}>
-                Rozpocznij konfigurację
+                {t('welcomeStart')}
               </Text>
               <Ionicons name="arrow-forward" size={18} color={theme.primaryText} />
             </TouchableOpacity>
@@ -798,27 +883,31 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
             </View>
           </View>
 
-          <TouchableOpacity
-            style={[styles.navIconBtn, { backgroundColor: theme.bgSecondary }]}
-            onPress={() => {
-              triggerSelectionHaptic();
-              toggleTheme();
-            }}
-            activeOpacity={0.75}
-            accessibilityLabel="Przełącz motyw"
-          >
-            <Ionicons
-              name={isDark ? 'sunny-outline' : 'moon-outline'}
-              size={18}
-              color={theme.text}
-            />
-          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <LanguageSwitcher variant="pill" />
+
+            <TouchableOpacity
+              style={[styles.navIconBtn, { backgroundColor: theme.bgSecondary }]}
+              onPress={() => {
+                triggerSelectionHaptic();
+                toggleTheme();
+              }}
+              activeOpacity={0.75}
+              accessibilityLabel="Toggle theme"
+            >
+              <Ionicons
+                name={isDark ? 'sunny-outline' : 'moon-outline'}
+                size={18}
+                color={theme.text}
+              />
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Segmented Open Step Progress Track */}
         <View style={styles.progressRow}>
           <View style={styles.segmentsTrack}>
-            {STEP_META.map((sMeta, idx) => {
+            {localizedSteps.map((sMeta, idx) => {
               const isDoneOrCurrent = idx <= step;
               const isCurrent = idx === step;
               return (
@@ -1286,11 +1375,11 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
           )}
 
           {/* =========================================================
-              STEP 4: STARTER PLAN SELECTION (VISUAL WEEK SPLIT MATRIX)
+              STEP 4: TRAINING MODES SELECTION (FBW / UL / PPL / SPLIT4 / BLANK)
              ========================================================= */}
           {step === 3 && (
             <View style={styles.openStepFlow}>
-              {/* Live 3-Column Summary Telemetry for Currently Chosen Plan */}
+              {/* Live 3-Column Summary Telemetry for Currently Chosen Mode */}
               <View
                 style={[
                   styles.planTelemetryBar,
@@ -1302,16 +1391,16 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
               >
                 <View style={styles.planTelemetryCell}>
                   <Text style={[styles.planTelemetryLabel, { color: theme.textMuted }]}>
-                    RYTM TYGODNIA
+                    {t('onboardingModeWeekRhythm')}
                   </Text>
                   <Text style={[styles.planTelemetryVal, { color: selectedPlanMeta.accent }]}>
-                    {selectedPlanMeta.freq}
+                    {selectedModeCopy.freq}
                   </Text>
                 </View>
                 <View style={[styles.planTelemetryDivider, { backgroundColor: theme.hairline }]} />
                 <View style={styles.planTelemetryCell}>
                   <Text style={[styles.planTelemetryLabel, { color: theme.textMuted }]}>
-                    CZAS SESJI
+                    {t('onboardingModeDuration')}
                   </Text>
                   <Text style={[styles.planTelemetryVal, { color: theme.text }]}>
                     {selectedPlanMeta.duration}
@@ -1320,10 +1409,10 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
                 <View style={[styles.planTelemetryDivider, { backgroundColor: theme.hairline }]} />
                 <View style={styles.planTelemetryCell}>
                   <Text style={[styles.planTelemetryLabel, { color: theme.textMuted }]}>
-                    PRIORYTET
+                    {t('onboardingModeFocus')}
                   </Text>
                   <Text style={[styles.planTelemetryVal, { color: theme.text }]}>
-                    {selectedPlanMeta.focus}
+                    {selectedModeCopy.focus}
                   </Text>
                 </View>
               </View>
@@ -1332,6 +1421,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
                 {PLAN_TEMPLATE_OPTIONS.map((tpl) => {
                   const key = tpl.id as Exclude<PlanTemplateKey, 'clone_current'>;
                   const pMeta = PLAN_VISUAL_META[key] || PLAN_VISUAL_META.fbw3;
+                  const pCopy = modeStrings[key] || modeStrings.fbw3;
                   const selected = templateKey === tpl.id;
                   return (
                     <TouchableOpacity
@@ -1348,11 +1438,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
                             : 'transparent',
                         },
                       ]}
-                      onPress={() => {
-                        triggerSelectionHaptic();
-                        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-                        setTemplateKey(key);
-                      }}
+                      onPress={() => handleSelectTrainingMode(key)}
                       activeOpacity={0.82}
                     >
                       <View style={styles.planOptionTopRow}>
@@ -1375,12 +1461,12 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
                                 { color: selected ? '#09090B' : theme.textSecondary },
                               ]}
                             >
-                              {pMeta.badge}
+                              {pCopy.badge}
                             </Text>
                           </View>
 
                           <Text style={[styles.planFreqInline, { color: pMeta.accent }]}>
-                            {pMeta.freq}
+                            {pCopy.freq}
                           </Text>
                         </View>
 
@@ -1398,21 +1484,21 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
                       </View>
 
                       <Text style={[styles.templateTitle, { color: theme.text }]}>
-                        {tpl.label}
+                        {pCopy.label}
                       </Text>
                       <Text style={[styles.templateDesc, { color: theme.textSecondary }]}>
-                        {tpl.summary}
+                        {pCopy.summary}
                       </Text>
 
                       {/* Visual 7-Day Week Split Mini-Timeline */}
                       <View style={styles.weekMatrixRow}>
-                        {WEEK_SHORT_LABELS.map((dayLbl, dayIdx) => {
+                        {WEEK_DAY_IDS.map((dayId, dayIdx) => {
                           const code = pMeta.dayCodes[dayIdx] || '·';
                           const isWorkout = code !== '·';
                           return (
-                            <View key={dayLbl} style={styles.weekMatrixCol}>
+                            <View key={dayId} style={styles.weekMatrixCol}>
                               <Text style={[styles.weekDayLbl, { color: theme.textMuted }]}>
-                                {dayLbl}
+                                {dayLabel(dayId, true)}
                               </Text>
                               <View
                                 style={[
@@ -1458,18 +1544,218 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
               </View>
             </View>
           )}
+
           {/* =========================================================
-              STEP 5: ACCOUNT & CLOUD LOGIN (FINAL CONFIGURATOR PAGE)
+              STEP 5: PROPOSED EXERCISES PER DAY WITH "ZMIEŃ" ALTERNATIVE PICKER
              ========================================================= */}
           {step === 4 && (
             <View style={styles.openStepFlow}>
               <View style={[styles.openSection, { borderTopColor: theme.hairline }]}>
+                <Text style={[styles.sectionEyebrow, { color: '#A855F7' }]}>
+                  {t('onboardingDaySelectLabel')} · {selectedModeCopy.label.toUpperCase()}
+                </Text>
+
+                {templateKey === 'blank' ? (
+                  <View
+                    style={[
+                      styles.blankModeBanner,
+                      { backgroundColor: theme.bgSecondary, borderColor: theme.border },
+                    ]}
+                  >
+                    <Ionicons name="sparkles-outline" size={20} color="#F59E0B" />
+                    <Text style={[styles.blankModeBannerText, { color: theme.textSecondary }]}>
+                      {t('onboardingBlankInfo')}
+                    </Text>
+                  </View>
+                ) : null}
+
+                {/* Horizontal Day Switcher across days of the chosen mode */}
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.proposedDayScroll}
+                >
+                  {customDays
+                    .filter((d) => (templateKey === 'blank' ? true : d.type === 'workout'))
+                    .map((d) => {
+                      const active = d.id === selectedPreviewDayId;
+                      return (
+                        <TouchableOpacity
+                          key={d.id}
+                          style={[
+                            styles.proposedDayPill,
+                            {
+                              backgroundColor: active ? theme.text : theme.bgSecondary,
+                              borderColor: active ? theme.text : theme.border,
+                            },
+                          ]}
+                          onPress={() => {
+                            triggerSelectionHaptic();
+                            LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                            setSelectedPreviewDayId(d.id);
+                          }}
+                          activeOpacity={0.78}
+                        >
+                          <Text
+                            style={[
+                              styles.proposedDayShort,
+                              { color: active ? theme.bg : theme.text },
+                            ]}
+                          >
+                            {dayLabel(d.id, true)}
+                          </Text>
+                          <Text
+                            style={[
+                              styles.proposedDayName,
+                              { color: active ? theme.bg : theme.textSecondary },
+                            ]}
+                            numberOfLines={1}
+                          >
+                            {d.name.split('·')[0].trim()}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                </ScrollView>
+
+                {(() => {
+                  const activeDay =
+                    customDays.find((d) => d.id === selectedPreviewDayId) ||
+                    customDays.find((d) => d.type === 'workout') ||
+                    customDays[0];
+                  if (!activeDay) return null;
+                  const dayExercises = activeDay.exercises || [];
+
+                  return (
+                    <View style={styles.proposedListWrap}>
+                      <View style={styles.proposedDayHeader}>
+                        <Text style={[styles.proposedDayHeading, { color: theme.text }]}>
+                          {activeDay.name}
+                        </Text>
+                        <Text style={[styles.proposedDaySub, { color: theme.textMuted }]}>
+                          {dayExercises.length} · {activeDay.subtitle}
+                        </Text>
+                      </View>
+
+                      {dayExercises.map((exItem, exIdx) => {
+                        const anatomy = resolveExerciseMuscles(exItem);
+                        const primaryLbl = muscleLabel(anatomy.primary, true);
+                        const secondaryLbls = anatomy.secondary
+                          .filter((s) => s.weight >= 0.25)
+                          .slice(0, 3)
+                          .map((s) => muscleLabel(s.muscle, true));
+
+                        return (
+                          <View
+                            key={`${exItem.id}_${exIdx}`}
+                            style={[
+                              styles.proposedExRow,
+                              { borderBottomColor: theme.hairline },
+                            ]}
+                          >
+                            <View style={styles.proposedIndexBadge}>
+                              <Text style={[styles.proposedIndexText, { color: theme.textMuted }]}>
+                                {String(exIdx + 1).padStart(2, '0')}
+                              </Text>
+                            </View>
+
+                            <View style={{ flex: 1, minWidth: 0 }}>
+                              <Text
+                                style={[styles.proposedExName, { color: theme.text }]}
+                                numberOfLines={2}
+                              >
+                                {exItem.name}
+                              </Text>
+                              <Text
+                                style={[styles.proposedExMeta, { color: theme.textSecondary }]}
+                                numberOfLines={2}
+                              >
+                                {primaryLbl}
+                                {secondaryLbls.length > 0 ? ` + ${secondaryLbls.join(', ')}` : ''}
+                              </Text>
+                              <Text style={[styles.proposedExStats, { color: theme.textMuted }]}>
+                                {exItem.sets} × {exItem.reps}
+                                {exItem.equipment ? ` · ${equipmentLabel(exItem.equipment)}` : ''}
+                              </Text>
+                            </View>
+
+                            <View style={styles.proposedActionsCol}>
+                              <TouchableOpacity
+                                style={[
+                                  styles.swapExBtn,
+                                  { backgroundColor: theme.bgSecondary, borderColor: theme.border },
+                                ]}
+                                onPress={() => {
+                                  triggerSelectionHaptic();
+                                  setSwapSearch('');
+                                  setShowAllInSwap(false);
+                                  setSwapTarget({
+                                    dayId: activeDay.id,
+                                    exIndex: exIdx,
+                                    currentExercise: exItem,
+                                  });
+                                }}
+                                activeOpacity={0.78}
+                              >
+                                <Ionicons name="swap-horizontal" size={14} color={theme.text} />
+                                <Text style={[styles.swapExBtnText, { color: theme.text }]}>
+                                  {t('change')}
+                                </Text>
+                              </TouchableOpacity>
+
+                              <TouchableOpacity
+                                style={styles.removeExIconBtn}
+                                onPress={() => handleRemoveProposedExercise(activeDay.id, exIdx)}
+                                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                              >
+                                <Ionicons name="close-circle-outline" size={18} color={theme.textMuted} />
+                              </TouchableOpacity>
+                            </View>
+                          </View>
+                        );
+                      })}
+
+                      <TouchableOpacity
+                        style={[
+                          styles.addProposedExBtn,
+                          { backgroundColor: theme.bgSecondary, borderColor: theme.border },
+                        ]}
+                        onPress={() => {
+                          triggerSelectionHaptic();
+                          setSwapSearch('');
+                          setShowAllInSwap(false);
+                          setSwapTarget({
+                            dayId: activeDay.id,
+                            exIndex: null,
+                            currentExercise: dayExercises[0] || null,
+                          });
+                        }}
+                        activeOpacity={0.78}
+                      >
+                        <Ionicons name="add-circle-outline" size={17} color={theme.text} />
+                        <Text style={[styles.addProposedExText, { color: theme.text }]}>
+                          {t('onboardingAddExercise')}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  );
+                })()}
+              </View>
+            </View>
+          )}
+
+          {/* =========================================================
+              STEP 6: ACCOUNT & CLOUD LOGIN (FINAL CONFIGURATOR PAGE)
+             ========================================================= */}
+          {step === 5 && (
+            <View style={styles.openStepFlow}>
+              <View style={[styles.openSection, { borderTopColor: theme.hairline }]}>
                 <Text style={[styles.sectionEyebrow, { color: '#10B981' }]}>
-                  BEZPIECZNY ZAPIS W CHMURZE (CLERK + NOSQL)
+                  CLERK · NOSQL
                 </Text>
 
                 <Text style={[styles.cloudFinalLead, { color: theme.textSecondary }]}>
-                  Połącz swoje konto Apple iCloud lub Gmail przez Clerk, aby automatycznie zapisywać plany, serię treningów oraz rekordy 1RM i łatwo przenieść profil na kolejny telefon.
+                  {t('step6Subtitle')}
                 </Text>
 
                 <View style={styles.cloudChoiceList}>
@@ -1491,7 +1777,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
                       <>
                         <Ionicons name="logo-apple" size={20} color={theme.bg} />
                         <Text style={[styles.cloudChoiceText, { color: theme.bg }]}>
-                          Kontynuuj z iCloud
+                          {t('onboardingContinueCloud')}
                         </Text>
                       </>
                     )}
@@ -1517,7 +1803,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
                       <>
                         <Ionicons name="logo-google" size={18} color={theme.text} />
                         <Text style={[styles.cloudChoiceText, { color: theme.text }]}>
-                          Kontynuuj z Gmail / Google
+                          {t('onboardingContinueGoogle')}
                         </Text>
                       </>
                     )}
@@ -1525,7 +1811,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
 
                   <View style={[styles.orDividerRow]}>
                     <View style={[styles.orDividerLine, { backgroundColor: theme.hairline }]} />
-                    <Text style={[styles.orDividerText, { color: theme.textMuted }]}>LUB</Text>
+                    <Text style={[styles.orDividerText, { color: theme.textMuted }]}>/</Text>
                     <View style={[styles.orDividerLine, { backgroundColor: theme.hairline }]} />
                   </View>
 
@@ -1547,7 +1833,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
                       <>
                         <Ionicons name="phone-portrait-outline" size={17} color={theme.textSecondary} />
                         <Text style={[styles.localOnlyBtnText, { color: theme.textSecondary }]}>
-                          Używaj lokalnie bez konta
+                          {t('onboardingUseLocal')}
                         </Text>
                       </>
                     )}
@@ -1555,7 +1841,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
                 </View>
 
                 <Text style={[styles.cloudDisclaimerText, { color: theme.textMuted }]}>
-                  Dane w chmurze służą wyłącznie do wygodnego przechowywania kopii zapasowej Twojego konta. Możesz połączyć konto także później w Ustawieniach.
+                  {t('onboardingPrivacyNote')}
                 </Text>
               </View>
             </View>
@@ -1573,13 +1859,186 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
               activeOpacity={0.85}
             >
               <Text style={[styles.primaryBtnText, { color: theme.primaryText }]}>
-                Kontynuuj ({step + 1}/{TOTAL_STEPS})
+                {step === 3
+                  ? t('onboardingGoToExercises')
+                  : step === 4
+                  ? t('onboardingGoToCloud')
+                  : `${t('next')} (${step + 1}/${TOTAL_STEPS})`}
               </Text>
               <Ionicons name="arrow-forward" size={18} color={theme.primaryText} />
             </TouchableOpacity>
           </View>
         </View>
       )}
+
+      {/* Alternative Exercise Picker Modal for Step 5 ("Zmień") */}
+      <Modal
+        visible={swapTarget !== null}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setSwapTarget(null)}
+      >
+        <View style={[styles.swapModalContainer, { backgroundColor: theme.bg }]}>
+          <View style={[styles.swapModalHeader, { borderBottomColor: theme.hairline }]}>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={[styles.swapModalTitle, { color: theme.text }]}>
+                {swapTarget?.exIndex !== null
+                  ? t('onboardingSwapTitle')
+                  : t('onboardingAddExercise')}
+              </Text>
+              <Text style={[styles.swapModalSub, { color: theme.textMuted }]} numberOfLines={2}>
+                {swapTarget?.currentExercise
+                  ? `${swapTarget.currentExercise.name} · ${t('onboardingSwapSubtitle')}`
+                  : t('onboardingSwapSubtitle')}
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={[styles.navIconBtn, { backgroundColor: theme.bgSecondary }]}
+              onPress={() => setSwapTarget(null)}
+            >
+              <Ionicons name="close" size={18} color={theme.text} />
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.swapSearchRow}>
+            <View
+              style={[
+                styles.swapSearchBox,
+                { backgroundColor: theme.bgSecondary, borderColor: theme.border },
+              ]}
+            >
+              <Ionicons name="search" size={16} color={theme.textMuted} />
+              <TextInput
+                style={[styles.swapSearchInput, { color: theme.text }]}
+                placeholder={t('searchPlaceholder')}
+                placeholderTextColor={theme.textMuted}
+                value={swapSearch}
+                onChangeText={setSwapSearch}
+              />
+            </View>
+
+            <TouchableOpacity
+              style={[
+                styles.showAllTogglePill,
+                {
+                  backgroundColor: showAllInSwap ? theme.text : theme.bgSecondary,
+                  borderColor: showAllInSwap ? theme.text : theme.border,
+                },
+              ]}
+              onPress={() => {
+                triggerSelectionHaptic();
+                setShowAllInSwap((v) => !v);
+              }}
+              activeOpacity={0.78}
+            >
+              <Text
+                style={[
+                  styles.showAllToggleText,
+                  { color: showAllInSwap ? theme.bg : theme.text },
+                ]}
+              >
+                {t('all')}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView
+            contentContainerStyle={styles.swapListContent}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          >
+            {(() => {
+              if (!swapTarget) return null;
+              const targetDay = customDays.find((d) => d.id === swapTarget.dayId);
+              const existingDayIds = (targetDay?.exercises || []).map((e) => e.id);
+              const candidates =
+                swapTarget.currentExercise && !showAllInSwap
+                  ? getAlternativeExercisesFor(swapTarget.currentExercise, existingDayIds)
+                  : EXERCISE_LIBRARY.filter((e) => !existingDayIds.includes(e.id));
+
+              const q = swapSearch.trim().toLowerCase();
+              const favSet = new Set(favoriteIds);
+              const filtered = candidates
+                .filter((cand) => {
+                  if (!q) return true;
+                  const anatomy = resolveExerciseMuscles(cand);
+                  return (
+                    cand.name.toLowerCase().includes(q) ||
+                    muscleLabel(anatomy.primary).toLowerCase().includes(q) ||
+                    (cand.equipment || '').toLowerCase().includes(q)
+                  );
+                })
+                .sort((a, b) => {
+                  const aFav =
+                    favSet.has(a.id) || favSet.has(resolveCanonicalExerciseId(a.id, a.name)) ? 1 : 0;
+                  const bFav =
+                    favSet.has(b.id) || favSet.has(resolveCanonicalExerciseId(b.id, b.name)) ? 1 : 0;
+                  return bFav - aFav;
+                });
+
+              if (filtered.length === 0) {
+                return (
+                  <Text style={[styles.inlineEmptySwap, { color: theme.textMuted }]}>
+                    {t('noResults')}
+                  </Text>
+                );
+              }
+
+              return filtered.map((cand) => {
+                const anatomy = resolveExerciseMuscles(cand);
+                const cid = resolveCanonicalExerciseId(cand.id, cand.name);
+                const isFav = favSet.has(cand.id) || favSet.has(cid);
+                const secLbls = anatomy.secondary
+                  .filter((s) => s.weight >= 0.25)
+                  .slice(0, 3)
+                  .map((s) => muscleLabel(s.muscle, true));
+
+                return (
+                  <TouchableOpacity
+                    key={cand.id}
+                    style={[
+                      styles.swapOptionRow,
+                      { borderBottomColor: theme.hairline },
+                    ]}
+                    onPress={() => handleConfirmSwapOrAdd(cand)}
+                    activeOpacity={0.78}
+                  >
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={[styles.swapOptionTitle, { color: theme.text }]}>
+                        {cand.name}
+                      </Text>
+                      <Text style={[styles.swapOptionMuscles, { color: theme.textSecondary }]}>
+                        {muscleLabel(anatomy.primary, true)}
+                        {secLbls.length > 0 ? ` + ${secLbls.join(', ')}` : ''}
+                      </Text>
+                      <Text style={[styles.swapOptionMeta, { color: theme.textMuted }]}>
+                        {cand.sets} × {cand.reps}
+                        {cand.equipment ? ` · ${equipmentLabel(cand.equipment)}` : ''}
+                      </Text>
+                    </View>
+
+                    <TouchableOpacity
+                      onPress={() => handleToggleSwapFavorite(cand)}
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                      style={{ padding: 6 }}
+                    >
+                      <Ionicons
+                        name={isFav ? 'heart' : 'heart-outline'}
+                        size={18}
+                        color={isFav ? '#EF4444' : theme.textMuted}
+                      />
+                    </TouchableOpacity>
+
+                    <View style={[styles.swapSelectPill, { backgroundColor: theme.primary }]}>
+                      <Ionicons name="checkmark" size={14} color={theme.primaryText} />
+                    </View>
+                  </TouchableOpacity>
+                );
+              });
+            })()}
+          </ScrollView>
+        </View>
+      </Modal>
     </KeyboardAvoidingView>
   );
 };
@@ -2179,5 +2638,208 @@ const styles = StyleSheet.create({
   skipBtnText: {
     fontSize: 13,
     fontWeight: '600',
+  },
+  blankModeBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    padding: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+    marginBottom: 14,
+  },
+  blankModeBannerText: {
+    flex: 1,
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  proposedDayScroll: {
+    gap: 8,
+    paddingVertical: 6,
+  },
+  proposedDayPill: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+    minWidth: 104,
+  },
+  proposedDayShort: {
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 0.6,
+  },
+  proposedDayName: {
+    fontSize: 12,
+    fontWeight: '700',
+    marginTop: 2,
+    maxWidth: 140,
+  },
+  proposedListWrap: {
+    marginTop: 12,
+  },
+  proposedDayHeader: {
+    marginBottom: 8,
+  },
+  proposedDayHeading: {
+    fontSize: 17,
+    fontWeight: '900',
+  },
+  proposedDaySub: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  proposedExRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 13,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  proposedIndexBadge: {
+    width: 24,
+    alignItems: 'center',
+  },
+  proposedIndexText: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  proposedExName: {
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  proposedExMeta: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  proposedExStats: {
+    fontSize: 11,
+    marginTop: 3,
+  },
+  proposedActionsCol: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  swapExBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  swapExBtnText: {
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  removeExIconBtn: {
+    padding: 4,
+  },
+  addProposedExBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 14,
+    paddingVertical: 13,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  addProposedExText: {
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  swapModalContainer: {
+    flex: 1,
+    paddingTop: 14,
+  },
+  swapModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    paddingHorizontal: 18,
+    paddingBottom: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  swapModalTitle: {
+    fontSize: 18,
+    fontWeight: '900',
+  },
+  swapModalSub: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  swapSearchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+  },
+  swapSearchBox: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    height: 40,
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+  },
+  swapSearchInput: {
+    flex: 1,
+    fontSize: 14,
+  },
+  showAllTogglePill: {
+    height: 40,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  showAllToggleText: {
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  swapListContent: {
+    paddingHorizontal: 18,
+    paddingBottom: 40,
+  },
+  swapOptionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  swapOptionTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  swapOptionMuscles: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 3,
+  },
+  swapOptionMeta: {
+    fontSize: 11,
+    marginTop: 3,
+  },
+  swapSelectPill: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  inlineEmptySwap: {
+    textAlign: 'center',
+    marginTop: 40,
+    fontSize: 14,
   },
 });

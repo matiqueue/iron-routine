@@ -6,6 +6,11 @@ import {
   MuscleCategory,
   PlanTemplateKey,
 } from '../types/workout';
+import {
+  EXERCISE_MUSCLE_MAP,
+  getInvolvedMuscleCategories,
+  MUSCLE_SUBGROUP_MAP,
+} from './exerciseAnatomyMap';
 
 export const DEFAULT_DAYS_OF_WEEK: DayMetaInfo[] = [
   { id: 'mon', label: 'Poniedziałek', short: 'Pn' },
@@ -71,6 +76,12 @@ export const PLAN_TEMPLATE_OPTIONS: {
     summary: 'Wysoka objętość w systemie wypychanie / przyciąganie / nogi.',
   },
   {
+    id: 'split4',
+    label: 'Split 4-dniowy (Inne)',
+    subtitle: 'Klasyczny podział partiami (4 dni)',
+    summary: 'Klatka + Triceps, Plecy + Biceps, Nogi oraz Barki + Brzuch.',
+  },
+  {
     id: 'blank',
     label: 'Pusty plan',
     subtitle: 'Własna konfiguracja od zera',
@@ -90,10 +101,13 @@ function ex(
   note?: string,
   ab?: boolean
 ): Exercise {
+  const mapped = EXERCISE_MUSCLE_MAP[id];
   return {
     id,
     name,
     category,
+    primaryMuscle: mapped?.primary,
+    secondaryMuscles: mapped?.secondary ? mapped.secondary.map((s) => ({ ...s })) : undefined,
     equipment,
     sets,
     reps,
@@ -1730,12 +1744,74 @@ export function resolveCanonicalExerciseId(exerciseId: string, exerciseName?: st
 export function normalizeExercise(exercise: Exercise): Exercise {
   const canonicalId = resolveCanonicalExerciseId(exercise.id, exercise.name);
   const libMatch = EXERCISE_LIBRARY.find((item) => item.id === canonicalId);
+  const mapped = EXERCISE_MUSCLE_MAP[canonicalId];
   return {
     ...exercise,
     id: canonicalId,
+    primaryMuscle: exercise.primaryMuscle || libMatch?.primaryMuscle || mapped?.primary,
+    secondaryMuscles:
+      exercise.secondaryMuscles && exercise.secondaryMuscles.length > 0
+        ? exercise.secondaryMuscles
+        : libMatch?.secondaryMuscles || mapped?.secondary,
     equipment: exercise.equipment || libMatch?.equipment || 'Inne',
     description: exercise.description || libMatch?.description || '',
   };
+}
+
+export function getExerciseCategoriesWorked(exercise: Exercise): MuscleCategory[] {
+  const mapped = EXERCISE_MUSCLE_MAP[resolveCanonicalExerciseId(exercise.id, exercise.name)];
+  const primary = exercise.primaryMuscle || mapped?.primary;
+  const secondary =
+    exercise.secondaryMuscles && exercise.secondaryMuscles.length > 0
+      ? exercise.secondaryMuscles
+      : mapped?.secondary || [];
+  if (!primary) {
+    return [exercise.category];
+  }
+  const cats = getInvolvedMuscleCategories({ primary, secondary });
+  return cats.includes(exercise.category) ? cats : [exercise.category, ...cats];
+}
+
+export function getAlternativeExercisesFor(
+  target: Exercise,
+  excludeIds: string[] = [],
+  extraPool: Exercise[] = []
+): Exercise[] {
+  const excluded = new Set(excludeIds.map((id) => resolveCanonicalExerciseId(id)));
+  excluded.add(resolveCanonicalExerciseId(target.id, target.name));
+
+  const targetPrimary =
+    target.primaryMuscle ||
+    EXERCISE_MUSCLE_MAP[resolveCanonicalExerciseId(target.id, target.name)]?.primary;
+  const targetParentCat = targetPrimary
+    ? MUSCLE_SUBGROUP_MAP[targetPrimary]?.parentCategory || target.category
+    : target.category;
+
+  const pool = [...extraPool, ...EXERCISE_LIBRARY];
+  const samePrimary: Exercise[] = [];
+  const sameCategory: Exercise[] = [];
+  const secondaryOverlap: Exercise[] = [];
+
+  for (const cand of pool) {
+    const cid = resolveCanonicalExerciseId(cand.id, cand.name);
+    if (excluded.has(cid)) continue;
+    excluded.add(cid);
+
+    const candPrimary = cand.primaryMuscle || EXERCISE_MUSCLE_MAP[cid]?.primary;
+    const candSec = cand.secondaryMuscles || EXERCISE_MUSCLE_MAP[cid]?.secondary || [];
+    if (targetPrimary && candPrimary === targetPrimary) {
+      samePrimary.push(cand);
+    } else if (
+      cand.category === target.category ||
+      (candPrimary && MUSCLE_SUBGROUP_MAP[candPrimary]?.parentCategory === targetParentCat)
+    ) {
+      sameCategory.push(cand);
+    } else if (targetPrimary && candSec.some((s) => s.muscle === targetPrimary && s.weight >= 0.3)) {
+      secondaryOverlap.push(cand);
+    }
+  }
+
+  return [...samePrimary, ...sameCategory, ...secondaryOverlap];
 }
 
 export function normalizeDayPlan(day: DayPlan): DayPlan {
@@ -2009,6 +2085,87 @@ export function buildPlanDaysFromTemplate(
       pullDay('fri', 'Pull B · Przyciąganie'),
       legsDay('sat', 'Legs B · Nogi'),
       makeRestDay('sun', 'Regeneracja', 'Odpoczynek po 6 dniach treningu', 'rest'),
+    ];
+  }
+
+  if (templateKey === 'split4') {
+    const chestTriceps: DayPlan = {
+      id: 'mon',
+      name: 'Klatka & Triceps',
+      subtitle: 'Wyciskania • Rozpiętki • Prostowania tricepsa',
+      iconName: 'flash-outline',
+      bannerTag: 'chest',
+      time: '60-70 min',
+      type: 'workout',
+      warmup: 'Krążenia ramion i 2 serie wstępne wyciskania na ławce.',
+      exercises: pickLibraryExercises([
+        'lib_barbell_bench',
+        'lib_db_incline_press',
+        'lib_cable_crossover',
+        'lib_dips_triceps',
+        'lib_tricep_rope_pushdown',
+      ]),
+    };
+    const backBiceps: DayPlan = {
+      id: 'tue',
+      name: 'Plecy & Biceps',
+      subtitle: 'Podciąganie • Wiosłowanie • Uginania ramion',
+      iconName: 'barbell-outline',
+      bannerTag: 'back',
+      time: '65-75 min',
+      type: 'workout',
+      warmup: 'Aktywny zwis na drążku i ściągania łopatek.',
+      exercises: pickLibraryExercises([
+        'lib_pullups_overhand',
+        'lib_barbell_row',
+        'lib_seated_cable_row',
+        'lib_ezbar_curl',
+        'lib_hammer_curl',
+      ]),
+    };
+    const legsDay: DayPlan = {
+      id: 'thu',
+      name: 'Nogi & Pośladki',
+      subtitle: 'Przysiady • RDL • Maszyny • Łydki',
+      iconName: 'walk-outline',
+      bannerTag: 'legs',
+      time: '65-80 min',
+      type: 'workout',
+      warmup: 'Mobilizacja bioder i 2 serie lekkiego przysiadu.',
+      exercises: pickLibraryExercises([
+        'lib_back_squat',
+        'lib_rdl',
+        'lib_leg_press',
+        'lib_lying_leg_curl',
+        'lib_calf_raise',
+      ]),
+    };
+    const shouldersAbs: DayPlan = {
+      id: 'fri',
+      name: 'Barki & Brzuch',
+      subtitle: 'OHP • Wznosy bokiem • Tył barku • Core',
+      iconName: 'flame-outline',
+      bannerTag: 'shoulders',
+      time: '55-65 min',
+      type: 'workout',
+      warmup: 'Rotatory zewnętrzne barków z linką lub lekkim hantlem.',
+      exercises: pickLibraryExercises([
+        'lib_ohp_barbell',
+        'lib_db_lateral_raise',
+        'lib_reverse_pec_deck',
+        'lib_cable_crunch',
+        'lib_hanging_leg_raise',
+      ]),
+    };
+
+    return [
+      chestTriceps,
+      backBiceps,
+      makeRestDay('wed', 'Dzień regeneracji', 'Odpoczynek, sen i nawodnienie', 'rest'),
+      legsDay,
+      shouldersAbs,
+      makeRestDay('sat', 'Aktywny spacer', 'Cardio w strefie tlenowej', 'walk'),
+      makeRestDay('sun', 'Odpoczynek', 'Pełna regeneracja przed kolejnym tygodniem', 'rest'),
     ];
   }
 

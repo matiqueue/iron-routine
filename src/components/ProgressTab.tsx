@@ -19,6 +19,7 @@ import Svg, { Circle, Defs, LinearGradient, Line, Path, Stop } from 'react-nativ
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useAppTheme } from '../context/ThemeContext';
+import { useLanguage } from '../context/LanguageContext';
 import {
   DayPlan,
   Exercise,
@@ -50,6 +51,7 @@ import {
   getAllBestPRs,
   getCustomExercises,
   getExerciseHistory,
+  getFavoriteExerciseIds,
   getWeightHistory,
   getWorkoutHistory,
   updateProfileStats,
@@ -198,7 +200,9 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
 
   // Exercise progression sheet
+  const { t, muscleLabel } = useLanguage();
   const [customExercises, setCustomExercises] = useState<Exercise[]>([]);
+  const [favoriteIds, setFavoriteIds] = useState<string[]>([]);
   const [bestPRs, setBestPRs] = useState<{ [id: string]: PRRecord }>({});
   const [selectedExercise, setSelectedExercise] = useState<Exercise | null>(null);
   const [prHistory, setPrHistory] = useState<PRRecord[]>([]);
@@ -240,17 +244,19 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
   );
 
   const loadAllAnalytics = useCallback(async () => {
-    const [prs, weights, hist, custom] = await Promise.all([
+    const [prs, weights, hist, custom, favs] = await Promise.all([
       getAllBestPRs(effectiveProfileId),
       getWeightHistory(effectiveProfileId),
       getWorkoutHistory(effectiveProfileId),
       getCustomExercises(),
+      getFavoriteExerciseIds(),
     ]);
 
     setBestPRs(prs);
     setWeightHistory(weights);
     setWorkoutHistory(hist);
     setCustomExercises(custom);
+    setFavoriteIds(favs);
 
     const catalog = mergeAllExercises(custom, [
       ...EXERCISE_LIBRARY,
@@ -564,8 +570,12 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
       }
     }
 
+    const favSet = new Set(favoriteIds);
     for (const m of MUSCLE_SUBGROUPS) {
       map[m.id].sort((a, b) => {
+        const aFav = favSet.has(a.exerciseId) || favSet.has(a.exercise.id) ? 1 : 0;
+        const bFav = favSet.has(b.exerciseId) || favSet.has(b.exercise.id) ? 1 : 0;
+        if (bFav !== aFav) return bFav - aFav;
         const aPR = bestPRs[a.exerciseId];
         const bPR = bestPRs[b.exerciseId];
         const aHasProgress = a.totalSets > 0 || Boolean(aPR) ? 1 : 0;
@@ -579,7 +589,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
       });
     }
     return map;
-  }, [allExercises, physiqueReport, bestPRs]);
+  }, [allExercises, physiqueReport, bestPRs, favoriteIds]);
 
   const filteredMuscleGroups = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -859,7 +869,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
       {/* Open Editorial Header with Silky 120fps Icon-Only Glass Pill Slider */}
       <View style={[styles.header, { borderBottomColor: theme.hairline }]}>
         <View style={styles.headerTopRow}>
-          <Text style={[styles.title, { color: theme.text }]}>Osiągi</Text>
+          <Text style={[styles.title, { color: theme.text }]}>{t('progressTitle')}</Text>
 
           <View
             {...navPanResponder.panHandlers}
@@ -1348,7 +1358,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                             <View style={styles.muscleMiddleCol}>
                               <View style={styles.muscleRowHeaderLine}>
                                 <Text style={[styles.muscleRowTitle, { color: theme.text }]}>
-                                  {stat.meta.label}
+                                  {muscleLabel(stat.muscleId)}
                                 </Text>
                                 <Text
                                   style={[
@@ -1449,8 +1459,8 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                       >
                         <Text style={[styles.loadAllMusclesText, { color: theme.text }]}>
                           {showAllMuscles
-                            ? 'Pokaż mniej (top 5)'
-                            : `Załaduj wszystkie partie (${orderedMuscleList.length})`}
+                            ? t('progressShowTop')
+                            : `${t('progressLoadAll')} (${orderedMuscleList.length})`}
                         </Text>
                         <Ionicons
                           name={showAllMuscles ? 'chevron-up' : 'chevron-down'}
@@ -1512,7 +1522,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                       { color: muscleFilter === 'all' ? theme.bg : theme.textSecondary },
                     ]}
                   >
-                    Wszystkie (19)
+                    {t('all')} (19)
                   </Text>
                 </TouchableOpacity>
 
@@ -1535,7 +1545,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                           { color: active ? theme.bg : theme.textSecondary },
                         ]}
                       >
-                        {m.shortLabel}
+                        {muscleLabel(m.id, true)}
                       </Text>
                     </TouchableOpacity>
                   );
@@ -1563,7 +1573,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                       <View style={styles.openGroupTitleWrap}>
                         <RankCrestIcon tier={mStat?.rank || 'F'} size={30} />
                         <Text style={[styles.openGroupTitle, { color: theme.text }]}>
-                          {mGroup.label}
+                          {muscleLabel(mGroup.id)}
                         </Text>
                       </View>
                       <Text style={[styles.openGroupMeta, { color: theme.textMuted }]}>

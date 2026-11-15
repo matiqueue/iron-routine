@@ -108,7 +108,10 @@ export interface HealthDailySummary {
   lastSyncedAt?: string;
 }
 
+export type AppLanguage = 'pl' | 'en' | 'de' | 'fr' | 'es';
+
 export interface AppSettings {
+  language: AppLanguage;
   hapticsEnabled: boolean;
   hapticsIntensity: 'subtle' | 'medium' | 'strong';
   restEndMultiBuzz: boolean;
@@ -124,7 +127,7 @@ export interface AppSettings {
   healthSyncEnabled: boolean;
 }
 
-export type PlanTemplateKey = 'blank' | 'fbw3' | 'ppl' | 'upper_lower' | 'clone_current';
+export type PlanTemplateKey = 'blank' | 'fbw3' | 'ppl' | 'upper_lower' | 'split4' | 'clone_current';
 
 export interface WorkoutPlan {
   id: string;
@@ -228,6 +231,7 @@ export interface ProfileBackupPayload {
   plans: WorkoutPlan[];
   activePlanId?: string;
   customExercises: Exercise[];
+  favoriteExerciseIds?: string[];
   prRecords: { [exerciseId: string]: PRRecord[] };
   history: WorkoutHistoryEntry[];
   weightHistory: WeightEntry[];

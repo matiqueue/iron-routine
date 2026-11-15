@@ -37,6 +37,7 @@ const TEMPLATE_ICONS: Record<PlanTemplateKey, keyof typeof Ionicons.glyphMap> = 
   fbw3: 'barbell-outline',
   ppl: 'flame-outline',
   upper_lower: 'swap-vertical-outline',
+  split4: 'grid-outline',
   blank: 'document-outline',
   clone_current: 'copy-outline',
 };

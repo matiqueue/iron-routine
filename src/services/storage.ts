@@ -42,6 +42,7 @@ const STORAGE_KEYS = {
   PLANS_PREFIX: '@iron_routine_plans_',
   ACTIVE_PLAN_PREFIX: '@iron_routine_active_plan_',
   CUSTOM_EXERCISES: '@iron_routine_custom_exercises',
+  FAVORITE_EXERCISES: '@iron_routine_favorite_exercises',
   LOCAL_SEED_VERSION: '@iron_routine_local_seed_version',
 };
 
@@ -242,6 +243,7 @@ export async function createProfile(
     height?: number;
     weight?: number;
     templateKey?: Exclude<PlanTemplateKey, 'clone_current'>;
+    customDays?: DayPlan[];
     cloudUserId?: string;
     cloudProvider?: 'apple' | 'google';
     cloudEmail?: string;
@@ -293,14 +295,19 @@ export async function createProfile(
       fbw3: { name: 'FBW 3 dni', subtitle: 'Full Body Workout (Pn / Śr / Pt)' },
       upper_lower: { name: 'Upper / Lower', subtitle: 'Split 4-dniowy Góra / Dół' },
       ppl: { name: 'Push / Pull / Legs', subtitle: 'Split 6-dniowy PPL' },
+      split4: { name: 'Split 4-dniowy', subtitle: 'Klatka+Triceps, Plecy+Biceps, Nogi, Barki' },
     };
-    const meta = templateLabelMap[templateKey];
+    const meta = templateLabelMap[templateKey] || templateLabelMap.fbw3;
     const nowIso = new Date().toISOString();
+    const days =
+      options?.customDays && options.customDays.length > 0
+        ? cloneDays(options.customDays)
+        : buildPlanDaysFromTemplate(templateKey);
     const starterPlan: WorkoutPlan = {
       id: `plan_${templateKey}_${Date.now()}`,
       name: meta.name,
       subtitle: meta.subtitle,
-      days: buildPlanDaysFromTemplate(templateKey),
+      days,
       isDefault: true,
       createdAt: nowIso,
       updatedAt: nowIso,
@@ -1358,6 +1365,56 @@ export async function deleteCustomExercise(exerciseId: string): Promise<void> {
   notifyCloudAutoSync();
 }
 
+export async function getFavoriteExerciseIds(): Promise<string[]> {
+  try {
+    const raw = await AsyncStorage.getItem(STORAGE_KEYS.FAVORITE_EXERCISES);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return Array.from(
+      new Set(
+        parsed
+          .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+          .map((id) => resolveCanonicalExerciseId(id))
+      )
+    );
+  } catch {
+    return [];
+  }
+}
+
+export async function setFavoriteExerciseIds(ids: string[]): Promise<string[]> {
+  const normalized = Array.from(
+    new Set(
+      ids
+        .filter((id) => typeof id === 'string' && id.trim().length > 0)
+        .map((id) => resolveCanonicalExerciseId(id))
+    )
+  );
+  await AsyncStorage.setItem(STORAGE_KEYS.FAVORITE_EXERCISES, JSON.stringify(normalized));
+  notifyCloudAutoSync();
+  return normalized;
+}
+
+export async function toggleFavoriteExercise(
+  exerciseOrId: Pick<Exercise, 'id' | 'name'> | string
+): Promise<string[]> {
+  const rawId = typeof exerciseOrId === 'string' ? exerciseOrId : exerciseOrId.id;
+  const rawName = typeof exerciseOrId === 'string' ? undefined : exerciseOrId.name;
+  const canonicalId = resolveCanonicalExerciseId(rawId, rawName);
+
+  const current = await getFavoriteExerciseIds();
+  const exists = current.includes(canonicalId) || current.includes(rawId);
+  const next = exists
+    ? current.filter((id) => id !== canonicalId && id !== rawId)
+    : [canonicalId, ...current];
+
+  triggerSelectionHaptic();
+  await AsyncStorage.setItem(STORAGE_KEYS.FAVORITE_EXERCISES, JSON.stringify(next));
+  notifyCloudAutoSync();
+  return next;
+}
+
 // ==================== WORKOUT HISTORY & WEEKLY VOLUME ANALYTICS ====================
 
 export async function getWorkoutHistory(profileId?: string): Promise<WorkoutHistoryEntry[]> {
@@ -1440,13 +1497,15 @@ export async function exportProfileBackup(profileId?: string): Promise<ProfileBa
     throw new Error('Brak profilu do wyeksportowania.');
   }
 
-  const [plans, activePlanId, customExercises, history, weightHistory] = await Promise.all([
-    getProfilePlans(target.id),
-    getActivePlanId(target.id),
-    getCustomExercises(),
-    getWorkoutHistory(target.id),
-    getWeightHistory(target.id),
-  ]);
+  const [plans, activePlanId, customExercises, favoriteExerciseIds, history, weightHistory] =
+    await Promise.all([
+      getProfilePlans(target.id),
+      getActivePlanId(target.id),
+      getCustomExercises(),
+      getFavoriteExerciseIds(),
+      getWorkoutHistory(target.id),
+      getWeightHistory(target.id),
+    ]);
 
   const prRecords: { [exerciseId: string]: PRRecord[] } = {};
   try {
@@ -1475,6 +1534,7 @@ export async function exportProfileBackup(profileId?: string): Promise<ProfileBa
     plans,
     activePlanId,
     customExercises,
+    favoriteExerciseIds,
     prRecords,
     history,
     weightHistory,
@@ -1557,6 +1617,10 @@ export async function importProfileBackup(
       STORAGE_KEYS.CUSTOM_EXERCISES,
       JSON.stringify(Array.from(map.values()))
     );
+  }
+
+  if (Array.isArray(payload.favoriteExerciseIds)) {
+    await setFavoriteExerciseIds(payload.favoriteExerciseIds);
   }
 
   if (payload.prRecords && typeof payload.prRecords === 'object') {

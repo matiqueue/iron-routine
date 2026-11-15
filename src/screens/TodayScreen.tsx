@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAppTheme } from '../context/ThemeContext';
+import { useLanguage } from '../context/LanguageContext';
 import {
   DayPlan,
   DayProgress,
@@ -88,6 +89,17 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
   onSwitchToPlanTab,
 }) => {
   const { theme, isDark, toggleTheme } = useAppTheme();
+  const { t, language } = useLanguage();
+  const dateLocale =
+    language === 'en'
+      ? 'en-US'
+      : language === 'de'
+      ? 'de-DE'
+      : language === 'fr'
+      ? 'fr-FR'
+      : language === 'es'
+      ? 'es-ES'
+      : 'pl-PL';
 
   const bannerTag = resolveDayBannerTag(currentPlan);
   const tagMeta = getDayBannerTagMeta(bannerTag);
@@ -135,7 +147,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
         <View style={styles.greetingCol}>
           <Text style={[styles.dateLabel, { color: theme.textMuted }]} numberOfLines={1}>
             {new Date()
-              .toLocaleDateString('pl-PL', {
+              .toLocaleDateString(dateLocale, {
                 weekday: 'long',
                 day: 'numeric',
                 month: 'long',
@@ -442,18 +454,18 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
                   </View>
                 </View>
                 <View style={styles.bodyStatsActionWrap}>
-                  <Text style={[styles.bodyStatsActionText, { color: theme.text }]}>Ustaw</Text>
+                  <Text style={[styles.bodyStatsActionText, { color: theme.text }]}>{t('change')}</Text>
                   <Ionicons name="chevron-forward" size={15} color={theme.textMuted} />
                 </View>
               </TouchableOpacity>
 
               <HoldToStartButton
                 onComplete={() => onStartWorkout(currentPlan.id)}
-                title="PRZYTRZYMAJ, ABY ZACZĄĆ"
+                title={t('todayStartWorkout').toUpperCase()}
                 subtitle={
                   dayProgress.sessionConfig
-                    ? `Gotowe (${activeExercisesCount} ćwiczeń, ${totalSets} serii) · przytrzymaj`
-                    : 'Przytrzymaj, przed startem potwierdzisz ćwiczenia i kolejność'
+                    ? `${activeExercisesCount} · ${totalSets} ${t('sets').toLowerCase()}`
+                    : t('todayEditSession')
                 }
               />
             </View>

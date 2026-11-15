@@ -147,7 +147,7 @@ iron-routine/
 
 ## Współtworzenie & Wsparcie
 
-- **Main Contributor**: [Matique (@matiqueue)](https://github.com/matiqueue)
+- **Main Contributor**: [matique (@matiqueue)](https://github.com/matiqueue)
 - **Buy Me a Coffee**: [matiqueue-portfolio.vercel.app](https://matiqueue-portfolio.vercel.app)
 
 Przed otwarciem Pull Requesta zapoznaj się z [CONTRIBUTING.md](./CONTRIBUTING.md), [CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md) oraz [SECURITY.md](./SECURITY.md). Pull Requesty kierujemy zawsze na gałąź **`dev`**, a wydania produkcyjne publikowane są przez scalenie `dev` -> `main`.
