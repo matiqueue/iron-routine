@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
+  Animated,
   Modal,
   StyleSheet,
   Text,
@@ -27,6 +28,28 @@ export const LanguageSwitcher: React.FC<LanguageSwitcherProps> = ({
   const { theme, isDark } = useAppTheme();
   const { language, setLanguage, t } = useLanguage();
   const [modalVisible, setModalVisible] = useState(false);
+  const dialogScale = useRef(new Animated.Value(0.92)).current;
+  const dialogOpacity = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (modalVisible) {
+      dialogScale.setValue(0.92);
+      dialogOpacity.setValue(0);
+      Animated.parallel([
+        Animated.spring(dialogScale, {
+          toValue: 1,
+          friction: 7,
+          tension: 90,
+          useNativeDriver: true,
+        }),
+        Animated.timing(dialogOpacity, {
+          toValue: 1,
+          duration: 180,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    }
+  }, [modalVisible, dialogScale, dialogOpacity]);
 
   const currentMeta =
     SUPPORTED_LANGUAGES.find((l) => l.code === language) || SUPPORTED_LANGUAGES[0];
@@ -57,7 +80,7 @@ export const LanguageSwitcher: React.FC<LanguageSwitcherProps> = ({
           }}
           activeOpacity={0.78}
         >
-          <Ionicons name="globe-outline" size={14} color={theme.text} />
+          <Text style={styles.flagEmojiPill}>{currentMeta.flag}</Text>
           <Text style={[styles.compactPillText, { color: theme.text }]}>
             {currentMeta.short}
           </Text>
@@ -77,11 +100,11 @@ export const LanguageSwitcher: React.FC<LanguageSwitcherProps> = ({
               {t('language')}
             </Text>
             <Text style={[styles.settingsRowSub, { color: theme.textSecondary }]}>
-              {currentMeta.nativeName} · {t('languageSub')}
+              {currentMeta.flag} {currentMeta.nativeName} · {t('languageSub')}
             </Text>
           </View>
           <View style={[styles.settingsBadge, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
-            <Ionicons name="globe-outline" size={14} color={theme.text} />
+            <Text style={styles.flagEmojiPill}>{currentMeta.flag}</Text>
             <Text style={[styles.settingsBadgeText, { color: theme.text }]}>
               {currentMeta.short}
             </Text>
@@ -99,18 +122,20 @@ export const LanguageSwitcher: React.FC<LanguageSwitcherProps> = ({
         <TouchableWithoutFeedback onPress={() => setModalVisible(false)}>
           <View style={styles.backdrop}>
             <TouchableWithoutFeedback>
-              <View
+              <Animated.View
                 style={[
                   styles.dialog,
                   {
                     backgroundColor: theme.card,
                     borderColor: theme.border,
+                    opacity: dialogOpacity,
+                    transform: [{ scale: dialogScale }],
                   },
                 ]}
               >
                 <View style={styles.dialogHeader}>
                   <View style={styles.dialogTitleRow}>
-                    <Ionicons name="globe-outline" size={18} color={theme.text} />
+                    <Text style={styles.flagEmojiHeader}>{currentMeta.flag}</Text>
                     <Text style={[styles.dialogTitle, { color: theme.text }]}>
                       {t('chooseLanguage')}
                     </Text>
@@ -142,7 +167,7 @@ export const LanguageSwitcher: React.FC<LanguageSwitcherProps> = ({
                         <View style={styles.langLeft}>
                           <View
                             style={[
-                              styles.codeBadge,
+                              styles.flagWrap,
                               {
                                 backgroundColor: active
                                   ? 'rgba(255,255,255,0.16)'
@@ -151,23 +176,29 @@ export const LanguageSwitcher: React.FC<LanguageSwitcherProps> = ({
                               },
                             ]}
                           >
+                            <Text style={styles.flagEmojiOption}>{item.flag}</Text>
+                          </View>
+                          <View>
                             <Text
                               style={[
-                                styles.codeBadgeText,
+                                styles.langNative,
                                 { color: active ? theme.primaryText : theme.text },
+                              ]}
+                            >
+                              {item.nativeName}
+                            </Text>
+                            <Text
+                              style={[
+                                styles.langCodeSub,
+                                {
+                                  color: active ? theme.primaryText : theme.textMuted,
+                                  opacity: active ? 0.8 : 1,
+                                },
                               ]}
                             >
                               {item.short}
                             </Text>
                           </View>
-                          <Text
-                            style={[
-                              styles.langNative,
-                              { color: active ? theme.primaryText : theme.text },
-                            ]}
-                          >
-                            {item.nativeName}
-                          </Text>
                         </View>
                         {active && (
                           <Ionicons
@@ -180,7 +211,7 @@ export const LanguageSwitcher: React.FC<LanguageSwitcherProps> = ({
                     );
                   })}
                 </View>
-              </View>
+              </Animated.View>
             </TouchableWithoutFeedback>
           </View>
         </TouchableWithoutFeedback>
@@ -290,19 +321,34 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
   },
-  codeBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-    borderWidth: 1,
+  flagEmojiPill: {
+    fontSize: 15,
+    lineHeight: 18,
   },
-  codeBadgeText: {
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 0.6,
+  flagEmojiHeader: {
+    fontSize: 18,
+    lineHeight: 22,
+  },
+  flagWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 11,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  flagEmojiOption: {
+    fontSize: 20,
+    lineHeight: 24,
   },
   langNative: {
     fontSize: 15,
     fontWeight: '700',
+  },
+  langCodeSub: {
+    fontSize: 10.5,
+    fontWeight: '800',
+    letterSpacing: 0.7,
+    marginTop: 1,
   },
 });

@@ -1306,11 +1306,27 @@ export async function deleteWorkoutPlan(planId: string, profileId?: string): Pro
   const pid = await resolveProfileId(profileId);
   if (!pid) throw new Error('Brak aktywnego profilu.');
   const plans = await getProfilePlans(pid);
-  if (plans.length <= 1) {
-    throw new Error('Profil musi posiadać co najmniej jeden plan treningowy.');
+  const remaining = plans.filter((p) => p.id !== planId);
+
+  if (remaining.length === 0) {
+    const nowIso = new Date().toISOString();
+    const blankReplacement: WorkoutPlan = normalizeWorkoutPlan({
+      id: `plan_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+      name: 'Pusty plan',
+      subtitle: 'Pusty tydzień - dodaj własne treningi',
+      days: buildPlanDaysFromTemplate('blank'),
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    });
+    await AsyncStorage.setItem(
+      `${STORAGE_KEYS.PLANS_PREFIX}${pid}`,
+      JSON.stringify([blankReplacement])
+    );
+    await setActivePlanId(blankReplacement.id, pid);
+    notifyCloudAutoSync(pid);
+    return blankReplacement.id;
   }
 
-  const remaining = plans.filter((p) => p.id !== planId);
   await AsyncStorage.setItem(`${STORAGE_KEYS.PLANS_PREFIX}${pid}`, JSON.stringify(remaining));
 
   const currentActive = await getActivePlanId(pid);

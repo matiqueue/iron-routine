@@ -18,6 +18,7 @@ import { PlanDayEditorModal } from './PlanDayEditorModal';
 import { ExerciseLibraryModal } from './ExerciseLibraryModal';
 import { DayBannerArtwork } from './DayBannerArtwork';
 import { DayExercisePreviewList } from './DayExercisePreviewList';
+import { AnimatedIcon } from './AnimatedIcon';
 import { updateDayInPlan } from '../services/storage';
 import { triggerSelectionHaptic } from '../services/haptics';
 
@@ -236,10 +237,18 @@ export const PlanTab: React.FC<PlanTabProps> = ({
                 {tagMeta.badge}
               </Text>
             </View>
-            <Ionicons
+            <AnimatedIcon
               name={(tagMeta.icon as any) || (currentPlan.iconName as any) || 'barbell-outline'}
+              preset={
+                currentPlan.type === 'rest'
+                  ? 'moon'
+                  : currentPlan.type === 'walk'
+                  ? 'footsteps'
+                  : 'barbell'
+              }
               size={22}
               color={theme.text}
+              active
             />
           </View>
 
@@ -284,7 +293,7 @@ export const PlanTab: React.FC<PlanTabProps> = ({
               onPress={() => onStartWorkoutForDay(currentPlan.id)}
               activeOpacity={0.8}
             >
-              <Ionicons name="play" size={16} color={theme.primaryText} />
+              <AnimatedIcon name="play" preset="pulse" size={16} color={theme.primaryText} active />
               <Text style={[styles.startWorkoutBtnText, { color: theme.primaryText }]}>
                 ROZPOCZNIJ TEN TRENING
               </Text>

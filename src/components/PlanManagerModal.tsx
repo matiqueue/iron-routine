@@ -145,15 +145,13 @@ export const PlanManagerModal: React.FC<PlanManagerModalProps> = ({
   };
 
   const handleDelete = (plan: WorkoutPlan) => {
-    if (plans.length <= 1) {
-      Alert.alert('Nie można usunąć', 'Konto musi posiadać co najmniej jeden aktywny plan.');
-      return;
-    }
-
     triggerImpactHaptic('medium');
+    const isLastPlan = plans.length <= 1;
     Alert.alert(
       'Usunąć plan treningowy?',
-      `Plan „${plan.name}” zostanie trwale usunięty. Twoje rekordy (PR) i historia serii pozostają bezpieczne.`,
+      isLastPlan
+        ? `Plan „${plan.name}” zostanie usunięty i zastąpiony pustym planem startowym. Twoje rekordy (PR) i historia serii pozostają bezpieczne.`
+        : `Plan „${plan.name}” zostanie trwale usunięty. Twoje rekordy (PR) i historia serii pozostają bezpieczne.`,
       [
         { text: 'Anuluj', style: 'cancel' },
         {
@@ -564,18 +562,22 @@ export const PlanManagerModal: React.FC<PlanManagerModalProps> = ({
                       </Text>
                     </TouchableOpacity>
 
-                    {plans.length > 1 && (
-                      <TouchableOpacity
-                        style={[styles.actionChip, { backgroundColor: theme.card, borderColor: theme.border }]}
-                        onPress={() => handleDelete(plan)}
-                        activeOpacity={0.75}
-                      >
-                        <Ionicons name="trash-outline" size={13} color={theme.textMuted} />
-                        <Text style={[styles.actionChipText, { color: theme.textMuted }]}>
-                          Usuń
-                        </Text>
-                      </TouchableOpacity>
-                    )}
+                    <TouchableOpacity
+                      style={[
+                        styles.actionChip,
+                        {
+                          backgroundColor: 'rgba(239, 68, 68, 0.12)',
+                          borderColor: 'rgba(239, 68, 68, 0.4)',
+                        },
+                      ]}
+                      onPress={() => handleDelete(plan)}
+                      activeOpacity={0.75}
+                    >
+                      <Ionicons name="trash-outline" size={13} color="#EF4444" />
+                      <Text style={[styles.actionChipText, { color: '#EF4444' }]}>
+                        Usuń
+                      </Text>
+                    </TouchableOpacity>
                   </View>
                 )}
               </View>

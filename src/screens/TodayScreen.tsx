@@ -322,7 +322,19 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
             <View style={styles.heroInner}>
               <View style={styles.heroTagRow}>
                 <View style={[styles.heroTagPill, { backgroundColor: theme.primary }]}>
-                  <Ionicons name={tagMeta.icon as any} size={11} color={theme.primaryText} />
+                  <AnimatedIcon
+                    name={tagMeta.icon as any}
+                    preset={
+                      currentPlan.type === 'rest'
+                        ? 'moon'
+                        : currentPlan.type === 'walk'
+                        ? 'footsteps'
+                        : 'barbell'
+                    }
+                    size={12}
+                    color={theme.primaryText}
+                    active
+                  />
                   <Text style={[styles.heroTagText, { color: theme.primaryText }]}>
                     {tagMeta.label.toUpperCase()}
                   </Text>
@@ -401,7 +413,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
               ]}
             >
               <View style={styles.warmupHeaderLine}>
-                <Ionicons name="sparkles-outline" size={13} color="#10B981" />
+                <AnimatedIcon name="sparkles-outline" preset="pulse" size={13} color="#10B981" active />
                 <Text style={[styles.warmupEyebrow, { color: '#10B981' }]}>
                   ROZGRZEWKA I MOBILIZACJA
                 </Text>

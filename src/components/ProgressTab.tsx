@@ -66,6 +66,7 @@ import {
   EnrichedExerciseRankStat,
 } from './AnimatedBodySilhouette';
 import { RankCrestIcon } from './RankCrestIcon';
+import { AnimatedIcon } from './AnimatedIcon';
 import { BottomSheetScrollView, InteractiveBottomSheet } from './InteractiveBottomSheet';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
@@ -177,6 +178,28 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
   const navThumbAnim = useRef(new Animated.Value(0)).current;
   const navScaleAnim = useRef(new Animated.Value(1)).current;
   const viewFadeAnim = useRef(new Animated.Value(1)).current;
+  const heroCrestPulse = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(heroCrestPulse, {
+          toValue: 1,
+          duration: 1700,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+        Animated.timing(heroCrestPulse, {
+          toValue: 0,
+          duration: 1700,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [heroCrestPulse]);
 
   const scrollViewRef = useRef<any>(null);
 
@@ -938,11 +961,30 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
               {/* Open Hero Rank Showcase & Telemetry Strip */}
               <View style={[styles.heroShowcaseWrap, { borderBottomColor: theme.hairline }]}>
                 <View style={styles.heroCrestBlock}>
-                  <RankCrestIcon
-                    tier={physiqueReport?.overallRank || 'F'}
-                    size={58}
-                    progressPct={overallAverageProgress}
-                  />
+                  <Animated.View
+                    style={{
+                      transform: [
+                        {
+                          scale: heroCrestPulse.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: [1, 1.06],
+                          }),
+                        },
+                        {
+                          translateY: heroCrestPulse.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: [0, -1.5],
+                          }),
+                        },
+                      ],
+                    }}
+                  >
+                    <RankCrestIcon
+                      tier={physiqueReport?.overallRank || 'F'}
+                      size={58}
+                      progressPct={overallAverageProgress}
+                    />
+                  </Animated.View>
                   <View style={styles.heroCrestTextCol}>
                     <Text style={[styles.heroCrestEyebrow, { color: theme.textMuted }]}>
                       RANGA OGÓLNA
@@ -1139,7 +1181,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                   {closestToRankUp.length > 0 && (
                     <View style={[styles.milestoneBlock, { borderTopColor: theme.hairline }]}>
                       <View style={styles.milestoneHeaderRow}>
-                        <Ionicons name="sparkles-outline" size={13} color="#10B981" />
+                        <AnimatedIcon name="sparkles-outline" preset="pulse" size={13} color="#10B981" active />
                         <Text style={[styles.milestoneHeaderTitle, { color: theme.textSecondary }]}>
                           NAJBLIŻEJ KOLEJNEJ RANGI
                         </Text>

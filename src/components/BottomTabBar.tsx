@@ -228,8 +228,18 @@ export const BottomTabBar: React.FC<BottomTabBarProps> = ({ activeTab, onSelectT
           />
         )}
 
-        {TABS.map((tab) => {
+        {TABS.map((tab, idx) => {
           const isActive = activeTab === tab.key;
+          const iconScale = thumbAnim.interpolate({
+            inputRange: [idx - 1, idx, idx + 1],
+            outputRange: [1, 1.14, 1],
+            extrapolate: 'clamp',
+          });
+          const iconLift = thumbAnim.interpolate({
+            inputRange: [idx - 1, idx, idx + 1],
+            outputRange: [0, -1.5, 0],
+            extrapolate: 'clamp',
+          });
           return (
             <TouchableOpacity
               key={tab.key}
@@ -242,11 +252,17 @@ export const BottomTabBar: React.FC<BottomTabBarProps> = ({ activeTab, onSelectT
                 }
               }}
             >
-              <Ionicons
-                name={isActive ? tab.iconActive : tab.iconInactive}
-                size={20}
-                color={isActive ? theme.text : theme.textMuted}
-              />
+              <Animated.View
+                style={{
+                  transform: [{ scale: iconScale }, { translateY: iconLift }],
+                }}
+              >
+                <Ionicons
+                  name={isActive ? tab.iconActive : tab.iconInactive}
+                  size={20}
+                  color={isActive ? theme.text : theme.textMuted}
+                />
+              </Animated.View>
               <Text
                 style={[
                   styles.navLabel,
