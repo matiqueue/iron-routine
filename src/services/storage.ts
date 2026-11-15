@@ -629,14 +629,17 @@ export async function markWorkoutCompleted(
     let totalVolumeKg = 0;
     const newPRs: NewPRHighlight[] = [];
     const currentBestPRs = await getAllBestPRs(pid);
+    const exerciseSets: { [exerciseId: string]: number } = {};
 
     for (const [exId, setEntries] of Object.entries(setsSource)) {
       let bestExerciseWeight = 0;
       let bestExerciseReps = 0;
       let bestExercise1RM = 0;
+      let exCompletedSetsCount = 0;
 
       for (const sEntry of Object.values(setEntries || {})) {
         if (!sEntry?.completed) continue;
+        exCompletedSetsCount += 1;
         const w = parseFloat(String(sEntry.weight || '').replace(',', '.'));
         const r = parseInt(String(sEntry.reps || ''), 10);
         if (!isNaN(w) && w > 0 && !isNaN(r) && r > 0) {
@@ -648,6 +651,11 @@ export async function markWorkoutCompleted(
             bestExerciseReps = r;
           }
         }
+      }
+
+      if (exCompletedSetsCount > 0) {
+        const canonicalExId = resolveCanonicalExerciseId(exId);
+        exerciseSets[canonicalExId] = (exerciseSets[canonicalExId] || 0) + exCompletedSetsCount;
       }
 
       if (bestExercise1RM > 0) {
@@ -698,6 +706,7 @@ export async function markWorkoutCompleted(
       totalSets,
       durationMinutes: options?.durationMinutes,
       totalVolumeKg: totalVolumeKg > 0 ? totalVolumeKg : undefined,
+      exerciseSets: Object.keys(exerciseSets).length > 0 ? exerciseSets : undefined,
     };
 
     if (existingIdx >= 0) {

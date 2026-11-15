@@ -1,11 +1,41 @@
 export type MuscleCategory = 'klatka' | 'plecy' | 'nogi' | 'barki' | 'ramiona' | 'brzuch' | 'ogolne';
 
+export type MuscleSubGroupId =
+  | 'upper_chest'
+  | 'mid_lower_chest'
+  | 'front_delts'
+  | 'side_delts'
+  | 'rear_delts'
+  | 'biceps'
+  | 'triceps'
+  | 'forearms'
+  | 'traps'
+  | 'lats'
+  | 'mid_back'
+  | 'lower_back'
+  | 'abs'
+  | 'obliques'
+  | 'quads'
+  | 'hamstrings'
+  | 'glutes'
+  | 'adductors'
+  | 'calves';
+
+export type RankTier = 'F' | 'E' | 'D' | 'C' | 'B' | 'A' | 'S' | 'S+';
+
 export type EquipmentType = 'Sztanga' | 'Hantle' | 'Maszyna' | 'Wyciąg' | 'Masa ciała' | 'Inne';
+
+export interface SecondaryMuscleWeight {
+  muscle: MuscleSubGroupId;
+  weight: number; // e.g. 0.35 - 0.5
+}
 
 export interface Exercise {
   id: string;
   name: string;
   category: MuscleCategory;
+  primaryMuscle?: MuscleSubGroupId;
+  secondaryMuscles?: SecondaryMuscleWeight[];
   sets: number;
   reps: string;
   rest: number; // in seconds
@@ -158,6 +188,7 @@ export interface WorkoutHistoryEntry {
   totalSets: number;
   durationMinutes?: number;
   totalVolumeKg?: number;
+  exerciseSets?: { [exerciseId: string]: number };
 }
 
 export interface NewPRHighlight {

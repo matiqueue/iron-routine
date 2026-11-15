@@ -12,13 +12,18 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useAppTheme } from '../context/ThemeContext';
-import { EquipmentType, Exercise, MuscleCategory } from '../types/workout';
+import { EquipmentType, Exercise, MuscleCategory, MuscleSubGroupId } from '../types/workout';
 import {
   EQUIPMENT_OPTIONS,
   EXERCISE_LIBRARY,
   MUSCLE_CATEGORY_META,
   cloneExercise,
 } from '../data/exerciseLibrary';
+import {
+  MUSCLE_SUBGROUPS,
+  MUSCLE_SUBGROUP_MAP,
+  resolveExerciseMuscles,
+} from '../data/muscleMap';
 import { mergeAllExercises } from '../data/planData';
 import {
   deleteCustomExercise,
@@ -55,6 +60,7 @@ export const ExerciseLibraryContent: React.FC<ExerciseLibraryContentProps> = ({
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [newName, setNewName] = useState('');
   const [newCategory, setNewCategory] = useState<MuscleCategory>('klatka');
+  const [newPrimaryMuscle, setNewPrimaryMuscle] = useState<MuscleSubGroupId>('mid_lower_chest');
   const [newEquipment, setNewEquipment] = useState<EquipmentType>('Sztanga');
   const [newSets, setNewSets] = useState('3');
   const [newReps, setNewReps] = useState('8-12');
@@ -125,6 +131,7 @@ export const ExerciseLibraryContent: React.FC<ExerciseLibraryContentProps> = ({
     const created = await saveCustomExercise({
       name: trimmedName,
       category: newCategory,
+      primaryMuscle: newPrimaryMuscle,
       equipment: newEquipment,
       sets: parsedSets,
       reps: trimmedReps,
@@ -337,7 +344,13 @@ export const ExerciseLibraryContent: React.FC<ExerciseLibraryContentProps> = ({
                         borderColor: active ? theme.primary : theme.border,
                       },
                     ]}
-                    onPress={() => setNewCategory(cat.id)}
+                    onPress={() => {
+                      setNewCategory(cat.id);
+                      const firstSub = MUSCLE_SUBGROUPS.find((m) => m.parentCategory === cat.id);
+                      if (firstSub) {
+                        setNewPrimaryMuscle(firstSub.id);
+                      }
+                    }}
                     activeOpacity={0.7}
                   >
                     <Text
@@ -352,6 +365,46 @@ export const ExerciseLibraryContent: React.FC<ExerciseLibraryContentProps> = ({
                 );
               })}
             </ScrollView>
+
+            {MUSCLE_SUBGROUPS.some((m) => m.parentCategory === newCategory) && (
+              <>
+                <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>
+                  MIĘSIEŃ ANATOMICZNY (MODEL 3D & RANGI)
+                </Text>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.chipRow}
+                >
+                  {MUSCLE_SUBGROUPS.filter((m) => m.parentCategory === newCategory).map((sub) => {
+                    const active = newPrimaryMuscle === sub.id;
+                    return (
+                      <TouchableOpacity
+                        key={sub.id}
+                        style={[
+                          styles.chip,
+                          {
+                            backgroundColor: active ? theme.primary : theme.card,
+                            borderColor: active ? theme.primary : theme.border,
+                          },
+                        ]}
+                        onPress={() => setNewPrimaryMuscle(sub.id)}
+                        activeOpacity={0.7}
+                      >
+                        <Text
+                          style={[
+                            styles.chipText,
+                            { color: active ? theme.primaryText : theme.text },
+                          ]}
+                        >
+                          {sub.label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              </>
+            )}
 
             <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>SPRZĘT</Text>
             <ScrollView
@@ -485,6 +538,7 @@ export const ExerciseLibraryContent: React.FC<ExerciseLibraryContentProps> = ({
             const isExpanded = expandedId === ex.id;
             const catLabel =
               MUSCLE_CATEGORY_META.find((m) => m.id === ex.category)?.label || ex.category;
+            const subMuscleMeta = MUSCLE_SUBGROUP_MAP[resolveExerciseMuscles(ex).primary];
 
             return (
               <View
@@ -516,7 +570,7 @@ export const ExerciseLibraryContent: React.FC<ExerciseLibraryContentProps> = ({
                         ]}
                       >
                         <Text style={[styles.catTagText, { color: theme.text }]}>
-                          {catLabel.toUpperCase()}
+                          {(subMuscleMeta?.shortLabel || catLabel).toUpperCase()}
                         </Text>
                       </View>
 

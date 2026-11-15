@@ -896,6 +896,50 @@ export const EXERCISE_LIBRARY: Exercise[] = [
     'Podciąganie w zakresie optymalnej dźwigni i najwyższego napięcia dla najszerszych grzbietu oraz bicepsów.',
     'Kontrolowane opuszczenie do pozycji wyjściowej w serii bez szarpania nogami.'
   ),
+  ex(
+    'lib_wrist_curl',
+    'Uginanie nadgarstków ze sztangą / hantlami',
+    'ramiona',
+    'Sztanga',
+    3,
+    '12-20',
+    60,
+    'Oprzyj przedramiona na ławce lub udach dłońmi skierowanymi w górę. Opuść ciężar do palców i mocno zegnij nadgarstki w górę.',
+    'Izolowana praca zginaczy przedramienia i siły chwytu.'
+  ),
+  ex(
+    'lib_reverse_barbell_curl',
+    'Uginanie ramion nachwytem ze sztangą',
+    'ramiona',
+    'Sztanga',
+    3,
+    '10-15',
+    60,
+    'Chwyć sztangę nachwytem na szerokość barków. Uginaj przedramiona bez odrywania łokci od tułowia i powoli opuszczaj.',
+    'Rozbudowuje prostowniki przedramienia i mięsień ramienno-promieniowy.'
+  ),
+  ex(
+    'lib_db_shrugs',
+    'Szrugsy z hantlami / sztangą (Kaptury)',
+    'plecy',
+    'Hantle',
+    3,
+    '12-15',
+    75,
+    'Trzymaj ciężkie hantle wzdłuż tułowia i unoś barki pionowo w stronę uszu z 1-sekundowym dopięciem u góry.',
+    'Nie kręć barkami w kółko - prowadź ruch czysto góra-dół.'
+  ),
+  ex(
+    'lib_seated_calf_raise',
+    'Wspięcia na palce siedząc (maszyna / hantle)',
+    'nogi',
+    'Maszyna',
+    4,
+    '15-20',
+    60,
+    'Z ugiętymi kolanami pod kątem 90° opuść pięty maksymalnie w dół i wykonaj pełne wspięcie na palce z przytrzymaniem.',
+    'Ugięte kolano izoluje mięsień płaszczkowaty łydki.'
+  ),
 ];
 
 export const EXERCISE_ID_ALIASES: Record<string, string> = {
