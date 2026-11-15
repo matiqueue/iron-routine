@@ -9,16 +9,17 @@ import {
 export interface LanguageOptionMeta {
   code: AppLanguage;
   short: string;
+  flag: string;
   label: string;
   nativeName: string;
 }
 
 export const SUPPORTED_LANGUAGES: LanguageOptionMeta[] = [
-  { code: 'pl', short: 'PL', label: 'Polski', nativeName: 'Polski' },
-  { code: 'en', short: 'EN', label: 'English', nativeName: 'English' },
-  { code: 'de', short: 'DE', label: 'Niemiecki', nativeName: 'Deutsch' },
-  { code: 'fr', short: 'FR', label: 'Francuski', nativeName: 'Français' },
-  { code: 'es', short: 'ES', label: 'Hiszpański', nativeName: 'Español' },
+  { code: 'pl', short: 'PL', flag: '🇵🇱', label: 'Polski', nativeName: 'Polski' },
+  { code: 'en', short: 'EN', flag: '🇬🇧', label: 'English', nativeName: 'English' },
+  { code: 'de', short: 'DE', flag: '🇩🇪', label: 'Niemiecki', nativeName: 'Deutsch' },
+  { code: 'fr', short: 'FR', flag: '🇫🇷', label: 'Francuski', nativeName: 'Français' },
+  { code: 'es', short: 'ES', flag: '🇪🇸', label: 'Hiszpański', nativeName: 'Español' },
 ];
 
 const PL = {

@@ -1,9 +1,10 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   Animated,
+  Easing,
   Pressable,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -25,7 +26,45 @@ export const HoldToStartButton: React.FC<HoldToStartButtonProps> = ({
   const [isHolding, setIsHolding] = useState(false);
   const progressAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(1)).current;
+  const idlePulseAnim = useRef(new Animated.Value(0)).current;
   const hapticTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    if (isHolding) {
+      idlePulseAnim.stopAnimation();
+      idlePulseAnim.setValue(0);
+      return;
+    }
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(idlePulseAnim, {
+          toValue: 1,
+          duration: 1200,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+        Animated.timing(idlePulseAnim, {
+          toValue: 0,
+          duration: 1200,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    loop.start();
+    return () => {
+      loop.stop();
+    };
+  }, [isHolding, idlePulseAnim]);
+
+  const iconPulseScale = idlePulseAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [1, 1.09],
+  });
+  const fingerprintOpacity = idlePulseAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.55, 0.95],
+  });
 
   const startHold = () => {
     setIsHolding(true);
@@ -130,13 +169,21 @@ export const HoldToStartButton: React.FC<HoldToStartButtonProps> = ({
 
         {/* Content */}
         <View style={styles.content}>
-          <View style={[styles.iconCircle, { backgroundColor: theme.primaryText }]}>
+          <Animated.View
+            style={[
+              styles.iconCircle,
+              {
+                backgroundColor: theme.primaryText,
+                transform: [{ scale: iconPulseScale }],
+              },
+            ]}
+          >
             <Ionicons
               name={isHolding ? 'radio-button-on' : 'play'}
               size={18}
               color={theme.primary}
             />
-          </View>
+          </Animated.View>
 
           <View style={styles.textCol}>
             <Text style={[styles.title, { color: theme.primaryText }]}>
@@ -147,12 +194,13 @@ export const HoldToStartButton: React.FC<HoldToStartButtonProps> = ({
             </Text>
           </View>
 
-          <Ionicons
-            name="finger-print-outline"
-            size={22}
-            color={theme.primaryText}
-            style={{ opacity: 0.7 }}
-          />
+          <Animated.View style={{ opacity: fingerprintOpacity, transform: [{ scale: iconPulseScale }] }}>
+            <Ionicons
+              name="finger-print-outline"
+              size={22}
+              color={theme.primaryText}
+            />
+          </Animated.View>
         </View>
       </Pressable>
     </Animated.View>

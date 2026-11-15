@@ -9,7 +9,8 @@ export type AnimatedIconPreset =
   | 'trophy'
   | 'heart'
   | 'footsteps'
-  | 'moon';
+  | 'moon'
+  | 'pulse';
 
 interface AnimatedIconProps {
   name: keyof typeof Ionicons.glyphMap;
@@ -46,6 +47,7 @@ export const AnimatedIcon: React.FC<AnimatedIconProps> = ({
     else if (preset === 'footsteps') duration = 1700;
     else if (preset === 'moon') duration = 2600;
     else if (preset === 'trophy') duration = 2100;
+    else if (preset === 'pulse') duration = 1850;
 
     const loop = Animated.loop(
       Animated.sequence([
@@ -172,6 +174,21 @@ export const AnimatedIcon: React.FC<AnimatedIconProps> = ({
         scale: anim.interpolate({
           inputRange: [0, 1],
           outputRange: [0.97, 1.07],
+        }),
+      }
+    );
+  } else if (preset === 'pulse') {
+    transform.push(
+      {
+        scale: anim.interpolate({
+          inputRange: [0, 0.5, 1],
+          outputRange: [1, 1.14, 1],
+        }),
+      },
+      {
+        translateY: anim.interpolate({
+          inputRange: [0, 0.5, 1],
+          outputRange: [0, -1, 0],
         }),
       }
     );

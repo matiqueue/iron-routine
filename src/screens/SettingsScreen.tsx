@@ -39,7 +39,6 @@ import {
   ensureNotificationPermissions,
   getNotificationPermissionSummary,
   NotificationPermissionSummary,
-  scheduleTestRestNotification,
   syncRemindersWithSettings,
 } from '../services/notifications';
 import { fetchTodayHealthSummary, requestHealthPermissions } from '../services/health';
@@ -778,33 +777,13 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                 Powiadomienia i przypomnienia
               </Text>
             </View>
-            <TouchableOpacity
-              style={[styles.smallActionPill, { backgroundColor: theme.bgSecondary }]}
-              onPress={async () => {
-                triggerSelectionHaptic();
-                const res = await scheduleTestRestNotification();
-                setNotifPerm(res);
-                if (!res.granted) {
-                  Alert.alert(
-                    'Powiadomienia zablokowane w systemie',
-                    'Włącz Alerty i Dźwięki dla Iron Routine w ustawieniach iOS, aby alarm wibrował na zablokowanym ekranie.',
-                    [
-                      { text: 'Anuluj', style: 'cancel' },
-                      { text: 'Ustawienia', onPress: () => Linking.openSettings() },
-                    ]
-                  );
-                  return;
-                }
-                Alert.alert(
-                  'Alarm testowy ustawiony na za 5s',
-                  'Wyjdź z aplikacji lub zablokuj ekran teraz, aby sprawdzić alarm i wibrację po 5 sekundach.'
-                );
-              }}
-              activeOpacity={0.75}
-            >
-              <Ionicons name="notifications-outline" size={13} color={theme.text} />
-              <Text style={[styles.smallActionPillText, { color: theme.text }]}>Test (5s)</Text>
-            </TouchableOpacity>
+            <AnimatedIcon
+              name="notifications-outline"
+              preset="bell"
+              size={18}
+              color={settings.restNotificationsEnabled ? '#10B981' : theme.textMuted}
+              active={settings.restNotificationsEnabled}
+            />
           </View>
 
           <View style={[styles.openSwitchLine, { borderBottomColor: theme.hairline }]}>
@@ -1035,7 +1014,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           {settings.healthSyncEnabled && healthSummary?.authorized && (
             <View style={styles.healthPillRow}>
               <View style={[styles.healthChip, { backgroundColor: theme.bgSecondary }]}>
-                <Ionicons name="footsteps-outline" size={13} color={theme.text} />
+                <AnimatedIcon name="footsteps-outline" preset="footsteps" size={13} color={theme.text} active />
                 <Text style={[styles.healthChipText, { color: theme.text }]}>
                   {healthSummary.steps !== null
                     ? `${healthSummary.steps.toLocaleString('pl-PL')} kroków`
@@ -1043,7 +1022,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                 </Text>
               </View>
               <View style={[styles.healthChip, { backgroundColor: theme.bgSecondary }]}>
-                <Ionicons name="moon-outline" size={13} color={theme.text} />
+                <AnimatedIcon name="moon-outline" preset="moon" size={13} color={theme.text} active />
                 <Text style={[styles.healthChipText, { color: theme.text }]}>
                   {healthSummary.sleepHours !== null ? `${healthSummary.sleepHours} h snu` : '- h snu'}
                 </Text>
@@ -1189,7 +1168,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             }}
             activeOpacity={0.85}
           >
-            <Ionicons name="cafe-outline" size={18} color="#09090B" />
+            <AnimatedIcon name="cafe-outline" preset="pulse" size={18} color="#09090B" active />
             <Text style={styles.coffeeBtnText}>Buy Me a Coffee · Wesprzyj autora</Text>
             <Ionicons name="open-outline" size={15} color="#09090B" />
           </TouchableOpacity>
