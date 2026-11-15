@@ -421,6 +421,15 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
     cloudSession || activeProfile.cloudUserId || activeProfile.cloudEmail
   );
 
+  const savedName = (activeProfile.name || '').trim();
+  const savedHeight = activeProfile.height ? String(activeProfile.height) : '';
+  const savedWeight = activeProfile.weight ? String(activeProfile.weight) : '';
+  const hasProfileChanges =
+    nameInput.trim() !== savedName ||
+    heightInput.trim() !== savedHeight ||
+    weightInput.trim() !== savedWeight ||
+    genderInput !== (activeProfile.gender || 'male');
+
   return (
     <View style={[styles.container, { backgroundColor: theme.bg }]}>
       {/* Open Editorial Header */}
@@ -597,20 +606,22 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             </View>
           </View>
 
-          <TouchableOpacity
-            style={[styles.openPrimaryAction, { backgroundColor: theme.primary, marginTop: 8 }]}
-            onPress={handleSaveProfile}
-            disabled={isSavingProfile}
-            activeOpacity={0.85}
-          >
-            {isSavingProfile ? (
-              <ActivityIndicator size="small" color={theme.primaryText} />
-            ) : (
-              <Text style={[styles.openPrimaryActionText, { color: theme.primaryText }]}>
-                Zapisz parametry profilu
-              </Text>
-            )}
-          </TouchableOpacity>
+          {hasProfileChanges && (
+            <TouchableOpacity
+              style={[styles.openPrimaryAction, { backgroundColor: theme.primary, marginTop: 8 }]}
+              onPress={handleSaveProfile}
+              disabled={isSavingProfile}
+              activeOpacity={0.85}
+            >
+              {isSavingProfile ? (
+                <ActivityIndicator size="small" color={theme.primaryText} />
+              ) : (
+                <Text style={[styles.openPrimaryActionText, { color: theme.primaryText }]}>
+                  Zapisz parametry profilu
+                </Text>
+              )}
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* =========================================================

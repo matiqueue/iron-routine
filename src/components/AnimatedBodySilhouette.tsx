@@ -8,7 +8,17 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import Svg, { Circle, Defs, G, Line, LinearGradient, Path, Stop } from 'react-native-svg';
+import Svg, {
+  Circle,
+  Defs,
+  G,
+  Line,
+  LinearGradient,
+  Path,
+  Pattern,
+  Rect,
+  Stop,
+} from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useAppTheme } from '../context/ThemeContext';
@@ -491,8 +501,40 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = Rea
         </TouchableOpacity>
       </View>
 
-      {/* Interactive Swipe-to-Rotate Silhouette Stage (Locked on Central Axis) */}
-      <View {...panResponder.panHandlers} style={styles.swipeZone}>
+      {/* Interactive Swipe-to-Rotate Silhouette Stage with Crisp Technical Grid ("Kratki") */}
+      <View
+        {...panResponder.panHandlers}
+        style={[
+          styles.swipeZone,
+          {
+            borderColor: isDark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(24, 24, 27, 0.06)',
+          },
+        ]}
+      >
+        <Svg
+          width="100%"
+          height="100%"
+          style={StyleSheet.absoluteFill}
+          pointerEvents="none"
+        >
+          <Defs>
+            <Pattern
+              id="silhouetteGrid"
+              width={24}
+              height={24}
+              patternUnits="userSpaceOnUse"
+            >
+              <Path
+                d="M 24 0 L 0 0 0 24"
+                fill="none"
+                stroke={isDark ? 'rgba(255, 255, 255, 0.055)' : 'rgba(24, 24, 27, 0.055)'}
+                strokeWidth={1}
+              />
+            </Pattern>
+          </Defs>
+          <Rect x={0} y={0} width="100%" height="100%" fill="url(#silhouetteGrid)" />
+        </Svg>
+
         <Animated.View
           style={[
             styles.stageWrap,
@@ -791,9 +833,13 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   swipeZone: {
+    position: 'relative',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 4,
+    paddingVertical: 6,
+    borderRadius: 18,
+    borderWidth: StyleSheet.hairlineWidth,
+    overflow: 'hidden',
   },
   stageWrap: {
     alignItems: 'center',

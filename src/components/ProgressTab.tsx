@@ -569,16 +569,24 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
 
     for (const m of MUSCLE_SUBGROUPS) {
       map[m.id].sort((a, b) => {
+        const aPR = bestPRs[a.exerciseId];
+        const bPR = bestPRs[b.exerciseId];
+        const aHasProgress = a.totalSets > 0 || Boolean(aPR) ? 1 : 0;
+        const bHasProgress = b.totalSets > 0 || Boolean(bPR) ? 1 : 0;
+        if (bHasProgress !== aHasProgress) return bHasProgress - aHasProgress;
         if (b.totalSets !== a.totalSets) return b.totalSets - a.totalSets;
+        const a1RM = aPR?.estimated1RM || 0;
+        const b1RM = bPR?.estimated1RM || 0;
+        if (b1RM !== a1RM) return b1RM - a1RM;
         return a.exercise.name.localeCompare(b.exercise.name, 'pl');
       });
     }
     return map;
-  }, [allExercises, physiqueReport]);
+  }, [allExercises, physiqueReport, bestPRs]);
 
   const filteredMuscleGroups = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    return MUSCLE_SUBGROUPS.filter((m) => {
+    const matched = MUSCLE_SUBGROUPS.filter((m) => {
       if (muscleFilter !== 'all' && m.id !== muscleFilter) return false;
       const list = exercisesByMuscle[m.id] || [];
       if (!q) return list.length > 0;
@@ -587,7 +595,23 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
         list.some((ex) => ex.exercise.name.toLowerCase().includes(q))
       );
     });
-  }, [muscleFilter, searchQuery, exercisesByMuscle]);
+
+    return [...matched].sort((a, b) => {
+      const aStat = physiqueReport?.muscleStats[a.id];
+      const bStat = physiqueReport?.muscleStats[b.id];
+      const aExList = exercisesByMuscle[a.id] || [];
+      const bExList = exercisesByMuscle[b.id] || [];
+      const aExProgress = aExList.some((e) => e.totalSets > 0 || Boolean(bestPRs[e.exerciseId]));
+      const bExProgress = bExList.some((e) => e.totalSets > 0 || Boolean(bestPRs[e.exerciseId]));
+      const aHas = (aStat?.effectiveSetsTotal || 0) > 0 || aExProgress ? 1 : 0;
+      const bHas = (bStat?.effectiveSetsTotal || 0) > 0 || bExProgress ? 1 : 0;
+      if (bHas !== aHas) return bHas - aHas;
+      const aScore = aStat?.effectiveSetsTotal || 0;
+      const bScore = bStat?.effectiveSetsTotal || 0;
+      if (bScore !== aScore) return bScore - aScore;
+      return 0;
+    });
+  }, [muscleFilter, searchQuery, exercisesByMuscle, physiqueReport, bestPRs]);
 
   const orderedMuscleList = useMemo(() => {
     if (!physiqueReport) return [];
@@ -595,23 +619,38 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
     if (selectedRankTier) {
       list = list.filter((m) => m.rank === selectedRankTier);
     }
+
+    const hasMuscleProgress = (m: MuscleRankStat): number => {
+      if (m.effectiveSetsTotal > 0) return 1;
+      const groupEx = exercisesByMuscle[m.muscleId] || [];
+      return groupEx.some((e) => e.totalSets > 0 || Boolean(bestPRs[e.exerciseId])) ? 1 : 0;
+    };
+
     if (muscleSortMode === 'priority') {
       const priorityOrder: Record<MuscleRankStat['priorityStatus'], number> = {
-        untrained: 0,
-        neglected: 1,
-        lagging: 2,
-        balanced: 3,
-        dominant: 4,
+        neglected: 0,
+        lagging: 1,
+        balanced: 2,
+        dominant: 3,
+        untrained: 4,
       };
       return list.sort((a, b) => {
+        const bHas = hasMuscleProgress(b);
+        const aHas = hasMuscleProgress(a);
+        if (bHas !== aHas) return bHas - aHas;
         if (priorityOrder[a.priorityStatus] !== priorityOrder[b.priorityStatus]) {
           return priorityOrder[a.priorityStatus] - priorityOrder[b.priorityStatus];
         }
         return a.relativeDevelopmentRatio - b.relativeDevelopmentRatio;
       });
     }
-    return list.sort((a, b) => b.effectiveSetsTotal - a.effectiveSetsTotal);
-  }, [physiqueReport, muscleSortMode, selectedRankTier]);
+    return list.sort((a, b) => {
+      const bHas = hasMuscleProgress(b);
+      const aHas = hasMuscleProgress(a);
+      if (bHas !== aHas) return bHas - aHas;
+      return b.effectiveSetsTotal - a.effectiveSetsTotal;
+    });
+  }, [physiqueReport, muscleSortMode, selectedRankTier, exercisesByMuscle, bestPRs]);
 
   const tierDistribution = useMemo(() => {
     const counts: Record<RankTier, number> = {
