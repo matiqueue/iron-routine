@@ -110,6 +110,17 @@ const PLAN_VISUAL_META: Record<
 
 const STEP_ACCENTS = ['#10B981', '#F59E0B', '#EF4444', '#38BDF8', '#A855F7', '#10B981'];
 
+const SWAP_CAT_COLORS: Record<string, string> = {
+  chest: '#38BDF8',
+  back: '#10B981',
+  legs: '#F59E0B',
+  shoulders: '#A855F7',
+  arms: '#EC4899',
+  core: '#14B8A6',
+  cardio: '#F97316',
+  other: '#71717A',
+};
+
 export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted }) => {
   const { theme, isDark, toggleTheme } = useAppTheme();
   const { language, t, muscleLabel, equipmentLabel, dayLabel } = useLanguage();
@@ -995,7 +1006,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
                             size={18}
                             color={active ? theme.bg : theme.textSecondary}
                           />
-                          <View style={{ flex: 1 }}>
+                          <View style={{ flex: 1, minWidth: 0 }}>
                             <Text
                               style={[
                                 styles.genderOptionTitle,
@@ -1034,12 +1045,12 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
                     ]}
                   >
                     <Svg
-                      width={78}
-                      height={145}
+                      width={56}
+                      height={106}
                       viewBox={
                         gender === 'female'
-                          ? '-50.5 15 740 1445'
-                          : '-11.2 80 724 1320'
+                          ? '-80 0 800 1490'
+                          : '-35 60 770 1360'
                       }
                     >
                       <Path
@@ -1988,6 +1999,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
                 const anatomy = resolveExerciseMuscles(cand);
                 const cid = resolveCanonicalExerciseId(cand.id, cand.name);
                 const isFav = favSet.has(cand.id) || favSet.has(cid);
+                const catColor = SWAP_CAT_COLORS[cand.category] || '#10B981';
                 const secLbls = anatomy.secondary
                   .filter((s) => s.weight >= 0.25)
                   .slice(0, 3)
@@ -1997,40 +2009,98 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
                   <TouchableOpacity
                     key={cand.id}
                     style={[
-                      styles.swapOptionRow,
-                      { borderBottomColor: theme.hairline },
+                      styles.swapOptionCard,
+                      {
+                        backgroundColor: isFav ? `${catColor}12` : theme.bgSecondary,
+                        borderColor: isFav ? `${catColor}55` : theme.border,
+                      },
                     ]}
                     onPress={() => handleConfirmSwapOrAdd(cand)}
-                    activeOpacity={0.78}
+                    activeOpacity={0.8}
                   >
-                    <View style={{ flex: 1, minWidth: 0 }}>
-                      <Text style={[styles.swapOptionTitle, { color: theme.text }]}>
-                        {cand.name}
-                      </Text>
-                      <Text style={[styles.swapOptionMuscles, { color: theme.textSecondary }]}>
-                        {muscleLabel(anatomy.primary, true)}
-                        {secLbls.length > 0 ? ` + ${secLbls.join(', ')}` : ''}
-                      </Text>
-                      <Text style={[styles.swapOptionMeta, { color: theme.textMuted }]}>
-                        {cand.sets} × {cand.reps}
-                        {cand.equipment ? ` · ${equipmentLabel(cand.equipment)}` : ''}
-                      </Text>
-                    </View>
+                    <View style={[styles.swapCatStripe, { backgroundColor: catColor }]} />
 
-                    <TouchableOpacity
-                      onPress={() => handleToggleSwapFavorite(cand)}
-                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                      style={{ padding: 6 }}
-                    >
-                      <Ionicons
-                        name={isFav ? 'heart' : 'heart-outline'}
-                        size={18}
-                        color={isFav ? '#EF4444' : theme.textMuted}
-                      />
-                    </TouchableOpacity>
+                    <View style={styles.swapCardBody}>
+                      <View style={styles.swapCardTopRow}>
+                        <Text
+                          style={[styles.swapOptionTitle, { color: theme.text }]}
+                          numberOfLines={2}
+                        >
+                          {cand.name}
+                        </Text>
 
-                    <View style={[styles.swapSelectPill, { backgroundColor: theme.primary }]}>
-                      <Ionicons name="checkmark" size={14} color={theme.primaryText} />
+                        <TouchableOpacity
+                          onPress={() => handleToggleSwapFavorite(cand)}
+                          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                          style={[
+                            styles.swapFavBtn,
+                            {
+                              backgroundColor: isFav
+                                ? 'rgba(239, 68, 68, 0.14)'
+                                : isDark
+                                ? 'rgba(255,255,255,0.06)'
+                                : 'rgba(24,24,27,0.05)',
+                            },
+                          ]}
+                        >
+                          <Ionicons
+                            name={isFav ? 'heart' : 'heart-outline'}
+                            size={16}
+                            color={isFav ? '#EF4444' : theme.textMuted}
+                          />
+                        </TouchableOpacity>
+                      </View>
+
+                      <View style={styles.swapMusclePillsRow}>
+                        <View
+                          style={[
+                            styles.swapPrimaryMusclePill,
+                            {
+                              backgroundColor: `${catColor}1A`,
+                              borderColor: `${catColor}44`,
+                            },
+                          ]}
+                        >
+                          <View style={[styles.swapMuscleDot, { backgroundColor: catColor }]} />
+                          <Text style={[styles.swapPrimaryMuscleText, { color: catColor }]}>
+                            {muscleLabel(anatomy.primary, true)}
+                          </Text>
+                        </View>
+
+                        {secLbls.map((sLbl) => (
+                          <View
+                            key={sLbl}
+                            style={[
+                              styles.swapSecMusclePill,
+                              {
+                                backgroundColor: isDark
+                                  ? 'rgba(255,255,255,0.05)'
+                                  : 'rgba(24,24,27,0.04)',
+                                borderColor: theme.hairline,
+                              },
+                            ]}
+                          >
+                            <Text style={[styles.swapSecMuscleText, { color: theme.textSecondary }]}>
+                              +{sLbl}
+                            </Text>
+                          </View>
+                        ))}
+                      </View>
+
+                      <View style={styles.swapCardFooterRow}>
+                        <View style={styles.swapMetaBadges}>
+                          <Text style={[styles.swapSetsTag, { color: theme.text }]}>
+                            {cand.sets} × {cand.reps}
+                          </Text>
+                          {cand.equipment ? (
+                            <Text style={[styles.swapOptionMeta, { color: theme.textMuted }]}>
+                              · {equipmentLabel(cand.equipment)}
+                            </Text>
+                          ) : null}
+                        </View>
+
+                        <Ionicons name="chevron-forward" size={16} color={theme.textMuted} />
+                      </View>
                     </View>
                   </TouchableOpacity>
                 );
@@ -2356,10 +2426,11 @@ const styles = StyleSheet.create({
   genderShowcaseRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
+    gap: 10,
   },
   genderPillsCol: {
     flex: 1,
+    minWidth: 0,
     gap: 8,
   },
   genderOptionRow: {
@@ -2379,10 +2450,12 @@ const styles = StyleSheet.create({
     marginTop: 1,
   },
   silhouetteMiniPreview: {
-    width: 86,
-    height: 150,
+    width: 68,
+    height: 118,
+    overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
+    flexShrink: 0,
   },
   underlineInputGroup: {
     paddingVertical: 10,
@@ -2808,34 +2881,98 @@ const styles = StyleSheet.create({
   },
   swapListContent: {
     paddingHorizontal: 18,
+    paddingTop: 4,
     paddingBottom: 40,
-  },
-  swapOptionRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
     gap: 10,
-    paddingVertical: 14,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  swapOptionCard: {
+    flexDirection: 'row',
+    borderRadius: 16,
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  swapCatStripe: {
+    width: 4,
+  },
+  swapCardBody: {
+    flex: 1,
+    minWidth: 0,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    gap: 8,
+  },
+  swapCardTopRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 10,
   },
   swapOptionTitle: {
+    flex: 1,
     fontSize: 15,
     fontWeight: '800',
+    lineHeight: 20,
   },
-  swapOptionMuscles: {
+  swapFavBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  swapMusclePillsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  swapPrimaryMusclePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 3.5,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  swapMuscleDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  swapPrimaryMuscleText: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  swapSecMusclePill: {
+    paddingHorizontal: 8,
+    paddingVertical: 3.5,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  swapSecMuscleText: {
+    fontSize: 10.5,
+    fontWeight: '700',
+  },
+  swapCardFooterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  swapMetaBadges: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flex: 1,
+    minWidth: 0,
+  },
+  swapSetsTag: {
     fontSize: 12,
-    fontWeight: '600',
-    marginTop: 3,
+    fontWeight: '800',
   },
   swapOptionMeta: {
-    fontSize: 11,
-    marginTop: 3,
-  },
-  swapSelectPill: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
+    fontSize: 11.5,
+    fontWeight: '600',
   },
   inlineEmptySwap: {
     textAlign: 'center',

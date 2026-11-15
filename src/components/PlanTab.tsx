@@ -122,44 +122,6 @@ export const PlanTab: React.FC<PlanTabProps> = ({
             <Text style={[styles.libraryBtnText, { color: theme.text }]}>{t('planLibraryBtn')}</Text>
           </TouchableOpacity>
         </View>
-
-        <View style={styles.planControlsRow}>
-          <TouchableOpacity
-            style={[
-              styles.planSelectorPill,
-              { backgroundColor: theme.bgSecondary, borderColor: theme.border },
-            ]}
-            onPress={() => {
-              triggerSelectionHaptic();
-              onOpenPlanManager?.();
-            }}
-            activeOpacity={0.75}
-          >
-            <Ionicons name="layers-outline" size={15} color={theme.text} />
-            <Text style={[styles.planSelectorText, { color: theme.text }]} numberOfLines={1}>
-              {activePlan?.name || 'Mój Plan'}
-            </Text>
-            <Text style={[styles.planCountBadge, { color: theme.textMuted }]}>
-              ({allPlansCount})
-            </Text>
-            <Ionicons name="chevron-down" size={14} color={theme.textMuted} />
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              styles.editDayHeaderBtn,
-              { backgroundColor: theme.bgSecondary, borderColor: theme.border },
-            ]}
-            onPress={() => {
-              triggerSelectionHaptic();
-              setEditingDay(true);
-            }}
-            activeOpacity={0.75}
-          >
-            <Ionicons name="create-outline" size={15} color={theme.text} />
-            <Text style={[styles.editDayHeaderBtnText, { color: theme.text }]}>{t('planEditDayBtn')}</Text>
-          </TouchableOpacity>
-        </View>
       </View>
 
       {/* Day Selector Pills */}
@@ -215,6 +177,44 @@ export const PlanTab: React.FC<PlanTabProps> = ({
         contentContainerStyle={styles.contentInner}
         showsVerticalScrollIndicator={false}
       >
+        <View style={styles.planControlsRow}>
+          <TouchableOpacity
+            style={[
+              styles.planSelectorPill,
+              { backgroundColor: theme.bgSecondary, borderColor: theme.border },
+            ]}
+            onPress={() => {
+              triggerSelectionHaptic();
+              onOpenPlanManager?.();
+            }}
+            activeOpacity={0.75}
+          >
+            <Ionicons name="layers-outline" size={15} color={theme.text} />
+            <Text style={[styles.planSelectorText, { color: theme.text }]} numberOfLines={1}>
+              {activePlan?.name || 'Mój Plan'}
+            </Text>
+            <Text style={[styles.planCountBadge, { color: theme.textMuted }]}>
+              ({allPlansCount})
+            </Text>
+            <Ionicons name="chevron-down" size={14} color={theme.textMuted} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.editDayHeaderBtn,
+              { backgroundColor: theme.bgSecondary, borderColor: theme.border },
+            ]}
+            onPress={() => {
+              triggerSelectionHaptic();
+              setEditingDay(true);
+            }}
+            activeOpacity={0.75}
+          >
+            <Ionicons name="create-outline" size={15} color={theme.text} />
+            <Text style={[styles.editDayHeaderBtnText, { color: theme.text }]}>{t('planEditDayBtn')}</Text>
+          </TouchableOpacity>
+        </View>
+
         <Animated.View
           style={{
             opacity: contentFadeAnim,
@@ -274,19 +274,6 @@ export const PlanTab: React.FC<PlanTabProps> = ({
           </View>
         </View>
 
-        {/* Warmup advice */}
-        {currentPlan.warmup ? (
-          <View style={[styles.warmupNotice, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
-            <Ionicons name="information-circle-outline" size={20} color={theme.text} style={{ marginTop: 1 }} />
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.warmupTitle, { color: theme.text }]}>Wskazówka rozgrzewkowa</Text>
-              <Text style={[styles.warmupDesc, { color: theme.textSecondary }]}>
-                {currentPlan.warmup}
-              </Text>
-            </View>
-          </View>
-        ) : null}
-
         {/* Start workout button */}
         {currentPlan.type === 'workout' &&
           currentPlan.exercises &&
@@ -303,6 +290,19 @@ export const PlanTab: React.FC<PlanTabProps> = ({
               </Text>
             </TouchableOpacity>
           )}
+
+        {/* Warmup advice (placed below Start Workout button) */}
+        {currentPlan.warmup ? (
+          <View style={[styles.warmupNotice, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
+            <Ionicons name="information-circle-outline" size={20} color={theme.text} style={{ marginTop: 1 }} />
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.warmupTitle, { color: theme.text }]}>Wskazówka rozgrzewkowa</Text>
+              <Text style={[styles.warmupDesc, { color: theme.textSecondary }]}>
+                {currentPlan.warmup}
+              </Text>
+            </View>
+          </View>
+        ) : null}
 
         {/* Empty workout day prompt */}
         {currentPlan.type === 'workout' &&
@@ -675,7 +675,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    marginTop: 12,
+    marginBottom: 14,
   },
   planSelectorPill: {
     flex: 1,

@@ -40,7 +40,7 @@ interface TodayScreenProps {
   isHealthLoading?: boolean;
   onRefreshHealth?: () => void;
   onConnectHealth: () => void;
-  onConfigureSession: () => void;
+  onConfigureSession?: () => void;
   onOpenPlanManager: () => void;
   onOpenBodyStats: () => void;
   onStartWorkout: (dayId?: string) => void;
@@ -81,7 +81,6 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
   isHealthLoading = false,
   onRefreshHealth,
   onConnectHealth,
-  onConfigureSession,
   onOpenPlanManager,
   onOpenBodyStats,
   onStartWorkout,
@@ -413,52 +412,9 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
             </View>
           ) : null}
 
-          {/* PRESERVED: HOLD TO START BUTTON & Session Configure Stack */}
+          {/* PRESERVED: HOLD TO START BUTTON */}
           {totalExercises > 0 ? (
             <View style={styles.startStack}>
-              <TouchableOpacity
-                style={[
-                  styles.configureSessionBtn,
-                  { backgroundColor: theme.bgSecondary, borderColor: theme.border },
-                ]}
-                onPress={() => {
-                  triggerSelectionHaptic();
-                  onConfigureSession();
-                }}
-                activeOpacity={0.78}
-              >
-                <View style={styles.configureLeft}>
-                  <View
-                    style={[
-                      styles.configureIconWrap,
-                      { backgroundColor: theme.card, borderColor: theme.border },
-                    ]}
-                  >
-                    <AnimatedIcon
-                      name="options-outline"
-                      preset="barbell"
-                      size={17}
-                      color={theme.text}
-                      active={false}
-                    />
-                  </View>
-                  <View style={{ flex: 1, minWidth: 0 }}>
-                    <Text style={[styles.configureTitle, { color: theme.text }]} numberOfLines={1}>
-                      Konfiguruj dzisiejszą sesję
-                    </Text>
-                    <Text style={[styles.configureSub, { color: theme.textMuted }]} numberOfLines={1}>
-                      {dayProgress.sessionConfig
-                        ? `Aktywne: ${activeExercisesCount}/${totalExercises} ćwiczeń · własna kolejność`
-                        : 'Zaznacz ćwiczenia i ustaw kolejność przed startem'}
-                    </Text>
-                  </View>
-                </View>
-                <View style={styles.bodyStatsActionWrap}>
-                  <Text style={[styles.bodyStatsActionText, { color: theme.text }]}>{t('change')}</Text>
-                  <Ionicons name="chevron-forward" size={15} color={theme.textMuted} />
-                </View>
-              </TouchableOpacity>
-
               <HoldToStartButton
                 onComplete={() => onStartWorkout(currentPlan.id)}
                 title={t('todayStartWorkout').toUpperCase()}
@@ -1036,41 +992,6 @@ const styles = StyleSheet.create({
   startStack: {
     gap: 10,
     marginBottom: 6,
-  },
-  configureSessionBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    borderRadius: 16,
-    borderWidth: 1,
-    gap: 10,
-  },
-  configureLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 11,
-    flex: 1,
-    minWidth: 0,
-  },
-  configureIconWrap: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-  },
-  configureTitle: {
-    fontSize: 14,
-    fontWeight: '800',
-  },
-  configureSub: {
-    fontSize: 11,
-    fontWeight: '600',
-    marginTop: 2,
   },
   openSection: {
     marginTop: 20,

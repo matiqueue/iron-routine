@@ -198,6 +198,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
   // Exercises sub-view filter & search
   const [muscleFilter, setMuscleFilter] = useState<MuscleSubGroupId | 'all'>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [expandedExGroups, setExpandedExGroups] = useState<Record<string, boolean>>({});
 
   // Exercise progression sheet
   const { t, muscleLabel } = useLanguage();
@@ -1564,6 +1565,10 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
 
                 if (exList.length === 0) return null;
 
+                const isGroupExpanded = Boolean(expandedExGroups[mGroup.id]);
+                const visibleExList = q || isGroupExpanded ? exList : exList.slice(0, 3);
+                const hasMoreEx = !q && exList.length > 3;
+
                 return (
                   <View
                     key={mGroup.id}
@@ -1581,7 +1586,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                       </Text>
                     </View>
 
-                    {exList.map((exStat, idx) => {
+                    {visibleExList.map((exStat, idx) => {
                       const pr = bestPRs[exStat.exerciseId];
                       return (
                         <TouchableOpacity
@@ -1645,6 +1650,40 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                         </TouchableOpacity>
                       );
                     })}
+
+                    {hasMoreEx && (
+                      <TouchableOpacity
+                        style={[
+                          styles.loadAllMusclesBtn,
+                          {
+                            backgroundColor: theme.bgSecondary,
+                            borderColor: theme.border,
+                          },
+                        ]}
+                        onPress={() => {
+                          try {
+                            Haptics.selectionAsync();
+                          } catch {}
+                          LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                          setExpandedExGroups((prev) => ({
+                            ...prev,
+                            [mGroup.id]: !prev[mGroup.id],
+                          }));
+                        }}
+                        activeOpacity={0.78}
+                      >
+                        <Text style={[styles.loadAllMusclesText, { color: theme.text }]}>
+                          {isGroupExpanded
+                            ? t('progressShowTop')
+                            : `${t('progressLoadAll')} (${exList.length})`}
+                        </Text>
+                        <Ionicons
+                          name={isGroupExpanded ? 'chevron-up' : 'chevron-down'}
+                          size={15}
+                          color={theme.textSecondary}
+                        />
+                      </TouchableOpacity>
+                    )}
                   </View>
                 );
               })}

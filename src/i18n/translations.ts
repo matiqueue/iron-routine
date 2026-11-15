@@ -62,7 +62,7 @@ const PL = {
   chooseLanguage: 'Wybierz język',
 
   // Onboarding
-  welcomeHeadline: 'Witaj na siłowni.\nZacznij mądrze.',
+  welcomeHeadline: 'Witaj w Iron Routine.\nZacznij mądrze.',
   welcomeSub:
     'W minutę dopasujemy model sylwetki, dawkowanie suplementów, budzik przerw oraz tryb treningu z doborem ćwiczeń.',
   welcomeStart: 'Rozpocznij konfigurację',
@@ -200,7 +200,7 @@ const EN: Record<TranslationKey, string> = {
   languageSub: 'Polski, English, Deutsch, Français, Español',
   chooseLanguage: 'Choose language',
 
-  welcomeHeadline: 'Welcome to the gym.\nTrain smarter.',
+  welcomeHeadline: 'Welcome to Iron Routine.\nTrain smarter.',
   welcomeSub:
     'In one minute we will tailor your body model, supplements, rest alarm and workout split with exercise selection.',
   welcomeStart: 'Start setup',
@@ -332,7 +332,7 @@ const DE: Record<TranslationKey, string> = {
   languageSub: 'Polski, English, Deutsch, Français, Español',
   chooseLanguage: 'Sprache wählen',
 
-  welcomeHeadline: 'Willkommen im Gym.\nTrainiere smart.',
+  welcomeHeadline: 'Willkommen bei Iron Routine.\nTrainiere smart.',
   welcomeSub:
     'In einer Minute passen wir Körpermodell, Supplemente, Pausentimer und Trainingsmodus an.',
   welcomeStart: 'Einrichtung starten',
@@ -464,7 +464,7 @@ const FR: Record<TranslationKey, string> = {
   languageSub: 'Polski, English, Deutsch, Français, Español',
   chooseLanguage: 'Choisir la langue',
 
-  welcomeHeadline: 'Bienvenue à la salle.\nEntraîne-toi mieux.',
+  welcomeHeadline: 'Bienvenue sur Iron Routine.\nEntraîne-toi mieux.',
   welcomeSub:
     'En une minute, nous configurons ton modèle anatomique, suppléments, minuteur et programme.',
   welcomeStart: 'Commencer la configuration',
@@ -596,7 +596,7 @@ const ES: Record<TranslationKey, string> = {
   languageSub: 'Polski, English, Deutsch, Français, Español',
   chooseLanguage: 'Elegir idioma',
 
-  welcomeHeadline: 'Bienvenido al gym.\nEntrena mejor.',
+  welcomeHeadline: 'Bienvenido a Iron Routine.\nEntrena mejor.',
   welcomeSub:
     'En un minuto ajustaremos tu modelo anatómico, suplementos, temporizador y modo de entrenamiento.',
   welcomeStart: 'Comenzar configuración',
