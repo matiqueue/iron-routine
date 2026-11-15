@@ -10,7 +10,7 @@ import React, {
 import {
   Animated,
   Dimensions,
-  KeyboardAvoidingView,
+  Keyboard,
   Modal,
   PanResponder,
   Platform,
@@ -22,6 +22,7 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAppTheme } from '../context/ThemeContext';
 import { triggerSelectionHaptic } from '../services/haptics';
 
@@ -115,10 +116,38 @@ export const InteractiveBottomSheet: React.FC<InteractiveBottomSheetProps> = ({
   children,
 }) => {
   const { theme } = useAppTheme();
+  const insets = useSafeAreaInsets();
   const baseHeight = Math.round(SCREEN_HEIGHT * initialHeightPercent);
 
   const [renderModal, setRenderModal] = useState(visible);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const renderModalRef = useRef(visible);
+
+  useEffect(() => {
+    if (!visible) {
+      setKeyboardHeight(0);
+      return;
+    }
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+
+    const showSub = Keyboard.addListener(showEvent, (e) => {
+      const h = e?.endCoordinates?.height || 0;
+      setKeyboardHeight(h);
+    });
+    const hideSub = Keyboard.addListener(hideEvent, () => {
+      setKeyboardHeight(0);
+    });
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, [visible]);
+
+  const topSafe = Math.max(insets.top, Platform.OS === 'ios' ? 48 : 24);
+  const availableHeight = Math.max(260, SCREEN_HEIGHT - topSafe - keyboardHeight - 8);
+  const sheetHeight = Math.min(baseHeight, availableHeight);
 
   const translateY = useRef(new Animated.Value(visible ? 0 : SCREEN_HEIGHT)).current;
   const scrollOffsetYRef = useRef(0);
@@ -293,10 +322,7 @@ export const InteractiveBottomSheet: React.FC<InteractiveBottomSheetProps> = ({
       statusBarTranslucent
       onRequestClose={animateClose}
     >
-      <KeyboardAvoidingView
-        style={styles.root}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
+      <View style={[styles.root, keyboardHeight > 0 && { paddingBottom: keyboardHeight }]}>
         <Animated.View
           style={[
             StyleSheet.absoluteFill,
@@ -314,7 +340,8 @@ export const InteractiveBottomSheet: React.FC<InteractiveBottomSheetProps> = ({
           style={[
             styles.sheet,
             {
-              height: baseHeight,
+              height: sheetHeight,
+              maxHeight: availableHeight,
               backgroundColor: theme.card,
               borderColor: theme.border,
               transform: [{ translateY }],
@@ -367,7 +394,7 @@ export const InteractiveBottomSheet: React.FC<InteractiveBottomSheetProps> = ({
             <View style={styles.body}>{children}</View>
           </BottomSheetContext.Provider>
         </Animated.View>
-      </KeyboardAvoidingView>
+      </View>
     </Modal>
   );
 };

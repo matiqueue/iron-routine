@@ -40,7 +40,7 @@ export function Footer() {
                 rel="noopener noreferrer"
                 className="font-semibold text-white underline decoration-zinc-600 underline-offset-4 transition-colors hover:decoration-white"
               >
-                Matique (@matiqueue)
+                matique (@matiqueue)
               </a>
             </p>
           </div>
@@ -87,8 +87,8 @@ export function Footer() {
               </RouteLink>
             ))}
           </div>
-          <span className="font-mono text-[11px] text-zinc-600">
-            100% OFFLINE • MONOCHROME EDITION
+          <span className="font-mono text-[11px] text-zinc-500">
+            SZYFROWANA CHMURA NOSQL (TYLKO PRZECHOWYWANIE KONTA) • MONOCHROME EDITION
           </span>
         </div>
       </div>

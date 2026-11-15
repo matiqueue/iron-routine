@@ -1,8 +1,18 @@
-import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Platform } from 'react-native';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  Animated,
+  PanResponder,
+  Platform,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAppTheme } from '../context/ThemeContext';
+import { useLanguage } from '../context/LanguageContext';
+import { TranslationKey } from '../i18n/translations';
 import { triggerSelectionHaptic } from '../services/haptics';
 
 export type AppTabKey = 'today' | 'plan' | 'progress' | 'settings';
@@ -14,87 +24,297 @@ interface BottomTabBarProps {
 
 const TABS: {
   key: AppTabKey;
-  label: string;
+  labelKey: TranslationKey;
   iconActive: keyof typeof Ionicons.glyphMap;
   iconInactive: keyof typeof Ionicons.glyphMap;
 }[] = [
-  { key: 'today', label: 'Trening', iconActive: 'barbell', iconInactive: 'barbell-outline' },
-  { key: 'plan', label: 'Plan', iconActive: 'calendar', iconInactive: 'calendar-outline' },
-  { key: 'progress', label: 'Osiągi', iconActive: 'analytics', iconInactive: 'analytics-outline' },
-  { key: 'settings', label: 'Ustawienia', iconActive: 'settings', iconInactive: 'settings-outline' },
+  { key: 'today', labelKey: 'tabToday', iconActive: 'barbell', iconInactive: 'barbell-outline' },
+  { key: 'plan', labelKey: 'tabPlan', iconActive: 'calendar', iconInactive: 'calendar-outline' },
+  { key: 'progress', labelKey: 'tabProgress', iconActive: 'analytics', iconInactive: 'analytics-outline' },
+  { key: 'settings', labelKey: 'tabSettings', iconActive: 'settings', iconInactive: 'settings-outline' },
 ];
 
 export const BottomTabBar: React.FC<BottomTabBarProps> = ({ activeTab, onSelectTab }) => {
-  const { theme } = useAppTheme();
+  const { theme, isDark } = useAppTheme();
+  const { t } = useLanguage();
   const insets = useSafeAreaInsets();
-  const bottomPad = Math.max(insets.bottom, Platform.OS === 'ios' ? 16 : 8);
+  const bottomOffset = Math.max(insets.bottom > 0 ? insets.bottom - 4 : 10, Platform.OS === 'ios' ? 14 : 10);
+
+  const [barWidth, setBarWidth] = useState(0);
+  const barWidthRef = useRef(0);
+  const activeTabRef = useRef<AppTabKey>(activeTab);
+  const dragStartIdxRef = useRef(0);
+
+  const activeIdx = Math.max(0, TABS.findIndex((t) => t.key === activeTab));
+  const thumbAnim = useRef(new Animated.Value(activeIdx)).current;
+  const thumbScale = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    activeTabRef.current = activeTab;
+    const idx = Math.max(0, TABS.findIndex((t) => t.key === activeTab));
+    Animated.parallel([
+      Animated.spring(thumbAnim, {
+        toValue: idx,
+        friction: 7,
+        tension: 88,
+        useNativeDriver: true,
+      }),
+      Animated.sequence([
+        Animated.timing(thumbScale, {
+          toValue: 0.95,
+          duration: 75,
+          useNativeDriver: true,
+        }),
+        Animated.spring(thumbScale, {
+          toValue: 1,
+          friction: 5,
+          tension: 120,
+          useNativeDriver: true,
+        }),
+      ]),
+    ]).start();
+  }, [activeTab, thumbAnim, thumbScale]);
+
+  const panResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => false,
+        onMoveShouldSetPanResponder: (_, gestureState) =>
+          Math.abs(gestureState.dx) > 5 &&
+          Math.abs(gestureState.dx) > Math.abs(gestureState.dy),
+        onMoveShouldSetPanResponderCapture: (_, gestureState) =>
+          Math.abs(gestureState.dx) > 6 &&
+          Math.abs(gestureState.dx) > Math.abs(gestureState.dy),
+        onPanResponderGrant: () => {
+          dragStartIdxRef.current = Math.max(
+            0,
+            TABS.findIndex((t) => t.key === activeTabRef.current)
+          );
+          Animated.spring(thumbScale, {
+            toValue: 0.96,
+            friction: 7,
+            tension: 120,
+            useNativeDriver: true,
+          }).start();
+        },
+        onPanResponderMove: (_, gestureState) => {
+          const totalW = barWidthRef.current;
+          const slotW = totalW > 10 ? (totalW - 10) / TABS.length : 80;
+          const rawIdx = dragStartIdxRef.current + gestureState.dx / slotW;
+          const clampedIdx = Math.max(0, Math.min(TABS.length - 1, rawIdx));
+          thumbAnim.setValue(clampedIdx);
+
+          const nearestIdx = Math.round(clampedIdx);
+          const nextTab = TABS[nearestIdx]?.key;
+          if (nextTab && nextTab !== activeTabRef.current) {
+            activeTabRef.current = nextTab;
+            triggerSelectionHaptic();
+            onSelectTab(nextTab);
+          }
+        },
+        onPanResponderRelease: () => {
+          const finalIdx = Math.max(
+            0,
+            TABS.findIndex((t) => t.key === activeTabRef.current)
+          );
+          Animated.parallel([
+            Animated.spring(thumbAnim, {
+              toValue: finalIdx,
+              friction: 7,
+              tension: 92,
+              useNativeDriver: true,
+            }),
+            Animated.spring(thumbScale, {
+              toValue: 1,
+              friction: 6,
+              tension: 120,
+              useNativeDriver: true,
+            }),
+          ]).start();
+        },
+        onPanResponderTerminate: () => {
+          const finalIdx = Math.max(
+            0,
+            TABS.findIndex((t) => t.key === activeTabRef.current)
+          );
+          Animated.parallel([
+            Animated.spring(thumbAnim, {
+              toValue: finalIdx,
+              friction: 7,
+              tension: 92,
+              useNativeDriver: true,
+            }),
+            Animated.spring(thumbScale, {
+              toValue: 1,
+              friction: 6,
+              tension: 120,
+              useNativeDriver: true,
+            }),
+          ]).start();
+        },
+      }),
+    [onSelectTab, thumbAnim, thumbScale]
+  );
+
+  const slotWidth = barWidth > 10 ? (barWidth - 10) / TABS.length : 0;
+  const thumbTranslateX = thumbAnim.interpolate({
+    inputRange: [0, 1, 2, 3],
+    outputRange: [0, slotWidth, slotWidth * 2, slotWidth * 3],
+  });
 
   return (
     <View
+      pointerEvents="box-none"
       style={[
-        styles.bottomBar,
+        styles.outerPositioner,
         {
-          backgroundColor: theme.card,
-          borderTopColor: theme.border,
-          paddingBottom: bottomPad,
-          height: 54 + bottomPad,
+          bottom: bottomOffset,
         },
       ]}
     >
-      {TABS.map((tab) => {
-        const isActive = activeTab === tab.key;
-        return (
-          <TouchableOpacity
-            key={tab.key}
-            style={styles.navItem}
-            activeOpacity={0.7}
-            onPress={() => {
-              triggerSelectionHaptic();
-              onSelectTab(tab.key);
-            }}
-          >
-            <Ionicons
-              name={isActive ? tab.iconActive : tab.iconInactive}
-              size={22}
-              color={isActive ? theme.text : theme.textMuted}
-            />
-            <Text
-              style={[
-                styles.navLabel,
-                { color: isActive ? theme.text : theme.textMuted },
-              ]}
-              numberOfLines={1}
+      <View
+        {...panResponder.panHandlers}
+        onLayout={(e) => {
+          const w = e.nativeEvent.layout.width;
+          barWidthRef.current = w;
+          setBarWidth(w);
+        }}
+        style={[
+          styles.glassDock,
+          {
+            backgroundColor: isDark
+              ? 'rgba(18, 18, 22, 0.84)'
+              : 'rgba(255, 255, 255, 0.86)',
+            borderColor: isDark
+              ? 'rgba(255, 255, 255, 0.14)'
+              : 'rgba(24, 24, 27, 0.09)',
+            shadowOpacity: isDark ? 0.52 : 0.14,
+          },
+        ]}
+      >
+        {/* Top Specular Glass Reflection Line */}
+        <View
+          pointerEvents="none"
+          style={[
+            styles.specularTopLine,
+            {
+              backgroundColor: isDark
+                ? 'rgba(255, 255, 255, 0.18)'
+                : 'rgba(255, 255, 255, 0.95)',
+            },
+          ]}
+        />
+
+        {/* Animated Liquid Glass Active Pill */}
+        {slotWidth > 0 && (
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              styles.activeGlassPill,
+              {
+                width: slotWidth,
+                backgroundColor: isDark
+                  ? 'rgba(255, 255, 255, 0.11)'
+                  : 'rgba(24, 24, 27, 0.08)',
+                borderColor: isDark
+                  ? 'rgba(255, 255, 255, 0.16)'
+                  : 'rgba(24, 24, 27, 0.08)',
+                transform: [
+                  { translateX: thumbTranslateX },
+                  { scale: thumbScale },
+                ],
+              },
+            ]}
+          />
+        )}
+
+        {TABS.map((tab) => {
+          const isActive = activeTab === tab.key;
+          return (
+            <TouchableOpacity
+              key={tab.key}
+              style={styles.navItem}
+              activeOpacity={0.78}
+              onPress={() => {
+                if (activeTab !== tab.key) {
+                  triggerSelectionHaptic();
+                  onSelectTab(tab.key);
+                }
+              }}
             >
-              {tab.label}
-            </Text>
-          </TouchableOpacity>
-        );
-      })}
+              <Ionicons
+                name={isActive ? tab.iconActive : tab.iconInactive}
+                size={20}
+                color={isActive ? theme.text : theme.textMuted}
+              />
+              <Text
+                style={[
+                  styles.navLabel,
+                  {
+                    color: isActive ? theme.text : theme.textMuted,
+                    fontWeight: isActive ? '800' : '600',
+                  },
+                ]}
+                numberOfLines={1}
+              >
+                {t(tab.labelKey)}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  bottomBar: {
+  outerPositioner: {
     position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
+    left: 16,
+    right: 16,
+    zIndex: 50,
+  },
+  glassDock: {
+    position: 'relative',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-around',
-    borderTopWidth: StyleSheet.hairlineWidth,
-    paddingTop: 6,
+    height: 62,
+    borderRadius: 31,
+    paddingHorizontal: 5,
+    borderWidth: 1,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowRadius: 24,
+    elevation: 16,
+    overflow: 'hidden',
+  },
+  specularTopLine: {
+    position: 'absolute',
+    top: 0,
+    left: 24,
+    right: 24,
+    height: StyleSheet.hairlineWidth,
+  },
+  activeGlassPill: {
+    position: 'absolute',
+    top: 5,
+    bottom: 5,
+    left: 5,
+    borderRadius: 26,
+    borderWidth: StyleSheet.hairlineWidth,
   },
   navItem: {
     flex: 1,
     minWidth: 0,
+    height: '100%',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 3,
+    zIndex: 2,
   },
   navLabel: {
-    fontSize: 11,
-    fontWeight: '700',
+    fontSize: 10.5,
+    letterSpacing: -0.1,
   },
 });

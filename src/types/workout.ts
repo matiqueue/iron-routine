@@ -1,11 +1,41 @@
 export type MuscleCategory = 'klatka' | 'plecy' | 'nogi' | 'barki' | 'ramiona' | 'brzuch' | 'ogolne';
 
+export type MuscleSubGroupId =
+  | 'upper_chest'
+  | 'mid_lower_chest'
+  | 'front_delts'
+  | 'side_delts'
+  | 'rear_delts'
+  | 'biceps'
+  | 'triceps'
+  | 'forearms'
+  | 'traps'
+  | 'lats'
+  | 'mid_back'
+  | 'lower_back'
+  | 'abs'
+  | 'obliques'
+  | 'quads'
+  | 'hamstrings'
+  | 'glutes'
+  | 'adductors'
+  | 'calves';
+
+export type RankTier = 'F' | 'E' | 'D' | 'C' | 'B' | 'A' | 'S' | 'S+';
+
 export type EquipmentType = 'Sztanga' | 'Hantle' | 'Maszyna' | 'Wyciąg' | 'Masa ciała' | 'Inne';
+
+export interface SecondaryMuscleWeight {
+  muscle: MuscleSubGroupId;
+  weight: number; // e.g. 0.35 - 0.5
+}
 
 export interface Exercise {
   id: string;
   name: string;
   category: MuscleCategory;
+  primaryMuscle?: MuscleSubGroupId;
+  secondaryMuscles?: SecondaryMuscleWeight[];
   sets: number;
   reps: string;
   rest: number; // in seconds
@@ -78,7 +108,10 @@ export interface HealthDailySummary {
   lastSyncedAt?: string;
 }
 
+export type AppLanguage = 'pl' | 'en' | 'de' | 'fr' | 'es';
+
 export interface AppSettings {
+  language: AppLanguage;
   hapticsEnabled: boolean;
   hapticsIntensity: 'subtle' | 'medium' | 'strong';
   restEndMultiBuzz: boolean;
@@ -94,7 +127,7 @@ export interface AppSettings {
   healthSyncEnabled: boolean;
 }
 
-export type PlanTemplateKey = 'blank' | 'fbw3' | 'ppl' | 'upper_lower' | 'clone_current';
+export type PlanTemplateKey = 'blank' | 'fbw3' | 'ppl' | 'upper_lower' | 'split4' | 'clone_current';
 
 export interface WorkoutPlan {
   id: string;
@@ -119,14 +152,21 @@ export interface DayProgress {
   sessionConfig?: SessionExerciseConfig;
 }
 
+export type UserGender = 'male' | 'female';
+
 export interface UserProfile {
   id: string;
   name: string;
   isOwner?: boolean;
   createdAt: string;
   avatarColor?: string;
+  gender?: UserGender;
   height?: number; // in cm (e.g. 180)
   weight?: number; // in kg (e.g. 60.1)
+  cloudUserId?: string;
+  cloudProvider?: 'apple' | 'google';
+  cloudEmail?: string;
+  lastCloudSyncAt?: string;
 }
 
 export interface WeightEntry {
@@ -158,6 +198,7 @@ export interface WorkoutHistoryEntry {
   totalSets: number;
   durationMinutes?: number;
   totalVolumeKg?: number;
+  exerciseSets?: { [exerciseId: string]: number };
 }
 
 export interface NewPRHighlight {
@@ -190,6 +231,7 @@ export interface ProfileBackupPayload {
   plans: WorkoutPlan[];
   activePlanId?: string;
   customExercises: Exercise[];
+  favoriteExerciseIds?: string[];
   prRecords: { [exerciseId: string]: PRRecord[] };
   history: WorkoutHistoryEntry[];
   weightHistory: WeightEntry[];

@@ -12,22 +12,31 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useAppTheme } from '../context/ThemeContext';
-import { EquipmentType, Exercise, MuscleCategory } from '../types/workout';
+import { useLanguage } from '../context/LanguageContext';
+import { EquipmentType, Exercise, MuscleCategory, MuscleSubGroupId } from '../types/workout';
 import {
   EQUIPMENT_OPTIONS,
   EXERCISE_LIBRARY,
+  getExerciseCategoriesWorked,
   MUSCLE_CATEGORY_META,
   cloneExercise,
+  resolveCanonicalExerciseId,
 } from '../data/exerciseLibrary';
+import {
+  MUSCLE_SUBGROUPS,
+  resolveExerciseMuscles,
+} from '../data/muscleMap';
 import { mergeAllExercises } from '../data/planData';
 import {
   deleteCustomExercise,
   getCustomExercises,
+  getFavoriteExerciseIds,
   saveCustomExercise,
+  toggleFavoriteExercise,
 } from '../services/storage';
 import { BottomSheetScrollView } from './InteractiveBottomSheet';
 
-export type LibraryCategoryFilter = MuscleCategory | 'wszystkie' | 'wlasne';
+export type LibraryCategoryFilter = MuscleCategory | 'wszystkie' | 'polubione' | 'wlasne';
 
 interface ExerciseLibraryContentProps {
   mode?: 'pick' | 'manage' | 'swap';
@@ -45,8 +54,10 @@ export const ExerciseLibraryContent: React.FC<ExerciseLibraryContentProps> = ({
   onLibraryChanged,
 }) => {
   const { theme } = useAppTheme();
+  const { t, muscleLabel, categoryLabel, equipmentLabel } = useLanguage();
 
   const [customExercises, setCustomExercises] = useState<Exercise[]>([]);
+  const [favoriteIds, setFavoriteIds] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<LibraryCategoryFilter>('wszystkie');
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -55,6 +66,7 @@ export const ExerciseLibraryContent: React.FC<ExerciseLibraryContentProps> = ({
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [newName, setNewName] = useState('');
   const [newCategory, setNewCategory] = useState<MuscleCategory>('klatka');
+  const [newPrimaryMuscle, setNewPrimaryMuscle] = useState<MuscleSubGroupId>('mid_lower_chest');
   const [newEquipment, setNewEquipment] = useState<EquipmentType>('Sztanga');
   const [newSets, setNewSets] = useState('3');
   const [newReps, setNewReps] = useState('8-12');
@@ -63,13 +75,30 @@ export const ExerciseLibraryContent: React.FC<ExerciseLibraryContentProps> = ({
   const [newNote, setNewNote] = useState('');
 
   const loadCustom = useCallback(async () => {
-    const list = await getCustomExercises();
+    const [list, favs] = await Promise.all([getCustomExercises(), getFavoriteExerciseIds()]);
     setCustomExercises(list);
+    setFavoriteIds(favs);
   }, []);
 
   useEffect(() => {
     loadCustom();
   }, [loadCustom]);
+
+  const favoriteSet = useMemo(() => new Set(favoriteIds), [favoriteIds]);
+
+  const isFavoriteEx = useCallback(
+    (ex: Exercise) => {
+      const cid = resolveCanonicalExerciseId(ex.id, ex.name);
+      return favoriteSet.has(ex.id) || favoriteSet.has(cid);
+    },
+    [favoriteSet]
+  );
+
+  const handleToggleFavorite = async (ex: Exercise) => {
+    const next = await toggleFavoriteExercise(ex);
+    setFavoriteIds(next);
+    onLibraryChanged?.();
+  };
 
   const allLibrary = useMemo(() => {
     // Custom first, then built-in gym catalog, then unique extra plan exercises (if not matching by name)
@@ -83,25 +112,53 @@ export const ExerciseLibraryContent: React.FC<ExerciseLibraryContentProps> = ({
 
   const filteredExercises = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    return allLibrary.filter((ex) => {
+    const list = allLibrary.filter((ex) => {
       if (selectedCategory === 'wlasne' && !ex.isCustom) return false;
+      if (selectedCategory === 'polubione' && !isFavoriteEx(ex)) return false;
       if (
         selectedCategory !== 'wszystkie' &&
         selectedCategory !== 'wlasne' &&
-        ex.category !== selectedCategory
+        selectedCategory !== 'polubione'
       ) {
-        return false;
+        const workedCats = getExerciseCategoriesWorked(ex);
+        if (!workedCats.includes(selectedCategory)) return false;
       }
 
       if (!q) return true;
+      const anatomy = resolveExerciseMuscles(ex);
+      const muscleText = [
+        muscleLabel(anatomy.primary),
+        ...anatomy.secondary.map((s) => muscleLabel(s.muscle)),
+      ]
+        .join(' ')
+        .toLowerCase();
       return (
         ex.name.toLowerCase().includes(q) ||
         ex.category.toLowerCase().includes(q) ||
+        muscleText.includes(q) ||
         (ex.equipment || '').toLowerCase().includes(q) ||
         (ex.description || '').toLowerCase().includes(q)
       );
     });
-  }, [allLibrary, selectedCategory, searchQuery]);
+
+    // Always prioritize favorited exercises first, then primary category match when filtering by body part
+    return list.slice().sort((a, b) => {
+      const aFav = isFavoriteEx(a) ? 1 : 0;
+      const bFav = isFavoriteEx(b) ? 1 : 0;
+      if (aFav !== bFav) return bFav - aFav;
+
+      if (
+        selectedCategory !== 'wszystkie' &&
+        selectedCategory !== 'wlasne' &&
+        selectedCategory !== 'polubione'
+      ) {
+        const aPrimaryMatch = a.category === selectedCategory ? 1 : 0;
+        const bPrimaryMatch = b.category === selectedCategory ? 1 : 0;
+        if (aPrimaryMatch !== bPrimaryMatch) return bPrimaryMatch - aPrimaryMatch;
+      }
+      return 0;
+    });
+  }, [allLibrary, selectedCategory, searchQuery, isFavoriteEx, muscleLabel]);
 
   const handleToggleCreateForm = () => {
     try {
@@ -125,6 +182,7 @@ export const ExerciseLibraryContent: React.FC<ExerciseLibraryContentProps> = ({
     const created = await saveCustomExercise({
       name: trimmedName,
       category: newCategory,
+      primaryMuscle: newPrimaryMuscle,
       equipment: newEquipment,
       sets: parsedSets,
       reps: trimmedReps,
@@ -181,12 +239,21 @@ export const ExerciseLibraryContent: React.FC<ExerciseLibraryContentProps> = ({
     setExpandedId((prev) => (prev === ex.id ? null : ex.id));
   };
 
+  const favoritesCount = useMemo(
+    () => allLibrary.filter((ex) => isFavoriteEx(ex)).length,
+    [allLibrary, isFavoriteEx]
+  );
+
   const filterTabs: { id: LibraryCategoryFilter; label: string }[] = [
-    { id: 'wszystkie', label: `Wszystkie (${allLibrary.length})` },
+    { id: 'wszystkie', label: `${t('all')} (${allLibrary.length})` },
+    { id: 'polubione', label: `${t('favorites')} (${favoritesCount})` },
     ...(customExercises.length > 0
-      ? [{ id: 'wlasne' as LibraryCategoryFilter, label: `Własne (${customExercises.length})` }]
+      ? [{ id: 'wlasne' as LibraryCategoryFilter, label: `${t('custom')} (${customExercises.length})` }]
       : []),
-    ...MUSCLE_CATEGORY_META.map((m) => ({ id: m.id as LibraryCategoryFilter, label: m.label })),
+    ...MUSCLE_CATEGORY_META.map((m) => ({
+      id: m.id as LibraryCategoryFilter,
+      label: categoryLabel(m.id),
+    })),
   ];
 
   return (
@@ -202,7 +269,7 @@ export const ExerciseLibraryContent: React.FC<ExerciseLibraryContentProps> = ({
           <Ionicons name="search" size={16} color={theme.textMuted} />
           <TextInput
             style={[styles.searchInput, { color: theme.text }]}
-            placeholder="Szukaj ćwiczenia lub sprzętu..."
+            placeholder={t('searchPlaceholder')}
             placeholderTextColor={theme.textMuted}
             value={searchQuery}
             onChangeText={setSearchQuery}
@@ -237,7 +304,7 @@ export const ExerciseLibraryContent: React.FC<ExerciseLibraryContentProps> = ({
               { color: showCreateForm ? theme.primaryText : theme.text },
             ]}
           >
-            Własne
+            {t('custom')}
           </Text>
         </TouchableOpacity>
       </View>
@@ -316,7 +383,6 @@ export const ExerciseLibraryContent: React.FC<ExerciseLibraryContentProps> = ({
               placeholderTextColor={theme.textMuted}
               value={newName}
               onChangeText={setNewName}
-              autoFocus
             />
 
             <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>PARTIA MIĘŚNIOWA</Text>
@@ -337,7 +403,13 @@ export const ExerciseLibraryContent: React.FC<ExerciseLibraryContentProps> = ({
                         borderColor: active ? theme.primary : theme.border,
                       },
                     ]}
-                    onPress={() => setNewCategory(cat.id)}
+                    onPress={() => {
+                      setNewCategory(cat.id);
+                      const firstSub = MUSCLE_SUBGROUPS.find((m) => m.parentCategory === cat.id);
+                      if (firstSub) {
+                        setNewPrimaryMuscle(firstSub.id);
+                      }
+                    }}
                     activeOpacity={0.7}
                   >
                     <Text
@@ -352,6 +424,46 @@ export const ExerciseLibraryContent: React.FC<ExerciseLibraryContentProps> = ({
                 );
               })}
             </ScrollView>
+
+            {MUSCLE_SUBGROUPS.some((m) => m.parentCategory === newCategory) && (
+              <>
+                <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>
+                  MIĘSIEŃ ANATOMICZNY (MODEL 3D & RANGI)
+                </Text>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.chipRow}
+                >
+                  {MUSCLE_SUBGROUPS.filter((m) => m.parentCategory === newCategory).map((sub) => {
+                    const active = newPrimaryMuscle === sub.id;
+                    return (
+                      <TouchableOpacity
+                        key={sub.id}
+                        style={[
+                          styles.chip,
+                          {
+                            backgroundColor: active ? theme.primary : theme.card,
+                            borderColor: active ? theme.primary : theme.border,
+                          },
+                        ]}
+                        onPress={() => setNewPrimaryMuscle(sub.id)}
+                        activeOpacity={0.7}
+                      >
+                        <Text
+                          style={[
+                            styles.chipText,
+                            { color: active ? theme.primaryText : theme.text },
+                          ]}
+                        >
+                          {sub.label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              </>
+            )}
 
             <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>SPRZĘT</Text>
             <ScrollView
@@ -483,8 +595,13 @@ export const ExerciseLibraryContent: React.FC<ExerciseLibraryContentProps> = ({
           filteredExercises.map((ex) => {
             const isAdded = alreadyInDayIds.includes(ex.id);
             const isExpanded = expandedId === ex.id;
-            const catLabel =
-              MUSCLE_CATEGORY_META.find((m) => m.id === ex.category)?.label || ex.category;
+            const isFav = isFavoriteEx(ex);
+            const anatomy = resolveExerciseMuscles(ex);
+            const primaryLabel = muscleLabel(anatomy.primary, true);
+            const secondaryLabels = anatomy.secondary
+              .filter((s) => s.weight >= 0.2)
+              .slice(0, 4)
+              .map((s) => muscleLabel(s.muscle, true));
 
             return (
               <View
@@ -495,6 +612,8 @@ export const ExerciseLibraryContent: React.FC<ExerciseLibraryContentProps> = ({
                     backgroundColor: theme.bgSecondary,
                     borderColor: isAdded
                       ? theme.borderDark
+                      : isFav
+                      ? 'rgba(239, 68, 68, 0.35)'
                       : isExpanded
                       ? theme.text
                       : theme.border,
@@ -516,7 +635,7 @@ export const ExerciseLibraryContent: React.FC<ExerciseLibraryContentProps> = ({
                         ]}
                       >
                         <Text style={[styles.catTagText, { color: theme.text }]}>
-                          {catLabel.toUpperCase()}
+                          {primaryLabel.toUpperCase()}
                         </Text>
                       </View>
 
@@ -529,19 +648,37 @@ export const ExerciseLibraryContent: React.FC<ExerciseLibraryContentProps> = ({
                         >
                           <Ionicons name="barbell-outline" size={11} color={theme.textMuted} />
                           <Text style={[styles.equipTagText, { color: theme.textSecondary }]}>
-                            {ex.equipment}
+                            {equipmentLabel(ex.equipment)}
                           </Text>
                         </View>
                       )}
 
                       {ex.isCustom && (
                         <View style={[styles.customBadge, { backgroundColor: '#F59E0B' }]}>
-                          <Text style={styles.customBadgeText}>WŁASNE</Text>
+                          <Text style={styles.customBadgeText}>{t('custom').toUpperCase()}</Text>
                         </View>
                       )}
                     </View>
 
                     <View style={styles.exActions}>
+                      <TouchableOpacity
+                        style={[
+                          styles.infoIconBtn,
+                          {
+                            backgroundColor: isFav ? 'rgba(239, 68, 68, 0.14)' : theme.card,
+                            borderColor: isFav ? 'rgba(239, 68, 68, 0.45)' : theme.border,
+                          },
+                        ]}
+                        onPress={() => handleToggleFavorite(ex)}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      >
+                        <Ionicons
+                          name={isFav ? 'heart' : 'heart-outline'}
+                          size={15}
+                          color={isFav ? '#EF4444' : theme.textMuted}
+                        />
+                      </TouchableOpacity>
+
                       <TouchableOpacity
                         style={[
                           styles.infoIconBtn,
@@ -581,7 +718,7 @@ export const ExerciseLibraryContent: React.FC<ExerciseLibraryContentProps> = ({
                               { color: isAdded ? theme.textMuted : theme.primaryText },
                             ]}
                           >
-                            {mode === 'swap' ? 'Zamień' : isAdded ? 'Dodano' : 'Dodaj'}
+                            {mode === 'swap' ? t('change') : isAdded ? t('added') : t('add')}
                           </Text>
                         </View>
                       ) : ex.isCustom ? (
@@ -601,6 +738,13 @@ export const ExerciseLibraryContent: React.FC<ExerciseLibraryContentProps> = ({
                   {/* Title */}
                   <Text style={[styles.exName, { color: theme.text }]}>{ex.name}</Text>
 
+                  {/* Secondary Muscles Worked Strip */}
+                  {secondaryLabels.length > 0 && (
+                    <Text style={[styles.secondaryMusclesLine, { color: theme.textSecondary }]}>
+                      + {secondaryLabels.join(' · ')}
+                    </Text>
+                  )}
+
                   {/* Structured Stats Bar */}
                   <View style={styles.exStatsStrip}>
                     <View
@@ -611,7 +755,7 @@ export const ExerciseLibraryContent: React.FC<ExerciseLibraryContentProps> = ({
                     >
                       <Ionicons name="repeat-outline" size={12} color={theme.textMuted} />
                       <Text style={[styles.exStatText, { color: theme.textSecondary }]}>
-                        {ex.sets} × {ex.reps} powt.
+                        {ex.sets} × {ex.reps} {t('reps')}
                       </Text>
                     </View>
                     <View
@@ -622,7 +766,7 @@ export const ExerciseLibraryContent: React.FC<ExerciseLibraryContentProps> = ({
                     >
                       <Ionicons name="timer-outline" size={12} color={theme.textMuted} />
                       <Text style={[styles.exStatText, { color: theme.textSecondary }]}>
-                        Przerwa {ex.rest}s
+                        {t('rest')} {ex.rest}s
                       </Text>
                     </View>
                   </View>
@@ -897,6 +1041,12 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
     borderRadius: 8,
     borderWidth: StyleSheet.hairlineWidth,
+  },
+  secondaryMusclesLine: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginBottom: 8,
+    marginTop: -4,
   },
   exStatText: {
     fontSize: 12,

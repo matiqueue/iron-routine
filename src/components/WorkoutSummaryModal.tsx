@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, Modal, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAppTheme } from '../context/ThemeContext';
+import { useLanguage } from '../context/LanguageContext';
 import { NewPRHighlight } from '../types/workout';
 import { AnimatedIcon } from './AnimatedIcon';
 
@@ -27,6 +28,7 @@ export const WorkoutSummaryModal: React.FC<WorkoutSummaryModalProps> = ({
   onClose,
 }) => {
   const { theme } = useAppTheme();
+  const { t } = useLanguage();
   const completionPct =
     totalSets > 0 ? Math.min(100, Math.round((completedSets / totalSets) * 100)) : 100;
 
@@ -38,7 +40,7 @@ export const WorkoutSummaryModal: React.FC<WorkoutSummaryModalProps> = ({
             <AnimatedIcon name="trophy" preset="trophy" size={32} color="#F59E0B" active={visible} />
           </View>
 
-          <Text style={[styles.title, { color: theme.text }]}>Trening ukończony</Text>
+          <Text style={[styles.title, { color: theme.text }]}>{t('summaryDoneTitle')}</Text>
           <Text style={[styles.dayName, { color: theme.textMuted }]}>{dayName}</Text>
 
           <View style={[styles.statsRow, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
@@ -86,7 +88,7 @@ export const WorkoutSummaryModal: React.FC<WorkoutSummaryModalProps> = ({
           )}
 
           <Text style={[styles.cheerText, { color: theme.textSecondary }]}>
-            Wszystkie serie i statystyki zostały zapisane lokalnie w pamięci urządzenia. Odpocznij przed kolejną sesją.
+            {t('summaryLocalSaved')}
           </Text>
 
           <TouchableOpacity
@@ -94,7 +96,7 @@ export const WorkoutSummaryModal: React.FC<WorkoutSummaryModalProps> = ({
             activeOpacity={0.8}
             onPress={onClose}
           >
-            <Text style={[styles.btnText, { color: theme.primaryText }]}>Zamknij</Text>
+            <Text style={[styles.btnText, { color: theme.primaryText }]}>{t('close')}</Text>
           </TouchableOpacity>
         </View>
       </View>

@@ -223,19 +223,15 @@ export const PlanDayEditorModal: React.FC<PlanDayEditorModalProps> = ({
         ) : undefined
       }
     >
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={{ flex: 1 }}
-      >
-        {viewMode === 'library' ? (
-          <ExerciseLibraryContent
-            mode={swapIndex !== null ? 'swap' : 'pick'}
-            alreadyInDayIds={exercises.map((e) => e.id)}
-            extraExercises={extraExercises}
-            onSelectExercise={handlePickedExercise}
-            onLibraryChanged={onLibraryChanged}
-          />
-        ) : (
+      {viewMode === 'library' ? (
+        <ExerciseLibraryContent
+          mode={swapIndex !== null ? 'swap' : 'pick'}
+          alreadyInDayIds={exercises.map((e) => e.id)}
+          extraExercises={extraExercises}
+          onSelectExercise={handlePickedExercise}
+          onLibraryChanged={onLibraryChanged}
+        />
+      ) : (
           <PlanDayEditorBody
             scrollContentStyle={styles.scrollContent}
             footerStyle={[
@@ -617,7 +613,6 @@ export const PlanDayEditorModal: React.FC<PlanDayEditorModalProps> = ({
               )}
           </PlanDayEditorBody>
         )}
-      </KeyboardAvoidingView>
     </InteractiveBottomSheet>
   );
 };

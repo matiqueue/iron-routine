@@ -37,6 +37,7 @@ const TEMPLATE_ICONS: Record<PlanTemplateKey, keyof typeof Ionicons.glyphMap> = 
   fbw3: 'barbell-outline',
   ppl: 'flame-outline',
   upper_lower: 'swap-vertical-outline',
+  split4: 'grid-outline',
   blank: 'document-outline',
   clone_current: 'copy-outline',
 };
@@ -203,11 +204,7 @@ export const PlanManagerModal: React.FC<PlanManagerModalProps> = ({
       subtitle={`${plans.length} ${plans.length === 1 ? 'plan' : 'plany'} • Wspólne rekordy PR`}
       initialHeightPercent={0.86}
     >
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={{ flex: 1 }}
-      >
-        <BottomSheetScrollView
+      <BottomSheetScrollView
           style={styles.scroll}
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
@@ -585,7 +582,6 @@ export const PlanManagerModal: React.FC<PlanManagerModalProps> = ({
             );
           })}
         </BottomSheetScrollView>
-      </KeyboardAvoidingView>
     </InteractiveBottomSheet>
   );
 };

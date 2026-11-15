@@ -1,8 +1,8 @@
 import React from 'react';
-import { KeyboardAvoidingView, Platform } from 'react-native';
 import { InteractiveBottomSheet } from './InteractiveBottomSheet';
 import { ExerciseLibraryContent } from './ExerciseLibraryContent';
 import { Exercise } from '../types/workout';
+import { useLanguage } from '../context/LanguageContext';
 
 interface ExerciseLibraryModalProps {
   visible: boolean;
@@ -27,19 +27,21 @@ export const ExerciseLibraryModal: React.FC<ExerciseLibraryModalProps> = ({
   onSelectExercise,
   onLibraryChanged,
 }) => {
+  const { t } = useLanguage();
+
   const resolvedTitle =
     title ||
     (mode === 'swap'
-      ? 'Zamień ćwiczenie'
+      ? t('libraryTitleSwap')
       : mode === 'pick'
-      ? 'Dodaj ćwiczenie z bazy'
-      : 'Baza ćwiczeń na siłownię');
+      ? t('libraryTitlePick')
+      : t('libraryTitleManage'));
 
   const resolvedSubtitle =
     subtitle ||
     (mode === 'manage'
-      ? 'Przeglądaj technikę lub twórz własne ćwiczenia'
-      : 'Wybierz ćwiczenie z bazy albo dodaj własne');
+      ? t('librarySubtitleManage')
+      : t('librarySubtitlePick'));
 
   return (
     <InteractiveBottomSheet
@@ -49,18 +51,13 @@ export const ExerciseLibraryModal: React.FC<ExerciseLibraryModalProps> = ({
       subtitle={resolvedSubtitle}
       initialHeightPercent={0.9}
     >
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={{ flex: 1 }}
-      >
-        <ExerciseLibraryContent
-          mode={mode}
-          alreadyInDayIds={alreadyInDayIds}
-          extraExercises={extraExercises}
-          onSelectExercise={onSelectExercise}
-          onLibraryChanged={onLibraryChanged}
-        />
-      </KeyboardAvoidingView>
+      <ExerciseLibraryContent
+        mode={mode}
+        alreadyInDayIds={alreadyInDayIds}
+        extraExercises={extraExercises}
+        onSelectExercise={onSelectExercise}
+        onLibraryChanged={onLibraryChanged}
+      />
     </InteractiveBottomSheet>
   );
 };

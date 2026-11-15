@@ -1,7 +1,7 @@
 <div align="center">
   <img src="./assets/banner-mono.svg" alt="Iron Routine Monochrome Banner" width="100%" />
   <br /><br />
-  <p><b>Minimalistyczny, monochromatyczny dziennik treningowy i tracker progresu siłowego (iOS & Android, 100% offline)</b></p>
+  <p><b>Minimalistyczny, monochromatyczny dziennik treningowy i tracker progresu siłowego (iOS & Android, pamięć lokalna + szyfrowana chmura NoSQL do przenoszenia konta)</b></p>
 
   <p>
     <a href="https://iron-routine-app.vercel.app"><img src="https://img.shields.io/badge/Strona_WWW-Portal_Pobierania-FFFFFF?style=for-the-badge&labelColor=09090B" alt="Strona WWW" /></a>
@@ -19,21 +19,23 @@
 ## Najważniejsze funkcje (v2.0.0)
 
 - **Monochrome AMOLED UI + Responsywność od 375 pt**: Czysta paleta czerni `#000000` i ciemnych kart `#121214` (plus tryb jasny) z dopracowanymi marginesami dla starszych i nowszych iPhone'ów (`iPhone X / XS` oraz `16 Pro`) i płynnym zamykaniem popupów gestem przesunięcia w dół (`InteractiveBottomSheet` + `BottomSheetScrollView`).
-- **4-krokowy animowany Onboarding & Jeden Profil**: Neutralny start dla nowego użytkownika: parametry ciała, lista suplementów (`Zalecane` / `Wg masy g/kg` / `Własna`), zgody Apple Health / Health Connect i wybór planu startowego (lub `Importuj JSON`).
+- **4-krokowy animowany Onboarding & Wybór Płci**: Otwarty, bezkartonowy kreator dla nowego użytkownika: wybór modelu sylwetki (`Mężczyzna` / `Kobieta`), parametry ciała, lista suplementów (`Zalecane` / `Wg masy g/kg` / `Własna`), zgody Apple Health / Health Connect, wybór planu startowego oraz opcja szybkiego odtworzenia konta z chmury (`Apple iCloud` / `Google`).
+- **Szyfrowana Synchronizacja w Chmurze NoSQL (Vercel)**: Opcjonalne logowanie za pomocą **Apple iCloud** lub **Google** pozwala jednym kliknięciem zapisać lub pobrać kopię JSON profilu między telefonami. Dane użytkowników są zbierane i szyfrowane (`AES-256-GCM`) **wyłącznie w celu wygodnego przechowywania konta oraz migracji między urządzeniami** — nie są nigdzie indziej udostępniane, sprzedawane ani wykorzystywane marketingowo.
+- **Osiągi: Model Anatomiczny (Męski / Kobiecy) & Spektrum Rang F–S+**: Interaktywna sylwetka obracana gestem przesunięcia w bok (`Przesuń w bok, aby obrócić`), z szarym oznaczeniem partii nietrenowanych (`0 serii`), oddzielnym animowanym **Spektrum i Drabiną Rang (`F` → `S+`)** dla 19 grup mięśniowych oraz bazą **125 unikalnych ćwiczeń**.
 - **Jeden Profil, Wiele Planów i Wspólne Rekordy PR**: Przełączaj schematy treningowe (np. FBEOD, Upper/Lower, PPL) bez utraty historii serii, szacowanego 1RM ani wykresów postępu.
 - **Konfiguracja Sesji Przed Startem (Drag & Drop)**: Przed rozpoczęciem treningu odznaczaj pomijane ćwiczenia, zmieniaj ich kolejność przeciąganiem (`SessionExercisePickerModal`) lub dokładaj ćwiczenia ze znormalizowanej bazy + tworzonych własnych ćwiczeń.
 - **iOS Live Activities, Dynamic Island i Alarm Przerw w Tle**: Podgląd bieżącej serii i czasu odpoczynku na ekranie blokady. Wstrzymanie lub zmiana czasu (`-15s` / `+15s`) w `RestTimerBar` natychmiast zamraża Dynamic Island i anuluje lub przesuwa 3-falowy alarm `rest_alarm.wav` z potrójną wibracją poza aplikacją.
 - **Apple HealthKit & Google Health Connect**: Automatyczny odczyt kroków, snu, aktywnych kalorii i dystansu na ekranie **Dziś** wraz z kontekstowymi wskazówkami regeneracji.
 - **Analityka Siły i Objętości**: Szacowany 1RM (wzór Epleya), płynne wykresy SVG (`7d` / `30d` / `90d`), tygodniowa objętość serii per partia mięśniowa oraz dziennik wagi (`BodyStatsModal`).
 - **Banery SVG i Autorska Ikona**: Dopasowane grafiki wektorowe dni (`DayBannerArtwork`) dobierane po tagach planu oraz nowa minimalistyczna ikona aplikacji i animowane ikony interfejsu (`AnimatedIcon`).
-- **Ustawienia, Backup JSON & Prywatne Seedy**: Zakładka `Ustawienia` z edycją profilu, siłą haptyki, przypomnieniami, własnymi ćwiczeniami i eksportem/importem kopii JSON oraz lokalnym folderem `seeds/` wspieranym przez `scripts/use-seed.mjs`.
+- **Ustawienia, Synchronizacja Chmurowa, Backup JSON & Prywatne Seedy**: Otwarta, bezkartonowa zakładka `Ustawienia` z synchronizacją NoSQL (`Apple iCloud` / `Google`), wyborem płci modelu, siłą haptyki, przypomnieniami, własnymi ćwiczeniami i eksportem/importem kopii JSON oraz lokalnym folderem `seeds/` wspieranym przez `scripts/use-seed.mjs`.
 
 ---
 
 ## Stack technologiczny
 
 - **Aplikacja mobilna**: [Expo SDK 58](https://expo.dev) / [React Native 0.88](https://reactnative.dev) / TypeScript
-- **Pamięć lokalna**: `@react-native-async-storage/async-storage` (100% offline, bez kont w chmurze)
+- **Pamięć i Synchronizacja**: `@react-native-async-storage/async-storage` (baza lokalna) + prywatna baza dokumentowa **NoSQL na Vercel (`iron-routine-cloud`)** z szyfrowaniem `AES-256-GCM` wyłącznie dla wygodnego przechowywania kont użytkowników i przenoszenia danych między telefonami.
 - **Moduły natywne**: `expo-live-activity`, `@kingstinct/react-native-healthkit`, `react-native-health-connect`, `expo-notifications`, `expo-haptics`, `expo-keep-awake`, `react-native-svg`
 - **Portal WWW (`website/`)**: React 19 + Vite + TypeScript + Tailwind CSS (wielostronicowy, monochromatyczny, hostowany na Vercel z deployem wyłącznie z gałęzi `main`)
 
@@ -145,7 +147,7 @@ iron-routine/
 
 ## Współtworzenie & Wsparcie
 
-- **Main Contributor**: [Matique (@matiqueue)](https://github.com/matiqueue)
+- **Main Contributor**: [matique (@matiqueue)](https://github.com/matiqueue)
 - **Buy Me a Coffee**: [matiqueue-portfolio.vercel.app](https://matiqueue-portfolio.vercel.app)
 
 Przed otwarciem Pull Requesta zapoznaj się z [CONTRIBUTING.md](./CONTRIBUTING.md), [CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md) oraz [SECURITY.md](./SECURITY.md). Pull Requesty kierujemy zawsze na gałąź **`dev`**, a wydania produkcyjne publikowane są przez scalenie `dev` -> `main`.

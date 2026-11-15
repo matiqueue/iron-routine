@@ -1,1152 +1,2128 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  TextInput,
   Alert,
-  KeyboardAvoidingView,
-  Platform,
   Animated,
+  Dimensions,
+  Easing,
+  KeyboardAvoidingView,
   LayoutAnimation,
+  PanResponder,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
+import Svg, { Circle, Defs, LinearGradient, Line, Path, Stop } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useAppTheme } from '../context/ThemeContext';
+import { useLanguage } from '../context/LanguageContext';
 import {
+  DayPlan,
   Exercise,
-  MuscleCategory,
-  MuscleVolumeStat,
+  MuscleSubGroupId,
   PRRecord,
-  SupplementItem,
+  RankTier,
   UserProfile,
+  WeightEntry,
   WorkoutHistoryEntry,
   WorkoutPlan,
 } from '../types/workout';
-import { getAllExercises, mergeAllExercises } from '../data/planData';
-import { formatSupplementDose } from '../data/supplements';
-import { getAppSettings } from '../services/settings';
 import {
-  getAllBestPRs,
-  getExerciseHistory,
+  EXERCISE_LIBRARY,
+  resolveCanonicalExerciseId,
+} from '../data/exerciseLibrary';
+import {
+  getExerciseRankMeta,
+  MUSCLE_SUBGROUPS,
+  RANK_TIERS,
+  RANK_TIER_MAP,
+  resolveExerciseMuscles,
+} from '../data/muscleMap';
+import { mergeAllExercises, WORKOUT_PLAN } from '../data/planData';
+import {
   addPRRecord,
+  addWeightEntry,
   deletePRRecord,
-  calculate1RM,
-  getCreatineLog,
-  toggleCreatineDay,
-  getWeightStatsSummary,
-  getExerciseImprovements,
-  getWeeklyVolumeByMuscle,
-  getWorkoutHistory,
+  deleteWeightEntry,
+  getAllBestPRs,
   getCustomExercises,
-  CreatineDayEntry,
-  WeightStatsSummary,
-  ExerciseImprovement,
+  getExerciseHistory,
+  getFavoriteExerciseIds,
+  getWeightHistory,
+  getWorkoutHistory,
+  updateProfileStats,
 } from '../services/storage';
-import { ModernSplineChart } from './ModernSplineChart';
-import { InteractiveBottomSheet } from './InteractiveBottomSheet';
+import {
+  computePhysiqueAnalytics,
+  MuscleRankStat,
+  PhysiqueAnalyticsReport,
+} from '../services/muscleAnalytics';
+import {
+  AnimatedBodySilhouette,
+  EnrichedExerciseRankStat,
+} from './AnimatedBodySilhouette';
+import { RankCrestIcon } from './RankCrestIcon';
+import { BottomSheetScrollView, InteractiveBottomSheet } from './InteractiveBottomSheet';
 
-interface ProgressTabProps {
-  activeProfile: UserProfile;
+const SCREEN_WIDTH = Dimensions.get('window').width;
+
+export interface ProgressTabProps {
+  activeProfile?: UserProfile | null;
   activePlan?: WorkoutPlan | null;
   profilePlans?: WorkoutPlan[];
+  profileId?: string;
+  extraExercises?: Exercise[];
   refreshKey?: number;
-  onOpenProfileModal?: () => void;
+  focusedExercise?: Exercise | null;
+  onClearFocusedExercise?: () => void;
 }
 
-type ViewMode = 'stats' | 'exercises';
-type Timeframe = '7d' | '30d' | '90d';
+type SubViewTab = 'physique' | 'exercises' | 'journal';
+type ChartRange = '7d' | '30d' | 'all';
 
-const CATEGORIES: { id: MuscleCategory | 'wszystkie'; label: string }[] = [
-  { id: 'wszystkie', label: 'Wszystkie' },
-  { id: 'klatka', label: 'Klatka' },
-  { id: 'plecy', label: 'Plecy' },
-  { id: 'nogi', label: 'Nogi' },
-  { id: 'barki', label: 'Barki' },
-  { id: 'ramiona', label: 'Ramiona' },
-  { id: 'brzuch', label: 'Brzuch' },
-  { id: 'ogolne', label: 'Ogólne' },
+const SUB_TABS: Array<{ id: SubViewTab; icon: keyof typeof Ionicons.glyphMap; activeIcon: keyof typeof Ionicons.glyphMap; a11y: string }> = [
+  { id: 'physique', icon: 'body-outline', activeIcon: 'body', a11y: 'Sylwetka' },
+  { id: 'exercises', icon: 'barbell-outline', activeIcon: 'barbell', a11y: 'Ćwiczenia' },
+  { id: 'journal', icon: 'stats-chart-outline', activeIcon: 'stats-chart', a11y: 'Dziennik' },
 ];
+
+const SLIDER_PADDING = 3;
+const SLIDER_SLOT_W = 46;
+const SLIDER_WIDTH = SLIDER_SLOT_W * 3 + SLIDER_PADDING * 2; // 144px
+
+/**
+ * Lightweight zero-JS-animation progress fill bar for instant tab switching.
+ */
+const AnimatedFillBar: React.FC<{
+  pct: number;
+  color: string;
+  trackColor: string;
+  height?: number;
+  delayMs?: number;
+}> = React.memo(({ pct, color, trackColor, height = 5 }) => {
+  const clamped = Math.max(0, Math.min(100, pct));
+  return (
+    <View style={[styles.barTrack, { backgroundColor: trackColor, height }]}>
+      <View
+        style={[
+          styles.barFill,
+          {
+            backgroundColor: color,
+            height,
+            width: `${clamped}%`,
+          },
+        ]}
+      />
+    </View>
+  );
+});
+
+const AnimatedVerticalSpectrumBar: React.FC<{
+  pct: number;
+  color: string;
+  trackColor: string;
+  isSelected: boolean;
+  delayMs?: number;
+}> = React.memo(({ pct, color, trackColor, isSelected }) => {
+  const clamped = Math.max(10, Math.min(100, pct));
+  return (
+    <View
+      style={[
+        styles.spectrumColTrack,
+        {
+          backgroundColor: trackColor,
+          borderColor: isSelected ? color : 'transparent',
+          borderWidth: isSelected ? 1.5 : 0,
+        },
+      ]}
+    >
+      <View
+        style={[
+          styles.spectrumColFill,
+          {
+            backgroundColor: color,
+            opacity: isSelected ? 1 : 0.85,
+            height: `${clamped}%`,
+          },
+        ]}
+      />
+    </View>
+  );
+});
 
 export const ProgressTab: React.FC<ProgressTabProps> = ({
   activeProfile,
   activePlan,
   profilePlans = [],
+  profileId,
+  extraExercises = [],
   refreshKey = 0,
-  onOpenProfileModal,
+  focusedExercise,
+  onClearFocusedExercise,
 }) => {
-  const { theme } = useAppTheme();
+  const { theme, isDark } = useAppTheme();
+  const effectiveProfileId = activeProfile?.id || profileId || 'default';
 
-  // Mode: Stats & Trends vs Exercise PR list
-  const [viewMode, setViewMode] = useState<ViewMode>('stats');
-  const [timeframe, setTimeframe] = useState<Timeframe>('7d');
+  // Top sub-view navigation + silky 120fps icon-only sliding pill thumb
+  const [subView, setSubView] = useState<SubViewTab>('physique');
+  const [sliderVisualIdx, setSliderVisualIdx] = useState(0);
+  const subViewRef = useRef<SubViewTab>('physique');
+  const grantXRef = useRef(0);
+  const dragStartIndexRef = useRef(0);
+  const hoverIdxRef = useRef(0);
+  const navThumbAnim = useRef(new Animated.Value(0)).current;
+  const navScaleAnim = useRef(new Animated.Value(1)).current;
+  const viewFadeAnim = useRef(new Animated.Value(1)).current;
 
-  // Animation values for mode and timeframe transitions
-  const modeFadeAnim = useRef(new Animated.Value(1)).current;
-  const modeSlideAnim = useRef(new Animated.Value(0)).current;
-
-  const handleSwitchMode = (mode: ViewMode) => {
-    if (mode === viewMode) return;
-    try {
-      Haptics.selectionAsync();
-    } catch {}
-
-    modeFadeAnim.setValue(0);
-    modeSlideAnim.setValue(8);
-    setViewMode(mode);
-
-    Animated.parallel([
-      Animated.timing(modeFadeAnim, {
-        toValue: 1,
-        duration: 180,
-        useNativeDriver: true,
-      }),
-      Animated.spring(modeSlideAnim, {
-        toValue: 0,
-        friction: 8,
-        tension: 65,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  };
-
-  const handleSwitchTimeframe = (tf: Timeframe) => {
-    if (tf === timeframe) return;
-    try {
-      Haptics.selectionAsync();
-    } catch {}
-
-    modeFadeAnim.setValue(0.3);
-    modeSlideAnim.setValue(6);
-    setTimeframe(tf);
-
-    Animated.parallel([
-      Animated.timing(modeFadeAnim, {
-        toValue: 1,
-        duration: 160,
-        useNativeDriver: true,
-      }),
-      Animated.spring(modeSlideAnim, {
-        toValue: 0,
-        friction: 8,
-        tension: 65,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  };
-
-  // Stats data
-  const [creatineLog, setCreatineLog] = useState<CreatineDayEntry[]>([]);
-  const [weightStats, setWeightStats] = useState<WeightStatsSummary | null>(null);
-  const [improvements, setImprovements] = useState<ExerciseImprovement[]>([]);
-
-  // PR Records State
-  const [bestPRs, setBestPRs] = useState<{ [exerciseId: string]: PRRecord }>({});
-  const [selectedCategory, setSelectedCategory] = useState<MuscleCategory | 'wszystkie'>('wszystkie');
-  const [searchQuery, setSearchQuery] = useState('');
-
-  // Modal State
-  const [selectedExercise, setSelectedExercise] = useState<Exercise | null>(null);
-  const [history, setHistory] = useState<PRRecord[]>([]);
-  const [modalVisible, setModalVisible] = useState(false);
-
-  // Form Inputs
-  const [inputWeight, setInputWeight] = useState('80');
-  const [inputReps, setInputReps] = useState('8');
-  const [inputNote, setInputNote] = useState('');
-  const [customExercises, setCustomExercises] = useState<Exercise[]>([]);
-  const [weeklyVolume, setWeeklyVolume] = useState<MuscleVolumeStat[]>([]);
-  const [workoutHistory, setWorkoutHistory] = useState<WorkoutHistoryEntry[]>([]);
-  const [showAllHistory, setShowAllHistory] = useState(false);
-  const [activeSupplements, setActiveSupplements] = useState<SupplementItem[]>([]);
-
-  const activePlanExerciseIds = useMemo(() => {
-    const ids = new Set<string>();
-    for (const day of activePlan?.days || []) {
-      for (const ex of day.exercises || []) ids.add(ex.id);
-    }
-    return ids;
-  }, [activePlan]);
-
-  const allExercises = useMemo(() => {
-    const planExercises = [
-      ...(activePlan?.days || []).flatMap((d) => d.exercises || []),
-      ...profilePlans.flatMap((p) => p.days.flatMap((d) => d.exercises || [])),
-    ];
-    return mergeAllExercises(planExercises, customExercises, getAllExercises());
-  }, [activePlan, profilePlans, customExercises]);
-
-  const loadData = useCallback(async () => {
-    try {
-      const records = await getAllBestPRs(activeProfile.id);
-      setBestPRs(records);
-
-      const daysCount = timeframe === '7d' ? 7 : timeframe === '30d' ? 30 : 90;
-      const planDaysForVol = activePlan?.days || [];
-
-      const [cLog, wStats, imp, customList, volStats, histList, appSettings] = await Promise.all([
-        getCreatineLog(timeframe === '7d' ? 7 : 14),
-        getWeightStatsSummary(daysCount, activeProfile.id),
-        getExerciseImprovements(activeProfile.id),
-        getCustomExercises(),
-        getWeeklyVolumeByMuscle(planDaysForVol, undefined, activeProfile.id),
-        getWorkoutHistory(activeProfile.id),
-        getAppSettings(),
-      ]);
-
-      setCreatineLog(cLog);
-      setWeightStats(wStats);
-      setImprovements(imp);
-      setCustomExercises(customList);
-      setWeeklyVolume(volStats);
-      setWorkoutHistory(histList);
-      setActiveSupplements((appSettings.supplements || []).filter((s) => s.enabled));
-    } catch (e) {
-      console.warn('Error loading progress stats:', e);
-    }
-  }, [activeProfile.id, timeframe, activePlan]);
+  const scrollViewRef = useRef<any>(null);
 
   useEffect(() => {
-    loadData();
-  }, [loadData, refreshKey]);
+    subViewRef.current = subView;
+    const idx = SUB_TABS.findIndex((t) => t.id === subView);
+    if (idx >= 0) setSliderVisualIdx(idx);
+  }, [subView]);
 
-  const handleToggleCreatine = async (entry: CreatineDayEntry) => {
+  // Silhouette & muscle states
+  const [muscleSortMode, setMuscleSortMode] = useState<'priority' | 'rank'>('rank');
+  const sortThumbAnim = useRef(new Animated.Value(0)).current;
+  const [selectedRankTier, setSelectedRankTier] = useState<RankTier | null>(null);
+  const [selectedMuscle, setSelectedMuscle] = useState<MuscleSubGroupId | null>(null);
+  const [expandedMuscleId, setExpandedMuscleId] = useState<MuscleSubGroupId | null>(null);
+  const [showAllMuscles, setShowAllMuscles] = useState(false);
+  const [physiqueReport, setPhysiqueReport] = useState<PhysiqueAnalyticsReport | null>(null);
+
+  // Exercises sub-view filter & search
+  const [muscleFilter, setMuscleFilter] = useState<MuscleSubGroupId | 'all'>('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [expandedExGroups, setExpandedExGroups] = useState<Record<string, boolean>>({});
+
+  // Exercise progression sheet
+  const { t, muscleLabel } = useLanguage();
+  const [customExercises, setCustomExercises] = useState<Exercise[]>([]);
+  const [favoriteIds, setFavoriteIds] = useState<string[]>([]);
+  const [bestPRs, setBestPRs] = useState<{ [id: string]: PRRecord }>({});
+  const [selectedExercise, setSelectedExercise] = useState<Exercise | null>(null);
+  const [prHistory, setPrHistory] = useState<PRRecord[]>([]);
+  const [prChartRange, setPrChartRange] = useState<ChartRange>('all');
+  const [manualWeight, setManualWeight] = useState('');
+  const [manualReps, setManualReps] = useState('');
+
+  // Journal sub-view state
+  const [weightHistory, setWeightHistory] = useState<WeightEntry[]>([]);
+  const [weightChartRange, setWeightChartRange] = useState<ChartRange>('30d');
+  const [newWeightInput, setNewWeightInput] = useState('');
+  const [workoutHistory, setWorkoutHistory] = useState<WorkoutHistoryEntry[]>([]);
+  const [showAllJournalWorkouts, setShowAllJournalWorkouts] = useState(false);
+
+  const allExercises = useMemo(() => {
+    const planExercises: Exercise[] = [];
+    for (const p of profilePlans) {
+      for (const d of p.days || []) {
+        if (d.exercises) planExercises.push(...d.exercises);
+      }
+    }
+    const merged = mergeAllExercises(customExercises, EXERCISE_LIBRARY);
+    const seenNames = new Set(merged.map((e) => e.name.trim().toLowerCase()));
+    const combinedExtras = [...extraExercises, ...planExercises];
+    const extras: Exercise[] = [];
+    for (const e of combinedExtras) {
+      const lower = (e.name || '').trim().toLowerCase();
+      if (lower && !seenNames.has(lower) && !merged.some((m) => m.id === e.id)) {
+        seenNames.add(lower);
+        extras.push(e);
+      }
+    }
+    return [...merged, ...extras];
+  }, [customExercises, extraExercises, profilePlans]);
+
+  const activePlanDays: DayPlan[] = useMemo(
+    () => (activePlan?.days?.length ? activePlan.days : WORKOUT_PLAN),
+    [activePlan]
+  );
+
+  const loadAllAnalytics = useCallback(async () => {
+    const [prs, weights, hist, custom, favs] = await Promise.all([
+      getAllBestPRs(effectiveProfileId),
+      getWeightHistory(effectiveProfileId),
+      getWorkoutHistory(effectiveProfileId),
+      getCustomExercises(),
+      getFavoriteExerciseIds(),
+    ]);
+
+    setBestPRs(prs);
+    setWeightHistory(weights);
+    setWorkoutHistory(hist);
+    setCustomExercises(custom);
+    setFavoriteIds(favs);
+
+    const catalog = mergeAllExercises(custom, [
+      ...EXERCISE_LIBRARY,
+      ...extraExercises,
+    ]);
+    const report = await computePhysiqueAnalytics({
+      profileId: effectiveProfileId,
+      allExercises: catalog,
+      activePlanDays,
+      workoutHistory: hist,
+    });
+    setPhysiqueReport(report);
+  }, [effectiveProfileId, extraExercises, activePlanDays]);
+
+  useEffect(() => {
+    loadAllAnalytics();
+  }, [loadAllAnalytics, refreshKey]);
+
+  const openExerciseDetail = useCallback(
+    async (exercise: Exercise) => {
+      try {
+        Haptics.selectionAsync();
+      } catch {}
+      setSelectedExercise(exercise);
+      const canonicalId = resolveCanonicalExerciseId(exercise.id, exercise.name);
+      const history = await getExerciseHistory(canonicalId, effectiveProfileId);
+      setPrHistory(history);
+    },
+    [effectiveProfileId]
+  );
+
+  useEffect(() => {
+    if (focusedExercise) {
+      openExerciseDetail(focusedExercise);
+      onClearFocusedExercise?.();
+    }
+  }, [focusedExercise, openExerciseDetail, onClearFocusedExercise]);
+
+  const handleSwitchSubView = useCallback(
+    (next: SubViewTab, animateThumb = true) => {
+      const targetIdx = SUB_TABS.findIndex((t) => t.id === next);
+      if (targetIdx < 0) return;
+
+      if (animateThumb) {
+        Animated.parallel([
+          Animated.spring(navThumbAnim, {
+            toValue: targetIdx,
+            friction: 7,
+            tension: 110,
+            useNativeDriver: true,
+          }),
+          Animated.spring(navScaleAnim, {
+            toValue: 1,
+            friction: 6,
+            tension: 120,
+            useNativeDriver: true,
+          }),
+        ]).start();
+      }
+
+      if (next === subViewRef.current) return;
+
+      try {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      } catch {}
+
+      subViewRef.current = next;
+      setSliderVisualIdx(targetIdx);
+      scrollViewRef.current?.scrollTo({ y: 0, animated: false });
+      viewFadeAnim.setValue(0.25);
+
+      React.startTransition(() => {
+        setSubView(next);
+      });
+
+      Animated.timing(viewFadeAnim, {
+        toValue: 1,
+        duration: 150,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }).start();
+    },
+    [navScaleAnim, navThumbAnim, viewFadeAnim]
+  );
+
+  const navPanResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponder: () => true,
+        onPanResponderTerminationRequest: () => false,
+        onPanResponderGrant: (evt) => {
+          const lx = Math.max(0, Math.min(SLIDER_WIDTH, evt.nativeEvent.locationX));
+          grantXRef.current = lx;
+          const curIdx = SUB_TABS.findIndex((t) => t.id === subViewRef.current);
+          const touchedIdx = Math.max(
+            0,
+            Math.min(SUB_TABS.length - 1, Math.floor((lx - SLIDER_PADDING) / SLIDER_SLOT_W))
+          );
+          dragStartIndexRef.current = touchedIdx === curIdx ? curIdx : touchedIdx;
+          hoverIdxRef.current = touchedIdx;
+          setSliderVisualIdx(touchedIdx);
+          try {
+            Haptics.selectionAsync();
+          } catch {}
+          Animated.parallel([
+            Animated.spring(navScaleAnim, {
+              toValue: 0.94,
+              friction: 8,
+              tension: 140,
+              useNativeDriver: true,
+            }),
+            Animated.spring(navThumbAnim, {
+              toValue: touchedIdx,
+              friction: 9,
+              tension: 160,
+              useNativeDriver: true,
+            }),
+          ]).start();
+        },
+        onPanResponderMove: (_, gestureState) => {
+          const currentX = grantXRef.current + gestureState.dx;
+          const rawIdx = (currentX - SLIDER_PADDING - SLIDER_SLOT_W / 2) / SLIDER_SLOT_W;
+          const clampedIdx = Math.max(0, Math.min(SUB_TABS.length - 1, rawIdx));
+          navThumbAnim.setValue(clampedIdx);
+
+          const nearestIdx = Math.round(clampedIdx);
+          if (nearestIdx !== hoverIdxRef.current) {
+            hoverIdxRef.current = nearestIdx;
+            setSliderVisualIdx(nearestIdx);
+            try {
+              Haptics.selectionAsync();
+            } catch {}
+          }
+        },
+        onPanResponderRelease: (_, gestureState) => {
+          const moved = Math.abs(gestureState.dx) > 4;
+          const currentX = grantXRef.current + gestureState.dx;
+          const targetIdx = moved
+            ? Math.max(
+                0,
+                Math.min(
+                  SUB_TABS.length - 1,
+                  Math.round((currentX - SLIDER_PADDING - SLIDER_SLOT_W / 2) / SLIDER_SLOT_W)
+                )
+              )
+            : Math.max(
+                0,
+                Math.min(
+                  SUB_TABS.length - 1,
+                  Math.floor((grantXRef.current - SLIDER_PADDING) / SLIDER_SLOT_W)
+                )
+              );
+
+          const targetTab = SUB_TABS[targetIdx]?.id || subViewRef.current;
+          handleSwitchSubView(targetTab, true);
+        },
+        onPanResponderTerminate: () => {
+          const curIdx = SUB_TABS.findIndex((t) => t.id === subViewRef.current);
+          setSliderVisualIdx(curIdx >= 0 ? curIdx : 0);
+          Animated.parallel([
+            Animated.spring(navThumbAnim, {
+              toValue: curIdx >= 0 ? curIdx : 0,
+              friction: 7,
+              tension: 110,
+              useNativeDriver: true,
+            }),
+            Animated.spring(navScaleAnim, {
+              toValue: 1,
+              friction: 6,
+              tension: 120,
+              useNativeDriver: true,
+            }),
+          ]).start();
+        },
+      }),
+    [handleSwitchSubView, navScaleAnim, navThumbAnim]
+  );
+
+  const handleSwitchSortMode = (mode: 'rank' | 'priority') => {
+    if (mode === muscleSortMode) return;
     try {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      LayoutAnimation.configureNext(LayoutAnimation.Presets.spring);
-      const nextState = !entry.taken;
-      await toggleCreatineDay(entry.date, nextState);
-      setCreatineLog((prev) =>
-        prev.map((item) => (item.date === entry.date ? { ...item, taken: nextState } : item))
-      );
-    } catch (e) {
-      console.warn('Error toggling creatine day', e);
+      Haptics.selectionAsync();
+    } catch {}
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setMuscleSortMode(mode);
+    Animated.spring(sortThumbAnim, {
+      toValue: mode === 'rank' ? 0 : 1,
+      friction: 7,
+      tension: 85,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const handleSelectMuscle = (muscleId: MuscleSubGroupId | null) => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setSelectedMuscle(muscleId);
+    if (muscleId) {
+      setExpandedMuscleId(muscleId);
     }
   };
 
-  const handleOpenExercise = async (exercise: Exercise) => {
-    setSelectedExercise(exercise);
-    const hist = await getExerciseHistory(exercise.id, activeProfile.id);
-    setHistory(hist);
-
-    if (hist.length > 0) {
-      setInputWeight(String(hist[0].weight));
-      setInputReps(String(hist[0].reps));
+  const handleToggleMuscleRow = (muscleId: MuscleSubGroupId) => {
+    try {
+      Haptics.selectionAsync();
+    } catch {}
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    if (expandedMuscleId === muscleId) {
+      setExpandedMuscleId(null);
+      setSelectedMuscle(null);
     } else {
-      setInputWeight('60');
-      setInputReps('8');
+      setExpandedMuscleId(muscleId);
+      setSelectedMuscle(muscleId);
     }
-    setInputNote('');
-    setModalVisible(true);
   };
 
-  const handleSaveRecord = async () => {
+  const handleAddManualPR = async () => {
     if (!selectedExercise) return;
-    const w = parseFloat(inputWeight.replace(',', '.'));
-    const r = parseInt(inputReps, 10);
-
+    const w = parseFloat(manualWeight.replace(',', '.'));
+    const r = parseInt(manualReps, 10);
     if (isNaN(w) || w <= 0 || isNaN(r) || r <= 0) {
-      Alert.alert('Błędne dane', 'Podaj poprawny ciężar (kg) i liczbę powtórzeń.');
+      Alert.alert('Błędne dane', 'Podaj prawidłowy ciężar (kg) i liczbę powtórzeń.');
       return;
     }
-
+    const canonicalId = resolveCanonicalExerciseId(selectedExercise.id, selectedExercise.name);
+    await addPRRecord(
+      canonicalId,
+      selectedExercise.name,
+      selectedExercise.category,
+      w,
+      r,
+      undefined,
+      effectiveProfileId
+    );
+    setManualWeight('');
+    setManualReps('');
+    const updatedHistory = await getExerciseHistory(canonicalId, effectiveProfileId);
+    setPrHistory(updatedHistory);
+    await loadAllAnalytics();
     try {
-      await addPRRecord(
-        selectedExercise.id,
-        selectedExercise.name,
-        selectedExercise.category,
-        w,
-        r,
-        inputNote,
-        activeProfile.id
-      );
-
-      const updatedHist = await getExerciseHistory(selectedExercise.id, activeProfile.id);
-      setHistory(updatedHist);
-      await loadData();
-      setInputNote('');
-    } catch (e) {
-      console.error('Error saving PR:', e);
-    }
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch {}
   };
 
-  const handleDeleteRecord = (record: PRRecord) => {
-    Alert.alert(
-      'Usunąć rekord?',
-      `${record.weight} kg × ${record.reps} z dnia ${record.date.slice(0, 10)}`,
-      [
-        { text: 'Anuluj', style: 'cancel' },
-        {
-          text: 'Usuń',
-          style: 'destructive',
-          onPress: async () => {
-            if (!selectedExercise) return;
-            await deletePRRecord(record.id, selectedExercise.id, activeProfile.id);
-            const updatedHist = await getExerciseHistory(selectedExercise.id, activeProfile.id);
-            setHistory(updatedHist);
-            await loadData();
-          },
-        },
-      ]
+  const handleDeletePRPoint = async (recordId: string) => {
+    if (!selectedExercise) return;
+    const canonicalId = resolveCanonicalExerciseId(selectedExercise.id, selectedExercise.name);
+    await deletePRRecord(canonicalId, recordId, effectiveProfileId);
+    const updated = await getExerciseHistory(canonicalId, effectiveProfileId);
+    setPrHistory(updated);
+    await loadAllAnalytics();
+  };
+
+  const handleSaveWeight = async () => {
+    const val = parseFloat(newWeightInput.replace(',', '.'));
+    if (isNaN(val) || val < 25 || val > 300) {
+      Alert.alert('Nieprawidłowa waga', 'Wpisz wagę w kilogramach (np. 82.5).');
+      return;
+    }
+    await addWeightEntry(val, undefined, undefined, effectiveProfileId);
+    if (activeProfile) {
+      await updateProfileStats(
+        effectiveProfileId,
+        activeProfile.height || 180,
+        val
+      ).catch(() => {});
+    }
+    setNewWeightInput('');
+    await loadAllAnalytics();
+    try {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch {}
+  };
+
+  const handleRemoveWeight = async (id: string) => {
+    await deleteWeightEntry(id, effectiveProfileId);
+    await loadAllAnalytics();
+  };
+
+  // Exercises grouped by muscle for the inline accordion & Exercises tab
+  const exercisesByMuscle = useMemo(() => {
+    const map: Record<MuscleSubGroupId, EnrichedExerciseRankStat[]> = {} as any;
+    for (const m of MUSCLE_SUBGROUPS) {
+      map[m.id] = [];
+    }
+
+    for (const ex of allExercises) {
+      const canonicalId = resolveCanonicalExerciseId(ex.id, ex.name);
+      const existingStat = physiqueReport?.exerciseStats[canonicalId];
+      const primary = existingStat?.primaryMuscle || resolveExerciseMuscles(ex).primary;
+      const fallbackMeta = getExerciseRankMeta(0);
+
+      const enriched: EnrichedExerciseRankStat = existingStat
+        ? { ...existingStat, exercise: ex }
+        : {
+            exerciseId: canonicalId,
+            totalSets: 0,
+            recentSets30d: 0,
+            sessionsCount: 0,
+            rank: fallbackMeta.meta.tier,
+            rankMeta: fallbackMeta.meta,
+            progressPct: fallbackMeta.progressPct,
+            setsToNext: fallbackMeta.setsToNext,
+            nextTier: fallbackMeta.nextTier,
+            primaryMuscle: primary,
+            exercise: ex,
+          };
+
+      if (map[primary] && !map[primary].some((item) => item.exerciseId === canonicalId)) {
+        map[primary].push(enriched);
+      }
+    }
+
+    const favSet = new Set(favoriteIds);
+    for (const m of MUSCLE_SUBGROUPS) {
+      map[m.id].sort((a, b) => {
+        const aFav = favSet.has(a.exerciseId) || favSet.has(a.exercise.id) ? 1 : 0;
+        const bFav = favSet.has(b.exerciseId) || favSet.has(b.exercise.id) ? 1 : 0;
+        if (bFav !== aFav) return bFav - aFav;
+        const aPR = bestPRs[a.exerciseId];
+        const bPR = bestPRs[b.exerciseId];
+        const aHasProgress = a.totalSets > 0 || Boolean(aPR) ? 1 : 0;
+        const bHasProgress = b.totalSets > 0 || Boolean(bPR) ? 1 : 0;
+        if (bHasProgress !== aHasProgress) return bHasProgress - aHasProgress;
+        if (b.totalSets !== a.totalSets) return b.totalSets - a.totalSets;
+        const a1RM = aPR?.estimated1RM || 0;
+        const b1RM = bPR?.estimated1RM || 0;
+        if (b1RM !== a1RM) return b1RM - a1RM;
+        return a.exercise.name.localeCompare(b.exercise.name, 'pl');
+      });
+    }
+    return map;
+  }, [allExercises, physiqueReport, bestPRs, favoriteIds]);
+
+  const filteredMuscleGroups = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    const matched = MUSCLE_SUBGROUPS.filter((m) => {
+      if (muscleFilter !== 'all' && m.id !== muscleFilter) return false;
+      const list = exercisesByMuscle[m.id] || [];
+      if (!q) return list.length > 0;
+      return (
+        m.label.toLowerCase().includes(q) ||
+        list.some((ex) => ex.exercise.name.toLowerCase().includes(q))
+      );
+    });
+
+    return [...matched].sort((a, b) => {
+      const aStat = physiqueReport?.muscleStats[a.id];
+      const bStat = physiqueReport?.muscleStats[b.id];
+      const aExList = exercisesByMuscle[a.id] || [];
+      const bExList = exercisesByMuscle[b.id] || [];
+      const aExProgress = aExList.some((e) => e.totalSets > 0 || Boolean(bestPRs[e.exerciseId]));
+      const bExProgress = bExList.some((e) => e.totalSets > 0 || Boolean(bestPRs[e.exerciseId]));
+      const aHas = (aStat?.effectiveSetsTotal || 0) > 0 || aExProgress ? 1 : 0;
+      const bHas = (bStat?.effectiveSetsTotal || 0) > 0 || bExProgress ? 1 : 0;
+      if (bHas !== aHas) return bHas - aHas;
+      const aScore = aStat?.effectiveSetsTotal || 0;
+      const bScore = bStat?.effectiveSetsTotal || 0;
+      if (bScore !== aScore) return bScore - aScore;
+      return 0;
+    });
+  }, [muscleFilter, searchQuery, exercisesByMuscle, physiqueReport, bestPRs]);
+
+  const orderedMuscleList = useMemo(() => {
+    if (!physiqueReport) return [];
+    let list = [...physiqueReport.muscleStatsList];
+    if (selectedRankTier) {
+      list = list.filter((m) => m.rank === selectedRankTier);
+    }
+
+    const hasMuscleProgress = (m: MuscleRankStat): number => {
+      if (m.effectiveSetsTotal > 0) return 1;
+      const groupEx = exercisesByMuscle[m.muscleId] || [];
+      return groupEx.some((e) => e.totalSets > 0 || Boolean(bestPRs[e.exerciseId])) ? 1 : 0;
+    };
+
+    if (muscleSortMode === 'priority') {
+      const priorityOrder: Record<MuscleRankStat['priorityStatus'], number> = {
+        neglected: 0,
+        lagging: 1,
+        balanced: 2,
+        dominant: 3,
+        untrained: 4,
+      };
+      return list.sort((a, b) => {
+        const bHas = hasMuscleProgress(b);
+        const aHas = hasMuscleProgress(a);
+        if (bHas !== aHas) return bHas - aHas;
+        if (priorityOrder[a.priorityStatus] !== priorityOrder[b.priorityStatus]) {
+          return priorityOrder[a.priorityStatus] - priorityOrder[b.priorityStatus];
+        }
+        return a.relativeDevelopmentRatio - b.relativeDevelopmentRatio;
+      });
+    }
+    return list.sort((a, b) => {
+      const bHas = hasMuscleProgress(b);
+      const aHas = hasMuscleProgress(a);
+      if (bHas !== aHas) return bHas - aHas;
+      return b.effectiveSetsTotal - a.effectiveSetsTotal;
+    });
+  }, [physiqueReport, muscleSortMode, selectedRankTier, exercisesByMuscle, bestPRs]);
+
+  const tierDistribution = useMemo(() => {
+    const counts: Record<RankTier, number> = {
+      F: 0,
+      E: 0,
+      D: 0,
+      C: 0,
+      B: 0,
+      A: 0,
+      S: 0,
+      'S+': 0,
+    };
+    if (!physiqueReport) return counts;
+    for (const m of physiqueReport.muscleStatsList) {
+      counts[m.rank] = (counts[m.rank] || 0) + 1;
+    }
+    return counts;
+  }, [physiqueReport]);
+
+  // Muscles closest to unlocking their next rank emblem
+  const closestToRankUp = useMemo(() => {
+    if (!physiqueReport) return [];
+    return [...physiqueReport.muscleStatsList]
+      .filter((m) => m.nextTier !== null)
+      .sort((a, b) => {
+        if (b.progressPct !== a.progressPct) return b.progressPct - a.progressPct;
+        return a.setsToNext - b.setsToNext;
+      })
+      .slice(0, 3);
+  }, [physiqueReport]);
+
+  const overallAverageProgress = useMemo(() => {
+    if (!physiqueReport || physiqueReport.muscleStatsList.length === 0) return 0;
+    const sum = physiqueReport.muscleStatsList.reduce((acc, m) => acc + m.progressPct, 0);
+    return Math.round(sum / physiqueReport.muscleStatsList.length);
+  }, [physiqueReport]);
+
+  const filterByRange = <T extends { date: string }>(items: T[], range: ChartRange): T[] => {
+    if (range === 'all') return items;
+    const days = range === '7d' ? 7 : 30;
+    const cutoff = Date.now() - days * 86400000;
+    return items.filter((i) => new Date(i.date).getTime() >= cutoff);
+  };
+
+  const filteredWeightPoints = useMemo(
+    () => filterByRange(weightHistory, weightChartRange),
+    [weightHistory, weightChartRange]
+  );
+
+  const filteredPRPoints = useMemo(
+    () => filterByRange(prHistory, prChartRange),
+    [prHistory, prChartRange]
+  );
+
+  const last28Days = useMemo(() => {
+    const workedDates = new Set(workoutHistory.map((h) => h.date.slice(0, 10)));
+    const out: Array<{ key: string; label: string; active: boolean; isToday: boolean }> = [];
+    const now = new Date();
+    for (let i = 27; i >= 0; i--) {
+      const d = new Date(now);
+      d.setDate(now.getDate() - i);
+      const iso = d.toISOString().slice(0, 10);
+      out.push({
+        key: iso,
+        label: String(d.getDate()),
+        active: workedDates.has(iso),
+        isToday: i === 0,
+      });
+    }
+    return out;
+  }, [workoutHistory]);
+
+  const renderOpenLineChart = (
+    points: Array<{ value: number; label: string }>,
+    strokeColor: string,
+    unitLabel: string
+  ) => {
+    if (points.length === 0) {
+      return (
+        <View style={styles.emptyChartOpen}>
+          <Text style={[styles.emptyChartText, { color: theme.textMuted }]}>
+            Brak zapisanych pomiarów w wybranym okresie
+          </Text>
+        </View>
+      );
+    }
+
+    const chartW = SCREEN_WIDTH - 40;
+    const chartH = 150;
+    const padL = 8;
+    const padR = 8;
+    const padT = 18;
+    const padB = 26;
+    const innerW = chartW - padL - padR;
+    const innerH = chartH - padT - padB;
+
+    const vals = points.map((p) => p.value);
+    const minVal = Math.min(...vals);
+    const maxVal = Math.max(...vals);
+    const span = Math.max(1, maxVal - minVal);
+
+    const coords = points.map((p, idx) => {
+      const x =
+        points.length === 1
+          ? padL + innerW / 2
+          : padL + (idx / (points.length - 1)) * innerW;
+      const y =
+        points.length === 1
+          ? padT + innerH / 2
+          : padT + innerH - ((p.value - minVal) / span) * innerH;
+      return { x, y, ...p };
+    });
+
+    const lineD = coords
+      .map((c, idx) => `${idx === 0 ? 'M' : 'L'} ${c.x.toFixed(1)} ${c.y.toFixed(1)}`)
+      .join(' ');
+
+    const areaD =
+      coords.length > 1
+        ? `${lineD} L ${coords[coords.length - 1].x.toFixed(1)} ${(padT + innerH).toFixed(
+            1
+          )} L ${coords[0].x.toFixed(1)} ${(padT + innerH).toFixed(1)} Z`
+        : '';
+
+    return (
+      <View style={styles.openChartWrap}>
+        <Svg width={chartW} height={chartH}>
+          <Defs>
+            <LinearGradient id="openChartGrad" x1="0" y1="0" x2="0" y2="1">
+              <Stop offset="0%" stopColor={strokeColor} stopOpacity={0.25} />
+              <Stop offset="100%" stopColor={strokeColor} stopOpacity={0.0} />
+            </LinearGradient>
+          </Defs>
+
+          {[0, 0.5, 1].map((t, i) => {
+            const y = padT + t * innerH;
+            return (
+              <Line
+                key={i}
+                x1={padL}
+                y1={y}
+                x2={chartW - padR}
+                y2={y}
+                stroke={theme.hairline}
+                strokeDasharray="3 4"
+                strokeWidth={1}
+              />
+            );
+          })}
+
+          {areaD ? <Path d={areaD} fill="url(#openChartGrad)" /> : null}
+          {coords.length > 1 ? (
+            <Path
+              d={lineD}
+              fill="none"
+              stroke={strokeColor}
+              strokeWidth={2.5}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          ) : null}
+
+          {coords.map((c, idx) => (
+            <Circle
+              key={idx}
+              cx={c.x}
+              cy={c.y}
+              r={idx === coords.length - 1 ? 5 : 3.5}
+              fill={idx === coords.length - 1 ? strokeColor : theme.bg}
+              stroke={strokeColor}
+              strokeWidth={2}
+            />
+          ))}
+        </Svg>
+
+        <View style={styles.chartAxisLabels}>
+          <Text style={[styles.chartAxisText, { color: theme.textMuted }]}>
+            Min: {minVal} {unitLabel}
+          </Text>
+          <Text style={[styles.chartAxisText, { color: theme.text }]}>
+            Max: {maxVal} {unitLabel}
+          </Text>
+        </View>
+      </View>
     );
   };
 
-  const adjustWeight = (delta: number) => {
-    const cur = parseFloat(inputWeight.replace(',', '.')) || 0;
-    const next = Math.max(0, Math.round((cur + delta) * 10) / 10);
-    setInputWeight(String(next));
-  };
+  const selectedExerciseCanonicalId = selectedExercise
+    ? resolveCanonicalExerciseId(selectedExercise.id, selectedExercise.name)
+    : null;
+  const selectedExerciseRankStat =
+    selectedExerciseCanonicalId && physiqueReport
+      ? physiqueReport.exerciseStats[selectedExerciseCanonicalId]
+      : null;
 
-  const adjustReps = (delta: number) => {
-    const cur = parseInt(inputReps, 10) || 0;
-    const next = Math.max(1, cur + delta);
-    setInputReps(String(next));
-  };
+  const thumbTranslateX = navThumbAnim.interpolate({
+    inputRange: [0, 1, 2],
+    outputRange: [0, SLIDER_SLOT_W, SLIDER_SLOT_W * 2],
+  });
 
-  const currentEst1RM = useMemo(() => {
-    const w = parseFloat(inputWeight.replace(',', '.')) || 0;
-    const r = parseInt(inputReps, 10) || 0;
-    return calculate1RM(w, r);
-  }, [inputWeight, inputReps]);
-
-  const statsSummary = useMemo(() => {
-    const values = Object.values(bestPRs);
-    const totalCount = values.length;
-    let maxWeight = 0;
-    let max1RM = 0;
-
-    for (const pr of values) {
-      if (pr.weight > maxWeight) maxWeight = pr.weight;
-      if (pr.estimated1RM > max1RM) max1RM = pr.estimated1RM;
-    }
-
-    return { totalCount, maxWeight, max1RM };
-  }, [bestPRs]);
-
-  const filteredExercises = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    return allExercises
-      .filter((ex) => {
-        const matchCat = selectedCategory === 'wszystkie' || ex.category === selectedCategory;
-        const matchQuery =
-          !q ||
-          ex.name.toLowerCase().includes(q) ||
-          ex.category.toLowerCase().includes(q) ||
-          (ex.equipment || '').toLowerCase().includes(q);
-        return matchCat && matchQuery;
-      })
-      .sort((a, b) => {
-        const aScore = (bestPRs[a.id] ? 2 : 0) + (activePlanExerciseIds.has(a.id) ? 1 : 0);
-        const bScore = (bestPRs[b.id] ? 2 : 0) + (activePlanExerciseIds.has(b.id) ? 1 : 0);
-        return bScore - aScore;
-      });
-  }, [allExercises, selectedCategory, searchQuery, bestPRs, activePlanExerciseIds]);
-
-  const creatineStats = useMemo(() => {
-    const count = creatineLog.filter((c) => c.taken).length;
-    const total = creatineLog.length;
-    const percent = total > 0 ? Math.round((count / total) * 100) : 0;
-    const todayTaken = creatineLog.find((c) => c.isToday)?.taken ?? false;
-    return { count, total, percent, todayTaken };
-  }, [creatineLog]);
+  const visibleMuscles =
+    selectedRankTier || showAllMuscles
+      ? orderedMuscleList
+      : orderedMuscleList.slice(0, 5);
+  const canToggleMoreMuscles = !selectedRankTier && orderedMuscleList.length > 5;
 
   return (
     <View style={[styles.container, { backgroundColor: theme.bg }]}>
-      {/* Title */}
-      <View style={styles.header}>
-        <Text style={[styles.title, { color: theme.text }]}>Osiągi & Statystyki</Text>
-        <Text style={[styles.subtitle, { color: theme.textMuted }]}>
-          Monitoruj progres siły, wagę i regularność suplementacji
-        </Text>
-      </View>
+      {/* Open Editorial Header with Silky 120fps Icon-Only Glass Pill Slider */}
+      <View style={[styles.header, { borderBottomColor: theme.hairline }]}>
+        <View style={styles.headerTopRow}>
+          <Text style={[styles.title, { color: theme.text }]}>{t('progressTitle')}</Text>
 
-      {/* Main Segmented Mode Switcher */}
-      <View style={styles.modeSwitchWrapper}>
-        <View style={[styles.modeSwitchBox, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
-          <TouchableOpacity
+          <View
+            {...navPanResponder.panHandlers}
             style={[
-              styles.modeBtn,
-              viewMode === 'stats' && {
-                backgroundColor: theme.card,
-                shadowColor: '#000',
-                shadowOpacity: 0.1,
-                shadowRadius: 4,
-                elevation: 2,
+              styles.navPills,
+              {
+                width: SLIDER_WIDTH,
+                backgroundColor: isDark
+                  ? 'rgba(39, 39, 42, 0.72)'
+                  : 'rgba(244, 244, 245, 0.88)',
+                borderColor: isDark
+                  ? 'rgba(255, 255, 255, 0.11)'
+                  : 'rgba(24, 24, 27, 0.08)',
               },
             ]}
-            onPress={() => handleSwitchMode('stats')}
-            activeOpacity={0.7}
           >
-            <Ionicons
-              name="analytics-outline"
-              size={16}
-              color={viewMode === 'stats' ? theme.text : theme.textMuted}
-            />
-            <Text
+            <Animated.View
+              pointerEvents="none"
               style={[
-                styles.modeBtnText,
-                { color: viewMode === 'stats' ? theme.text : theme.textMuted },
-                viewMode === 'stats' && { fontWeight: '900' },
+                styles.navPillAnimatedThumb,
+                {
+                  width: SLIDER_SLOT_W,
+                  backgroundColor: theme.text,
+                  transform: [
+                    { translateX: thumbTranslateX },
+                    { scale: navScaleAnim },
+                  ],
+                },
               ]}
-            >
-              Statystyki & Trendy
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              styles.modeBtn,
-              viewMode === 'exercises' && {
-                backgroundColor: theme.card,
-                shadowColor: '#000',
-                shadowOpacity: 0.1,
-                shadowRadius: 4,
-                elevation: 2,
-              },
-            ]}
-            onPress={() => handleSwitchMode('exercises')}
-            activeOpacity={0.7}
-          >
-            <Ionicons
-              name="trophy-outline"
-              size={16}
-              color={viewMode === 'exercises' ? theme.text : theme.textMuted}
             />
-            <Text
-              style={[
-                styles.modeBtnText,
-                { color: viewMode === 'exercises' ? theme.text : theme.textMuted },
-                viewMode === 'exercises' && { fontWeight: '900' },
-              ]}
-            >
-              Rekordy PR ({statsSummary.totalCount})
-            </Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      {/* Animated Mode / Timeframe Content Container */}
-      <Animated.View
-        style={{
-          flex: 1,
-          opacity: modeFadeAnim,
-          transform: [{ translateY: modeSlideAnim }],
-        }}
-      >
-        {/* ==================== VIEW 1: STATS & TRENDS ==================== */}
-        {viewMode === 'stats' ? (
-          <ScrollView style={styles.scrollArea} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-            {/* Timeframe Filter */}
-            <View style={styles.timeframeRow}>
-              {(['7d', '30d', '90d'] as Timeframe[]).map((tf) => {
-                const isSelected = timeframe === tf;
-                const label = tf === '7d' ? '7 dni' : tf === '30d' ? '30 dni' : '90 dni';
-                return (
-                  <TouchableOpacity
-                    key={tf}
-                    style={[
-                      styles.tfPill,
-                      {
-                        backgroundColor: isSelected ? theme.primary : theme.bgSecondary,
-                        borderColor: isSelected ? theme.primary : theme.border,
-                      },
-                    ]}
-                    onPress={() => handleSwitchTimeframe(tf)}
-                    activeOpacity={0.7}
-                  >
-                  <Text
-                    style={[
-                      styles.tfPillText,
-                      { color: isSelected ? theme.primaryText : theme.text },
-                    ]}
-                  >
-                    {label}
-                  </Text>
-                </TouchableOpacity>
+            {SUB_TABS.map((tab, idx) => {
+              const active = sliderVisualIdx === idx;
+              return (
+                <View
+                  key={tab.id}
+                  pointerEvents="none"
+                  accessibilityLabel={tab.a11y}
+                  style={styles.navPillBtn}
+                >
+                  <Ionicons
+                    name={active ? tab.activeIcon : tab.icon}
+                    size={17}
+                    color={active ? theme.bg : theme.textMuted}
+                  />
+                </View>
               );
             })}
           </View>
+        </View>
+      </View>
 
-          {/* SECTION 1: BODY WEIGHT CHART & BALANCE */}
-          <View style={[styles.card, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
-            <View style={styles.cardHeaderRow}>
-              <View>
-                <Text style={[styles.cardKicker, { color: theme.textMuted }]}>MASA CIAŁA</Text>
-                <Text style={[styles.cardTitle, { color: theme.text }]}>Waga i bilans ({timeframe})</Text>
-              </View>
-
-              {weightStats ? (
-                <View style={styles.weightDeltaBadge}>
-                  <Ionicons
-                    name={weightStats.diff >= 0 ? 'trending-up' : 'trending-down'}
-                    size={16}
-                    color={theme.text}
+      <ScrollView
+        ref={scrollViewRef}
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
+        <Animated.View style={{ opacity: viewFadeAnim }}>
+          {/* =========================================================
+              SUB-VIEW 1: SYLWETKA (OPEN ANATOMY & MUSCLE RANKS)
+             ========================================================= */}
+          {subView === 'physique' && (
+            <View style={styles.openPage}>
+              {/* Open Hero Rank Showcase & Telemetry Strip */}
+              <View style={[styles.heroShowcaseWrap, { borderBottomColor: theme.hairline }]}>
+                <View style={styles.heroCrestBlock}>
+                  <RankCrestIcon
+                    tier={physiqueReport?.overallRank || 'F'}
+                    size={58}
+                    progressPct={overallAverageProgress}
                   />
-                  <Text style={[styles.weightDeltaText, { color: theme.text }]}>
-                    {weightStats.diff > 0 ? `+${weightStats.diff}` : `${weightStats.diff}`} kg ({weightStats.diffPercent > 0 ? `+${weightStats.diffPercent}` : `${weightStats.diffPercent}`}%)
-                  </Text>
-                </View>
-              ) : null}
-            </View>
-
-            {/* Quick Metrics Line */}
-            {weightStats ? (
-              <View style={styles.metricsSummaryRow}>
-                <View style={styles.metricItem}>
-                  <Text style={[styles.metricLabel, { color: theme.textMuted }]}>Aktualna</Text>
-                  <Text style={[styles.metricVal, { color: theme.text }]}>
-                    {weightStats.current > 0 ? `${weightStats.current} kg` : '-'}
-                  </Text>
-                </View>
-                <View style={styles.metricDivider} />
-                <View style={styles.metricItem}>
-                  <Text style={[styles.metricLabel, { color: theme.textMuted }]}>Początkowa</Text>
-                  <Text style={[styles.metricVal, { color: theme.text }]}>
-                    {weightStats.start > 0 ? `${weightStats.start} kg` : '-'}
-                  </Text>
-                </View>
-                <View style={styles.metricDivider} />
-                <View style={styles.metricItem}>
-                  <Text style={[styles.metricLabel, { color: theme.textMuted }]}>Wzrost</Text>
-                  <Text style={[styles.metricVal, { color: theme.text }]}>
-                    {activeProfile.height ? `${activeProfile.height} cm` : '-'}
-                  </Text>
-                </View>
-              </View>
-            ) : null}
-
-            {/* Modern Fluid Bezier Spline Chart */}
-            {weightStats && weightStats.entries.length > 0 ? (
-              <View style={[styles.chartCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
-                <ModernSplineChart
-                  entries={weightStats.entries}
-                  timeframe={timeframe === '90d' ? 'all' : timeframe}
-                  onTimeframeChange={(tf) => handleSwitchTimeframe(tf === 'all' ? '90d' : tf)}
-                  height={190}
-                />
-              </View>
-            ) : null}
-
-            <View style={[styles.insightPill, { backgroundColor: theme.card, borderColor: theme.hairline }]}>
-              <Ionicons name="sparkles-outline" size={15} color={theme.text} />
-              <Text style={[styles.insightText, { color: theme.textSecondary }]}>
-                {weightStats && weightStats.entries.length >= 2
-                  ? `Bilans w tym okresie: ${weightStats.diff > 0 ? `+${weightStats.diff}` : weightStats.diff} kg (${weightStats.diffPercent > 0 ? `+${weightStats.diffPercent}` : weightStats.diffPercent}%) • Plan: ${activePlan?.name || 'Domyślny'}.`
-                  : weightStats && weightStats.entries.length === 1
-                  ? `Zapisana waga: ${weightStats.current} kg. Kolejne ważenia wyświetlą wykres trendu.`
-                  : `Brak zapisanych pomiarów wagi dla profilu ${activeProfile.name}.`}
-              </Text>
-            </View>
-          </View>
-
-          {/* SECTION 2: SUPPLEMENT TRACKER & HEATMAP */}
-          <View style={[styles.card, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
-            <View style={styles.cardHeaderRow}>
-              <View>
-                <Text style={[styles.cardKicker, { color: theme.textMuted }]}>SUPLEMENTACJA</Text>
-                <Text style={[styles.cardTitle, { color: theme.text }]}>Regularność i dawki</Text>
-              </View>
-
-              <View
-                style={[
-                  styles.creatineBadge,
-                  {
-                    backgroundColor: creatineStats.todayTaken ? theme.primary : theme.bgTertiary,
-                    borderColor: creatineStats.todayTaken ? theme.primary : theme.border,
-                  },
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.creatineBadgeText,
-                    { color: creatineStats.todayTaken ? theme.primaryText : theme.text },
-                  ]}
-                >
-                  {creatineStats.todayTaken ? 'DZISIAJ: WZIĘTE ✅' : 'DZISIAJ: DO WZIĘCIA ⏳'}
-                </Text>
-              </View>
-            </View>
-
-            {activeSupplements.length > 0 && (
-              <View style={styles.suppChipsWrap}>
-                {activeSupplements.map((item) => (
-                  <View
-                    key={item.id}
-                    style={[
-                      styles.suppChip,
-                      { backgroundColor: theme.card, borderColor: theme.border },
-                    ]}
-                  >
-                    <Text style={[styles.suppChipText, { color: theme.text }]}>
-                      {item.name} ·{' '}
-                      <Text style={{ color: theme.textSecondary }}>
-                        {formatSupplementDose(item, weightStats?.current ?? activeProfile.weight)}
-                      </Text>
+                  <View style={styles.heroCrestTextCol}>
+                    <Text style={[styles.heroCrestEyebrow, { color: theme.textMuted }]}>
+                      RANGA OGÓLNA
                     </Text>
-                  </View>
-                ))}
-              </View>
-            )}
-
-            <Text style={[styles.creatineSubtitle, { color: theme.textSecondary }]}>
-              Regularność w wybranym okresie:{' '}
-              <Text style={{ fontWeight: '800', color: theme.text }}>
-                {creatineStats.count}/{creatineStats.total} dni ({creatineStats.percent}%)
-              </Text>
-            </Text>
-
-            {/* Interactive Supplement Week Ribbon */}
-            <View style={styles.creatineRibbon}>
-              {creatineLog.slice(-7).map((item) => {
-                return (
-                  <TouchableOpacity
-                    key={item.date}
-                    style={[
-                      styles.dayCircleCol,
-                      item.isToday && { backgroundColor: theme.card, borderRadius: 14, paddingVertical: 4 },
-                    ]}
-                    onPress={() => handleToggleCreatine(item)}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={[styles.dayLabelText, { color: item.isToday ? theme.text : theme.textMuted }]}>
-                      {item.dayLabel}
+                    <Text style={[styles.heroCrestTitle, { color: theme.text }]}>
+                      {physiqueReport?.overallRankMeta.title || 'Nowicjusz'}
                     </Text>
-                    <View
-                      style={[
-                        styles.dayCircle,
-                        {
-                          backgroundColor: item.taken ? theme.text : 'transparent',
-                          borderColor: item.taken ? theme.text : theme.borderDark,
-                        },
-                      ]}
-                    >
-                      {item.taken ? (
-                        <Ionicons name="checkmark" size={14} color={theme.bg} />
-                      ) : (
-                        <Text style={[styles.emptyX, { color: theme.textMuted }]}>-</Text>
-                      )}
-                    </View>
-                    <Text style={[styles.dayNumText, { color: theme.textMuted }]}>
-                      {item.dayNum}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-
-            <Text style={[styles.creatineTip, { color: theme.textMuted }]}>
-              Dotknij dnia, aby szybko zmienić status. Suplementy i ich dawki zmienisz w Ustawieniach.
-            </Text>
-          </View>
-
-          {/* SECTION 3: STRENGTH IMPROVEMENT & DELTAS */}
-          <View style={[styles.card, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
-            <View style={styles.cardHeaderRow}>
-              <View>
-                <Text style={[styles.cardKicker, { color: theme.textMuted }]}>POSTĘPY SIŁOWE</Text>
-                <Text style={[styles.cardTitle, { color: theme.text }]}>Wzrosty ciężarów & 1RM</Text>
-              </View>
-            </View>
-
-            <Text style={[styles.creatineSubtitle, { color: theme.textSecondary }]}>
-              Porównanie wyników ({activePlan?.name || 'Twój plan'}):
-            </Text>
-
-            {improvements.length === 0 ? (
-              <Text style={[styles.emptyBlockText, { color: theme.textMuted }]}>
-                Zapisz wyniki w treningach lub w zakładce „Rekordy PR”, aby śledzić przyrosty ciężarów i 1RM.
-              </Text>
-            ) : (
-              <View style={styles.improvementsList}>
-                {improvements.map((item) => (
-                  <View
-                    key={item.id}
-                    style={[styles.improvementRow, { borderBottomColor: theme.hairline }]}
-                  >
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.impName, { color: theme.text }]}>{item.name}</Text>
-                      <View style={styles.impSubRow}>
-                        <View style={[styles.catTag, { backgroundColor: theme.card, borderColor: theme.border }]}>
-                          <Text style={[styles.catTagText, { color: theme.textSecondary }]}>
-                            {item.category.toUpperCase()}
-                          </Text>
-                        </View>
-                        <Text style={[styles.impPrevText, { color: theme.textMuted }]}>
-                          Poprzednio: {item.previousWeight} kg
-                        </Text>
-                      </View>
-                    </View>
-
-                    <View style={styles.impRight}>
-                      <View style={styles.impWeightRow}>
-                        <Text style={[styles.impWeightCur, { color: theme.text }]}>
-                          {item.currentWeight} kg
-                        </Text>
-                        <View style={[styles.deltaChip, { backgroundColor: theme.card, borderColor: theme.border }]}>
-                          <Ionicons
-                            name={item.diffWeight >= 0 ? 'arrow-up' : 'arrow-down'}
-                            size={11}
-                            color={theme.text}
-                          />
-                          <Text style={[styles.deltaChipText, { color: theme.text }]}>
-                            {item.diffWeight >= 0 ? `+${item.diffWeight}` : item.diffWeight} kg ({item.percentImprovement >= 0 ? `+${item.percentImprovement}` : item.percentImprovement}%)
-                          </Text>
-                        </View>
-                      </View>
-                      <Text style={[styles.imp1RM, { color: theme.textMuted }]}>
-                        1RM: ~{item.current1RM} kg ({item.diff1RM >= 0 ? `+${item.diff1RM}` : item.diff1RM} kg)
-                      </Text>
-                    </View>
-                  </View>
-                ))}
-              </View>
-            )}
-          </View>
-
-          {/* SECTION 4: WEEKLY MUSCLE VOLUME BREAKDOWN */}
-          <View style={[styles.card, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
-            <View style={styles.cardHeaderRow}>
-              <View>
-                <Text style={[styles.cardKicker, { color: theme.textMuted }]}>OBJĘTOŚĆ TYGODNIOWA</Text>
-                <Text style={[styles.cardTitle, { color: theme.text }]}>Serie wg partii mięśniowych</Text>
-              </View>
-            </View>
-
-            {weeklyVolume.length === 0 ? (
-              <Text style={[styles.emptyBlockText, { color: theme.textMuted }]}>
-                Brak zaplanowanych ćwiczeń w aktywnym planie. Skonfiguruj plan, aby monitorować objętość.
-              </Text>
-            ) : (
-              <View style={styles.volumeList}>
-                {weeklyVolume.map((vol) => {
-                  const pct =
-                    vol.plannedSets > 0
-                      ? Math.min(100, Math.round((vol.completedSets / vol.plannedSets) * 100))
-                      : 0;
-                  return (
-                    <View key={vol.category} style={styles.volumeRow}>
-                      <View style={styles.volumeLabelLine}>
-                        <Text style={[styles.volumeCatName, { color: theme.text }]}>
-                          {vol.label}
-                        </Text>
-                        <Text style={[styles.volumeMetaText, { color: theme.textMuted }]}>
-                          {vol.completedSets}/{vol.plannedSets} serii
-                          {vol.volumeKg > 0 ? ` • ${vol.volumeKg} kg` : ''}
-                        </Text>
-                      </View>
-                      <View style={[styles.volumeTrack, { backgroundColor: theme.bgTertiary }]}>
-                        <View
-                          style={[
-                            styles.volumeFill,
-                            { width: `${pct}%`, backgroundColor: theme.text },
-                          ]}
-                        />
-                      </View>
-                    </View>
-                  );
-                })}
-              </View>
-            )}
-          </View>
-
-          {/* SECTION 5: WORKOUT HISTORY LOG */}
-          <View style={[styles.card, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
-            <View style={styles.cardHeaderRow}>
-              <View>
-                <Text style={[styles.cardKicker, { color: theme.textMuted }]}>DZIENNIK SESJI</Text>
-                <Text style={[styles.cardTitle, { color: theme.text }]}>
-                  Historia treningów ({workoutHistory.length})
-                </Text>
-              </View>
-            </View>
-
-            {workoutHistory.length === 0 ? (
-              <Text style={[styles.emptyBlockText, { color: theme.textMuted }]}>
-                Ukończ pierwszy trening, aby pojawił się tutaj wraz z objętością i czasem trwania.
-              </Text>
-            ) : (
-              <>
-                {(showAllHistory ? workoutHistory : workoutHistory.slice(0, 5)).map((entry, idx) => (
-                  <View
-                    key={`${entry.date}_${entry.dayId}_${idx}`}
-                    style={[styles.workoutHistRow, { borderBottomColor: theme.hairline }]}
-                  >
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.workoutHistTitle, { color: theme.text }]}>
-                        {entry.dayName}
-                      </Text>
-                      <Text style={[styles.workoutHistSub, { color: theme.textMuted }]}>
-                        {entry.date}
-                        {entry.planName ? ` • ${entry.planName}` : ''}
-                      </Text>
-                    </View>
-
-                    <View style={styles.workoutHistRight}>
-                      <Text style={[styles.workoutHistSets, { color: theme.text }]}>
-                        {entry.completedSets}/{entry.totalSets} serii
-                      </Text>
-                      <Text style={[styles.workoutHistMeta, { color: theme.textMuted }]}>
-                        {entry.durationMinutes ? `${entry.durationMinutes} min` : ''}
-                        {entry.durationMinutes && entry.totalVolumeKg ? ' • ' : ''}
-                        {entry.totalVolumeKg ? `${entry.totalVolumeKg} kg` : ''}
-                      </Text>
-                    </View>
-                  </View>
-                ))}
-
-                {workoutHistory.length > 5 && (
-                  <TouchableOpacity
-                    style={[styles.showMoreHistBtn, { borderColor: theme.border }]}
-                    onPress={() => setShowAllHistory((prev) => !prev)}
-                    activeOpacity={0.75}
-                  >
-                    <Text style={[styles.showMoreHistText, { color: theme.text }]}>
-                      {showAllHistory
-                        ? 'Zwiń historię'
-                        : `Pokaż wszystkie (${workoutHistory.length})`}
-                    </Text>
-                  </TouchableOpacity>
-                )}
-              </>
-            )}
-          </View>
-        </ScrollView>
-      ) : (
-        /* ==================== VIEW 2: EXERCISE PR LIST ==================== */
-        <>
-          {/* Search Input */}
-          <View style={[styles.searchWrapper, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
-            <Ionicons name="search" size={18} color={theme.textMuted} />
-            <TextInput
-              style={[styles.searchInput, { color: theme.text }]}
-              placeholder="Szukaj ćwiczenia..."
-              placeholderTextColor={theme.textMuted}
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-              clearButtonMode="while-editing"
-            />
-            {searchQuery.length > 0 && (
-              <TouchableOpacity onPress={() => setSearchQuery('')}>
-                <Ionicons name="close-circle" size={18} color={theme.textMuted} />
-              </TouchableOpacity>
-            )}
-          </View>
-
-          {/* Category Pills */}
-          <View style={styles.categoryWrap}>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.categoryScroll}
-            >
-              {CATEGORIES.map((cat) => {
-                const isActive = selectedCategory === cat.id;
-                return (
-                  <TouchableOpacity
-                    key={cat.id}
-                    style={[
-                      styles.catPill,
-                      {
-                        backgroundColor: isActive ? theme.primary : theme.bgSecondary,
-                        borderColor: isActive ? theme.primary : theme.border,
-                      },
-                    ]}
-                    onPress={() => {
-                      Haptics.selectionAsync();
-                      setSelectedCategory(cat.id);
-                    }}
-                    activeOpacity={0.7}
-                  >
                     <Text
                       style={[
-                        styles.catPillText,
-                        { color: isActive ? theme.primaryText : theme.text },
+                        styles.heroCrestSub,
+                        { color: physiqueReport?.overallRankMeta.color || theme.textSecondary },
                       ]}
                     >
-                      {cat.label}
+                      Śr. postęp tieru: {overallAverageProgress}%
                     </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
-          </View>
+                  </View>
+                </View>
 
-          {/* List of Exercises */}
-          <ScrollView
-            style={styles.list}
-            contentContainerStyle={styles.listInner}
-            showsVerticalScrollIndicator={false}
-          >
-            {/* KPI Cards Strip - scrolls away so user has maximum space for exercises */}
-            <View style={styles.kpiRow}>
-              <View style={[styles.kpiCard, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
-                <Ionicons name="trophy-outline" size={20} color={theme.text} />
-                <Text style={[styles.kpiVal, { color: theme.text }]}>{statsSummary.totalCount}</Text>
-                <Text style={[styles.kpiLbl, { color: theme.textMuted }]}>Rekordów</Text>
+                <View style={styles.heroStatsRightRow}>
+                  <View style={styles.heroMetricItem}>
+                    <Text style={[styles.heroMetricValue, { color: theme.text }]}>
+                      {physiqueReport?.balanceScorePct ?? 100}%
+                    </Text>
+                    <Text style={[styles.heroMetricLabel, { color: theme.textMuted }]}>
+                      Balans
+                    </Text>
+                  </View>
+
+                  <View style={[styles.verticalHairline, { backgroundColor: theme.hairline }]} />
+
+                  <View style={styles.heroMetricItem}>
+                    <Text style={[styles.heroMetricValue, { color: theme.text }]}>
+                      {physiqueReport?.totalLifetimeSets ?? 0}
+                    </Text>
+                    <Text style={[styles.heroMetricLabel, { color: theme.textMuted }]}>
+                      Serie
+                    </Text>
+                  </View>
+
+                  <View style={[styles.verticalHairline, { backgroundColor: theme.hairline }]} />
+
+                  <View style={styles.heroMetricItem}>
+                    <Text style={[styles.heroMetricValue, { color: theme.text }]}>
+                      {Object.keys(bestPRs).length}
+                    </Text>
+                    <Text style={[styles.heroMetricLabel, { color: theme.textMuted }]}>
+                      Rekordy
+                    </Text>
+                  </View>
+                </View>
               </View>
 
-              <View style={[styles.kpiCard, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
-                <Ionicons name="barbell-outline" size={20} color={theme.text} />
-                <Text style={[styles.kpiVal, { color: theme.text }]}>
-                  {statsSummary.maxWeight > 0 ? `${statsSummary.maxWeight} kg` : '-'}
-                </Text>
-                <Text style={[styles.kpiLbl, { color: theme.textMuted }]}>Maks. Ciężar</Text>
-              </View>
+              {/* Open 2D Animated Anatomical Silhouette (Swipe to Rotate, Gender-aware) */}
+              {physiqueReport && (
+                <AnimatedBodySilhouette
+                  gender={activeProfile?.gender || 'male'}
+                  muscleStatsMap={physiqueReport.muscleStats}
+                  selectedMuscle={selectedMuscle}
+                  onSelectMuscle={handleSelectMuscle}
+                  selectedMuscleExercises={
+                    selectedMuscle ? exercisesByMuscle[selectedMuscle] || [] : []
+                  }
+                  onPressExercise={openExerciseDetail}
+                />
+              )}
 
-              <View style={[styles.kpiCard, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
-                <Ionicons name="flash-outline" size={20} color={theme.text} />
-                <Text style={[styles.kpiVal, { color: theme.text }]}>
-                  {statsSummary.max1RM > 0 ? `${statsSummary.max1RM} kg` : '-'}
-                </Text>
-                <Text style={[styles.kpiLbl, { color: theme.textMuted }]}>Top 1RM</Text>
-              </View>
-            </View>
-
-            {filteredExercises.length === 0 ? (
-              <View style={styles.emptyView}>
-                <Ionicons name="search-outline" size={28} color={theme.textMuted} style={{ marginBottom: 8 }} />
-                <Text style={[styles.emptyText, { color: theme.textMuted }]}>
-                  Nie znaleziono pasujących ćwiczeń
-                </Text>
-              </View>
-            ) : (
-              filteredExercises.map((exercise) => {
-                const pr = bestPRs[exercise.id];
-
-                return (
-                  <TouchableOpacity
-                    key={exercise.id}
-                    style={[
-                      styles.exerciseRow,
-                      { borderBottomColor: theme.hairline },
-                    ]}
-                    onPress={() => handleOpenExercise(exercise)}
-                    activeOpacity={0.75}
-                  >
-                    <View style={styles.rowLeft}>
-                      <Text style={[styles.exTitle, { color: theme.text }]}>
-                        {exercise.name}
+              {/* Open Interactive Rank Evolution & Emblems (F -> S+) */}
+              {physiqueReport && (
+                <View style={[styles.openSection, { borderTopColor: theme.hairline }]}>
+                  <View style={styles.openSectionHeader}>
+                    <View>
+                      <Text
+                        style={[
+                          styles.sectionEyebrow,
+                          { color: physiqueReport.overallRankMeta.color },
+                        ]}
+                      >
+                        EMBLEMATY PROGRESJI (F - S+)
                       </Text>
-                      <View style={styles.subMeta}>
-                        <View style={[styles.catTag, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
-                          <Text style={[styles.catTagText, { color: theme.textSecondary }]}>
-                            {exercise.category.toUpperCase()}
-                          </Text>
-                        </View>
-                        <Text style={[styles.planHint, { color: theme.textMuted }]}>
-                          Plan: {exercise.sets} × {exercise.reps}
+                      <Text style={[styles.sectionHeading, { color: theme.text }]}>
+                        Drabina rang i odznak
+                      </Text>
+                    </View>
+                    {selectedRankTier ? (
+                      <TouchableOpacity
+                        onPress={() => {
+                          try {
+                            Haptics.selectionAsync();
+                          } catch {}
+                          LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                          setSelectedRankTier(null);
+                        }}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={[styles.sectionRightMeta, { color: theme.text }]}>
+                          Pokaż wszystkie ({physiqueReport.muscleStatsList.length})
                         </Text>
-                      </View>
-                    </View>
-
-                    <View style={styles.rowRight}>
-                      {pr ? (
-                        <View style={styles.prResultCol}>
-                          <Text style={[styles.prWeightText, { color: theme.text }]}>
-                            {pr.weight} kg
-                          </Text>
-                          <Text style={[styles.prRepsText, { color: theme.textSecondary }]}>
-                            × {pr.reps} powt.
-                          </Text>
-                          <Text style={[styles.pr1RMText, { color: theme.textMuted }]}>
-                            1RM: ~{pr.estimated1RM} kg
-                          </Text>
-                        </View>
-                      ) : (
-                        <View style={[styles.addBadge, { borderColor: theme.borderDark, backgroundColor: theme.bgSecondary }]}>
-                          <Ionicons name="add" size={15} color={theme.text} />
-                          <Text style={[styles.addBadgeText, { color: theme.text }]}>Dodaj</Text>
-                        </View>
-                      )}
-                    </View>
-                  </TouchableOpacity>
-                );
-              })
-            )}
-          </ScrollView>
-        </>
-      )}
-      </Animated.View>
-
-      {/* Modal Dodawania / Edycji PR */}
-      <InteractiveBottomSheet
-        visible={modalVisible}
-        onClose={() => setModalVisible(false)}
-        title={selectedExercise?.name || 'Nowy wynik'}
-        subtitle={selectedExercise ? `${selectedExercise.category.toUpperCase()} • Zapisz wynik serii i 1RM` : undefined}
-        initialHeightPercent={0.88}
-      >
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          style={{ flex: 1 }}
-        >
-          <ScrollView
-            style={styles.modalScroll}
-            showsVerticalScrollIndicator={false}
-            bounces={false}
-            alwaysBounceVertical={false}
-            overScrollMode="never"
-            contentContainerStyle={{ paddingBottom: 40 }}
-          >
-            {/* Form */}
-              <View style={[styles.formContainer, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
-                <Text style={[styles.formHeaderTitle, { color: theme.text }]}>
-                  Nowy wynik dla ćwiczenia
-                </Text>
-
-                <View style={styles.formInputsRow}>
-                  {/* Weight */}
-                  <View style={styles.inputCol}>
-                    <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>CIĘŻAR (KG)</Text>
-                    <View style={[styles.stepperContainer, { backgroundColor: theme.card, borderColor: theme.border }]}>
-                      <TextInput
-                        style={[styles.stepperInput, { color: theme.text }]}
-                        keyboardType="decimal-pad"
-                        value={inputWeight}
-                        onChangeText={setInputWeight}
-                      />
-                      <View style={styles.stepperActions}>
-                        <TouchableOpacity
-                          style={[styles.stepBtn, { borderRightColor: theme.hairline }]}
-                          onPress={() => adjustWeight(2.5)}
-                        >
-                          <Text style={[styles.stepBtnText, { color: theme.text }]}>+2.5</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity style={styles.stepBtn} onPress={() => adjustWeight(-2.5)}>
-                          <Text style={[styles.stepBtnText, { color: theme.text }]}>-2.5</Text>
-                        </TouchableOpacity>
-                      </View>
-                    </View>
+                      </TouchableOpacity>
+                    ) : (
+                      <Text style={[styles.sectionRightMeta, { color: theme.textMuted }]}>
+                        Dotknij odznaki, by filtrować
+                      </Text>
+                    )}
                   </View>
 
-                  {/* Reps */}
-                  <View style={styles.inputCol}>
-                    <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>POWTÓRZENIA</Text>
-                    <View style={[styles.stepperContainer, { backgroundColor: theme.card, borderColor: theme.border }]}>
-                      <TextInput
-                        style={[styles.stepperInput, { color: theme.text }]}
-                        keyboardType="number-pad"
-                        value={inputReps}
-                        onChangeText={setInputReps}
-                      />
-                      <View style={styles.stepperActions}>
-                        <TouchableOpacity
-                          style={[styles.stepBtn, { borderRightColor: theme.hairline }]}
-                          onPress={() => adjustReps(1)}
-                        >
-                          <Text style={[styles.stepBtnText, { color: theme.text }]}>+1</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity style={styles.stepBtn} onPress={() => adjustReps(-1)}>
-                          <Text style={[styles.stepBtnText, { color: theme.text }]}>-1</Text>
-                        </TouchableOpacity>
-                      </View>
-                    </View>
-                  </View>
-                </View>
+                  {/* 8-Column Interactive Emblem + Spectrum Chart */}
+                  <View style={styles.spectrumGridRow}>
+                    {RANK_TIERS.map((tierObj, idx) => {
+                      const count = tierDistribution[tierObj.tier] || 0;
+                      const isSelected = selectedRankTier === tierObj.tier;
+                      const heightPct =
+                        count === 0
+                          ? 12
+                          : Math.min(100, Math.max(24, Math.round((count / 10) * 100)));
 
-                {/* 1RM projection banner */}
-                <View style={[styles.projectionBanner, { backgroundColor: theme.card, borderColor: theme.hairline }]}>
-                  <Text style={[styles.projectionLabel, { color: theme.textSecondary }]}>
-                    Szacowany 1RM z tej serii:
-                  </Text>
-                  <Text style={[styles.projectionValue, { color: theme.text }]}>
-                    ~{currentEst1RM} kg
-                  </Text>
-                </View>
-
-                {/* Percentage breakdown strips */}
-                {currentEst1RM > 0 && (
-                  <View style={[styles.pctTableRow, { borderColor: theme.hairline }]}>
-                    {[90, 85, 80, 75, 70].map((pct) => {
-                      const val = Math.round((currentEst1RM * (pct / 100)) * 2) / 2;
                       return (
-                        <View key={pct} style={styles.pctCell}>
-                          <Text style={[styles.pctCellLabel, { color: theme.textMuted }]}>{pct}%</Text>
-                          <Text style={[styles.pctCellVal, { color: theme.text }]}>{val}</Text>
-                        </View>
+                        <TouchableOpacity
+                          key={tierObj.tier}
+                          style={[
+                            styles.spectrumColWrap,
+                            isSelected && {
+                              backgroundColor: `${tierObj.color}14`,
+                              borderRadius: 14,
+                            },
+                          ]}
+                          onPress={() => {
+                            try {
+                              Haptics.selectionAsync();
+                            } catch {}
+                            LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                            setSelectedRankTier(
+                              selectedRankTier === tierObj.tier ? null : tierObj.tier
+                            );
+                          }}
+                          activeOpacity={0.75}
+                        >
+                          <Text
+                            style={[
+                              styles.spectrumCountLabel,
+                              {
+                                color: count > 0 ? theme.text : theme.textMuted,
+                                opacity: count > 0 ? 1 : 0.45,
+                              },
+                            ]}
+                          >
+                            {count}
+                          </Text>
+
+                          <AnimatedVerticalSpectrumBar
+                            pct={heightPct}
+                            color={count > 0 || isSelected ? tierObj.color : theme.border}
+                            trackColor={theme.bgSecondary}
+                            isSelected={isSelected}
+                            delayMs={idx * 40}
+                          />
+
+                          <RankCrestIcon
+                            tier={tierObj.tier}
+                            size={34}
+                            isSelected={isSelected}
+                            dimmed={count === 0 && !isSelected}
+                          />
+                        </TouchableOpacity>
                       );
                     })}
                   </View>
+
+                  {/* Selected Tier Info Strip */}
+                  {selectedRankTier ? (
+                    <View
+                      style={[
+                        styles.tierSpotlightRow,
+                        {
+                          borderLeftColor: RANK_TIER_MAP[selectedRankTier].color,
+                          backgroundColor: theme.bgSecondary,
+                        },
+                      ]}
+                    >
+                      <RankCrestIcon tier={selectedRankTier} size={46} isSelected />
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.tierSpotlightTitle, { color: theme.text }]}>
+                          Ranga {selectedRankTier} ({RANK_TIER_MAP[selectedRankTier].title}) ·{' '}
+                          {tierDistribution[selectedRankTier]} z 19 partii
+                        </Text>
+                        <Text style={[styles.tierSpotlightSub, { color: theme.textSecondary }]}>
+                          {RANK_TIER_MAP[selectedRankTier].subtitle} · próg: od{' '}
+                          {RANK_TIER_MAP[selectedRankTier].minMuscleSets} serii partii ({RANK_TIER_MAP[selectedRankTier].minExerciseSets} serii ćwiczenia)
+                        </Text>
+                      </View>
+                    </View>
+                  ) : null}
+
+                  {/* Closest to Rank-Up Milestone Strip ("Najbliżej awansu") */}
+                  {closestToRankUp.length > 0 && (
+                    <View style={[styles.milestoneBlock, { borderTopColor: theme.hairline }]}>
+                      <View style={styles.milestoneHeaderRow}>
+                        <Ionicons name="sparkles-outline" size={13} color="#10B981" />
+                        <Text style={[styles.milestoneHeaderTitle, { color: theme.textSecondary }]}>
+                          NAJBLIŻEJ KOLEJNEJ RANGI
+                        </Text>
+                      </View>
+
+                      {closestToRankUp.map((mStat, i) => (
+                        <TouchableOpacity
+                          key={mStat.muscleId}
+                          style={styles.milestoneRow}
+                          onPress={() => handleSelectMuscle(mStat.muscleId)}
+                          activeOpacity={0.75}
+                        >
+                          <RankCrestIcon tier={mStat.rank} size={28} />
+                          <View style={{ flex: 1, gap: 4 }}>
+                            <View style={styles.milestoneTextLine}>
+                              <Text style={[styles.milestoneMuscleName, { color: theme.text }]}>
+                                {mStat.meta.label}
+                              </Text>
+                              <Text style={[styles.milestoneRemaining, { color: theme.textMuted }]}>
+                                jeszcze {mStat.setsToNext} serii ({mStat.progressPct}%)
+                              </Text>
+                            </View>
+                            <AnimatedFillBar
+                              pct={mStat.progressPct}
+                              color={
+                                mStat.nextTier
+                                  ? RANK_TIER_MAP[mStat.nextTier].color
+                                  : mStat.rankMeta.color
+                              }
+                              trackColor={theme.bgSecondary}
+                              height={4}
+                              delayMs={i * 60}
+                            />
+                          </View>
+                          <Ionicons
+                            name="arrow-forward"
+                            size={12}
+                            color={theme.textMuted}
+                          />
+                          {mStat.nextTier && (
+                            <RankCrestIcon tier={mStat.nextTier} size={28} />
+                          )}
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  )}
+                </View>
+              )}
+
+              {/* Open Coach Priority Section ("Co teraz robić") */}
+              {physiqueReport && physiqueReport.topPriorities.length > 0 && (
+                <View style={[styles.openSection, { borderTopColor: theme.hairline }]}>
+                  <View style={styles.openSectionHeader}>
+                    <View>
+                      <Text style={[styles.sectionEyebrow, { color: '#F59E0B' }]}>
+                        REKOMENDACJA TRENINGOWA
+                      </Text>
+                      <Text style={[styles.sectionHeading, { color: theme.text }]}>
+                        Co teraz trenować?
+                      </Text>
+                    </View>
+                    <Text style={[styles.sectionRightMeta, { color: theme.textMuted }]}>
+                      Top 3 priorytety
+                    </Text>
+                  </View>
+
+                  {physiqueReport.topPriorities.map((stat) => {
+                    const isFocused = selectedMuscle === stat.muscleId;
+                    const topEx = (exercisesByMuscle[stat.muscleId] || [])[0];
+                    const dotColor =
+                      stat.priorityStatus === 'untrained'
+                        ? '#71717A'
+                        : '#F59E0B';
+
+                    return (
+                      <TouchableOpacity
+                        key={stat.muscleId}
+                        style={[
+                          styles.priorityOpenRow,
+                          { borderBottomColor: theme.hairline },
+                        ]}
+                        onPress={() => handleSelectMuscle(isFocused ? null : stat.muscleId)}
+                        activeOpacity={0.7}
+                      >
+                        <View style={[styles.priorityAccentBar, { backgroundColor: dotColor }]} />
+
+                        <View style={{ flex: 1, gap: 4 }}>
+                          <View style={styles.priorityTitleLine}>
+                            <Text style={[styles.priorityName, { color: theme.text }]}>
+                              {stat.meta.label}
+                            </Text>
+                            <Text
+                              style={[
+                                styles.priorityReasonTag,
+                                { color: dotColor },
+                              ]}
+                            >
+                              {stat.priorityStatus === 'untrained'
+                                ? 'Brak serii (0)'
+                                : `${Math.round(stat.relativeDevelopmentRatio * 100)}% normy`}
+                            </Text>
+                          </View>
+
+                          <Text
+                            style={[styles.priorityHint, { color: theme.textSecondary }]}
+                            numberOfLines={1}
+                          >
+                            {topEx
+                              ? `Polecane: ${topEx.exercise.name} (${topEx.totalSets} serii)`
+                              : stat.recommendationText}
+                          </Text>
+                        </View>
+
+                        <RankCrestIcon tier={stat.rank} size={34} />
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              )}
+
+              {/* Open Full-Width Animated Muscle Ranking List (19 muscles, NO cards) */}
+              <View style={[styles.openSection, { borderTopColor: theme.hairline }]}>
+                <View style={styles.openSectionHeader}>
+                  <View>
+                    <Text style={[styles.sectionEyebrow, { color: theme.textMuted }]}>
+                      {selectedRankTier
+                        ? `FILTR RANGI ${selectedRankTier} (${orderedMuscleList.length})`
+                        : 'WSZYSTKIE PARTIE (19)'}
+                    </Text>
+                    <Text style={[styles.sectionHeading, { color: theme.text }]}>
+                      Rangi rozwoju mięśni
+                    </Text>
+                  </View>
+
+                  <View style={[styles.sortPillsRow, { backgroundColor: theme.bgSecondary }]}>
+                    <Animated.View
+                      pointerEvents="none"
+                      style={[
+                        styles.sortAnimatedThumb,
+                        {
+                          backgroundColor: theme.text,
+                          transform: [
+                            {
+                              translateX: sortThumbAnim.interpolate({
+                                inputRange: [0, 1],
+                                outputRange: [0, 68],
+                              }),
+                            },
+                          ],
+                        },
+                      ]}
+                    />
+                    <TouchableOpacity
+                      style={styles.sortMiniPill}
+                      onPress={() => handleSwitchSortMode('rank')}
+                      activeOpacity={0.75}
+                    >
+                      <Text
+                        style={[
+                          styles.sortMiniText,
+                          { color: muscleSortMode === 'rank' ? theme.bg : theme.textMuted },
+                        ]}
+                      >
+                        Wg rangi
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.sortMiniPill}
+                      onPress={() => handleSwitchSortMode('priority')}
+                      activeOpacity={0.75}
+                    >
+                      <Text
+                        style={[
+                          styles.sortMiniText,
+                          { color: muscleSortMode === 'priority' ? theme.bg : theme.textMuted },
+                        ]}
+                      >
+                        Braki
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
+                {orderedMuscleList.length === 0 ? (
+                  <Text style={[styles.inlineEmptyText, { color: theme.textMuted }]}>
+                    Brak partii mięśniowych w wybranej randze {selectedRankTier}.
+                  </Text>
+                ) : (
+                  <>
+                    {visibleMuscles.map((stat, idx) => {
+                      const isExpanded = expandedMuscleId === stat.muscleId;
+                      const muscleExList = exercisesByMuscle[stat.muscleId] || [];
+                      const barColor =
+                        stat.effectiveSetsTotal === 0
+                          ? '#71717A'
+                          : stat.rankMeta.color;
+
+                      return (
+                        <View
+                          key={stat.muscleId}
+                          style={[
+                            styles.muscleOpenRowWrap,
+                            { borderBottomColor: theme.hairline },
+                          ]}
+                        >
+                          <TouchableOpacity
+                            style={styles.muscleOpenRow}
+                            onPress={() => handleToggleMuscleRow(stat.muscleId)}
+                            activeOpacity={0.7}
+                          >
+                            <RankCrestIcon
+                              tier={stat.rank}
+                              size={38}
+                              progressPct={stat.progressPct}
+                            />
+
+                            <View style={styles.muscleMiddleCol}>
+                              <View style={styles.muscleRowHeaderLine}>
+                                <Text style={[styles.muscleRowTitle, { color: theme.text }]}>
+                                  {muscleLabel(stat.muscleId)}
+                                </Text>
+                                <Text
+                                  style={[
+                                    styles.muscleRowSets,
+                                    { color: theme.textSecondary },
+                                  ]}
+                                >
+                                  {Math.round(stat.effectiveSetsTotal)} serii
+                                  {stat.nextTier ? ` (+${stat.setsToNext} → ${stat.nextTier})` : ' (MAX)'}
+                                </Text>
+                              </View>
+
+                              <AnimatedFillBar
+                                pct={stat.progressPct}
+                                color={barColor}
+                                trackColor={theme.bgSecondary}
+                                height={5}
+                                delayMs={Math.min(idx * 25, 300)}
+                              />
+                            </View>
+
+                            <Ionicons
+                              name={isExpanded ? 'chevron-up' : 'chevron-forward'}
+                              size={16}
+                              color={theme.textMuted}
+                            />
+                          </TouchableOpacity>
+
+                          {/* Smooth Inline Expanded Exercises for this Muscle */}
+                          {isExpanded && (
+                            <View style={styles.inlineExerciseList}>
+                              {muscleExList.length === 0 ? (
+                                <Text style={[styles.inlineEmptyText, { color: theme.textMuted }]}>
+                                  Brak przypisanych ćwiczeń w bazie
+                                </Text>
+                              ) : (
+                                muscleExList.map((exStat) => {
+                                  const pr = bestPRs[exStat.exerciseId];
+                                  return (
+                                    <TouchableOpacity
+                                      key={exStat.exerciseId}
+                                      style={styles.inlineExerciseRow}
+                                      onPress={() => openExerciseDetail(exStat.exercise)}
+                                      activeOpacity={0.7}
+                                    >
+                                      <RankCrestIcon tier={exStat.rank} size={26} />
+                                      <View style={{ flex: 1 }}>
+                                        <Text
+                                          style={[styles.inlineExName, { color: theme.text }]}
+                                          numberOfLines={1}
+                                        >
+                                          {exStat.exercise.name}
+                                        </Text>
+                                        <Text
+                                          style={[
+                                            styles.inlineExSub,
+                                            { color: theme.textMuted },
+                                          ]}
+                                        >
+                                          {exStat.totalSets} serii
+                                          {pr
+                                            ? ` · PR ${pr.weight} kg × ${pr.reps}`
+                                            : ' · Brak PR'}
+                                        </Text>
+                                      </View>
+                                      <Ionicons
+                                        name="stats-chart-outline"
+                                        size={14}
+                                        color={theme.textSecondary}
+                                      />
+                                    </TouchableOpacity>
+                                  );
+                                })
+                              )}
+                            </View>
+                          )}
+                        </View>
+                      );
+                    })}
+
+                    {canToggleMoreMuscles && (
+                      <TouchableOpacity
+                        style={[
+                          styles.loadAllMusclesBtn,
+                          {
+                            backgroundColor: theme.bgSecondary,
+                            borderColor: theme.border,
+                          },
+                        ]}
+                        onPress={() => {
+                          try {
+                            Haptics.selectionAsync();
+                          } catch {}
+                          LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                          setShowAllMuscles((v) => !v);
+                        }}
+                        activeOpacity={0.78}
+                      >
+                        <Text style={[styles.loadAllMusclesText, { color: theme.text }]}>
+                          {showAllMuscles
+                            ? t('progressShowTop')
+                            : `${t('progressLoadAll')} (${orderedMuscleList.length})`}
+                        </Text>
+                        <Ionicons
+                          name={showAllMuscles ? 'chevron-up' : 'chevron-down'}
+                          size={15}
+                          color={theme.textSecondary}
+                        />
+                      </TouchableOpacity>
+                    )}
+                  </>
+                )}
+              </View>
+            </View>
+          )}
+
+          {/* =========================================================
+              SUB-VIEW 2: ĆWICZENIA (OPEN GROUPED EXERCISE RANKS F-S+)
+             ========================================================= */}
+          {subView === 'exercises' && (
+            <View style={styles.openPage}>
+              <View
+                style={[
+                  styles.openSearchRow,
+                  { backgroundColor: theme.bgSecondary },
+                ]}
+              >
+                <Ionicons name="search" size={16} color={theme.textMuted} />
+                <TextInput
+                  style={[styles.openSearchInput, { color: theme.text }]}
+                  placeholder="Szukaj ćwiczenia lub mięśnia..."
+                  placeholderTextColor={theme.textMuted}
+                  value={searchQuery}
+                  onChangeText={setSearchQuery}
+                />
+                {searchQuery.length > 0 && (
+                  <TouchableOpacity onPress={() => setSearchQuery('')}>
+                    <Ionicons name="close-circle" size={16} color={theme.textMuted} />
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.filterPillsScroll}
+              >
+                <TouchableOpacity
+                  style={[
+                    styles.filterChip,
+                    {
+                      backgroundColor:
+                        muscleFilter === 'all' ? theme.text : theme.bgSecondary,
+                    },
+                  ]}
+                  onPress={() => setMuscleFilter('all')}
+                >
+                  <Text
+                    style={[
+                      styles.filterChipText,
+                      { color: muscleFilter === 'all' ? theme.bg : theme.textSecondary },
+                    ]}
+                  >
+                    {t('all')} (19)
+                  </Text>
+                </TouchableOpacity>
+
+                {MUSCLE_SUBGROUPS.map((m) => {
+                  const active = muscleFilter === m.id;
+                  return (
+                    <TouchableOpacity
+                      key={m.id}
+                      style={[
+                        styles.filterChip,
+                        {
+                          backgroundColor: active ? theme.text : theme.bgSecondary,
+                        },
+                      ]}
+                      onPress={() => setMuscleFilter(active ? 'all' : m.id)}
+                    >
+                      <Text
+                        style={[
+                          styles.filterChipText,
+                          { color: active ? theme.bg : theme.textSecondary },
+                        ]}
+                      >
+                        {muscleLabel(m.id, true)}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+
+              {filteredMuscleGroups.map((mGroup) => {
+                const mStat = physiqueReport?.muscleStats[mGroup.id];
+                const q = searchQuery.trim().toLowerCase();
+                const exList = (exercisesByMuscle[mGroup.id] || []).filter(
+                  (e) =>
+                    !q ||
+                    e.exercise.name.toLowerCase().includes(q) ||
+                    mGroup.label.toLowerCase().includes(q)
+                );
+
+                if (exList.length === 0) return null;
+
+                const isGroupExpanded = Boolean(expandedExGroups[mGroup.id]);
+                const visibleExList = q || isGroupExpanded ? exList : exList.slice(0, 3);
+                const hasMoreEx = !q && exList.length > 3;
+
+                return (
+                  <View
+                    key={mGroup.id}
+                    style={[styles.openGroupBlock, { borderTopColor: theme.hairline }]}
+                  >
+                    <View style={styles.openGroupHeader}>
+                      <View style={styles.openGroupTitleWrap}>
+                        <RankCrestIcon tier={mStat?.rank || 'F'} size={30} />
+                        <Text style={[styles.openGroupTitle, { color: theme.text }]}>
+                          {muscleLabel(mGroup.id)}
+                        </Text>
+                      </View>
+                      <Text style={[styles.openGroupMeta, { color: theme.textMuted }]}>
+                        {Math.round(mStat?.effectiveSetsTotal || 0)} serii
+                      </Text>
+                    </View>
+
+                    {visibleExList.map((exStat, idx) => {
+                      const pr = bestPRs[exStat.exerciseId];
+                      return (
+                        <TouchableOpacity
+                          key={exStat.exerciseId}
+                          style={[
+                            styles.openExerciseItem,
+                            { borderBottomColor: theme.hairline },
+                          ]}
+                          onPress={() => openExerciseDetail(exStat.exercise)}
+                          activeOpacity={0.7}
+                        >
+                          <RankCrestIcon
+                            tier={exStat.rank}
+                            size={34}
+                            progressPct={exStat.progressPct}
+                          />
+
+                          <View style={styles.openExBody}>
+                            <View style={styles.openExTopLine}>
+                              <Text
+                                style={[styles.openExTitle, { color: theme.text }]}
+                                numberOfLines={1}
+                              >
+                                {exStat.exercise.name}
+                              </Text>
+                              <Text
+                                style={[
+                                  styles.openExSetsCount,
+                                  { color: theme.textSecondary },
+                                ]}
+                              >
+                                {exStat.totalSets} serii
+                              </Text>
+                            </View>
+
+                            <AnimatedFillBar
+                              pct={exStat.progressPct}
+                              color={exStat.rankMeta.color}
+                              trackColor={theme.bgSecondary}
+                              height={4}
+                              delayMs={Math.min(idx * 20, 240)}
+                            />
+
+                            <View style={styles.openExBottomLine}>
+                              <Text style={[styles.openExMeta, { color: theme.textMuted }]}>
+                                {exStat.exercise.equipment || 'Ćwiczenie'} · {exStat.rankMeta.title}
+                              </Text>
+                              {pr ? (
+                                <Text style={[styles.openExPR, { color: theme.text }]}>
+                                  PR {pr.weight} kg × {pr.reps}
+                                </Text>
+                              ) : null}
+                            </View>
+                          </View>
+
+                          <Ionicons
+                            name="chevron-forward"
+                            size={15}
+                            color={theme.textMuted}
+                          />
+                        </TouchableOpacity>
+                      );
+                    })}
+
+                    {hasMoreEx && (
+                      <TouchableOpacity
+                        style={[
+                          styles.loadAllMusclesBtn,
+                          {
+                            backgroundColor: theme.bgSecondary,
+                            borderColor: theme.border,
+                          },
+                        ]}
+                        onPress={() => {
+                          try {
+                            Haptics.selectionAsync();
+                          } catch {}
+                          LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                          setExpandedExGroups((prev) => ({
+                            ...prev,
+                            [mGroup.id]: !prev[mGroup.id],
+                          }));
+                        }}
+                        activeOpacity={0.78}
+                      >
+                        <Text style={[styles.loadAllMusclesText, { color: theme.text }]}>
+                          {isGroupExpanded
+                            ? t('progressShowTop')
+                            : `${t('progressLoadAll')} (${exList.length})`}
+                        </Text>
+                        <Ionicons
+                          name={isGroupExpanded ? 'chevron-up' : 'chevron-down'}
+                          size={15}
+                          color={theme.textSecondary}
+                        />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                );
+              })}
+            </View>
+          )}
+
+          {/* =========================================================
+              SUB-VIEW 3: DZIENNIK (WEIGHT & ACTIVITY LOG)
+             ========================================================= */}
+          {subView === 'journal' && (
+            <View style={styles.openPage}>
+              {/* Open Weight Section */}
+              <View style={styles.openSectionNoBorder}>
+                <View style={styles.openSectionHeader}>
+                  <View>
+                    <Text style={[styles.sectionEyebrow, { color: theme.textMuted }]}>
+                      MASA CIAŁA
+                    </Text>
+                    <View style={styles.weightHeroRow}>
+                      <Text style={[styles.weightHeroBig, { color: theme.text }]}>
+                        {weightHistory.length > 0
+                          ? `${weightHistory[weightHistory.length - 1].weight} kg`
+                          : activeProfile?.weight
+                          ? `${activeProfile.weight} kg`
+                          : '-- kg'}
+                      </Text>
+                      {weightHistory.length >= 2 && (
+                        <Text
+                          style={[
+                            styles.weightDeltaText,
+                            {
+                              color:
+                                weightHistory[weightHistory.length - 1].weight -
+                                  weightHistory[0].weight <=
+                                0
+                                  ? '#10B981'
+                                  : '#38BDF8',
+                            },
+                          ]}
+                        >
+                          {(
+                            weightHistory[weightHistory.length - 1].weight -
+                            weightHistory[0].weight
+                          ).toFixed(1)}{' '}
+                          kg od startu
+                        </Text>
+                      )}
+                    </View>
+                  </View>
+
+                  <View style={[styles.rangePills, { backgroundColor: theme.bgSecondary }]}>
+                    {(
+                      [
+                        { id: '7d', label: '7D' },
+                        { id: '30d', label: '30D' },
+                        { id: 'all', label: 'MAX' },
+                      ] as const
+                    ).map((r) => {
+                      const active = weightChartRange === r.id;
+                      return (
+                        <TouchableOpacity
+                          key={r.id}
+                          style={[
+                            styles.rangePillBtn,
+                            active && { backgroundColor: theme.text },
+                          ]}
+                          onPress={() => setWeightChartRange(r.id)}
+                        >
+                          <Text
+                            style={[
+                              styles.rangePillText,
+                              { color: active ? theme.bg : theme.textMuted },
+                            ]}
+                          >
+                            {r.label}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+
+                {renderOpenLineChart(
+                  filteredWeightPoints.map((w) => ({
+                    value: w.weight,
+                    label: w.date.slice(5, 10),
+                  })),
+                  '#38BDF8',
+                  'kg'
                 )}
 
-                {/* Note input */}
+                <View style={styles.inlineInputRow}>
+                  <TextInput
+                    style={[
+                      styles.inlineInput,
+                      {
+                        backgroundColor: theme.bgSecondary,
+                        color: theme.text,
+                      },
+                    ]}
+                    placeholder="Wpisz dzisiejszą wagę (kg)..."
+                    placeholderTextColor={theme.textMuted}
+                    keyboardType="decimal-pad"
+                    value={newWeightInput}
+                    onChangeText={setNewWeightInput}
+                  />
+                  <TouchableOpacity
+                    style={[styles.inlineActionBtn, { backgroundColor: theme.text }]}
+                    onPress={handleSaveWeight}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={[styles.inlineActionBtnText, { color: theme.bg }]}>
+                      Zapisz
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                {weightHistory
+                  .slice(-5)
+                  .reverse()
+                  .map((w) => (
+                    <View
+                      key={w.id}
+                      style={[styles.simpleLogRow, { borderBottomColor: theme.hairline }]}
+                    >
+                      <Text style={[styles.simpleLogDate, { color: theme.textMuted }]}>
+                        {new Date(w.date).toLocaleDateString('pl-PL', {
+                          day: 'numeric',
+                          month: 'short',
+                          year: 'numeric',
+                        })}
+                      </Text>
+                      <View style={styles.simpleLogRight}>
+                        <Text style={[styles.simpleLogVal, { color: theme.text }]}>
+                          {w.weight} kg
+                        </Text>
+                        <TouchableOpacity onPress={() => handleRemoveWeight(w.id)}>
+                          <Ionicons name="trash-outline" size={14} color={theme.textMuted} />
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  ))}
+              </View>
+
+              {/* Open 28-Day Activity Matrix */}
+              <View style={[styles.openSection, { borderTopColor: theme.hairline }]}>
+                <View style={styles.openSectionHeader}>
+                  <View>
+                    <Text style={[styles.sectionEyebrow, { color: theme.textMuted }]}>
+                      REGULARNOŚĆ
+                    </Text>
+                    <Text style={[styles.sectionHeading, { color: theme.text }]}>
+                      Ostatnie 28 dni
+                    </Text>
+                  </View>
+                  <Text style={[styles.sectionRightMeta, { color: theme.textSecondary }]}>
+                    {last28Days.filter((d) => d.active).length} treningów
+                  </Text>
+                </View>
+
+                <View style={styles.dotsGrid}>
+                  {last28Days.map((day) => (
+                    <View
+                      key={day.key}
+                      style={[
+                        styles.dayDotBox,
+                        {
+                          backgroundColor: day.active
+                            ? '#10B981'
+                            : theme.bgSecondary,
+                          borderColor: day.isToday ? theme.text : 'transparent',
+                          borderWidth: day.isToday ? 1.5 : 0,
+                        },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.dayDotLabel,
+                          {
+                            color: day.active ? '#09090B' : theme.textMuted,
+                          },
+                        ]}
+                      >
+                        {day.label}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+
+              {/* Open Recent Workouts Timeline */}
+              <View style={[styles.openSection, { borderTopColor: theme.hairline }]}>
+                <View style={styles.openSectionHeader}>
+                  <View>
+                    <Text style={[styles.sectionEyebrow, { color: theme.textMuted }]}>
+                      HISTORIA SESJI
+                    </Text>
+                    <Text style={[styles.sectionHeading, { color: theme.text }]}>
+                      Ostatnie treningi
+                    </Text>
+                  </View>
+                  {workoutHistory.length > 4 ? (
+                    <TouchableOpacity
+                      onPress={() => {
+                        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                        setShowAllJournalWorkouts((v) => !v);
+                      }}
+                    >
+                      <Text style={[styles.sectionRightMeta, { color: theme.text }]}>
+                        {showAllJournalWorkouts ? 'Mniej' : `Wszystkie (${workoutHistory.length})`}
+                      </Text>
+                    </TouchableOpacity>
+                  ) : (
+                    <Text style={[styles.sectionRightMeta, { color: theme.textMuted }]}>
+                      Łącznie {workoutHistory.length}
+                    </Text>
+                  )}
+                </View>
+
+                {workoutHistory.length === 0 ? (
+                  <Text style={[styles.emptyLineText, { color: theme.textMuted }]}>
+                    Nie ukończono jeszcze żadnego treningu
+                  </Text>
+                ) : (
+                  (showAllJournalWorkouts ? workoutHistory.slice(-15) : workoutHistory.slice(-4))
+                    .slice()
+                    .reverse()
+                    .map((entry, idx) => (
+                      <View
+                        key={`${entry.date}-${idx}`}
+                        style={[styles.workoutLogRow, { borderBottomColor: theme.hairline }]}
+                      >
+                        <View style={{ flex: 1 }}>
+                          <Text style={[styles.workoutLogTitle, { color: theme.text }]}>
+                            {entry.dayName}
+                          </Text>
+                          <Text style={[styles.workoutLogSub, { color: theme.textMuted }]}>
+                            {new Date(entry.date).toLocaleDateString('pl-PL', {
+                              weekday: 'short',
+                              day: 'numeric',
+                              month: 'long',
+                            })}
+                            {entry.durationMinutes ? ` · ${entry.durationMinutes} min` : ''}
+                            {entry.totalVolumeKg
+                              ? ` · ${entry.totalVolumeKg.toLocaleString('pl-PL')} kg`
+                              : ''}
+                          </Text>
+                        </View>
+                        <Text style={[styles.workoutLogSets, { color: theme.textSecondary }]}>
+                          {entry.completedSets}/{entry.totalSets} serii
+                        </Text>
+                      </View>
+                    ))
+                )}
+              </View>
+            </View>
+          )}
+        </Animated.View>
+      </ScrollView>
+
+      {/* =========================================================
+          EXERCISE DETAIL & 1RM PROGRESSION BOTTOM SHEET (OPEN STYLE)
+         ========================================================= */}
+      <InteractiveBottomSheet
+        visible={selectedExercise !== null}
+        onClose={() => setSelectedExercise(null)}
+        title={selectedExercise?.name || 'Progresja ćwiczenia'}
+        subtitle={
+          selectedExerciseRankStat
+            ? `Ranga ${selectedExerciseRankStat.rank} (${selectedExerciseRankStat.rankMeta.title}) · ${selectedExerciseRankStat.totalSets} serii`
+            : 'Historia rekordów 1RM i serii'
+        }
+        initialHeightPercent={0.86}
+      >
+          <BottomSheetScrollView
+            style={{ flex: 1 }}
+            contentContainerStyle={styles.sheetScrollContent}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          >
+            {selectedExerciseRankStat && (
+              <View
+                style={[
+                  styles.sheetRankStrip,
+                  { borderBottomColor: theme.hairline },
+                ]}
+              >
+                <View style={styles.sheetRankTop}>
+                  <RankCrestIcon
+                    tier={selectedExerciseRankStat.rank}
+                    size={54}
+                    progressPct={selectedExerciseRankStat.progressPct}
+                  />
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.sheetRankTitle, { color: theme.text }]}>
+                      {selectedExerciseRankStat.rankMeta.title}
+                    </Text>
+                    <Text style={[styles.sheetRankSub, { color: theme.textMuted }]}>
+                      {selectedExerciseRankStat.nextTier
+                        ? `Brakuje ${selectedExerciseRankStat.setsToNext} serii do rangi ${selectedExerciseRankStat.nextTier}`
+                        : 'Osiągnięto najwyższą rangę S+'}
+                    </Text>
+                  </View>
+                  <Text style={[styles.sheetSetsCount, { color: theme.text }]}>
+                    {selectedExerciseRankStat.totalSets} serii
+                  </Text>
+                </View>
+
+                <AnimatedFillBar
+                  pct={selectedExerciseRankStat.progressPct}
+                  color={selectedExerciseRankStat.rankMeta.color}
+                  trackColor={theme.bgSecondary}
+                  height={6}
+                />
+              </View>
+            )}
+
+            {/* 1RM Progression Chart */}
+            <View style={styles.sheetSection}>
+              <View style={styles.openSectionHeader}>
+                <Text style={[styles.sectionHeading, { color: theme.text }]}>
+                  Estymowany 1RM (kg)
+                </Text>
+                <View style={[styles.rangePills, { backgroundColor: theme.bgSecondary }]}>
+                  {(
+                    [
+                      { id: '7d', label: '7D' },
+                      { id: '30d', label: '30D' },
+                      { id: 'all', label: 'MAX' },
+                    ] as const
+                  ).map((r) => {
+                    const active = prChartRange === r.id;
+                    return (
+                      <TouchableOpacity
+                        key={r.id}
+                        style={[
+                          styles.rangePillBtn,
+                          active && { backgroundColor: theme.text },
+                        ]}
+                        onPress={() => setPrChartRange(r.id)}
+                      >
+                        <Text
+                          style={[
+                            styles.rangePillText,
+                            { color: active ? theme.bg : theme.textMuted },
+                          ]}
+                        >
+                          {r.label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+
+              {renderOpenLineChart(
+                filteredPRPoints.map((p) => ({
+                  value: p.estimated1RM,
+                  label: p.date.slice(5, 10),
+                })),
+                selectedExerciseRankStat?.rankMeta.color || '#10B981',
+                'kg'
+              )}
+            </View>
+
+            {/* Manual PR Entry */}
+            <View style={[styles.sheetSection, { borderTopColor: theme.hairline }]}>
+              <Text style={[styles.sectionEyebrow, { color: theme.textMuted }]}>
+                DODAJ WYNIK RĘCZNIE
+              </Text>
+              <View style={styles.inlineInputRow}>
                 <TextInput
                   style={[
-                    styles.noteField,
-                    { backgroundColor: theme.card, borderColor: theme.border, color: theme.text },
+                    styles.inlineInput,
+                    { backgroundColor: theme.bgSecondary, color: theme.text },
                   ]}
-                  placeholder="Notatka (opcjonalnie, np. RPE 9, łatwa seria)..."
+                  placeholder="Ciężar (kg)"
                   placeholderTextColor={theme.textMuted}
-                  value={inputNote}
-                  onChangeText={setInputNote}
+                  keyboardType="decimal-pad"
+                  value={manualWeight}
+                  onChangeText={setManualWeight}
                 />
-
-                {/* Save button */}
+                <TextInput
+                  style={[
+                    styles.inlineInput,
+                    { backgroundColor: theme.bgSecondary, color: theme.text },
+                  ]}
+                  placeholder="Powtórzenia"
+                  placeholderTextColor={theme.textMuted}
+                  keyboardType="number-pad"
+                  value={manualReps}
+                  onChangeText={setManualReps}
+                />
                 <TouchableOpacity
-                  style={[styles.saveBtn, { backgroundColor: theme.primary }]}
-                  onPress={handleSaveRecord}
-                  activeOpacity={0.8}
+                  style={[styles.inlineActionBtn, { backgroundColor: theme.text }]}
+                  onPress={handleAddManualPR}
                 >
-                  <Text style={[styles.saveBtnText, { color: theme.primaryText }]}>
-                    ZAPISZ REKORD
+                  <Text style={[styles.inlineActionBtnText, { color: theme.bg }]}>
+                    Dodaj
                   </Text>
                 </TouchableOpacity>
               </View>
+            </View>
 
-              {/* History of this exercise */}
-              <View style={styles.historySection}>
-                <Text style={[styles.historyTitle, { color: theme.text }]}>
-                  Historia serii ({history.length})
+            {/* PR History List */}
+            <View style={[styles.sheetSection, { borderTopColor: theme.hairline }]}>
+              <Text style={[styles.sectionEyebrow, { color: theme.textMuted }]}>
+                ZAPISANE REKORDY ({prHistory.length})
+              </Text>
+              {prHistory.length === 0 ? (
+                <Text style={[styles.emptyLineText, { color: theme.textMuted }]}>
+                  Brak zapisanych wyników dla tego ćwiczenia
                 </Text>
-                {history.length === 0 ? (
-                  <Text style={[styles.historyEmpty, { color: theme.textMuted }]}>
-                    Brak zapisanych serii dla tego ćwiczenia. Wpisz swój pierwszy wynik powyżej!
-                  </Text>
-                ) : (
-                  history.map((rec) => (
-                    <View
-                      key={rec.id}
-                      style={[styles.historyRow, { borderBottomColor: theme.hairline }]}
-                    >
-                      <View>
-                        <View style={styles.histNumbers}>
-                          <Text style={[styles.histWeight, { color: theme.text }]}>
-                            {rec.weight} kg
-                          </Text>
-                          <Text style={[styles.histReps, { color: theme.textSecondary }]}>
-                            × {rec.reps} powt.
-                          </Text>
-                        </View>
-                        {rec.note ? (
-                          <Text style={[styles.histDate, { color: theme.textMuted }]}>
-                            {rec.note}
-                          </Text>
-                        ) : null}
-                      </View>
-
-                      <View style={styles.histMeta}>
-                        <Text style={[styles.hist1RM, { color: theme.textSecondary }]}>
-                          1RM: ~{rec.estimated1RM} kg
-                        </Text>
-                        <Text style={[styles.histDate, { color: theme.textMuted }]}>
-                          {rec.date.slice(0, 10)}
-                        </Text>
-                      </View>
-
-                      <TouchableOpacity
-                        onPress={() => handleDeleteRecord(rec)}
-                        style={styles.trashBtn}
-                      >
-                        <Ionicons name="trash-outline" size={16} color={theme.textMuted} />
+              ) : (
+                [...prHistory].reverse().map((rec) => (
+                  <View
+                    key={rec.id}
+                    style={[styles.simpleLogRow, { borderBottomColor: theme.hairline }]}
+                  >
+                    <Text style={[styles.simpleLogDate, { color: theme.textMuted }]}>
+                      {new Date(rec.date).toLocaleDateString('pl-PL', {
+                        day: 'numeric',
+                        month: 'short',
+                        year: 'numeric',
+                      })}
+                    </Text>
+                    <View style={styles.simpleLogRight}>
+                      <Text style={[styles.simpleLogVal, { color: theme.text }]}>
+                        {rec.weight} kg × {rec.reps} (~{rec.estimated1RM} kg)
+                      </Text>
+                      <TouchableOpacity onPress={() => handleDeletePRPoint(rec.id)}>
+                        <Ionicons name="trash-outline" size={14} color={theme.textMuted} />
                       </TouchableOpacity>
                     </View>
-                  ))
-                )}
-              </View>
-            </ScrollView>
-          </KeyboardAvoidingView>
+                  </View>
+                ))
+              )}
+            </View>
+          </BottomSheetScrollView>
       </InteractiveBottomSheet>
     </View>
   );
@@ -1159,712 +2135,608 @@ const styles = StyleSheet.create({
   header: {
     paddingHorizontal: 20,
     paddingTop: 14,
-    paddingBottom: 8,
+    paddingBottom: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  title: {
-    fontSize: 28,
-    fontWeight: '900',
-    letterSpacing: -0.6,
-  },
-  subtitle: {
-    fontSize: 14,
-    marginTop: 4,
-  },
-  modeSwitchWrapper: {
-    paddingHorizontal: 20,
-    marginBottom: 14,
-    marginTop: 4,
-  },
-  modeSwitchBox: {
-    flexDirection: 'row',
-    borderRadius: 14,
-    borderWidth: 1,
-    padding: 3,
-  },
-  modeBtn: {
-    flex: 1,
+  headerTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  title: {
+    fontSize: 30,
+    fontWeight: '900',
+    letterSpacing: -0.7,
+    flexShrink: 0,
+  },
+  navPills: {
+    position: 'relative',
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: 40,
+    borderRadius: 999,
+    padding: SLIDER_PADDING,
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  navPillAnimatedThumb: {
+    position: 'absolute',
+    top: SLIDER_PADDING,
+    bottom: SLIDER_PADDING,
+    left: SLIDER_PADDING,
+    borderRadius: 999,
+  },
+  navPillBtn: {
+    width: SLIDER_SLOT_W,
+    height: '100%',
+    alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 10,
-    borderRadius: 11,
+    borderRadius: 999,
+    zIndex: 2,
   },
-  modeBtnText: {
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  scrollArea: {
+  scroll: {
     flex: 1,
   },
   scrollContent: {
     paddingHorizontal: 20,
-    paddingBottom: 118,
+    paddingBottom: 120,
   },
-  timeframeRow: {
+  openPage: {
+    paddingTop: 6,
+  },
+  heroShowcaseWrap: {
     flexDirection: 'row',
-    gap: 8,
-    marginBottom: 16,
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    marginBottom: 8,
+    gap: 10,
   },
-  tfPill: {
+  heroCrestBlock: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flex: 1.15,
+  },
+  heroCrestTextCol: {
     flex: 1,
-    paddingVertical: 9,
-    borderRadius: 10,
-    borderWidth: 1,
+  },
+  heroCrestEyebrow: {
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 1,
+  },
+  heroCrestTitle: {
+    fontSize: 16,
+    fontWeight: '900',
+    letterSpacing: -0.3,
+    marginTop: 1,
+  },
+  heroCrestSub: {
+    fontSize: 11,
+    fontWeight: '700',
+    marginTop: 2,
+  },
+  heroStatsRightRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    flex: 1,
+  },
+  heroMetricItem: {
+    flex: 1,
     alignItems: 'center',
   },
-  tfPillText: {
-    fontSize: 12,
-    fontWeight: '800',
+  heroMetricValue: {
+    fontSize: 18,
+    fontWeight: '900',
+    fontVariant: ['tabular-nums'],
+    letterSpacing: -0.4,
   },
-  card: {
-    padding: 18,
-    borderRadius: 18,
-    borderWidth: 1,
-    marginBottom: 18,
+  heroMetricLabel: {
+    fontSize: 10,
+    fontWeight: '600',
+    marginTop: 2,
   },
-  cardHeaderRow: {
+  verticalHairline: {
+    width: StyleSheet.hairlineWidth,
+    height: 26,
+  },
+  openSection: {
+    marginTop: 22,
+    paddingTop: 18,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  openSectionNoBorder: {
+    paddingTop: 10,
+  },
+  openSectionHeader: {
     flexDirection: 'row',
+    alignItems: 'flex-end',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
     marginBottom: 12,
   },
-  cardKicker: {
+  sectionEyebrow: {
     fontSize: 10,
     fontWeight: '800',
-    letterSpacing: 0.8,
+    letterSpacing: 1.1,
+    marginBottom: 3,
   },
-  cardTitle: {
-    fontSize: 17,
-    fontWeight: '900',
-    marginTop: 2,
+  sectionHeading: {
+    fontSize: 20,
+    fontWeight: '800',
+    letterSpacing: -0.4,
+  },
+  sectionRightMeta: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  spectrumGridRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    paddingVertical: 10,
+    gap: 4,
+  },
+  spectrumColWrap: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 6,
+    gap: 6,
+  },
+  spectrumCountLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    fontVariant: ['tabular-nums'],
+  },
+  spectrumColTrack: {
+    width: 14,
+    height: 68,
+    borderRadius: 999,
+    justifyContent: 'flex-end',
+    overflow: 'hidden',
+  },
+  spectrumColFill: {
+    width: '100%',
+    borderRadius: 999,
+  },
+  tierSpotlightRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginTop: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderLeftWidth: 3,
+    borderRadius: 12,
+  },
+  tierSpotlightTitle: {
+    fontSize: 14,
+    fontWeight: '800',
     letterSpacing: -0.2,
   },
-  weightDeltaBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#CED4DA',
-  },
-  weightDeltaText: {
+  tierSpotlightSub: {
     fontSize: 12,
-    fontWeight: '800',
+    marginTop: 2,
+    lineHeight: 17,
   },
-  metricsSummaryRow: {
+  milestoneBlock: {
+    marginTop: 14,
+    paddingTop: 14,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    gap: 10,
+  },
+  milestoneHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-around',
-    paddingVertical: 10,
-    marginBottom: 14,
+    gap: 6,
   },
-  metricItem: {
+  milestoneHeaderTitle: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1,
+  },
+  milestoneRow: {
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: 10,
+    paddingVertical: 4,
   },
-  metricLabel: {
+  milestoneTextLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  milestoneMuscleName: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  milestoneRemaining: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  priorityOpenRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  priorityAccentBar: {
+    width: 3,
+    height: 34,
+    borderRadius: 2,
+  },
+  priorityTitleLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  priorityName: {
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  priorityReasonTag: {
     fontSize: 11,
     fontWeight: '700',
   },
-  metricVal: {
-    fontSize: 17,
-    fontWeight: '900',
-    marginTop: 2,
+  priorityHint: {
+    fontSize: 12,
   },
-  metricDivider: {
-    width: 1,
-    height: 24,
-    backgroundColor: '#E5E7EB',
-  },
-  chartCard: {
-    borderRadius: 16,
-    borderWidth: 1,
-    padding: 12,
-    marginBottom: 8,
-  },
-  chartWrapper: {
-    paddingVertical: 12,
-    marginBottom: 10,
-  },
-  chartBarsContainer: {
+  sortPillsRow: {
+    position: 'relative',
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-end',
-    height: 140,
-    paddingHorizontal: 4,
+    borderRadius: 999,
+    padding: 2,
+    overflow: 'hidden',
   },
-  chartCol: {
+  sortAnimatedThumb: {
+    position: 'absolute',
+    top: 2,
+    bottom: 2,
+    left: 2,
+    width: 68,
+    borderRadius: 999,
+  },
+  sortMiniPill: {
+    width: 68,
     alignItems: 'center',
-    flex: 1,
+    justifyContent: 'center',
+    paddingVertical: 5,
+    borderRadius: 999,
+    zIndex: 2,
   },
-  chartBarValue: {
-    fontSize: 10,
-    fontWeight: '800',
-    marginBottom: 4,
+  sortMiniText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  muscleOpenRowWrap: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  muscleOpenRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 13,
+  },
+  muscleMiddleCol: {
+    flex: 1,
+    gap: 6,
+  },
+  muscleRowHeaderLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  muscleRowTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  muscleRowSets: {
+    fontSize: 12,
+    fontWeight: '600',
+    fontVariant: ['tabular-nums'],
   },
   barTrack: {
-    width: 18,
-    height: 100,
-    justifyContent: 'flex-end',
-    alignItems: 'center',
-    borderRadius: 9,
+    width: '100%',
+    borderRadius: 999,
     overflow: 'hidden',
   },
   barFill: {
-    width: '100%',
-    borderRadius: 9,
+    borderRadius: 999,
   },
-  chartBarDay: {
-    fontSize: 10,
-    fontWeight: '700',
-    marginTop: 6,
+  inlineExerciseList: {
+    paddingLeft: 44,
+    paddingBottom: 12,
+    gap: 8,
   },
-  insightPill: {
+  inlineEmptyText: {
+    fontSize: 12,
+    paddingVertical: 4,
+  },
+  inlineExerciseRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    padding: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    marginTop: 8,
-  },
-  insightText: {
-    fontSize: 12,
-    lineHeight: 16,
-    flex: 1,
-    fontWeight: '600',
-  },
-  creatineBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 8,
-    borderWidth: 1,
-  },
-  creatineBadgeText: {
-    fontSize: 11,
-    fontWeight: '800',
-  },
-  creatineSubtitle: {
-    fontSize: 13,
-    marginBottom: 14,
-  },
-  creatineRibbon: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    gap: 10,
     paddingVertical: 6,
-    marginBottom: 10,
   },
-  dayCircleCol: {
-    alignItems: 'center',
-    flex: 1,
-    paddingVertical: 2,
-  },
-  dayLabelText: {
-    fontSize: 11,
-    fontWeight: '800',
-    marginBottom: 6,
-  },
-  dayCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    borderWidth: 1.5,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  emptyX: {
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  dayNumText: {
-    fontSize: 10,
-    fontWeight: '700',
-    marginTop: 6,
-  },
-  creatineTip: {
-    fontSize: 11,
-    marginTop: 4,
-  },
-  suppChipsWrap: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-    marginBottom: 10,
-  },
-  suppChip: {
-    paddingHorizontal: 9,
-    paddingVertical: 5,
-    borderRadius: 9,
-    borderWidth: 1,
-  },
-  suppChipText: {
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  improvementsList: {
-    marginTop: 4,
-  },
-  improvementRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 14,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    gap: 12,
-  },
-  impName: {
-    fontSize: 14,
-    fontWeight: '800',
-    marginBottom: 4,
-  },
-  impSubRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  catTag: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-    borderWidth: StyleSheet.hairlineWidth,
-  },
-  catTagText: {
-    fontSize: 9,
-    fontWeight: '800',
-    letterSpacing: 0.3,
-  },
-  impPrevText: {
-    fontSize: 12,
-  },
-  impRight: {
-    alignItems: 'flex-end',
-  },
-  impWeightRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  impWeightCur: {
-    fontSize: 16,
-    fontWeight: '900',
-  },
-  deltaChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 2,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-    borderWidth: 1,
-  },
-  deltaChipText: {
-    fontSize: 10,
-    fontWeight: '800',
-  },
-  imp1RM: {
-    fontSize: 11,
-    fontWeight: '600',
-    marginTop: 2,
-  },
-  searchWrapper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginHorizontal: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderRadius: 14,
-    borderWidth: 1,
-    gap: 10,
-    marginBottom: 14,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 16,
-    fontWeight: '500',
-  },
-  categoryWrap: {
-    marginBottom: 14,
-  },
-  categoryScroll: {
-    paddingHorizontal: 20,
-    gap: 10,
-  },
-  catPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 18,
-    paddingVertical: 11,
-    borderRadius: 20,
-    borderWidth: 1,
-  },
-  catPillText: {
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  list: {
-    flex: 1,
-  },
-  listInner: {
-    paddingHorizontal: 20,
-    paddingBottom: 118,
-  },
-  kpiRow: {
-    flexDirection: 'row',
-    gap: 10,
-    marginTop: 4,
-    marginBottom: 16,
-  },
-  kpiCard: {
-    flex: 1,
-    paddingVertical: 18,
-    paddingHorizontal: 12,
-    borderRadius: 16,
-    borderWidth: 1,
-    alignItems: 'center',
-    gap: 4,
-  },
-  kpiVal: {
-    fontSize: 22,
-    fontWeight: '900',
-    fontVariant: ['tabular-nums'],
-    marginTop: 2,
-  },
-  kpiLbl: {
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  emptyView: {
-    paddingVertical: 48,
-    alignItems: 'center',
-  },
-  emptyText: {
-    fontSize: 15,
-  },
-  exerciseRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 20,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    gap: 14,
-    minHeight: 80,
-  },
-  rowLeft: {
-    flex: 1,
-  },
-  exTitle: {
-    fontSize: 17,
-    fontWeight: '700',
-    letterSpacing: -0.2,
-    lineHeight: 22,
-    marginBottom: 6,
-  },
-  subMeta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  planHint: {
-    fontSize: 14,
-  },
-  rowRight: {
-    alignItems: 'flex-end',
-  },
-  prResultCol: {
-    alignItems: 'flex-end',
-  },
-  prWeightText: {
-    fontSize: 21,
-    fontWeight: '900',
-    fontVariant: ['tabular-nums'],
-  },
-  prRepsText: {
+  inlineExName: {
     fontSize: 14,
     fontWeight: '600',
   },
-  pr1RMText: {
-    fontSize: 12,
-    fontWeight: '700',
-    marginTop: 2,
+  inlineExSub: {
+    fontSize: 11,
+    marginTop: 1,
   },
-  addBadge: {
+  loadAllMusclesBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 16,
-    paddingVertical: 9,
-    borderRadius: 10,
-    borderWidth: 1,
-  },
-  addBadgeText: {
-    fontSize: 14,
-    fontWeight: '800',
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.65)',
-    justifyContent: 'flex-end',
-  },
-  backdrop: {
-    flex: 1,
-  },
-  modalSheet: {
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    maxHeight: '92%',
-    borderTopWidth: 1,
-    paddingBottom: Platform.OS === 'ios' ? 40 : 20,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    padding: 20,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  modalCategory: {
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 0.8,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: '900',
-    letterSpacing: -0.2,
-    marginTop: 2,
-  },
-  closeBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
     justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modalScroll: {
-    padding: 20,
-  },
-  formContainer: {
-    padding: 18,
-    borderRadius: 16,
+    gap: 8,
+    marginTop: 14,
+    paddingVertical: 12,
+    borderRadius: 999,
     borderWidth: 1,
-    marginBottom: 20,
   },
-  formHeaderTitle: {
-    fontSize: 17,
-    fontWeight: '800',
-    marginBottom: 14,
-  },
-  formInputsRow: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 14,
-  },
-  inputCol: {
-    flex: 1,
-  },
-  fieldLabel: {
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 0.6,
-    marginBottom: 6,
-  },
-  stepperContainer: {
-    borderRadius: 10,
-    borderWidth: 1,
-    overflow: 'hidden',
-  },
-  stepperInput: {
-    fontSize: 22,
-    fontWeight: '900',
-    textAlign: 'center',
-    paddingVertical: 8,
-  },
-  stepperActions: {
-    flexDirection: 'row',
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderColor: '#CED4DA',
-  },
-  stepBtn: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: 7,
-  },
-  stepBtnText: {
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  projectionBanner: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    marginBottom: 12,
-  },
-  projectionLabel: {
+  loadAllMusclesText: {
     fontSize: 13,
-    fontWeight: '600',
+    fontWeight: '800',
   },
-  projectionValue: {
-    fontSize: 15,
-    fontWeight: '900',
-  },
-  noteField: {
+  openSearchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
     paddingHorizontal: 14,
     paddingVertical: 10,
-    borderRadius: 8,
-    borderWidth: 1,
+    borderRadius: 999,
+    marginTop: 8,
+    marginBottom: 10,
+  },
+  openSearchInput: {
+    flex: 1,
     fontSize: 14,
-    marginBottom: 14,
+    paddingVertical: 0,
   },
-  saveBtn: {
+  filterPillsScroll: {
+    gap: 8,
+    paddingVertical: 4,
+    marginBottom: 8,
+  },
+  filterChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 999,
+  },
+  filterChipText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  openGroupBlock: {
+    marginTop: 16,
+    paddingTop: 14,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  openGroupHeader: {
+    flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 15,
-    borderRadius: 12,
+    justifyContent: 'space-between',
+    marginBottom: 6,
   },
-  saveBtnText: {
-    fontSize: 15,
-    fontWeight: '900',
-    letterSpacing: 0.5,
+  openGroupTitleWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
-  historySection: {
-    marginBottom: 24,
-  },
-  historyTitle: {
-    fontSize: 16,
+  openGroupTitle: {
+    fontSize: 17,
     fontWeight: '800',
-    marginBottom: 12,
+    letterSpacing: -0.3,
   },
-  historyEmpty: {
+  openGroupMeta: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  openExerciseItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  openExBody: {
+    flex: 1,
+    gap: 5,
+  },
+  openExTopLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  openExTitle: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  openExSetsCount: {
+    fontSize: 12,
+    fontWeight: '700',
+    fontVariant: ['tabular-nums'],
+  },
+  openExBottomLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  openExMeta: {
+    fontSize: 11,
+    fontWeight: '500',
+  },
+  openExPR: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  weightHeroRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 10,
+  },
+  weightHeroBig: {
+    fontSize: 30,
+    fontWeight: '900',
+    letterSpacing: -0.8,
+  },
+  weightDeltaText: {
     fontSize: 13,
-    fontStyle: 'italic',
+    fontWeight: '700',
   },
-  historyRow: {
+  rangePills: {
+    flexDirection: 'row',
+    borderRadius: 999,
+    padding: 2,
+  },
+  rangePillBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+  },
+  rangePillText: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  openChartWrap: {
+    marginVertical: 10,
+  },
+  chartAxisLabels: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 4,
+  },
+  chartAxisText: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  emptyChartOpen: {
+    paddingVertical: 32,
+    alignItems: 'center',
+  },
+  emptyChartText: {
+    fontSize: 13,
+  },
+  inlineInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 10,
+    marginBottom: 8,
+  },
+  inlineInput: {
+    flex: 1,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  inlineActionBtn: {
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 11,
+  },
+  inlineActionBtnText: {
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  simpleLogRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  simpleLogDate: {
+    fontSize: 13,
+  },
+  simpleLogRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  simpleLogVal: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  dotsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 4,
+  },
+  dayDotBox: {
+    width: (SCREEN_WIDTH - 40 - 6 * 8) / 7,
+    height: 36,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dayDotLabel: {
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  emptyLineText: {
+    fontSize: 13,
+    paddingVertical: 10,
+  },
+  workoutLogRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingVertical: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  histNumbers: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    gap: 4,
+  workoutLogTitle: {
+    fontSize: 15,
+    fontWeight: '700',
   },
-  histWeight: {
-    fontSize: 18,
-    fontWeight: '900',
-  },
-  histReps: {
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  histMeta: {
-    alignItems: 'flex-end',
-  },
-  hist1RM: {
+  workoutLogSub: {
     fontSize: 12,
-    fontWeight: '600',
+    marginTop: 2,
   },
-  histDate: {
-    fontSize: 11,
-    marginTop: 1,
-  },
-  trashBtn: {
-    padding: 6,
-  },
-  emptyBlockText: {
+  workoutLogSets: {
     fontSize: 13,
-    lineHeight: 19,
-    marginTop: 6,
+    fontWeight: '700',
   },
-  volumeList: {
-    marginTop: 10,
+  sheetScrollContent: {
+    paddingHorizontal: 20,
+    paddingBottom: 40,
+  },
+  sheetRankStrip: {
+    paddingVertical: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
     gap: 10,
   },
-  volumeRow: {
-    gap: 5,
-  },
-  volumeLabelLine: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  volumeCatName: {
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  volumeMetaText: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  volumeTrack: {
-    height: 7,
-    borderRadius: 4,
-    overflow: 'hidden',
-  },
-  volumeFill: {
-    height: '100%',
-    borderRadius: 4,
-  },
-  workoutHistRow: {
+  sheetRankTop: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 11,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    gap: 12,
   },
-  workoutHistTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  workoutHistSub: {
-    fontSize: 12,
-    marginTop: 2,
-  },
-  workoutHistRight: {
-    alignItems: 'flex-end',
-  },
-  workoutHistSets: {
-    fontSize: 13,
+  sheetRankTitle: {
+    fontSize: 17,
     fontWeight: '800',
   },
-  workoutHistMeta: {
-    fontSize: 11,
-    marginTop: 2,
-  },
-  showMoreHistBtn: {
-    marginTop: 12,
-    paddingVertical: 9,
-    borderRadius: 10,
-    borderWidth: 1,
-    alignItems: 'center',
-  },
-  showMoreHistText: {
+  sheetRankSub: {
     fontSize: 12,
-    fontWeight: '700',
-  },
-  pctTableRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: 8,
-    paddingHorizontal: 6,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    marginBottom: 12,
-  },
-  pctCell: {
-    alignItems: 'center',
-    flex: 1,
-  },
-  pctCellLabel: {
-    fontSize: 10,
-    fontWeight: '700',
-  },
-  pctCellVal: {
-    fontSize: 13,
-    fontWeight: '800',
     marginTop: 2,
+  },
+  sheetSetsCount: {
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  sheetSection: {
+    marginTop: 18,
+    paddingTop: 14,
+    borderTopWidth: StyleSheet.hairlineWidth,
   },
 });

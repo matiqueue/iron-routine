@@ -4,10 +4,18 @@ import { AnalyticsPage } from './pages/AnalyticsPage';
 import { FeaturesPage } from './pages/FeaturesPage';
 import { HomePage } from './pages/HomePage';
 import { InstallPage } from './pages/InstallPage';
+import { MobileAuthPage } from './pages/MobileAuthPage';
 import { RouterProvider, useRouter } from './utils/router';
 
 function AppShell() {
   const { route } = useRouter();
+
+  if (
+    typeof window !== 'undefined' &&
+    window.location.pathname.startsWith('/mobile-auth')
+  ) {
+    return <MobileAuthPage />;
+  }
 
   return (
     <div className="flex min-h-screen flex-col bg-black text-zinc-100">
