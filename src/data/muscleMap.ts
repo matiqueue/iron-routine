@@ -883,6 +883,396 @@ export const EXERCISE_MUSCLE_MAP: Record<string, ExerciseMuscleAssignment> = {
       { muscle: 'calves', weight: 0.3 },
     ],
   },
+
+  // ==================== ROZSZERZONA BAZA ĆWICZEŃ (62 NOWE POZYCJE) ====================
+  // KLATKA
+  lib_decline_barbell_bench: {
+    primary: 'mid_lower_chest',
+    secondary: [
+      { muscle: 'triceps', weight: 0.45 },
+      { muscle: 'front_delts', weight: 0.25 },
+    ],
+  },
+  lib_smith_incline_press: {
+    primary: 'upper_chest',
+    secondary: [
+      { muscle: 'front_delts', weight: 0.4 },
+      { muscle: 'triceps', weight: 0.35 },
+      { muscle: 'mid_lower_chest', weight: 0.3 },
+    ],
+  },
+  lib_low_to_high_cable_fly: {
+    primary: 'upper_chest',
+    secondary: [
+      { muscle: 'front_delts', weight: 0.25 },
+      { muscle: 'mid_lower_chest', weight: 0.25 },
+    ],
+  },
+  lib_db_pullover: {
+    primary: 'mid_lower_chest',
+    secondary: [
+      { muscle: 'lats', weight: 0.45 },
+      { muscle: 'triceps', weight: 0.25 },
+    ],
+  },
+  lib_floor_press: {
+    primary: 'mid_lower_chest',
+    secondary: [
+      { muscle: 'triceps', weight: 0.5 },
+      { muscle: 'front_delts', weight: 0.3 },
+    ],
+  },
+  lib_incline_db_fly: {
+    primary: 'upper_chest',
+    secondary: [{ muscle: 'mid_lower_chest', weight: 0.3 }],
+  },
+  lib_svend_press: {
+    primary: 'mid_lower_chest',
+    secondary: [
+      { muscle: 'upper_chest', weight: 0.3 },
+      { muscle: 'front_delts', weight: 0.25 },
+    ],
+  },
+  lib_deficit_pushups: {
+    primary: 'mid_lower_chest',
+    secondary: [
+      { muscle: 'upper_chest', weight: 0.35 },
+      { muscle: 'triceps', weight: 0.35 },
+      { muscle: 'front_delts', weight: 0.3 },
+    ],
+  },
+
+  // PLECY
+  lib_pendlay_row: {
+    primary: 'mid_back',
+    secondary: [
+      { muscle: 'lats', weight: 0.45 },
+      { muscle: 'traps', weight: 0.45 },
+      { muscle: 'rear_delts', weight: 0.35 },
+      { muscle: 'lower_back', weight: 0.35 },
+    ],
+  },
+  lib_seal_row: {
+    primary: 'mid_back',
+    secondary: [
+      { muscle: 'lats', weight: 0.45 },
+      { muscle: 'rear_delts', weight: 0.35 },
+      { muscle: 'biceps', weight: 0.3 },
+    ],
+  },
+  lib_chest_supported_machine_row: {
+    primary: 'mid_back',
+    secondary: [
+      { muscle: 'lats', weight: 0.45 },
+      { muscle: 'traps', weight: 0.35 },
+      { muscle: 'rear_delts', weight: 0.3 },
+    ],
+  },
+  lib_straight_arm_pulldown: {
+    primary: 'lats',
+    secondary: [
+      { muscle: 'triceps', weight: 0.2 },
+      { muscle: 'abs', weight: 0.2 },
+    ],
+  },
+  lib_meadows_row: {
+    primary: 'lats',
+    secondary: [
+      { muscle: 'mid_back', weight: 0.45 },
+      { muscle: 'rear_delts', weight: 0.35 },
+      { muscle: 'forearms', weight: 0.35 },
+    ],
+  },
+  lib_rack_pull: {
+    primary: 'lower_back',
+    secondary: [
+      { muscle: 'traps', weight: 0.55 },
+      { muscle: 'mid_back', weight: 0.45 },
+      { muscle: 'glutes', weight: 0.4 },
+      { muscle: 'forearms', weight: 0.5 },
+    ],
+  },
+  lib_neutral_pullups: {
+    primary: 'lats',
+    secondary: [
+      { muscle: 'biceps', weight: 0.45 },
+      { muscle: 'forearms', weight: 0.4 },
+      { muscle: 'mid_back', weight: 0.3 },
+    ],
+  },
+  lib_inverted_row: {
+    primary: 'mid_back',
+    secondary: [
+      { muscle: 'lats', weight: 0.35 },
+      { muscle: 'rear_delts', weight: 0.35 },
+      { muscle: 'biceps', weight: 0.35 },
+    ],
+  },
+  lib_barbell_shrugs: {
+    primary: 'traps',
+    secondary: [{ muscle: 'forearms', weight: 0.4 }],
+  },
+  lib_kelso_shrugs: {
+    primary: 'traps',
+    secondary: [{ muscle: 'mid_back', weight: 0.5 }],
+  },
+  lib_good_morning: {
+    primary: 'lower_back',
+    secondary: [
+      { muscle: 'hamstrings', weight: 0.5 },
+      { muscle: 'glutes', weight: 0.45 },
+    ],
+  },
+  lib_single_arm_cable_row: {
+    primary: 'lats',
+    secondary: [
+      { muscle: 'mid_back', weight: 0.4 },
+      { muscle: 'biceps', weight: 0.3 },
+    ],
+  },
+
+  // NOGI
+  lib_hack_squat: {
+    primary: 'quads',
+    secondary: [
+      { muscle: 'glutes', weight: 0.4 },
+      { muscle: 'adductors', weight: 0.25 },
+    ],
+  },
+  lib_goblet_squat: {
+    primary: 'quads',
+    secondary: [
+      { muscle: 'glutes', weight: 0.4 },
+      { muscle: 'abs', weight: 0.3 },
+    ],
+  },
+  lib_sumo_deadlift: {
+    primary: 'glutes',
+    secondary: [
+      { muscle: 'adductors', weight: 0.55 },
+      { muscle: 'quads', weight: 0.45 },
+      { muscle: 'hamstrings', weight: 0.4 },
+      { muscle: 'lower_back', weight: 0.35 },
+      { muscle: 'forearms', weight: 0.4 },
+    ],
+  },
+  lib_sissy_squat: {
+    primary: 'quads',
+    secondary: [{ muscle: 'abs', weight: 0.2 }],
+  },
+  lib_pendulum_squat: {
+    primary: 'quads',
+    secondary: [{ muscle: 'glutes', weight: 0.35 }],
+  },
+  lib_nordic_hamstring_curl: {
+    primary: 'hamstrings',
+    secondary: [
+      { muscle: 'glutes', weight: 0.25 },
+      { muscle: 'calves', weight: 0.25 },
+    ],
+  },
+  lib_single_leg_rdl: {
+    primary: 'hamstrings',
+    secondary: [
+      { muscle: 'glutes', weight: 0.5 },
+      { muscle: 'lower_back', weight: 0.3 },
+      { muscle: 'forearms', weight: 0.25 },
+    ],
+  },
+  lib_glute_kickback_cable: {
+    primary: 'glutes',
+    secondary: [{ muscle: 'hamstrings', weight: 0.2 }],
+  },
+  lib_kas_glute_bridge: {
+    primary: 'glutes',
+    secondary: [{ muscle: 'adductors', weight: 0.2 }],
+  },
+  lib_step_ups: {
+    primary: 'quads',
+    secondary: [
+      { muscle: 'glutes', weight: 0.5 },
+      { muscle: 'calves', weight: 0.2 },
+    ],
+  },
+  lib_copenhagen_plank: {
+    primary: 'adductors',
+    secondary: [{ muscle: 'obliques', weight: 0.4 }],
+  },
+  lib_donkey_calf_raise: {
+    primary: 'calves',
+    secondary: [],
+  },
+  lib_tibialis_raise: {
+    primary: 'calves',
+    secondary: [],
+  },
+  lib_single_leg_press: {
+    primary: 'quads',
+    secondary: [
+      { muscle: 'glutes', weight: 0.4 },
+      { muscle: 'adductors', weight: 0.25 },
+    ],
+  },
+
+  // BARKI
+  lib_arnold_press: {
+    primary: 'front_delts',
+    secondary: [
+      { muscle: 'side_delts', weight: 0.5 },
+      { muscle: 'triceps', weight: 0.35 },
+    ],
+  },
+  lib_landmine_press: {
+    primary: 'front_delts',
+    secondary: [
+      { muscle: 'upper_chest', weight: 0.4 },
+      { muscle: 'triceps', weight: 0.35 },
+      { muscle: 'obliques', weight: 0.25 },
+    ],
+  },
+  lib_upright_row: {
+    primary: 'side_delts',
+    secondary: [
+      { muscle: 'traps', weight: 0.5 },
+      { muscle: 'front_delts', weight: 0.3 },
+      { muscle: 'forearms', weight: 0.25 },
+    ],
+  },
+  lib_machine_lateral_raise: {
+    primary: 'side_delts',
+    secondary: [],
+  },
+  lib_egyptian_cable_lateral: {
+    primary: 'side_delts',
+    secondary: [{ muscle: 'traps', weight: 0.15 }],
+  },
+  lib_cable_rear_delt_fly: {
+    primary: 'rear_delts',
+    secondary: [
+      { muscle: 'mid_back', weight: 0.3 },
+      { muscle: 'traps', weight: 0.25 },
+    ],
+  },
+  lib_cable_front_raise: {
+    primary: 'front_delts',
+    secondary: [{ muscle: 'upper_chest', weight: 0.2 }],
+  },
+  lib_lu_raises: {
+    primary: 'side_delts',
+    secondary: [
+      { muscle: 'traps', weight: 0.45 },
+      { muscle: 'front_delts', weight: 0.35 },
+    ],
+  },
+
+  // RAMIONA
+  lib_incline_db_curl: {
+    primary: 'biceps',
+    secondary: [{ muscle: 'forearms', weight: 0.25 }],
+  },
+  lib_spider_curl: {
+    primary: 'biceps',
+    secondary: [{ muscle: 'forearms', weight: 0.25 }],
+  },
+  lib_concentration_curl: {
+    primary: 'biceps',
+    secondary: [{ muscle: 'forearms', weight: 0.2 }],
+  },
+  lib_bayesian_cable_curl: {
+    primary: 'biceps',
+    secondary: [{ muscle: 'forearms', weight: 0.2 }],
+  },
+  lib_zottman_curl: {
+    primary: 'forearms',
+    secondary: [{ muscle: 'biceps', weight: 0.6 }],
+  },
+  lib_overhead_cable_tricep: {
+    primary: 'triceps',
+    secondary: [],
+  },
+  lib_single_arm_pushdown: {
+    primary: 'triceps',
+    secondary: [],
+  },
+  lib_diamond_pushups: {
+    primary: 'triceps',
+    secondary: [
+      { muscle: 'mid_lower_chest', weight: 0.45 },
+      { muscle: 'front_delts', weight: 0.3 },
+    ],
+  },
+  lib_reverse_wrist_curl: {
+    primary: 'forearms',
+    secondary: [],
+  },
+  lib_dead_hang: {
+    primary: 'forearms',
+    secondary: [
+      { muscle: 'lats', weight: 0.25 },
+      { muscle: 'traps', weight: 0.2 },
+    ],
+  },
+
+  // BRZUCH
+  lib_pallof_press: {
+    primary: 'obliques',
+    secondary: [{ muscle: 'abs', weight: 0.45 }],
+  },
+  lib_side_plank: {
+    primary: 'obliques',
+    secondary: [{ muscle: 'abs', weight: 0.35 }],
+  },
+  lib_cable_woodchopper: {
+    primary: 'obliques',
+    secondary: [{ muscle: 'abs', weight: 0.35 }],
+  },
+  lib_dragon_flag: {
+    primary: 'abs',
+    secondary: [
+      { muscle: 'obliques', weight: 0.35 },
+      { muscle: 'lats', weight: 0.25 },
+    ],
+  },
+  lib_l_sit: {
+    primary: 'abs',
+    secondary: [
+      { muscle: 'quads', weight: 0.3 },
+      { muscle: 'triceps', weight: 0.25 },
+    ],
+  },
+  lib_bicycle_crunch: {
+    primary: 'obliques',
+    secondary: [{ muscle: 'abs', weight: 0.5 }],
+  },
+
+  // OGÓLNE & CARDIO
+  lib_rowing_ergometer: {
+    primary: 'mid_back',
+    secondary: [
+      { muscle: 'quads', weight: 0.4 },
+      { muscle: 'lats', weight: 0.35 },
+      { muscle: 'hamstrings', weight: 0.3 },
+    ],
+  },
+  lib_stairmaster: {
+    primary: 'glutes',
+    secondary: [
+      { muscle: 'quads', weight: 0.4 },
+      { muscle: 'calves', weight: 0.4 },
+    ],
+  },
+  lib_sled_push_pull: {
+    primary: 'quads',
+    secondary: [
+      { muscle: 'glutes', weight: 0.45 },
+      { muscle: 'calves', weight: 0.4 },
+      { muscle: 'abs', weight: 0.3 },
+    ],
+  },
+  lib_jump_rope: {
+    primary: 'calves',
+    secondary: [{ muscle: 'forearms', weight: 0.25 }],
+  },
 };
 
 export function resolveExerciseMuscles(

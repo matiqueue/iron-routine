@@ -211,6 +211,7 @@ export async function setActiveProfileId(profileId: string): Promise<void> {
 export async function createProfile(
   name: string,
   options?: {
+    gender?: 'male' | 'female';
     height?: number;
     weight?: number;
     templateKey?: Exclude<PlanTemplateKey, 'clone_current'>;
@@ -231,6 +232,7 @@ export async function createProfile(
       name: name.trim() || 'Mój Profil',
       createdAt: new Date().toISOString(),
       avatarColor: randomColor,
+      gender: options?.gender || 'male',
       height: parsedHeight,
       weight: parsedWeight,
     };
@@ -286,7 +288,16 @@ export async function createProfile(
 
 export async function updateProfile(
   profileId: string,
-  updates: { name?: string; height?: number; weight?: number }
+  updates: {
+    name?: string;
+    gender?: 'male' | 'female';
+    height?: number;
+    weight?: number;
+    cloudUserId?: string;
+    cloudProvider?: 'apple' | 'google';
+    cloudEmail?: string;
+    lastCloudSyncAt?: string;
+  }
 ): Promise<UserProfile> {
   const profiles = await getProfiles();
   const target = profiles.find((p) => p.id === profileId);
@@ -295,11 +306,26 @@ export async function updateProfile(
   if (updates.name !== undefined && updates.name.trim()) {
     target.name = updates.name.trim();
   }
+  if (updates.gender !== undefined) {
+    target.gender = updates.gender;
+  }
   if (updates.height !== undefined && updates.height > 0) {
     target.height = Math.round(updates.height);
   }
   if (updates.weight !== undefined && updates.weight > 0) {
     target.weight = Math.round(updates.weight * 10) / 10;
+  }
+  if (updates.cloudUserId !== undefined) {
+    target.cloudUserId = updates.cloudUserId || undefined;
+  }
+  if (updates.cloudProvider !== undefined) {
+    target.cloudProvider = updates.cloudProvider || undefined;
+  }
+  if (updates.cloudEmail !== undefined) {
+    target.cloudEmail = updates.cloudEmail || undefined;
+  }
+  if (updates.lastCloudSyncAt !== undefined) {
+    target.lastCloudSyncAt = updates.lastCloudSyncAt || undefined;
   }
 
   await AsyncStorage.setItem(STORAGE_KEYS.PROFILES, JSON.stringify(profiles));
@@ -1437,8 +1463,13 @@ export async function importProfileBackup(
     targetProfile = {
       ...active,
       name: payload.profile.name?.trim() || active.name,
+      gender: payload.profile.gender || active.gender || 'male',
       height: payload.profile.height ?? active.height,
       weight: payload.profile.weight ?? active.weight,
+      cloudUserId: payload.profile.cloudUserId ?? active.cloudUserId,
+      cloudProvider: payload.profile.cloudProvider ?? active.cloudProvider,
+      cloudEmail: payload.profile.cloudEmail ?? active.cloudEmail,
+      lastCloudSyncAt: payload.profile.lastCloudSyncAt ?? active.lastCloudSyncAt,
     };
     await AsyncStorage.setItem(STORAGE_KEYS.PROFILES, JSON.stringify([targetProfile]));
     await setActiveProfileId(targetProfile.id);
@@ -1447,6 +1478,7 @@ export async function importProfileBackup(
       ...payload.profile,
       id: active ? active.id : payload.profile.id || `profile_${Date.now()}`,
       name: payload.profile.name?.trim() || 'Mój Profil',
+      gender: payload.profile.gender || active?.gender || 'male',
       isOwner: false,
       createdAt: active?.createdAt || payload.profile.createdAt || new Date().toISOString(),
     };

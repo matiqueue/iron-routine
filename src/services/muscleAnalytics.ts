@@ -20,7 +20,7 @@ import {
   resolveExerciseMuscles,
 } from '../data/muscleMap';
 
-export type MusclePriorityStatus = 'neglected' | 'lagging' | 'balanced' | 'dominant';
+export type MusclePriorityStatus = 'untrained' | 'neglected' | 'lagging' | 'balanced' | 'dominant';
 
 export interface ExerciseRankStat {
   exerciseId: string;
@@ -341,9 +341,12 @@ export async function computePhysiqueAnalytics(params: {
       priorityScore += 17;
     }
 
-    if (effTotal === 0 || (rankGap >= 2 && relativeRatio < 0.28)) {
+    if (effTotal === 0) {
+      priorityStatus = 'untrained';
+      statusLabel = 'Brak aktywności';
+    } else if (rankGap >= 2 && relativeRatio < 0.28) {
       priorityStatus = 'neglected';
-      statusLabel = 'Priorytet - Odstaje';
+      statusLabel = 'Niska objętość';
     } else if (rankGap >= 1 && relativeRatio < 0.55) {
       priorityStatus = 'lagging';
       statusLabel = 'Warto dopracować';
@@ -358,7 +361,9 @@ export async function computePhysiqueAnalytics(params: {
     const topRecEx = primaryExercisesForMuscle.slice(0, 3);
     const recNames = topRecEx.slice(0, 2).map((e) => e.name).join(' lub ');
     let recommendationText = '';
-    if (priorityStatus === 'neglected') {
+    if (priorityStatus === 'untrained') {
+      recommendationText = `Brak zarejestrowanych serii dla partii ${m.shortLabel}. Dodaj np. ${recNames || 'ćwiczenie bazowe'}, aby rozpocząć progres.`;
+    } else if (priorityStatus === 'neglected') {
       recommendationText =
         planned === 0
           ? `Brak bezpośrednich serii w Twoim obecnym planie (${m.shortLabel}: Ranga ${rankInfo.meta.tier}). Dodaj ${recNames || 'ćwiczenie izolowane'} (${rankInfo.setsToNext} serii do rangi ${rankInfo.nextTier || 'E'}).`

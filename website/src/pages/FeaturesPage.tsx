@@ -187,11 +187,10 @@ export function FeaturesPage() {
                   <Bell className="h-4 w-4 text-zinc-500" />
                 </div>
                 <h3 className="mt-4 font-display text-lg font-bold text-white">
-                  100% prywatności i backup JSON
+                  Chmura NoSQL tylko dla wygody przenoszenia konta
                 </h3>
                 <p className="mt-2 text-xs leading-relaxed text-zinc-400">
-                  Zero serwerów. Eksportuj lub wgrywaj plany jednym kliknięciem przez „Importuj JSON”
-                  oraz systemowe udostępnianie plików.
+                  Aplikacja synchronizuje zaszyfrowaną kopię JSON w bazie NoSQL na Vercel (logowanie Apple iCloud / Google) wyłącznie po to, abyś mógł wygodnie przenieść konto z telefonu na telefon. Twoje dane nigdy nie są nigdzie indziej wykorzystywane ani udostępniane.
                 </p>
               </article>
             </div>
