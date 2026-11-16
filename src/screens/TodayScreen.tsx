@@ -2,13 +2,13 @@ import React, { useMemo } from 'react';
 import {
   ActivityIndicator,
   Platform,
-  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { SmartScrollView } from '../components/SmartScrollView';
 import { useAppTheme } from '../context/ThemeContext';
 import { useLanguage } from '../context/LanguageContext';
 import {
@@ -130,7 +130,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
   return (
     <View style={{ flex: 1, backgroundColor: theme.bg }}>
       <MinimalistBackdrop variant="dots" accentColor={isRestOrWalk ? '#38BDF8' : '#10B981'} />
-      <ScrollView
+      <SmartScrollView
         style={[styles.tabScroll, { backgroundColor: 'transparent' }]}
         contentContainerStyle={styles.tabContent}
         showsVerticalScrollIndicator={false}
@@ -501,7 +501,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
           )}
         </>
       )}
-      </ScrollView>
+      </SmartScrollView>
     </View>
   );
 };
@@ -750,7 +750,7 @@ const styles = StyleSheet.create({
   tabContent: {
     paddingHorizontal: 18,
     paddingTop: 14,
-    paddingBottom: 124,
+    paddingBottom: 92,
   },
   topHeader: {
     flexDirection: 'row',

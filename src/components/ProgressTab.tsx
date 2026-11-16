@@ -4,10 +4,8 @@ import {
   Animated,
   Dimensions,
   Easing,
-  KeyboardAvoidingView,
   LayoutAnimation,
   PanResponder,
-  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -20,6 +18,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useAppTheme } from '../context/ThemeContext';
 import { useLanguage } from '../context/LanguageContext';
+import { SmartScrollView } from './SmartScrollView';
 import {
   DayPlan,
   Exercise,
@@ -953,7 +952,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
         </View>
       </View>
 
-      <ScrollView
+      <SmartScrollView
         ref={scrollViewRef}
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
@@ -2020,7 +2019,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
             </View>
           )}
         </Animated.View>
-      </ScrollView>
+      </SmartScrollView>
 
       {/* =========================================================
           EXERCISE DETAIL & 1RM PROGRESSION BOTTOM SHEET (OPEN STYLE)
@@ -2269,7 +2268,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: 20,
-    paddingBottom: 120,
+    paddingBottom: 92,
   },
   openPage: {
     paddingTop: 6,

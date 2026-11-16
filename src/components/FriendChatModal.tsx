@@ -1,11 +1,10 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   Animated,
   Easing,
   FlatList,
-  KeyboardAvoidingView,
   Modal,
   Platform,
   StyleSheet,
@@ -18,6 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAppTheme } from '../context/ThemeContext';
 import { useLanguage } from '../context/LanguageContext';
+import { useKeyboardHeight } from '../hooks/useKeyboardHeight';
 import {
   ChatMessage,
   ChatMessagePayload,
@@ -67,34 +67,71 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
 
   const listRef = useRef<FlatList<ChatMessage>>(null);
   const trayAnim = useRef(new Animated.Value(0)).current;
+  const keyboardHeight = useKeyboardHeight(visible, true);
 
-  const loadMessages = useCallback(
-    async (silent = false) => {
-      if (!friend) return;
-      if (!silent) setLoading(true);
-      const res = await fetchChatMessages(friend.userId);
-      if (res.ok) {
-        setMessages(res.messages);
-        if (!silent) onMessagesChanged?.();
-      }
-      if (!silent) setLoading(false);
-    },
-    [friend, onMessagesChanged]
-  );
+  const onMessagesChangedRef = useRef(onMessagesChanged);
+  onMessagesChangedRef.current = onMessagesChanged;
+  const friendId = friend?.userId || null;
 
   useEffect(() => {
-    if (!visible || !friend) {
+    if (!visible || !friendId) {
       setMessages([]);
+      setLoading(false);
       setShowShareTray(false);
       setReactingMessageId(null);
       return;
     }
-    void loadMessages(false);
+
+    let cancelled = false;
+    setLoading(true);
+
+    fetchChatMessages(friendId)
+      .then((res) => {
+        if (cancelled) return;
+        if (res.ok) {
+          setMessages(res.messages);
+          onMessagesChangedRef.current?.();
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
     const interval = setInterval(() => {
-      void loadMessages(true);
+      fetchChatMessages(friendId)
+        .then((res) => {
+          if (cancelled || !res.ok) return;
+          setMessages((prev) => {
+            if (prev.length !== res.messages.length) {
+              onMessagesChangedRef.current?.();
+              return res.messages;
+            }
+            const lastPrev = prev[prev.length - 1]?.id;
+            const lastNext = res.messages[res.messages.length - 1]?.id;
+            if (lastPrev !== lastNext) {
+              onMessagesChangedRef.current?.();
+              return res.messages;
+            }
+            return prev;
+          });
+        })
+        .catch(() => {});
     }, 4500);
-    return () => clearInterval(interval);
-  }, [visible, friend, loadMessages]);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [visible, friendId]);
+
+  useEffect(() => {
+    if (keyboardHeight > 0) {
+      const tmr = setTimeout(() => {
+        listRef.current?.scrollToEnd({ animated: true });
+      }, 80);
+      return () => clearTimeout(tmr);
+    }
+  }, [keyboardHeight]);
 
   useEffect(() => {
     Animated.timing(trayAnim, {
@@ -369,9 +406,14 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-      <KeyboardAvoidingView
-        style={[styles.container, { backgroundColor: theme.bg }]}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      <View
+        style={[
+          styles.container,
+          {
+            backgroundColor: theme.bg,
+            paddingBottom: keyboardHeight,
+          },
+        ]}
       >
         <MinimalistBackdrop variant="dots" accentColor="#38BDF8" />
 
@@ -513,7 +555,7 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
           style={[
             styles.composerRow,
             {
-              paddingBottom: Math.max(insets.bottom, 12),
+              paddingBottom: keyboardHeight > 0 ? 10 : Math.max(insets.bottom, 12),
               borderTopColor: theme.hairline,
               backgroundColor: isDark ? 'rgba(18,18,22,0.92)' : 'rgba(255,255,255,0.94)',
             },
@@ -574,7 +616,7 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
             />
           </TouchableOpacity>
         </View>
-      </KeyboardAvoidingView>
+      </View>
     </Modal>
   );
 };
