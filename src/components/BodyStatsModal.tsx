@@ -392,19 +392,6 @@ export const BodyStatsModal: React.FC<BodyStatsModalProps> = ({
               />
             </View>
 
-            {creatineNotifEnabled && (
-              <TouchableOpacity
-                style={[styles.testNotifBtn, { borderColor: theme.border, backgroundColor: theme.card }]}
-                onPress={handleTestCreatineNotif}
-                activeOpacity={0.7}
-              >
-                <Ionicons name="flash-outline" size={15} color={theme.text} />
-                <Text style={[styles.testNotifBtnText, { color: theme.text }]}>
-                  {t('bodyTestSuppNotifBtn')}
-                </Text>
-              </TouchableOpacity>
-            )}
-
             {/* Weight History List */}
             <View style={styles.historySection}>
               <Text style={[styles.historyHeader, { color: theme.text }]}>

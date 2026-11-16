@@ -58,7 +58,6 @@ import {
 import {
   ALEXA_ENDPOINT_URL,
   buildAlexaInteractionModelJson,
-  VOICE_DEEP_LINKS,
 } from '../services/voiceCommands';
 import { getActiveWorkoutPlan } from '../services/storage';
 import {
@@ -1060,14 +1059,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                 {t('hapticsAndRestHeading')}
               </Text>
             </View>
-            <TouchableOpacity
-              style={[styles.smallActionPill, { backgroundColor: theme.bgSecondary }]}
-              onPress={() => triggerImpactHaptic('heavy')}
-              activeOpacity={0.75}
-            >
-              <Ionicons name="radio-outline" size={13} color={theme.text} />
-              <Text style={[styles.smallActionPillText, { color: theme.text }]}>{t('testBtn')}</Text>
-            </TouchableOpacity>
           </View>
 
           <View style={[styles.openSwitchLine, { borderBottomColor: theme.hairline }]}>
@@ -1402,8 +1393,8 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               <Text style={[styles.rowSub, { color: '#10B981', marginTop: 2, fontWeight: '700' }]}>
                 {t('voiceSiriPhrases')}
               </Text>
-              <View style={[styles.cloudActionsRow, { marginTop: 8 }]}>
-                {Platform.OS === 'ios' && (
+              {Platform.OS === 'ios' && (
+                <View style={[styles.cloudActionsRow, { marginTop: 8 }]}>
                   <TouchableOpacity
                     style={[styles.cloudActionSecondary, { backgroundColor: theme.bg, paddingVertical: 10 }]}
                     onPress={() => {
@@ -1417,21 +1408,8 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                       {t('voiceOpenShortcutsBtn')}
                     </Text>
                   </TouchableOpacity>
-                )}
-                <TouchableOpacity
-                  style={[styles.cloudActionPrimary, { backgroundColor: theme.primary, paddingVertical: 10 }]}
-                  onPress={() => {
-                    triggerSelectionHaptic();
-                    Linking.openURL(VOICE_DEEP_LINKS.startWorkout).catch(() => {});
-                  }}
-                  activeOpacity={0.85}
-                >
-                  <Ionicons name="play" size={13} color={theme.primaryText} />
-                  <Text style={[styles.cloudActionPrimaryText, { color: theme.primaryText, fontSize: 12 }]}>
-                    {t('voiceTestStartBtn')}
-                  </Text>
-                </TouchableOpacity>
-              </View>
+                </View>
+              )}
             </View>
           </View>
 
