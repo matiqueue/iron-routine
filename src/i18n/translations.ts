@@ -162,7 +162,7 @@ const PL = {
   todayEditSession: 'Edytuj sesję',
   todayRestDay: 'Dzień regeneracji',
   todayDoneLabel: 'Ukończono',
-  planTitle: 'Twój Plan',
+  planTitle: 'Plan',
   planLibraryBtn: 'Baza ćwiczeń',
   planManageBtn: 'Zarządzaj',
   planEditDayBtn: 'Edytuj dzień',
@@ -909,6 +909,8 @@ const PL = {
   voiceSentBadge: 'Wysłano',
   voiceSendingBadge: 'Wysyłanie...',
   voiceMicDeniedBody: 'Brak dostępu do mikrofonu. Włącz mikrofon w Ustawieniach systemu.',
+  voiceHoldHint: 'Przytrzymaj mikrofon, aby nagrać głosówkę',
+  voiceSpeakingNow: 'Mówię... Puść, aby wysłać',
 } as const;
 
 export type TranslationKey = keyof typeof PL;
@@ -1029,7 +1031,7 @@ const EN: Record<TranslationKey, string> = {
   todayEditSession: 'Edit session',
   todayRestDay: 'Recovery day',
   todayDoneLabel: 'Completed',
-  planTitle: 'Your Plan',
+  planTitle: 'Plan',
   planLibraryBtn: 'Exercises',
   planManageBtn: 'Manage',
   planEditDayBtn: 'Edit day',
@@ -1773,6 +1775,8 @@ const EN: Record<TranslationKey, string> = {
   voiceSentBadge: 'Sent',
   voiceSendingBadge: 'Sending...',
   voiceMicDeniedBody: 'Microphone access is disabled. Enable microphone in system Settings.',
+  voiceHoldHint: 'Hold the mic to record a voice note',
+  voiceSpeakingNow: 'Speaking... Release to send',
 };
 
 const DE: Record<TranslationKey, string> = {
@@ -1891,7 +1895,7 @@ const DE: Record<TranslationKey, string> = {
   todayEditSession: 'Session bearbeiten',
   todayRestDay: 'Regenerationstag',
   todayDoneLabel: 'Abgeschlossen',
-  planTitle: 'Dein Plan',
+  planTitle: 'Plan',
   planLibraryBtn: 'Übungen',
   planManageBtn: 'Verwalten',
   planEditDayBtn: 'Tag bearbeiten',
@@ -2635,6 +2639,8 @@ const DE: Record<TranslationKey, string> = {
   voiceSentBadge: 'Gesendet',
   voiceSendingBadge: 'Wird gesendet...',
   voiceMicDeniedBody: 'Kein Mikrofonzugriff. Bitte in den Systemeinstellungen aktivieren.',
+  voiceHoldHint: 'Mikrofon gedrückt halten zum Aufnehmen',
+  voiceSpeakingNow: 'Spricht... Loslassen zum Senden',
 };
 
 const FR: Record<TranslationKey, string> = {
@@ -2753,7 +2759,7 @@ const FR: Record<TranslationKey, string> = {
   todayEditSession: 'Modifier la séance',
   todayRestDay: 'Jour de récupération',
   todayDoneLabel: 'Terminé',
-  planTitle: 'Votre Programme',
+  planTitle: 'Plan',
   planLibraryBtn: 'Exercices',
   planManageBtn: 'Gérer',
   planEditDayBtn: 'Modifier le jour',
@@ -3497,6 +3503,8 @@ const FR: Record<TranslationKey, string> = {
   voiceSentBadge: 'Envoyé',
   voiceSendingBadge: 'Envoi...',
   voiceMicDeniedBody: 'Accès au micro refusé. Activez le micro dans Réglages.',
+  voiceHoldHint: 'Maintiens le micro pour enregistrer',
+  voiceSpeakingNow: 'Parle... Relâche pour envoyer',
 };
 
 const ES: Record<TranslationKey, string> = {
@@ -3615,7 +3623,7 @@ const ES: Record<TranslationKey, string> = {
   todayEditSession: 'Editar sesión',
   todayRestDay: 'Día de descanso',
   todayDoneLabel: 'Completado',
-  planTitle: 'Tu Plan',
+  planTitle: 'Plan',
   planLibraryBtn: 'Ejercicios',
   planManageBtn: 'Gestionar',
   planEditDayBtn: 'Editar día',
@@ -4359,6 +4367,8 @@ const ES: Record<TranslationKey, string> = {
   voiceSentBadge: 'Enviado',
   voiceSendingBadge: 'Enviando...',
   voiceMicDeniedBody: 'Sin acceso al micrófono. Actívalo en Ajustes del sistema.',
+  voiceHoldHint: 'Mantén el micrófono para grabar',
+  voiceSpeakingNow: 'Hablando... Suelta para enviar',
 };
 
 export const TRANSLATIONS: Record<AppLanguage, Record<TranslationKey, string>> = {

@@ -135,6 +135,7 @@ export const FriendsTab: React.FC<FriendsTabProps> = ({
   const [selectedProfileFriend, setSelectedProfileFriend] =
     useState<FriendProfileSummary | null>(null);
   const [activeChatFriend, setActiveChatFriend] = useState<FriendProfileSummary | null>(null);
+  const returnChatAfterProfileRef = useRef<FriendProfileSummary | null>(null);
 
   // Ambient & entrance animations
   const heroFloat = useRef(new Animated.Value(0)).current;
@@ -1347,10 +1348,22 @@ export const FriendsTab: React.FC<FriendsTabProps> = ({
         visible={selectedProfileFriend !== null}
         friend={selectedProfileFriend}
         myProfile={hub.myProfile}
-        onClose={() => setSelectedProfileFriend(null)}
-        onOpenChat={(f) => setActiveChatFriend(f)}
+        onClose={() => {
+          setSelectedProfileFriend(null);
+          const backTo = returnChatAfterProfileRef.current;
+          returnChatAfterProfileRef.current = null;
+          if (backTo) {
+            setTimeout(() => setActiveChatFriend(backTo), 220);
+          }
+        }}
+        onOpenChat={(f) => {
+          returnChatAfterProfileRef.current = null;
+          setSelectedProfileFriend(null);
+          setTimeout(() => setActiveChatFriend(f), 220);
+        }}
         onSendKudos={handleSendKudos}
         onRemoveFriend={async (f) => {
+          returnChatAfterProfileRef.current = null;
           await removeFriend(f.userId);
           await loadSocialState(false);
         }}
@@ -1361,8 +1374,15 @@ export const FriendsTab: React.FC<FriendsTabProps> = ({
         friend={activeChatFriend}
         myProfile={hub.myProfile}
         myUserId={myUserId}
-        onClose={() => setActiveChatFriend(null)}
-        onOpenProfile={(f) => setSelectedProfileFriend(f)}
+        onClose={() => {
+          returnChatAfterProfileRef.current = null;
+          setActiveChatFriend(null);
+        }}
+        onOpenProfile={(f) => {
+          returnChatAfterProfileRef.current = f;
+          setActiveChatFriend(null);
+          setTimeout(() => setSelectedProfileFriend(f), 220);
+        }}
         onMessagesChanged={handleChatMessagesChanged}
       />
 

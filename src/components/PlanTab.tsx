@@ -111,9 +111,6 @@ export const PlanTab: React.FC<PlanTabProps> = ({
         <View style={styles.headerTopRow}>
           <View style={{ flex: 1, minWidth: 0 }}>
             <Text style={[styles.title, { color: theme.text }]}>{t('planTitle')}</Text>
-            <Text style={[styles.subtitle, { color: theme.textMuted }]} numberOfLines={1}>
-              {t('planManageBtn')} · {t('technique')}
-            </Text>
           </View>
 
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>

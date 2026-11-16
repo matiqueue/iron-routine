@@ -24,7 +24,6 @@ import {
   useAudioPlayer,
   useAudioPlayerStatus,
   useAudioRecorder,
-  useAudioRecorderState,
 } from 'expo-audio';
 import { File, Paths } from 'expo-file-system';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -60,6 +59,7 @@ interface FriendChatModalProps {
 const MESSENGER_REACTIONS = ['❤️', '🔥', '💪', '😂', '👏', '🏆'];
 const MAX_VOICE_SECONDS = 30;
 const WAVEFORM_BAR_COUNT = 22;
+const LIVE_BAR_COUNT = 18;
 const DEFAULT_WAVEFORM = [
   0.32, 0.54, 0.78, 0.45, 0.88, 0.62, 0.39, 0.84, 0.72, 0.5, 0.92,
   0.66, 0.42, 0.79, 0.58, 0.44, 0.69, 0.82, 0.53, 0.74, 0.48, 0.35,
@@ -292,7 +292,7 @@ const VoiceNoteBubble: React.FC<VoiceNoteBubbleProps> = ({
         allowsRecording: false,
       });
     } catch {
-      // Ignore unsupported audio mode switches on web
+      // Ignore web fallback
     }
     if (status.playing) {
       player.pause();
@@ -318,19 +318,30 @@ const VoiceNoteBubble: React.FC<VoiceNoteBubbleProps> = ({
     }
   };
 
-  const buttonBg = isMine
-    ? 'rgba(255,255,255,0.22)'
+  const mineOnLight = isMine && !theme.isDark;
+  const mineOnDark = isMine && theme.isDark;
+
+  const buttonBg = mineOnDark
+    ? 'rgba(0,0,0,0.12)'
+    : mineOnLight
+    ? 'rgba(255,255,255,0.18)'
     : theme.isDark
-    ? 'rgba(10,132,255,0.18)'
-    : 'rgba(10,132,255,0.12)';
-  const buttonIconColor = isMine ? '#FFFFFF' : '#0A84FF';
-  const activeBarColor = isMine ? '#FFFFFF' : '#0A84FF';
-  const idleBarColor = isMine
+    ? 'rgba(255,255,255,0.12)'
+    : 'rgba(0,0,0,0.08)';
+  const buttonIconColor = isMine ? theme.primaryText : theme.text;
+  const activeBarColor = isMine ? theme.primaryText : theme.text;
+  const idleBarColor = mineOnDark
+    ? 'rgba(0,0,0,0.24)'
+    : mineOnLight
     ? 'rgba(255,255,255,0.34)'
     : theme.isDark
-    ? 'rgba(255,255,255,0.2)'
-    : 'rgba(15,23,42,0.16)';
-  const timerColor = isMine ? 'rgba(255,255,255,0.92)' : theme.textSecondary;
+    ? 'rgba(255,255,255,0.24)'
+    : 'rgba(0,0,0,0.2)';
+  const metaTextColor = mineOnDark
+    ? 'rgba(0,0,0,0.68)'
+    : mineOnLight
+    ? 'rgba(255,255,255,0.82)'
+    : theme.textSecondary;
 
   return (
     <View style={styles.voiceWrap}>
@@ -381,24 +392,14 @@ const VoiceNoteBubble: React.FC<VoiceNoteBubbleProps> = ({
         </View>
 
         <View style={styles.voiceMetaRow}>
-          <Text style={[styles.voiceTimerText, { color: timerColor }]}>
+          <Text style={[styles.voiceTimerText, { color: metaTextColor }]}>
             {status.playing || status.currentTime > 0.2
               ? `${formatDurationSec(status.currentTime)} / ${formatDurationSec(totalSec)}`
               : formatDurationSec(totalSec)}
           </Text>
           <View style={styles.voiceLockPill}>
-            <Ionicons
-              name="lock-closed"
-              size={9}
-              color={isMine ? 'rgba(255,255,255,0.78)' : '#10B981'}
-            />
-            <Text
-              style={[
-                styles.voiceHintTag,
-                { color: isMine ? 'rgba(255,255,255,0.78)' : theme.textMuted },
-              ]}
-              numberOfLines={1}
-            >
+            <Ionicons name="lock-closed" size={9} color={metaTextColor} />
+            <Text style={[styles.voiceHintTag, { color: metaTextColor }]} numberOfLines={1}>
               {t('voiceMsgLabel').replace('🎤 ', '')}
             </Text>
           </View>
@@ -426,19 +427,29 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [inputText, setInputText] = useState('');
+  const [showAttachMenu, setShowAttachMenu] = useState(false);
   const [reactionTargetMsg, setReactionTargetMsg] = useState<ChatMessage | null>(null);
+  const [holdHintVisible, setHoldHintVisible] = useState(false);
+
+  const attachAnim = useRef(new Animated.Value(0)).current;
   const reactionDockAnim = useRef(new Animated.Value(0)).current;
 
-  // Voice recording state
+  // Voice recording + real-time metering state
   const recorder = useAudioRecorder(VOICE_RECORDING_OPTIONS);
-  const recorderState = useAudioRecorderState(recorder, 100);
   const [isRecordingMode, setIsRecordingMode] = useState(false);
   const [isSendingVoice, setIsSendingVoice] = useState(false);
   const [recordingSec, setRecordingSec] = useState(0);
+  const [voiceIntensity, setVoiceIntensity] = useState(0.2);
   const [liveWaveSamples, setLiveWaveSamples] = useState<number[]>(() =>
-    new Array(16).fill(0.24)
+    new Array(LIVE_BAR_COUNT).fill(0.18)
   );
+
+  const hasMicPermRef = useRef<boolean>(false);
+  const holdActiveRef = useRef<boolean>(false);
+  const holdStartTsRef = useRef<number>(0);
+  const isRecordingActiveRef = useRef<boolean>(false);
   const recordedLevelsRef = useRef<number[]>([]);
+  const holdHintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const recPulseAnim = useRef(new Animated.Value(0)).current;
   const lastBubbleTapRef = useRef<{ id: string; time: number } | null>(null);
 
@@ -448,6 +459,16 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
   const animatedIdsRef = useRef<Set<string>>(new Set());
   const lastSignatureRef = useRef<string>('');
   const clientMsgSeqRef = useRef<number>(0);
+
+  // Silently check microphone permission on chat open so hold-to-record starts instantly
+  useEffect(() => {
+    if (!visible) return;
+    AudioModule.getRecordingPermissionsAsync()
+      .then((perm) => {
+        hasMicPermRef.current = Boolean(perm?.granted);
+      })
+      .catch(() => {});
+  }, [visible]);
 
   const loadMessages = useCallback(
     async (silent = false) => {
@@ -495,8 +516,11 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
       animatedIdsRef.current.clear();
       setMessages([]);
       setReactionTargetMsg(null);
+      setShowAttachMenu(false);
       setInputText('');
       setIsRecordingMode(false);
+      holdActiveRef.current = false;
+      isRecordingActiveRef.current = false;
       return;
     }
     void loadMessages(false);
@@ -505,6 +529,15 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
     }, 4500);
     return () => clearInterval(interval);
   }, [visible, friend?.userId, loadMessages]);
+
+  useEffect(() => {
+    Animated.spring(attachAnim, {
+      toValue: showAttachMenu ? 1 : 0,
+      friction: 8,
+      tension: 120,
+      useNativeDriver: true,
+    }).start();
+  }, [showAttachMenu, attachAnim]);
 
   useEffect(() => {
     if (!reactionTargetMsg) {
@@ -519,42 +552,57 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
     }).start();
   }, [reactionTargetMsg, reactionDockAnim]);
 
+  // Continuous live recorder metering poll (80ms) while holding mic -> flows left-to-right
   useEffect(() => {
     if (!isRecordingMode) {
       recPulseAnim.setValue(0);
+      setVoiceIntensity(0.2);
       return;
     }
     const loop = Animated.loop(
       Animated.sequence([
         Animated.timing(recPulseAnim, {
           toValue: 1,
-          duration: 520,
+          duration: 460,
           easing: Easing.inOut(Easing.ease),
           useNativeDriver: true,
         }),
         Animated.timing(recPulseAnim, {
           toValue: 0,
-          duration: 520,
+          duration: 460,
           easing: Easing.inOut(Easing.ease),
           useNativeDriver: true,
         }),
       ])
     );
     loop.start();
-    return () => loop.stop();
-  }, [isRecordingMode, recPulseAnim]);
 
-  useEffect(() => {
-    if (!isRecordingMode) return;
-    const elapsedSec = Math.floor((recorderState.durationMillis || 0) / 1000);
-    setRecordingSec(elapsedSec);
+    const poll = setInterval(() => {
+      try {
+        const st = recorder.getStatus();
+        const elapsedSec = Math.floor((st.durationMillis || 0) / 1000);
+        setRecordingSec(elapsedSec);
 
-    const db = typeof recorderState.metering === 'number' ? recorderState.metering : -30;
-    const normalized = Math.min(1, Math.max(0.16, (db + 52) / 52));
-    const jitter = normalized < 0.2 ? 0.22 + ((Date.now() % 19) / 100) : normalized;
-    recordedLevelsRef.current.push(jitter);
-    setLiveWaveSamples((prev) => [...prev.slice(1), jitter]);
-  }, [isRecordingMode, recorderState.durationMillis, recorderState.metering]);
+        // Native iOS AVAudioRecorder returns dBFS in [-160 .. 0]; speech sits around [-42 .. -4]
+        const rawDb = typeof st.metering === 'number' ? st.metering : -38;
+        const clampedDb = Math.max(-50, Math.min(-2, rawDb));
+        const normalized = Math.pow((clampedDb + 50) / 48, 0.85);
+        const level = Math.min(1, Math.max(0.14, normalized));
+
+        setVoiceIntensity(level);
+        recordedLevelsRef.current.push(level);
+        // Push newest sample to the LEFT (index 0) so waveform visibly flows left-to-right (→)
+        setLiveWaveSamples((prev) => [level, ...prev.slice(0, LIVE_BAR_COUNT - 1)]);
+      } catch {
+        // Ignore transient status read
+      }
+    }, 80);
+
+    return () => {
+      loop.stop();
+      clearInterval(poll);
+    };
+  }, [isRecordingMode, recPulseAnim, recorder]);
 
   const scrollToLatest = useCallback(() => {
     setTimeout(() => {
@@ -578,6 +626,7 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
       }
 
       triggerSelectionHaptic();
+      setShowAttachMenu(false);
       if (customType === 'text') {
         setInputText('');
       }
@@ -640,37 +689,17 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
     [friend, inputText, isSending, myUserId, onMessagesChanged, scrollToLatest, t]
   );
 
-  const handleStartRecording = async () => {
-    if (!friend) return;
-    if (!friend.e2eePublicKey) {
-      Alert.alert(t('e2eeBadgeLabel'), t('e2eeMissingRecipientKey'));
-      return;
-    }
-    triggerSelectionHaptic();
-    try {
-      const perm = await AudioModule.requestRecordingPermissionsAsync();
-      if (!perm.granted) {
-        Alert.alert(t('errorTitle'), t('voiceMicDeniedBody'));
-        return;
-      }
-      await setAudioModeAsync({
-        playsInSilentMode: true,
-        allowsRecording: true,
-      });
-      recordedLevelsRef.current = [];
-      setLiveWaveSamples(new Array(16).fill(0.24));
-      setRecordingSec(0);
-      await recorder.prepareToRecordAsync();
-      recorder.record();
-      setIsRecordingMode(true);
-    } catch (e: any) {
-      Alert.alert(t('errorTitle'), e?.message || t('voiceMicDeniedBody'));
-      setIsRecordingMode(false);
-    }
-  };
+  const showQuickHoldHint = useCallback(() => {
+    setHoldHintVisible(true);
+    if (holdHintTimerRef.current) clearTimeout(holdHintTimerRef.current);
+    holdHintTimerRef.current = setTimeout(() => {
+      setHoldHintVisible(false);
+    }, 2100);
+  }, []);
 
   const handleCancelRecording = useCallback(async () => {
-    triggerSelectionHaptic();
+    isRecordingActiveRef.current = false;
+    holdActiveRef.current = false;
     setIsRecordingMode(false);
     try {
       await recorder.stop();
@@ -683,27 +712,39 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
         allowsRecording: false,
       });
     } catch {
-      // Web / unsupported platform
+      // Ignore web fallback
     }
   }, [recorder]);
 
   const handleSendVoiceNote = useCallback(async () => {
     if (!friend || isSendingVoice) return;
     if (!friend.e2eePublicKey) {
+      await handleCancelRecording();
       Alert.alert(t('e2eeBadgeLabel'), t('e2eeMissingRecipientKey'));
       return;
     }
 
     setIsSendingVoice(true);
+    isRecordingActiveRef.current = false;
+    holdActiveRef.current = false;
+
+    const statusBeforeStop = (() => {
+      try {
+        return recorder.getStatus();
+      } catch {
+        return null;
+      }
+    })();
+
     const finalDuration = Math.max(
       1,
-      Math.round((recorderState.durationMillis || recordingSec * 1000) / 1000)
+      Math.round(((statusBeforeStop?.durationMillis || recordingSec * 1000)) / 1000)
     );
     const collectedWave = downsampleWaveform(recordedLevelsRef.current);
 
     try {
       await recorder.stop();
-      // Immediately route iOS audio back to Playback so speaker works cleanly
+      // Switch audio session back to Playback so voice note plays via bottom speaker
       await setAudioModeAsync({
         playsInSilentMode: true,
         allowsRecording: false,
@@ -713,7 +754,6 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
       setIsRecordingMode(false);
 
       if (!recordedUri) {
-        Alert.alert(t('errorTitle'), t('socialRequestFailedError'));
         return;
       }
 
@@ -739,7 +779,82 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
     } finally {
       setIsSendingVoice(false);
     }
-  }, [friend, handleSend, isSendingVoice, recorder, recorderState.durationMillis, recordingSec, t]);
+  }, [friend, handleCancelRecording, handleSend, isSendingVoice, recorder, recordingSec, t]);
+
+  const handleMicPressIn = async () => {
+    if (!friend || isSending || isSendingVoice) return;
+    if (!friend.e2eePublicKey) {
+      Alert.alert(t('e2eeBadgeLabel'), t('e2eeMissingRecipientKey'));
+      return;
+    }
+
+    setShowAttachMenu(false);
+    holdActiveRef.current = true;
+    holdStartTsRef.current = Date.now();
+    triggerSelectionHaptic();
+
+    if (!hasMicPermRef.current) {
+      const perm = await AudioModule.requestRecordingPermissionsAsync();
+      hasMicPermRef.current = Boolean(perm.granted);
+      if (!perm.granted) {
+        holdActiveRef.current = false;
+        Alert.alert(t('errorTitle'), t('voiceMicDeniedBody'));
+        return;
+      }
+      // After native permission modal dialog, user finger lifted; wait for next hold
+      if (!holdActiveRef.current) {
+        showQuickHoldHint();
+        return;
+      }
+    }
+
+    try {
+      await setAudioModeAsync({
+        playsInSilentMode: true,
+        allowsRecording: true,
+      });
+      await recorder.prepareToRecordAsync(VOICE_RECORDING_OPTIONS);
+      if (!holdActiveRef.current) {
+        await setAudioModeAsync({
+          playsInSilentMode: true,
+          allowsRecording: false,
+        }).catch(() => {});
+        return;
+      }
+
+      recordedLevelsRef.current = [];
+      setLiveWaveSamples(new Array(LIVE_BAR_COUNT).fill(0.18));
+      setRecordingSec(0);
+      recorder.record();
+      isRecordingActiveRef.current = true;
+      setIsRecordingMode(true);
+    } catch (e: any) {
+      holdActiveRef.current = false;
+      isRecordingActiveRef.current = false;
+      setIsRecordingMode(false);
+      Alert.alert(t('errorTitle'), e?.message || t('voiceMicDeniedBody'));
+    }
+  };
+
+  const handleMicPressOut = () => {
+    const heldMs = Date.now() - holdStartTsRef.current;
+    holdActiveRef.current = false;
+
+    if (!isRecordingActiveRef.current) {
+      if (heldMs < 380) {
+        showQuickHoldHint();
+      }
+      return;
+    }
+
+    if (heldMs < 420) {
+      void handleCancelRecording();
+      showQuickHoldHint();
+      return;
+    }
+
+    void handleSendVoiceNote();
+  };
 
   useEffect(() => {
     if (isRecordingMode && recordingSec >= MAX_VOICE_SECONDS && !isSendingVoice) {
@@ -780,17 +895,12 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
     });
   };
 
-  const handleQuickCheer = () => {
-    void handleSend('cheer', t('friendsChatQuickKudos'), { emoji: '🔥' });
-  };
-
   const handleReact = useCallback(
     async (messageId: string, emoji: string) => {
       if (!friend || messageId.startsWith('local_')) return;
       triggerSelectionHaptic();
       setReactionTargetMsg(null);
 
-      // Optimistic reaction update for instant Messenger responsiveness
       setMessages((prev) => {
         const next = prev.map((m) => {
           if (m.id !== messageId) return m;
@@ -823,9 +933,14 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
   );
 
   const handleBubblePress = (item: ChatMessage) => {
+    if (showAttachMenu) setShowAttachMenu(false);
     if (item.id.startsWith('local_')) return;
     const now = Date.now();
-    if (lastBubbleTapRef.current && lastBubbleTapRef.current.id === item.id && now - lastBubbleTapRef.current.time < 280) {
+    if (
+      lastBubbleTapRef.current &&
+      lastBubbleTapRef.current.id === item.id &&
+      now - lastBubbleTapRef.current.time < 280
+    ) {
       lastBubbleTapRef.current = null;
       void handleReact(item.id, '🔥');
     } else {
@@ -847,11 +962,14 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
 
     const prevTs = prev ? new Date(prev.createdAt).getTime() : 0;
     const curTs = new Date(item.createdAt).getTime();
-    const showTimeGapHeader = index === 0 || (!Number.isNaN(curTs) && !Number.isNaN(prevTs) && curTs - prevTs > 25 * 60 * 1000);
+    const showTimeGapHeader =
+      index === 0 ||
+      (!Number.isNaN(curTs) && !Number.isNaN(prevTs) && curTs - prevTs > 25 * 60 * 1000);
 
     const samePrev = !showTimeGapHeader && prev?.senderId === item.senderId;
     const nextTs = next ? new Date(next.createdAt).getTime() : 0;
-    const nextHasGap = next && !Number.isNaN(nextTs) && !Number.isNaN(curTs) && nextTs - curTs > 25 * 60 * 1000;
+    const nextHasGap =
+      next && !Number.isNaN(nextTs) && !Number.isNaN(curTs) && nextTs - curTs > 25 * 60 * 1000;
     const sameNext = !nextHasGap && next?.senderId === item.senderId;
 
     const showFriendAvatar = !isMine && !sameNext;
@@ -877,25 +995,37 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
           borderBottomLeftRadius: sameNext ? 6 : 21,
         };
 
-    const incomingBg = theme.isDark ? '#1B212C' : '#FFFFFF';
-    const incomingBorder = theme.isDark ? 'rgba(255,255,255,0.09)' : 'rgba(15,23,42,0.08)';
+    // Monochrome editorial bubbles aligned with app theme
+    const outgoingBg = theme.isDark ? '#F4F4F5' : '#18181B';
+    const incomingBg = theme.isDark ? '#141418' : '#FFFFFF';
+    const incomingBorder = theme.isDark ? 'rgba(255,255,255,0.11)' : 'rgba(15,23,42,0.09)';
+
     const bubbleBg = item.decryptFailed
       ? theme.isDark
         ? 'rgba(239,68,68,0.14)'
         : 'rgba(239,68,68,0.09)'
       : isMine
-      ? '#0A84FF'
+      ? outgoingBg
       : incomingBg;
     const bubbleBorderColor = item.decryptFailed
       ? 'rgba(239,68,68,0.38)'
       : isMine
-      ? 'rgba(255,255,255,0.2)'
+      ? theme.isDark
+        ? 'rgba(255,255,255,0.22)'
+        : 'rgba(0,0,0,0.08)'
       : incomingBorder;
     const bubbleTextColor = item.decryptFailed
       ? theme.textMuted
       : isMine
-      ? '#FFFFFF'
+      ? theme.isDark
+        ? '#09090B'
+        : '#FFFFFF'
       : theme.text;
+    const subTextColor = isMine
+      ? theme.isDark
+        ? 'rgba(9,9,11,0.7)'
+        : 'rgba(255,255,255,0.78)'
+      : theme.textSecondary;
 
     return (
       <AnimatedMessageRow animateOnMount={shouldAnimateEntry} isMine={isMine}>
@@ -906,7 +1036,7 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
                 styles.timeSeparatorPill,
                 {
                   backgroundColor: theme.isDark
-                    ? 'rgba(255,255,255,0.06)'
+                    ? 'rgba(255,255,255,0.07)'
                     : 'rgba(15,23,42,0.05)',
                 },
               ]}
@@ -922,7 +1052,7 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
           style={[
             styles.msgRow,
             isMine ? styles.msgRowMine : styles.msgRowTheirs,
-            { marginBottom: reactionsList.length > 0 ? 14 : sameNext ? 3 : 10 },
+            { marginBottom: reactionsList.length > 0 ? 15 : sameNext ? 3 : 10 },
           ]}
         >
           {!isMine && (
@@ -949,7 +1079,7 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
           >
             <TouchableOpacity
               activeOpacity={0.86}
-              delayLongPress={260}
+              delayLongPress={250}
               onLongPress={() => {
                 if (isPendingLocal) return;
                 triggerNotificationHaptic('success');
@@ -962,9 +1092,9 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
                 {
                   backgroundColor: bubbleBg,
                   borderColor: bubbleBorderColor,
-                  opacity: isPendingLocal ? 0.9 : 1,
+                  opacity: isPendingLocal ? 0.88 : 1,
                 },
-                isMine ? styles.outgoingShadow : styles.incomingShadow,
+                !isMine && styles.incomingShadow,
               ]}
             >
               {item.decryptFailed ? (
@@ -991,15 +1121,17 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
                         styles.richBadgeIcon,
                         {
                           backgroundColor: isMine
-                            ? 'rgba(255,255,255,0.22)'
-                            : `${theme.primary}18`,
+                            ? theme.isDark
+                              ? 'rgba(0,0,0,0.1)'
+                              : 'rgba(255,255,255,0.16)'
+                            : theme.bgSecondary,
                         },
                       ]}
                     >
                       <Ionicons
                         name={item.type === 'workout_share' ? 'barbell' : 'ribbon'}
                         size={15}
-                        color={isMine ? '#FFFFFF' : theme.primary}
+                        color={bubbleTextColor}
                       />
                     </View>
                     <Text style={[styles.richTitle, { color: bubbleTextColor }]}>
@@ -1007,16 +1139,7 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
                     </Text>
                   </View>
                   {item.payload?.subtitle ? (
-                    <Text
-                      style={[
-                        styles.richSub,
-                        {
-                          color: isMine
-                            ? 'rgba(255,255,255,0.86)'
-                            : theme.textSecondary,
-                        },
-                      ]}
-                    >
+                    <Text style={[styles.richSub, { color: subTextColor }]}>
                       {item.payload.subtitle}
                     </Text>
                   ) : null}
@@ -1043,8 +1166,8 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
                     styles.floatingReactionBadge,
                     isMine ? styles.floatingBadgeRight : styles.floatingBadgeLeft,
                     {
-                      backgroundColor: theme.isDark ? '#252C38' : '#FFFFFF',
-                      borderColor: theme.isDark ? 'rgba(255,255,255,0.14)' : 'rgba(15,23,42,0.1)',
+                      backgroundColor: theme.isDark ? '#202026' : '#FFFFFF',
+                      borderColor: theme.border,
                     },
                   ]}
                 >
@@ -1076,7 +1199,7 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
                   </>
                 ) : (
                   <>
-                    <Ionicons name="checkmark-done" size={12} color="#0A84FF" />
+                    <Ionicons name="checkmark-done" size={12} color={theme.textSecondary} />
                     <Text style={[styles.timeText, { color: theme.textMuted }]}>
                       {t('voiceSentBadge')} · {formatClockTime(item.createdAt)}
                     </Text>
@@ -1102,13 +1225,9 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
       onRequestClose={onClose}
     >
       <View style={[styles.screen, { backgroundColor: theme.bg }]}>
-        <MinimalistBackdrop
-          variant="diagonal"
-          accentColor="#0A84FF"
-          secondaryColor="#10B981"
-        />
+        <MinimalistBackdrop variant="diagonal" showCornerGlows={false} />
 
-        {/* Floating Frosted Messenger Header */}
+        {/* Sleek Monochrome Header */}
         <View
           style={[
             styles.header,
@@ -1116,18 +1235,18 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
               paddingTop: Math.max(insets.top + 8, 18),
               borderBottomColor: theme.hairline,
               backgroundColor: theme.isDark
-                ? 'rgba(12, 15, 22, 0.88)'
-                : 'rgba(250, 251, 254, 0.92)',
+                ? 'rgba(10, 10, 12, 0.92)'
+                : 'rgba(255, 255, 255, 0.94)',
             },
           ]}
         >
           <TouchableOpacity
             style={[
-              styles.backBtn,
+              styles.headerCircleBtn,
               {
                 backgroundColor: theme.isDark
                   ? 'rgba(255,255,255,0.08)'
-                  : 'rgba(15,23,42,0.06)',
+                  : 'rgba(0,0,0,0.06)',
               },
             ]}
             onPress={onClose}
@@ -1138,8 +1257,11 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
 
           <TouchableOpacity
             style={styles.headerFriendBtn}
-            onPress={() => onOpenProfile(friend)}
-            activeOpacity={0.78}
+            onPress={() => {
+              triggerSelectionHaptic();
+              onOpenProfile(friend);
+            }}
+            activeOpacity={0.75}
           >
             <UserAvatarBadge
               avatarUrl={friend.avatarUrl}
@@ -1154,9 +1276,20 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
                 <Text style={[styles.headerName, { color: theme.text }]} numberOfLines={1}>
                   {friend.displayName}
                 </Text>
-                <View style={styles.e2eeHeaderPill}>
-                  <Ionicons name="lock-closed" size={10} color="#10B981" />
-                  <Text style={styles.e2eeHeaderText}>E2EE</Text>
+                <View
+                  style={[
+                    styles.e2eeHeaderPill,
+                    {
+                      backgroundColor: theme.isDark
+                        ? 'rgba(255,255,255,0.09)'
+                        : 'rgba(0,0,0,0.06)',
+                    },
+                  ]}
+                >
+                  <Ionicons name="lock-closed" size={9.5} color={theme.textSecondary} />
+                  <Text style={[styles.e2eeHeaderText, { color: theme.textSecondary }]}>
+                    E2EE
+                  </Text>
                 </View>
               </View>
               <Text style={[styles.headerSub, { color: theme.textMuted }]} numberOfLines={1}>
@@ -1164,63 +1297,32 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
                 {friend.statusNote ? ` · ${friend.statusNote}` : ''}
               </Text>
             </View>
-            <Ionicons name="chevron-forward" size={16} color={theme.textMuted} />
           </TouchableOpacity>
-        </View>
 
-        {/* Compact Quick Share Pills */}
-        <View
-          style={[
-            styles.quickStrip,
-            {
-              backgroundColor: theme.isDark
-                ? 'rgba(12, 15, 22, 0.56)'
-                : 'rgba(250, 251, 254, 0.68)',
-            },
-          ]}
-        >
           <TouchableOpacity
             style={[
-              styles.quickChip,
-              { backgroundColor: 'rgba(10,132,255,0.12)', borderColor: 'rgba(10,132,255,0.32)' },
+              styles.headerCircleBtn,
+              {
+                backgroundColor: theme.isDark
+                  ? 'rgba(255,255,255,0.08)'
+                  : 'rgba(0,0,0,0.06)',
+              },
             ]}
-            onPress={handleQuickShareWorkout}
-            activeOpacity={0.8}
+            onPress={() => {
+              triggerSelectionHaptic();
+              onOpenProfile(friend);
+            }}
+            activeOpacity={0.75}
           >
-            <Ionicons name="barbell-outline" size={13} color="#0A84FF" />
-            <Text style={[styles.quickChipText, { color: '#0A84FF' }]}>
-              {t('friendsChatShareWorkout')}
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.quickChip, { backgroundColor: '#8B5CF618', borderColor: '#8B5CF638' }]}
-            onPress={handleQuickShareRank}
-            activeOpacity={0.8}
-          >
-            <Ionicons name="ribbon-outline" size={13} color="#A78BFA" />
-            <Text style={[styles.quickChipText, { color: '#A78BFA' }]}>
-              {t('friendsChatShareRank')}
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.quickChip, { backgroundColor: '#F59E0B18', borderColor: '#F59E0B38' }]}
-            onPress={handleQuickCheer}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.quickEmoji}>🔥</Text>
-            <Text style={[styles.quickChipText, { color: '#F59E0B' }]}>
-              {t('friendsKudosBtn')}
-            </Text>
+            <Ionicons name="chevron-forward" size={18} color={theme.text} />
           </TouchableOpacity>
         </View>
 
-        {/* Messages */}
+        {/* Message List */}
         <View style={styles.messagesWrap}>
           {isLoading ? (
             <View style={styles.centerEmpty}>
-              <ActivityIndicator color="#0A84FF" size="large" />
+              <ActivityIndicator color={theme.text} size="large" />
             </View>
           ) : messages.length === 0 ? (
             <View style={styles.centerEmpty}>
@@ -1256,11 +1358,15 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
           )}
         </View>
 
-        {/* Messenger Floating Composer / HQ Voice Recorder */}
+        {/* Bottom Monochrome Composer Dock + Floating "+" Attachments */}
         <View
           style={[
             styles.composerOuter,
             {
+              borderTopColor: theme.hairline,
+              backgroundColor: theme.isDark
+                ? 'rgba(10, 10, 12, 0.92)'
+                : 'rgba(255, 255, 255, 0.94)',
               paddingBottom:
                 keyboardHeight > 0
                   ? keyboardHeight + 10
@@ -1268,48 +1374,116 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
             },
           ]}
         >
-          {isRecordingMode ? (
+          {/* Hold hint banner */}
+          {holdHintVisible && !isRecordingMode && (
             <View
               style={[
-                styles.recordingPill,
+                styles.holdHintPill,
                 {
-                  backgroundColor: theme.isDark ? '#271419' : '#FFF1F2',
-                  borderColor: 'rgba(239,68,68,0.45)',
+                  backgroundColor: theme.isDark ? '#1F1F24' : '#18181B',
+                },
+              ]}
+            >
+              <Ionicons name="mic" size={12} color="#FFFFFF" />
+              <Text style={styles.holdHintText}>{t('voiceHoldHint')}</Text>
+            </View>
+          )}
+
+          {/* Expanding "+" Attachments Tray (Workout Share + Rank Card ONLY) */}
+          {showAttachMenu && !isRecordingMode && (
+            <Animated.View
+              style={[
+                styles.attachTray,
+                {
+                  opacity: attachAnim,
+                  transform: [
+                    {
+                      translateY: attachAnim.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [12, 0],
+                      }),
+                    },
+                  ],
                 },
               ]}
             >
               <TouchableOpacity
-                style={styles.recCancelBtn}
-                onPress={handleCancelRecording}
-                disabled={isSendingVoice}
-                activeOpacity={0.75}
+                style={[
+                  styles.attachChip,
+                  {
+                    backgroundColor: theme.isDark ? '#1C1C21' : '#F4F4F5',
+                    borderColor: theme.border,
+                  },
+                ]}
+                onPress={handleQuickShareWorkout}
+                activeOpacity={0.82}
               >
-                <Ionicons name="trash-outline" size={19} color="#EF4444" />
+                <View style={[styles.attachIconCircle, { backgroundColor: theme.primary }]}>
+                  <Ionicons name="barbell-outline" size={14} color={theme.primaryText} />
+                </View>
+                <Text style={[styles.attachChipText, { color: theme.text }]}>
+                  {t('friendsChatShareWorkout')}
+                </Text>
               </TouchableOpacity>
 
-              <View style={styles.recStatusWrap}>
+              <TouchableOpacity
+                style={[
+                  styles.attachChip,
+                  {
+                    backgroundColor: theme.isDark ? '#1C1C21' : '#F4F4F5',
+                    borderColor: theme.border,
+                  },
+                ]}
+                onPress={handleQuickShareRank}
+                activeOpacity={0.82}
+              >
+                <View style={[styles.attachIconCircle, { backgroundColor: theme.primary }]}>
+                  <Ionicons name="ribbon-outline" size={14} color={theme.primaryText} />
+                </View>
+                <Text style={[styles.attachChipText, { color: theme.text }]}>
+                  {t('friendsChatShareRank')}
+                </Text>
+              </TouchableOpacity>
+            </Animated.View>
+          )}
+
+          <View
+            style={[
+              styles.composerPill,
+              {
+                backgroundColor: isRecordingMode
+                  ? theme.isDark
+                    ? '#231316'
+                    : '#FFF1F2'
+                  : theme.isDark
+                  ? '#18181C'
+                  : '#F4F4F5',
+                borderColor: isRecordingMode
+                  ? 'rgba(239,68,68,0.45)'
+                  : theme.border,
+              },
+            ]}
+          >
+            {isRecordingMode ? (
+              <View style={styles.recordingStatusRow}>
                 <Animated.View
                   style={[
-                    styles.recDot,
+                    styles.recPulseRing,
                     {
+                      transform: [{ scale: 0.9 + voiceIntensity * 0.45 }],
                       opacity: recPulseAnim.interpolate({
                         inputRange: [0, 1],
-                        outputRange: [0.35, 1],
+                        outputRange: [0.45, 1],
                       }),
-                      transform: [
-                        {
-                          scale: recPulseAnim.interpolate({
-                            inputRange: [0, 1],
-                            outputRange: [0.85, 1.2],
-                          }),
-                        },
-                      ],
                     },
                   ]}
-                />
-                <Text style={[styles.recTimerText, { color: '#EF4444' }]}>
-                  {formatDurationSec(recordingSec)}
-                </Text>
+                >
+                  <View style={styles.recDotCore} />
+                </Animated.View>
+
+                <Text style={styles.recTimerText}>{formatDurationSec(recordingSec)}</Text>
+
+                {/* Live Left-to-Right Equalizer Bars */}
                 <View style={styles.liveWaveRow}>
                   {liveWaveSamples.map((amp, idx) => (
                     <View
@@ -1317,83 +1491,111 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
                       style={[
                         styles.liveWaveBar,
                         {
-                          height: Math.round(6 + amp * 16),
+                          height: Math.round(5 + amp * 20),
+                          opacity: Math.max(0.32, 1 - idx * 0.036),
                           backgroundColor: '#EF4444',
                         },
                       ]}
                     />
                   ))}
                 </View>
-              </View>
 
+                <Text style={[styles.speakingHintLabel, { color: '#EF4444' }]} numberOfLines={1}>
+                  {t('voiceSpeakingNow').split('.')[0]}
+                </Text>
+              </View>
+            ) : (
+              <>
+                <TouchableOpacity
+                  style={[
+                    styles.attachPlusBtn,
+                    {
+                      backgroundColor: showAttachMenu
+                        ? theme.primary
+                        : theme.isDark
+                        ? '#27272D'
+                        : '#E4E4E7',
+                    },
+                  ]}
+                  onPress={() => {
+                    triggerSelectionHaptic();
+                    setShowAttachMenu((v) => !v);
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons
+                    name={showAttachMenu ? 'close' : 'add'}
+                    size={20}
+                    color={showAttachMenu ? theme.primaryText : theme.text}
+                  />
+                </TouchableOpacity>
+
+                <TextInput
+                  style={[styles.input, { color: theme.text }]}
+                  placeholder={t('friendsChatPlaceholder')}
+                  placeholderTextColor={theme.textMuted}
+                  value={inputText}
+                  onChangeText={(txt) => {
+                    setInputText(txt);
+                    if (showAttachMenu && txt.length > 0) setShowAttachMenu(false);
+                  }}
+                  multiline
+                  maxLength={800}
+                  onFocus={() => {
+                    setShowAttachMenu(false);
+                    scrollToLatest();
+                  }}
+                />
+              </>
+            )}
+
+            {/* Right Action Button: NEVER unmounts when switching into hold-to-record */}
+            {canTypeSend && !isRecordingMode ? (
               <TouchableOpacity
-                style={[styles.sendBtn, { backgroundColor: '#0A84FF' }]}
-                onPress={handleSendVoiceNote}
-                disabled={isSendingVoice}
+                style={[styles.sendBtn, { backgroundColor: theme.primary }]}
+                onPress={() => handleSend('text')}
+                disabled={isSending}
                 activeOpacity={0.82}
+              >
+                {isSending ? (
+                  <ActivityIndicator size="small" color={theme.primaryText} />
+                ) : (
+                  <Ionicons name="arrow-up" size={19} color={theme.primaryText} />
+                )}
+              </TouchableOpacity>
+            ) : (
+              <Pressable
+                onPressIn={handleMicPressIn}
+                onPressOut={handleMicPressOut}
+                disabled={isSending || isSendingVoice}
+                style={({ pressed }) => [
+                  styles.sendBtn,
+                  {
+                    backgroundColor: isRecordingMode ? '#EF4444' : theme.primary,
+                    transform: [
+                      {
+                        scale: isRecordingMode
+                          ? 1.08 + voiceIntensity * 0.14
+                          : pressed
+                          ? 0.94
+                          : 1,
+                      },
+                    ],
+                  },
+                ]}
               >
                 {isSendingVoice ? (
                   <ActivityIndicator size="small" color="#FFFFFF" />
                 ) : (
-                  <Ionicons name="arrow-up" size={19} color="#FFFFFF" />
+                  <Ionicons
+                    name={isRecordingMode ? 'mic' : 'mic-outline'}
+                    size={19}
+                    color={isRecordingMode ? '#FFFFFF' : theme.primaryText}
+                  />
                 )}
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <View
-              style={[
-                styles.composerPill,
-                {
-                  backgroundColor: theme.isDark
-                    ? 'rgba(24, 28, 38, 0.94)'
-                    : 'rgba(255, 255, 255, 0.96)',
-                  borderColor: theme.isDark
-                    ? 'rgba(255,255,255,0.12)'
-                    : 'rgba(15,23,42,0.1)',
-                },
-              ]}
-            >
-              <TextInput
-                style={[styles.input, { color: theme.text }]}
-                placeholder={t('friendsChatPlaceholder')}
-                placeholderTextColor={theme.textMuted}
-                value={inputText}
-                onChangeText={setInputText}
-                multiline
-                maxLength={800}
-                onFocus={scrollToLatest}
-              />
-
-              {canTypeSend ? (
-                <TouchableOpacity
-                  style={[styles.sendBtn, { backgroundColor: '#0A84FF' }]}
-                  onPress={() => handleSend('text')}
-                  disabled={isSending}
-                  activeOpacity={0.82}
-                >
-                  {isSending ? (
-                    <ActivityIndicator size="small" color="#FFFFFF" />
-                  ) : (
-                    <Ionicons name="arrow-up" size={19} color="#FFFFFF" />
-                  )}
-                </TouchableOpacity>
-              ) : (
-                <TouchableOpacity
-                  style={[
-                    styles.sendBtn,
-                    {
-                      backgroundColor: '#0A84FF',
-                    },
-                  ]}
-                  onPress={handleStartRecording}
-                  disabled={isSending || isSendingVoice}
-                  activeOpacity={0.82}
-                >
-                  <Ionicons name="mic" size={19} color="#FFFFFF" />
-                </TouchableOpacity>
-              )}
-            </View>
-          )}
+              </Pressable>
+            )}
+          </View>
         </View>
 
         {/* Dedicated Animated Messenger Reaction Overlay */}
@@ -1428,10 +1630,8 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
                   style={[
                     styles.reactionDock,
                     {
-                      backgroundColor: theme.isDark ? '#1F2530' : '#FFFFFF',
-                      borderColor: theme.isDark
-                        ? 'rgba(255,255,255,0.14)'
-                        : 'rgba(15,23,42,0.1)',
+                      backgroundColor: theme.isDark ? '#18181D' : '#FFFFFF',
+                      borderColor: theme.border,
                     },
                   ]}
                 >
@@ -1446,7 +1646,9 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
                         style={[
                           styles.reactionDockBtn,
                           alreadyReacted && {
-                            backgroundColor: 'rgba(10, 132, 255, 0.22)',
+                            backgroundColor: theme.isDark
+                              ? 'rgba(255,255,255,0.16)'
+                              : 'rgba(0,0,0,0.09)',
                           },
                         ]}
                         activeOpacity={0.72}
@@ -1463,9 +1665,11 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
                     {
                       backgroundColor:
                         reactionTargetMsg.senderId === myUserId
-                          ? '#0A84FF'
+                          ? theme.isDark
+                            ? '#F4F4F5'
+                            : '#18181B'
                           : theme.isDark
-                          ? '#1B212C'
+                          ? '#141418'
                           : '#FFFFFF',
                       borderColor: theme.border,
                     },
@@ -1477,7 +1681,9 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
                       {
                         color:
                           reactionTargetMsg.senderId === myUserId
-                            ? '#FFFFFF'
+                            ? theme.isDark
+                              ? '#09090B'
+                              : '#FFFFFF'
                             : theme.text,
                       },
                     ]}
@@ -1504,10 +1710,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
     paddingHorizontal: 14,
-    paddingBottom: 10,
+    paddingBottom: 11,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  backBtn: {
+  headerCircleBtn: {
     width: 36,
     height: 36,
     borderRadius: 18,
@@ -1519,6 +1725,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
+    minWidth: 0,
   },
   headerMeta: {
     flex: 1,
@@ -1541,10 +1748,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 999,
-    backgroundColor: 'rgba(16, 185, 129, 0.14)',
   },
   e2eeHeaderText: {
-    color: '#10B981',
     fontSize: 9.5,
     fontWeight: '800',
     letterSpacing: 0.4,
@@ -1553,29 +1758,6 @@ const styles = StyleSheet.create({
     fontSize: 11.5,
     fontWeight: '600',
     marginTop: 1,
-  },
-  quickStrip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-  },
-  quickChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 10,
-    paddingVertical: 5.5,
-    borderRadius: 999,
-    borderWidth: 1,
-  },
-  quickChipText: {
-    fontSize: 11.5,
-    fontWeight: '800',
-  },
-  quickEmoji: {
-    fontSize: 12,
   },
   messagesWrap: {
     flex: 1,
@@ -1649,13 +1831,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 10,
     borderWidth: 1,
-  },
-  outgoingShadow: {
-    shadowColor: '#0A84FF',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.16,
-    shadowRadius: 6,
-    elevation: 2,
   },
   incomingShadow: {
     shadowColor: '#000',
@@ -1809,7 +1984,51 @@ const styles = StyleSheet.create({
   },
   composerOuter: {
     paddingHorizontal: 12,
-    paddingTop: 6,
+    paddingTop: 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  holdHintPill: {
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+    marginBottom: 8,
+  },
+  holdHintText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  attachTray: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 10,
+  },
+  attachChip: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 11,
+    paddingVertical: 9,
+    borderRadius: 16,
+    borderWidth: 1,
+  },
+  attachIconCircle: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  attachChipText: {
+    fontSize: 12.5,
+    fontWeight: '800',
+    flexShrink: 1,
   },
   composerPill: {
     flexDirection: 'row',
@@ -1817,20 +2036,24 @@ const styles = StyleSheet.create({
     gap: 8,
     borderRadius: 26,
     borderWidth: 1,
-    paddingLeft: 16,
+    paddingLeft: 6,
     paddingRight: 6,
     paddingVertical: 6,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 4,
+  },
+  attachPlusBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 1,
   },
   input: {
     flex: 1,
     minHeight: 36,
     maxHeight: 112,
     paddingVertical: 7,
+    paddingHorizontal: 4,
     fontSize: 15,
     fontWeight: '500',
   },
@@ -1841,40 +2064,34 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  recordingPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    borderRadius: 26,
-    borderWidth: 1,
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-  },
-  recCancelBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(239,68,68,0.14)',
-  },
-  recStatusWrap: {
+  recordingStatusRow: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+    paddingLeft: 8,
+    minHeight: 38,
   },
-  recDot: {
+  recPulseRing: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: 'rgba(239,68,68,0.22)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  recDotCore: {
     width: 9,
     height: 9,
     borderRadius: 4.5,
     backgroundColor: '#EF4444',
   },
   recTimerText: {
+    color: '#EF4444',
     fontSize: 13.5,
     fontWeight: '800',
     fontVariant: ['tabular-nums'],
-    minWidth: 38,
+    minWidth: 36,
   },
   liveWaveRow: {
     flex: 1,
@@ -1882,12 +2099,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'flex-start',
     gap: 3,
-    height: 24,
+    height: 26,
+    overflow: 'hidden',
   },
   liveWaveBar: {
     width: 3,
     borderRadius: 1.5,
-    opacity: 0.85,
+  },
+  speakingHintLabel: {
+    fontSize: 11.5,
+    fontWeight: '800',
+    marginRight: 4,
   },
   reactionBackdrop: {
     flex: 1,
