@@ -191,6 +191,7 @@ export interface FriendProfileSummary {
   userId: string;
   nickname: string;
   displayName: string;
+  e2eePublicKey?: string | null;
   avatarColor?: string;
   gender?: UserGender;
   overallRank: RankTier;
@@ -259,6 +260,13 @@ export interface ChatMessage {
   type: ChatMessageType;
   text: string;
   payload?: ChatMessagePayload;
+  isEncrypted?: boolean;
+  decryptFailed?: boolean;
+  ciphertext?: string;
+  nonce?: string;
+  senderPublicKey?: string;
+  recipientPublicKey?: string;
+  alg?: string;
   createdAt: string;
   reactions?: Record<string, string[]>;
 }

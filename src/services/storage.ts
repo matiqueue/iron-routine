@@ -173,7 +173,7 @@ async function applyLocalDeviceSeedIfNeeded(): Promise<void> {
 
 // ==================== PROFILE MANAGEMENT ====================
 
-const ONE_TIME_RESET_KEY = '@iron_routine_fresh_reset_v2_7';
+const ONE_TIME_RESET_KEY = '@iron_routine_fresh_reset_v3_0';
 let resetCheckedInMemory = false;
 
 let cloudAutoSyncTrigger: ((profileId?: string) => void) | null = null;

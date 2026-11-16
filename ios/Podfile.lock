@@ -59,6 +59,8 @@ PODS:
     - ExpoModulesCore
   - ExpoAsset (58.0.21):
     - ExpoModulesCore
+  - ExpoCrypto (58.0.8):
+    - ExpoModulesCore
   - ExpoDomWebView (58.0.2):
     - ExpoModulesCore
   - ExpoFileSystem (58.0.13):
@@ -2053,6 +2055,7 @@ DEPENDENCIES:
   - Expo (from `../node_modules/expo`)
   - ExpoApplication (from `../node_modules/expo-application/ios`)
   - ExpoAsset (from `../node_modules/expo/node_modules/expo-asset/ios`)
+  - ExpoCrypto (from `../node_modules/expo-crypto/ios`)
   - "ExpoDomWebView (from `../node_modules/@expo/dom-webview/ios`)"
   - ExpoFileSystem (from `../node_modules/expo/node_modules/expo-file-system/ios/ExpoFileSystem.podspec`)
   - ExpoFont (from `../node_modules/expo-font/ios/ExpoFont.podspec`)
@@ -2171,6 +2174,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/expo-application/ios"
   ExpoAsset:
     :path: "../node_modules/expo/node_modules/expo-asset/ios"
+  ExpoCrypto:
+    :path: "../node_modules/expo-crypto/ios"
   ExpoDomWebView:
     :path: "../node_modules/@expo/dom-webview/ios"
   ExpoFileSystem:
@@ -2383,6 +2388,7 @@ SPEC CHECKSUMS:
   Expo: c9c0816dfb08ecb3f0a23fc3ff548708e899ccdc
   ExpoApplication: c83355b2f69f996b5d26b64fef39228e7f1e1208
   ExpoAsset: eda9e4844b55b78d4e71a0e2de767a038f3a0806
+  ExpoCrypto: f9eb48ae9cda6a90357a693b44cc0bda89f6af4a
   ExpoDomWebView: b2a6d681b9d34c23b1f584321386ca8da1d36afb
   ExpoFileSystem: b619d80b490c53117a9a9c976021a4ce5a9da440
   ExpoFont: daea737a2e3742f9a946f2884518e70dd37011f3

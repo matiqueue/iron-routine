@@ -245,6 +245,7 @@ export default {
           displayName: userRecord.displayName,
           nickname: userRecord.nickname || null,
           nicknameUpdatedAt: userRecord.nicknameUpdatedAt || null,
+          e2eePublicKey: userRecord.e2eePublicKey || null,
           lastSyncedAt: userRecord.lastSyncedAt || null,
           backupSummary: userRecord.backupSummary || null,
         };

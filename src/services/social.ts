@@ -20,9 +20,15 @@ import { computePhysiqueAnalytics } from './muscleAnalytics';
 import { getCurrentAppLanguage } from './settings';
 import { getTranslatedExerciseName, translateText } from '../i18n/translations';
 import { isValidNickname, normalizeNickname } from '../utils/nickname';
+import {
+  decryptChatEnvelope,
+  encryptChatEnvelope,
+  getOrCreateE2eeKeyPair,
+  StoredE2eeKeyPair,
+} from '../utils/e2ee';
 
 const SOCIAL_API_URL = 'https://iron-routine-app.vercel.app/api/social';
-const SOCIAL_CACHE_KEY_PREFIX = '@iron_routine:social_hub_v1_';
+const SOCIAL_CACHE_KEY_PREFIX = '@iron_routine:social_hub_v2_';
 
 export interface SocialSearchResult {
   profile: FriendProfileSummary;
@@ -49,6 +55,64 @@ function getFriendlySocialError(code?: string): string {
     default:
       return translateText(lang, 'socialRequestFailedError');
   }
+}
+
+function decryptWireChatMessage(
+  raw: any,
+  myUserId: string,
+  myKeyPair: StoredE2eeKeyPair | null
+): ChatMessage {
+  const plain = decryptChatEnvelope(raw, myUserId, myKeyPair);
+  if (plain) {
+    return {
+      id: String(raw.id),
+      senderId: String(raw.senderId),
+      recipientId: String(raw.recipientId),
+      type: plain.type,
+      text: plain.text,
+      payload: plain.payload,
+      isEncrypted: raw.isEncrypted !== false,
+      decryptFailed: false,
+      ciphertext: raw.ciphertext,
+      nonce: raw.nonce,
+      senderPublicKey: raw.senderPublicKey,
+      recipientPublicKey: raw.recipientPublicKey,
+      alg: raw.alg,
+      createdAt: String(raw.createdAt),
+      reactions: raw.reactions || {},
+    };
+  }
+  return {
+    id: String(raw.id),
+    senderId: String(raw.senderId),
+    recipientId: String(raw.recipientId),
+    type: 'text',
+    text: translateText(getCurrentAppLanguage(), 'e2eeKeyChangedPlaceholder'),
+    isEncrypted: true,
+    decryptFailed: true,
+    createdAt: String(raw.createdAt),
+    reactions: raw.reactions || {},
+  };
+}
+
+export async function ensureE2eeKeyRegistered(): Promise<StoredE2eeKeyPair | null> {
+  const session = await getStoredCloudSession();
+  if (!session?.token || !session?.userId) return null;
+  const keyPair = await getOrCreateE2eeKeyPair(session.userId);
+  try {
+    await fetch(SOCIAL_API_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${session.token}`,
+      },
+      body: JSON.stringify({
+        action: 'register_e2ee_key',
+        publicKey: keyPair.publicKey,
+      }),
+    });
+  } catch {}
+  return keyPair;
 }
 
 export async function getCachedSocialHub(userId: string): Promise<SocialHubData | null> {
@@ -119,7 +183,9 @@ export async function claimNicknameInCloud(params: {
   }
 }
 
-export async function buildAndPublishSocialProfile(explicitProfileId?: string): Promise<FriendProfileSummary | null> {
+export async function buildAndPublishSocialProfile(
+  explicitProfileId?: string
+): Promise<FriendProfileSummary | null> {
   try {
     const session = await getStoredCloudSession();
     if (!session?.token) return null;
@@ -128,12 +194,13 @@ export async function buildAndPublishSocialProfile(explicitProfileId?: string): 
     const profileId = explicitProfileId || active?.id;
     if (!profileId || !active) return null;
 
-    const [activePlan, history, streak, customExercises, bestPRs] = await Promise.all([
+    const [activePlan, history, streak, customExercises, bestPRs, keyPair] = await Promise.all([
       getActiveWorkoutPlan(profileId),
       getWorkoutHistory(profileId),
       getWorkoutStreak(profileId),
       getCustomExercises(),
       getAllBestPRs(profileId),
+      getOrCreateE2eeKeyPair(session.userId),
     ]);
 
     const allExercises = [...EXERCISE_LIBRARY, ...customExercises];
@@ -184,6 +251,7 @@ export async function buildAndPublishSocialProfile(explicitProfileId?: string): 
         profile: {
           displayName: active.name,
           nickname: active.nickname,
+          e2eePublicKey: keyPair.publicKey,
           avatarColor: active.avatarColor || '#10B981',
           gender: active.gender || 'male',
           overallRank: physique.overallRank,
@@ -213,22 +281,42 @@ export async function buildAndPublishSocialProfile(explicitProfileId?: string): 
   }
 }
 
-export async function fetchSocialHub(): Promise<{ ok: boolean; hub?: SocialHubData; error?: string }> {
+export async function fetchSocialHub(): Promise<{
+  ok: boolean;
+  hub?: SocialHubData;
+  error?: string;
+}> {
   const session = await getStoredCloudSession();
   if (!session?.token) {
     return { ok: false, error: getFriendlySocialError('UNAUTHORIZED') };
   }
   try {
-    const res = await fetch(`${SOCIAL_API_URL}?action=hub`, {
-      method: 'GET',
-      headers: { Authorization: `Bearer ${session.token}` },
-    });
+    const [keyPair, res] = await Promise.all([
+      getOrCreateE2eeKeyPair(session.userId),
+      fetch(`${SOCIAL_API_URL}?action=hub`, {
+        method: 'GET',
+        headers: { Authorization: `Bearer ${session.token}` },
+      }),
+    ]);
+
     const data = await res.json().catch(() => null);
     if (!res.ok || !data?.ok || !data?.hub) {
       return { ok: false, error: getFriendlySocialError(data?.error) };
     }
-    await saveCachedSocialHub(session.userId, data.hub as SocialHubData);
-    return { ok: true, hub: data.hub as SocialHubData };
+
+    const rawHub = data.hub as SocialHubData;
+    const decryptedHub: SocialHubData = {
+      ...rawHub,
+      friends: (rawHub.friends || []).map((thread) => ({
+        ...thread,
+        lastMessage: thread.lastMessage
+          ? decryptWireChatMessage(thread.lastMessage, session.userId, keyPair)
+          : null,
+      })),
+    };
+
+    await saveCachedSocialHub(session.userId, decryptedHub);
+    return { ok: true, hub: decryptedHub };
   } catch {
     return { ok: false, error: translateText(getCurrentAppLanguage(), 'socialNetworkError') };
   }
@@ -387,18 +475,21 @@ export async function fetchChatMessages(friendId: string): Promise<{
     return { ok: false, messages: [], error: getFriendlySocialError('UNAUTHORIZED') };
   }
   try {
-    const res = await fetch(
-      `${SOCIAL_API_URL}?action=messages&friendId=${encodeURIComponent(friendId)}`,
-      {
+    const [keyPair, res] = await Promise.all([
+      getOrCreateE2eeKeyPair(session.userId),
+      fetch(`${SOCIAL_API_URL}?action=messages&friendId=${encodeURIComponent(friendId)}`, {
         method: 'GET',
         headers: { Authorization: `Bearer ${session.token}` },
-      }
-    );
+      }),
+    ]);
     const data = await res.json().catch(() => null);
     if (!res.ok || !data?.ok) {
       return { ok: false, messages: [], error: getFriendlySocialError(data?.error) };
     }
-    return { ok: true, messages: (data.messages || []) as ChatMessage[] };
+    const decrypted = (data.messages || []).map((m: any) =>
+      decryptWireChatMessage(m, session.userId, keyPair)
+    );
+    return { ok: true, messages: decrypted };
   } catch {
     return {
       ok: false,
@@ -410,6 +501,7 @@ export async function fetchChatMessages(friendId: string): Promise<{
 
 export async function sendChatMessage(params: {
   friendId: string;
+  recipientPublicKey: string;
   type?: ChatMessageType;
   text: string;
   payload?: ChatMessagePayload;
@@ -418,7 +510,25 @@ export async function sendChatMessage(params: {
   if (!session?.token) {
     return { ok: false, error: getFriendlySocialError('UNAUTHORIZED') };
   }
+  if (!params.recipientPublicKey) {
+    return {
+      ok: false,
+      error: translateText(getCurrentAppLanguage(), 'e2eeMissingRecipientKey'),
+    };
+  }
+
   try {
+    const myKeyPair = await getOrCreateE2eeKeyPair(session.userId);
+    const wire = encryptChatEnvelope(
+      {
+        type: params.type || 'text',
+        text: params.text,
+        payload: params.payload,
+      },
+      params.recipientPublicKey,
+      myKeyPair
+    );
+
     const res = await fetch(SOCIAL_API_URL, {
       method: 'POST',
       headers: {
@@ -428,16 +538,17 @@ export async function sendChatMessage(params: {
       body: JSON.stringify({
         action: 'send_message',
         friendId: params.friendId,
-        type: params.type || 'text',
-        text: params.text,
-        payload: params.payload,
+        ...wire,
       }),
     });
     const data = await res.json().catch(() => null);
     if (!res.ok || !data?.ok || !data?.message) {
       return { ok: false, error: getFriendlySocialError(data?.error) };
     }
-    return { ok: true, message: data.message as ChatMessage };
+    return {
+      ok: true,
+      message: decryptWireChatMessage(data.message, session.userId, myKeyPair),
+    };
   } catch {
     return { ok: false, error: translateText(getCurrentAppLanguage(), 'socialNetworkError') };
   }
@@ -451,27 +562,31 @@ export async function reactToChatMessage(
   const session = await getStoredCloudSession();
   if (!session?.token) return null;
   try {
-    const res = await fetch(SOCIAL_API_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${session.token}`,
-      },
-      body: JSON.stringify({
-        action: 'react_message',
-        friendId,
-        messageId,
-        emoji,
+    const [keyPair, res] = await Promise.all([
+      getOrCreateE2eeKeyPair(session.userId),
+      fetch(SOCIAL_API_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.token}`,
+        },
+        body: JSON.stringify({
+          action: 'react_message',
+          friendId,
+          messageId,
+          emoji,
+        }),
       }),
-    });
+    ]);
     const data = await res.json().catch(() => null);
-    return res.ok && data?.ok ? (data.message as ChatMessage) : null;
+    return res.ok && data?.ok
+      ? decryptWireChatMessage(data.message, session.userId, keyPair)
+      : null;
   } catch {
     return null;
   }
 }
 
-// Automatically publish live rank & workout snapshot whenever cloud backup succeeds
 registerPostCloudPushHook((profileId) => {
   void buildAndPublishSocialProfile(profileId);
 });

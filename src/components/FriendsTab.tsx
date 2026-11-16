@@ -51,6 +51,11 @@ import { triggerNotificationHaptic, triggerSelectionHaptic } from '../services/h
 import { sanitizeNicknameInput } from '../utils/nickname';
 import { MinimalistBackdrop } from './MinimalistBackdrop';
 import { RankCrestIcon } from './RankCrestIcon';
+import {
+  CrewPodiumStage,
+  CrewRadarOrb,
+  SquadAvatarRing,
+} from './CrewCustomComponents';
 import { FriendProfileModal } from './FriendProfileModal';
 import { FriendChatModal } from './FriendChatModal';
 
@@ -829,14 +834,14 @@ export const FriendsTab: React.FC<FriendsTabProps> = ({
                       },
                     ]}
                   >
-                    <Animated.View
-                      style={[
-                        styles.emptyIconStage,
-                        { transform: [{ translateY: cardFloatY }] },
-                      ]}
-                    >
-                      <Ionicons name="people-outline" size={32} color="#38BDF8" />
-                    </Animated.View>
+                    <CrewRadarOrb
+                      myRank={hub.myProfile?.overallRank || 'F'}
+                      friendRanks={[]}
+                      size={146}
+                    />
+                    <Text style={{ fontSize: 10.5, fontWeight: '800', color: '#10B981', letterSpacing: 0.6 }}>
+                      {t('friendsRadarSubtitle')}
+                    </Text>
                     <Text style={[styles.emptyTitle, { color: theme.text }]}>
                       {t('friendsEmptyTitle')}
                     </Text>
@@ -858,93 +863,127 @@ export const FriendsTab: React.FC<FriendsTabProps> = ({
                     </TouchableOpacity>
                   </View>
                 ) : (
-                  hub.friends.map((item) => {
-                    const fr = item.friend;
-                    const last = item.lastMessage;
-                    const rankColor = (RANK_TIER_MAP[fr.overallRank] || RANK_TIER_MAP.F).color;
-                    const previewLine = last
-                      ? `${last.senderId === myUserId ? t('friendsYouSayPrefix') : ''}${last.text}`
-                      : fr.statusNote ||
-                        `${fr.overallRank} · ${fr.streak} ${t('friendsDaysShort')}`;
-
-                    return (
-                      <TouchableOpacity
-                        key={fr.userId}
-                        style={[
-                          styles.friendRowCard,
-                          {
-                            backgroundColor: isDark
-                              ? 'rgba(24,24,28,0.78)'
-                              : 'rgba(255,255,255,0.9)',
-                            borderColor: item.unreadCount > 0 ? '#10B981' : theme.border,
-                          },
-                        ]}
-                        onPress={() => {
-                          triggerSelectionHaptic();
-                          setActiveChatFriend(fr);
-                        }}
-                        activeOpacity={0.82}
+                  <>
+                    {/* Horizontal Animated Crew Spotlight Carousel */}
+                    <View style={{ marginBottom: 6 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                        <Text style={{ fontSize: 10, fontWeight: '800', letterSpacing: 1.2, color: theme.textMuted }}>
+                          {t('friendsCrewSpotlightTitle')}
+                        </Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                          <Ionicons name="lock-closed" size={10} color="#10B981" />
+                          <Text style={{ fontSize: 10, fontWeight: '800', color: '#10B981' }}>
+                            {t('e2eeBadgeLabel')}
+                          </Text>
+                        </View>
+                      </View>
+                      <ScrollView
+                        horizontal
+                        showsHorizontalScrollIndicator={false}
+                        contentContainerStyle={{ gap: 12, paddingRight: 8 }}
                       >
+                        {hub.friends.map((item) => (
+                          <SquadAvatarRing
+                            key={`ring-${item.friend.userId}`}
+                            friend={item.friend}
+                            unreadCount={item.unreadCount}
+                            onPress={() => {
+                              triggerSelectionHaptic();
+                              setActiveChatFriend(item.friend);
+                            }}
+                          />
+                        ))}
+                      </ScrollView>
+                    </View>
+
+                    {hub.friends.map((item) => {
+                      const fr = item.friend;
+                      const last = item.lastMessage;
+                      const rankColor = (RANK_TIER_MAP[fr.overallRank] || RANK_TIER_MAP.F).color;
+                      const previewLine = last
+                        ? `${last.senderId === myUserId ? t('friendsYouSayPrefix') : ''}${last.text}`
+                        : fr.statusNote ||
+                          `${fr.overallRank} · ${fr.streak} ${t('friendsDaysShort')}`;
+
+                      return (
                         <TouchableOpacity
+                          key={fr.userId}
+                          style={[
+                            styles.friendRowCard,
+                            {
+                              backgroundColor: isDark
+                                ? 'rgba(24,24,28,0.78)'
+                                : 'rgba(255,255,255,0.9)',
+                              borderColor: item.unreadCount > 0 ? '#10B981' : theme.border,
+                            },
+                          ]}
                           onPress={() => {
                             triggerSelectionHaptic();
-                            setSelectedProfileFriend(fr);
+                            setActiveChatFriend(fr);
                           }}
-                          activeOpacity={0.75}
+                          activeOpacity={0.82}
                         >
-                          <RankCrestIcon tier={fr.overallRank || 'F'} size={44} isSelected />
-                        </TouchableOpacity>
+                          <TouchableOpacity
+                            onPress={() => {
+                              triggerSelectionHaptic();
+                              setSelectedProfileFriend(fr);
+                            }}
+                            activeOpacity={0.75}
+                          >
+                            <RankCrestIcon tier={fr.overallRank || 'F'} size={44} isSelected />
+                          </TouchableOpacity>
 
-                        <View style={styles.friendMidCol}>
-                          <View style={styles.friendTitleRow}>
-                            <Text style={[styles.friendName, { color: theme.text }]} numberOfLines={1}>
-                              {fr.displayName}
-                            </Text>
-                            <Text style={[styles.friendNickTag, { color: rankColor }]}>
-                              @{fr.nickname}
+                          <View style={styles.friendMidCol}>
+                            <View style={styles.friendTitleRow}>
+                              <Text style={[styles.friendName, { color: theme.text }]} numberOfLines={1}>
+                                {fr.displayName}
+                              </Text>
+                              <Text style={[styles.friendNickTag, { color: rankColor }]}>
+                                @{fr.nickname}
+                              </Text>
+                            </View>
+                            <Text
+                              style={[
+                                styles.friendLastMsg,
+                                {
+                                  color: item.unreadCount > 0 ? theme.text : theme.textSecondary,
+                                  fontWeight: item.unreadCount > 0 ? '700' : '500',
+                                },
+                              ]}
+                              numberOfLines={1}
+                            >
+                              {previewLine}
                             </Text>
                           </View>
-                          <Text
-                            style={[
-                              styles.friendLastMsg,
-                              {
-                                color: item.unreadCount > 0 ? theme.text : theme.textSecondary,
-                                fontWeight: item.unreadCount > 0 ? '700' : '500',
-                              },
-                            ]}
-                            numberOfLines={1}
-                          >
-                            {previewLine}
-                          </Text>
-                        </View>
 
-                        <View style={styles.friendRightCol}>
-                          <Text style={[styles.timeText, { color: theme.textMuted }]}>
-                            {formatRelativeTime(last?.createdAt || fr.lastActiveAt)}
-                          </Text>
-                          {item.unreadCount > 0 ? (
-                            <View style={styles.unreadCountPill}>
-                              <Text style={styles.unreadCountText}>{item.unreadCount}</Text>
-                            </View>
-                          ) : (
-                            <TouchableOpacity
-                              onPress={() => {
-                                triggerSelectionHaptic();
-                                setSelectedProfileFriend(fr);
-                              }}
-                              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                            >
-                              <Ionicons
-                                name="stats-chart-outline"
-                                size={15}
-                                color={theme.textMuted}
-                              />
-                            </TouchableOpacity>
-                          )}
-                        </View>
-                      </TouchableOpacity>
-                    );
-                  })
+                          <View style={styles.friendRightCol}>
+                            <Text style={[styles.timeText, { color: theme.textMuted }]}>
+                              {formatRelativeTime(last?.createdAt || fr.lastActiveAt)}
+                            </Text>
+                            {item.unreadCount > 0 ? (
+                              <View style={styles.unreadCountPill}>
+                                <Text style={styles.unreadCountText}>{item.unreadCount}</Text>
+                              </View>
+                            ) : (
+                              <TouchableOpacity
+                                onPress={() => {
+                                  triggerSelectionHaptic();
+                                  setSelectedProfileFriend(fr);
+                                }}
+                                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                              >
+                                <Ionicons
+                                  name="stats-chart-outline"
+                                  size={15}
+                                  color={theme.textMuted}
+                                />
+                              </TouchableOpacity>
+                            )}
+                          </View>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </>
                 )}
               </View>
             )}
@@ -1041,6 +1080,32 @@ export const FriendsTab: React.FC<FriendsTabProps> = ({
                ===================================================== */}
             {subTab === 'rank' && (
               <View style={styles.subSection}>
+                {leaderboardEntries.length > 0 && (
+                  <>
+                    <Text style={{ fontSize: 10, fontWeight: '800', letterSpacing: 1.2, color: theme.textMuted }}>
+                      {t('friendsPodiumTitle')}
+                    </Text>
+                    <CrewPodiumStage
+                      entries={leaderboardEntries.slice(0, 3).map((e) => ({
+                        profile: e.profile,
+                        isMe: e.isMe,
+                        metricLabel:
+                          leaderboardMetric === 'streak'
+                            ? `${e.profile.streak} ${t('friendsDaysShort')}`
+                            : leaderboardMetric === 'workouts'
+                            ? `${e.profile.weeklyWorkouts}`
+                            : `${e.profile.overallRank} (${e.profile.overallProgressPct}%)`,
+                      }))}
+                      onSelectProfile={(prof, isMe) => {
+                        if (!isMe) {
+                          triggerSelectionHaptic();
+                          setSelectedProfileFriend(prof);
+                        }
+                      }}
+                    />
+                  </>
+                )}
+
                 <View style={styles.metricChipsRow}>
                   {(
                     [

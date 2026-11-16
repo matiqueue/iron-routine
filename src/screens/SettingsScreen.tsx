@@ -1,9 +1,12 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Animated,
+  Easing,
   LayoutAnimation,
   Linking,
+  PanResponder,
   Platform,
   ScrollView,
   Share,
@@ -65,7 +68,12 @@ import {
 import {
   buildAndPublishSocialProfile,
   claimNicknameInCloud,
+  ensureE2eeKeyRegistered,
 } from '../services/social';
+import {
+  formatPublicKeyFingerprint,
+  getOrCreateE2eeKeyPair,
+} from '../utils/e2ee';
 import {
   generateRandomNickname,
   getNicknameCooldownInfo,
@@ -96,6 +104,19 @@ const INTENSITY_OPTIONS: Array<{ value: AppSettings['hapticsIntensity']; labelKe
 ];
 
 const REST_PRESETS = [60, 90, 120, 180];
+
+type SettingsSubTab = 'profile' | 'training' | 'system' | 'data';
+
+const SETTINGS_TABS: Array<{
+  key: SettingsSubTab;
+  icon: keyof typeof Ionicons.glyphMap;
+  labelKey: 'settingsTabProfile' | 'settingsTabTraining' | 'settingsTabSystem' | 'settingsTabData';
+}> = [
+  { key: 'profile', icon: 'person-outline', labelKey: 'settingsTabProfile' },
+  { key: 'training', icon: 'barbell-outline', labelKey: 'settingsTabTraining' },
+  { key: 'system', icon: 'options-outline', labelKey: 'settingsTabSystem' },
+  { key: 'data', icon: 'shield-checkmark-outline', labelKey: 'settingsTabData' },
+];
 
 export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   activeProfile,
@@ -137,6 +158,122 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   const [showImportSheet, setShowImportSheet] = useState(false);
   const [importJsonText, setImportJsonText] = useState('');
   const [isBusyIO, setIsBusyIO] = useState(false);
+
+  const [settingsTab, setSettingsTab] = useState<SettingsSubTab>('profile');
+  const settingsTabRef = useRef<SettingsSubTab>('profile');
+  const [segWidth, setSegWidth] = useState(0);
+  const segWidthRef = useRef(0);
+  const segStartIdxRef = useRef(0);
+  const segThumbAnim = useRef(new Animated.Value(0)).current;
+  const segThumbScale = useRef(new Animated.Value(1)).current;
+  const tabContentFade = useRef(new Animated.Value(1)).current;
+  const tabContentSlide = useRef(new Animated.Value(0)).current;
+  const [e2eeFingerprint, setE2eeFingerprint] = useState('---- · ---- · ---- · ----');
+
+  const switchSettingsTab = useCallback(
+    (next: SettingsSubTab) => {
+      if (next === settingsTabRef.current) return;
+      const curIdx = SETTINGS_TABS.findIndex((s) => s.key === settingsTabRef.current);
+      const nextIdx = SETTINGS_TABS.findIndex((s) => s.key === next);
+      const dir = nextIdx >= curIdx ? 1 : -1;
+      settingsTabRef.current = next;
+      setSettingsTab(next);
+      tabContentFade.setValue(0.3);
+      tabContentSlide.setValue(dir * 14);
+      Animated.parallel([
+        Animated.timing(tabContentFade, {
+          toValue: 1,
+          duration: 210,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.spring(tabContentSlide, {
+          toValue: 0,
+          friction: 9,
+          tension: 95,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    },
+    [tabContentFade, tabContentSlide]
+  );
+
+  useEffect(() => {
+    settingsTabRef.current = settingsTab;
+    const idx = Math.max(0, SETTINGS_TABS.findIndex((s) => s.key === settingsTab));
+    Animated.spring(segThumbAnim, {
+      toValue: idx,
+      friction: 7,
+      tension: 92,
+      useNativeDriver: true,
+    }).start();
+  }, [settingsTab, segThumbAnim]);
+
+  const segPanResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => false,
+        onMoveShouldSetPanResponder: (_, g) =>
+          Math.abs(g.dx) > 5 && Math.abs(g.dx) > Math.abs(g.dy),
+        onMoveShouldSetPanResponderCapture: (_, g) =>
+          Math.abs(g.dx) > 6 && Math.abs(g.dx) > Math.abs(g.dy),
+        onPanResponderGrant: () => {
+          segStartIdxRef.current = Math.max(
+            0,
+            SETTINGS_TABS.findIndex((s) => s.key === settingsTabRef.current)
+          );
+          Animated.spring(segThumbScale, {
+            toValue: 0.96,
+            friction: 7,
+            tension: 120,
+            useNativeDriver: true,
+          }).start();
+        },
+        onPanResponderMove: (_, g) => {
+          const totalW = segWidthRef.current;
+          const slotW = totalW > 10 ? (totalW - 8) / SETTINGS_TABS.length : 72;
+          const rawIdx = segStartIdxRef.current + g.dx / slotW;
+          const clamped = Math.max(0, Math.min(SETTINGS_TABS.length - 1, rawIdx));
+          segThumbAnim.setValue(clamped);
+          const nextTab = SETTINGS_TABS[Math.round(clamped)]?.key;
+          if (nextTab && nextTab !== settingsTabRef.current) {
+            triggerSelectionHaptic();
+            switchSettingsTab(nextTab);
+          }
+        },
+        onPanResponderRelease: () => {
+          const idx = Math.max(
+            0,
+            SETTINGS_TABS.findIndex((s) => s.key === settingsTabRef.current)
+          );
+          Animated.parallel([
+            Animated.spring(segThumbAnim, {
+              toValue: idx,
+              friction: 7,
+              tension: 92,
+              useNativeDriver: true,
+            }),
+            Animated.spring(segThumbScale, {
+              toValue: 1,
+              friction: 6,
+              tension: 120,
+              useNativeDriver: true,
+            }),
+          ]).start();
+        },
+      }),
+    [segThumbAnim, segThumbScale, switchSettingsTab]
+  );
+
+  useEffect(() => {
+    const uid = cloudSession?.userId || activeProfile.cloudUserId || 'device';
+    getOrCreateE2eeKeyPair(uid)
+      .then((kp) => setE2eeFingerprint(formatPublicKeyFingerprint(kp.publicKey)))
+      .catch(() => {});
+    if (cloudSession?.token) {
+      void ensureE2eeKeyRegistered();
+    }
+  }, [cloudSession?.userId, cloudSession?.token, activeProfile.cloudUserId]);
 
   useEffect(() => {
     setNameInput(activeProfile.name || '');
@@ -517,18 +654,86 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
     weightInput.trim() !== savedWeight ||
     genderInput !== (activeProfile.gender || 'male');
 
+  const slotWidth = segWidth > 10 ? (segWidth - 8) / SETTINGS_TABS.length : 0;
+  const settingsThumbX = segThumbAnim.interpolate({
+    inputRange: [0, 1, 2, 3],
+    outputRange: [0, slotWidth, slotWidth * 2, slotWidth * 3],
+  });
+
   return (
     <View style={[styles.container, { backgroundColor: theme.bg }]}>
       <MinimalistBackdrop variant="dots" accentColor="#10B981" />
-      {/* Open Editorial Header */}
-      <View style={[styles.header, { borderBottomColor: theme.hairline, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }]}>
-        <View style={{ flex: 1, minWidth: 0 }}>
-          <Text style={[styles.headerTitle, { color: theme.text }]}>{t('settingsTitle')}</Text>
-          <Text style={[styles.headerSub, { color: theme.textMuted }]}>
-            {t('settingsSectionProfile')} · {t('settingsSectionSupps')}
-          </Text>
+      {/* Open Editorial Header + Tabbed Segmented Switcher */}
+      <View style={[styles.header, { borderBottomColor: theme.hairline }]}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={[styles.headerTitle, { color: theme.text }]}>{t('settingsTitle')}</Text>
+            <Text style={[styles.headerSub, { color: theme.textMuted }]} numberOfLines={1}>
+              {savedNick ? `@${savedNick} · ` : ''}
+              {t(SETTINGS_TABS.find((tab) => tab.key === settingsTab)?.labelKey || 'settingsTabProfile')}
+            </Text>
+          </View>
+          <LanguageSwitcher variant="pill" />
         </View>
-        <LanguageSwitcher variant="pill" />
+
+        <View
+          {...segPanResponder.panHandlers}
+          onLayout={(e) => {
+            const w = e.nativeEvent.layout.width;
+            segWidthRef.current = w;
+            setSegWidth(w);
+          }}
+          style={[
+            styles.settingsSegDock,
+            {
+              backgroundColor: isDark ? 'rgba(24,24,28,0.85)' : 'rgba(244,244,246,0.92)',
+              borderColor: theme.border,
+            },
+          ]}
+        >
+          {slotWidth > 0 && (
+            <Animated.View
+              pointerEvents="none"
+              style={[
+                styles.settingsSegThumb,
+                {
+                  width: slotWidth,
+                  backgroundColor: isDark ? '#FAFAFA' : '#111114',
+                  transform: [{ translateX: settingsThumbX }, { scale: segThumbScale }],
+                },
+              ]}
+            />
+          )}
+          {SETTINGS_TABS.map((tab) => {
+            const active = settingsTab === tab.key;
+            return (
+              <TouchableOpacity
+                key={tab.key}
+                style={styles.settingsSegBtn}
+                onPress={() => {
+                  triggerSelectionHaptic();
+                  switchSettingsTab(tab.key);
+                }}
+                activeOpacity={0.8}
+              >
+                <Ionicons
+                  name={tab.icon}
+                  size={14}
+                  color={active ? (isDark ? '#09090B' : '#FFFFFF') : theme.textMuted}
+                />
+                <Text
+                  style={[
+                    styles.settingsSegText,
+                    { color: active ? (isDark ? '#09090B' : '#FFFFFF') : theme.textSecondary },
+                  ]}
+                  numberOfLines={1}
+                >
+                  {t(tab.labelKey)}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
       </View>
 
       <ScrollView
@@ -536,6 +741,14 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
+        <Animated.View
+          style={{
+            opacity: tabContentFade,
+            transform: [{ translateX: tabContentSlide }],
+          }}
+        >
+        {settingsTab === 'profile' && (
+          <>
         {/* =========================================================
             CLOUD LINK PROMPT (ONLY VISIBLE WHEN NOT LOGGED IN)
            ========================================================= */}
@@ -792,6 +1005,46 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               )}
             </TouchableOpacity>
           )}
+        </View>
+          </>
+        )}
+
+        {settingsTab === 'system' && (
+          <>
+        {/* =========================================================
+            APPEARANCE & LANGUAGE QUICK PANEL
+           ========================================================= */}
+        <View style={[styles.openSection, { borderBottomColor: theme.hairline }]}>
+          <View style={styles.sectionHeaderRow}>
+            <View>
+              <Text style={[styles.sectionEyebrow, { color: theme.textMuted }]}>
+                {t('settingsSectionAppearance')}
+              </Text>
+              <Text style={[styles.sectionHeading, { color: theme.text }]}>
+                {t('settingsAppearanceHeading')}
+              </Text>
+            </View>
+          </View>
+
+          <LanguageSwitcher variant="row" />
+
+          <View style={styles.openSwitchLine}>
+            <View style={styles.switchLabelWrap}>
+              <Text style={[styles.rowTitle, { color: theme.text }]}>{t('settingsDarkMode')}</Text>
+              <Text style={[styles.rowSub, { color: theme.textSecondary }]}>
+                {t('settingsDarkModeSub')}
+              </Text>
+            </View>
+            <Switch
+              value={isDark}
+              onValueChange={() => {
+                triggerSelectionHaptic();
+                toggleTheme();
+              }}
+              trackColor={switchTrack}
+              thumbColor={switchThumb}
+            />
+          </View>
         </View>
 
         {/* =========================================================
@@ -1102,6 +1355,48 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             </View>
           )}
         </View>
+          </>
+        )}
+
+        {settingsTab === 'training' && (
+          <>
+        {/* =========================================================
+            EXERCISE DATABASE & FAVORITES
+           ========================================================= */}
+        <View style={[styles.openSection, { borderBottomColor: theme.hairline }]}>
+          <View style={styles.sectionHeaderRow}>
+            <View>
+              <Text style={[styles.sectionEyebrow, { color: '#38BDF8' }]}>
+                {t('tabPlan').toUpperCase()}
+              </Text>
+              <Text style={[styles.sectionHeading, { color: theme.text }]}>
+                {t('settingsExerciseDb')}
+              </Text>
+            </View>
+          </View>
+          <TouchableOpacity
+            style={styles.openActionLine}
+            onPress={() => {
+              triggerSelectionHaptic();
+              setShowExerciseLibrary(true);
+            }}
+            activeOpacity={0.75}
+          >
+            <View style={styles.switchLabelWrap}>
+              <Text style={[styles.rowSub, { color: theme.textSecondary, marginTop: 0 }]}>
+                {t('settingsExerciseDbSub', {
+                  base: EXERCISE_LIBRARY.length,
+                  custom: customCount,
+                  fav: favoriteCount,
+                })}
+              </Text>
+            </View>
+            <View style={[styles.smallActionPill, { backgroundColor: theme.text }]}>
+              <Text style={[styles.smallActionPillText, { color: theme.bg }]}>{t('open')}</Text>
+              <Ionicons name="chevron-forward" size={13} color={theme.bg} />
+            </View>
+          </TouchableOpacity>
+        </View>
 
         {/* =========================================================
             SECTION 5: SUPPLEMENTS & HEALTH INTEGRATION
@@ -1205,65 +1500,59 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             </View>
           )}
         </View>
+          </>
+        )}
 
+        {settingsTab === 'data' && (
+          <>
         {/* =========================================================
-            SECTION 6: APPEARANCE, EXERCISE LIBRARY & LOCAL JSON
+            E2EE CHAT SECURITY FINGERPRINT & BACKUPS
            ========================================================= */}
         <View style={[styles.openSection, { borderBottomColor: theme.hairline }]}>
           <View style={styles.sectionHeaderRow}>
             <View>
-              <Text style={[styles.sectionEyebrow, { color: theme.textMuted }]}>
-                {t('settingsSectionAppearance')}
+              <Text style={[styles.sectionEyebrow, { color: '#10B981' }]}>
+                {t('e2eeBadgeLabel').toUpperCase()}
               </Text>
               <Text style={[styles.sectionHeading, { color: theme.text }]}>
-                {t('settingsAppearanceHeading')}
+                Curve25519 · E2EE
               </Text>
+            </View>
+            <View style={[styles.statusBadge, { backgroundColor: 'rgba(16, 185, 129, 0.14)' }]}>
+              <Ionicons name="lock-closed" size={12} color="#10B981" />
+              <Text style={[styles.statusBadgeText, { color: '#10B981' }]}>AES / NaCl</Text>
             </View>
           </View>
 
-          <LanguageSwitcher variant="row" />
+          <Text style={[styles.sectionLead, { color: theme.textSecondary }]}>
+            {t('e2eeSecurityHint')}
+          </Text>
 
-          <View style={[styles.openSwitchLine, { borderBottomColor: theme.hairline }]}>
-            <View style={styles.switchLabelWrap}>
-              <Text style={[styles.rowTitle, { color: theme.text }]}>{t('settingsDarkMode')}</Text>
-              <Text style={[styles.rowSub, { color: theme.textSecondary }]}>
-                {t('settingsDarkModeSub')}
-              </Text>
-            </View>
-            <Switch
-              value={isDark}
-              onValueChange={() => {
-                triggerSelectionHaptic();
-                toggleTheme();
-              }}
-              trackColor={switchTrack}
-              thumbColor={switchThumb}
-            />
-          </View>
-
-          <TouchableOpacity
-            style={[styles.openActionLine, { borderBottomColor: theme.hairline }]}
-            onPress={() => {
-              triggerSelectionHaptic();
-              setShowExerciseLibrary(true);
+          <View
+            style={{
+              backgroundColor: theme.bgSecondary,
+              borderRadius: 14,
+              padding: 13,
+              marginBottom: 16,
+              borderWidth: StyleSheet.hairlineWidth,
+              borderColor: theme.border,
             }}
-            activeOpacity={0.75}
           >
-            <View style={styles.switchLabelWrap}>
-              <Text style={[styles.rowTitle, { color: theme.text }]}>{t('settingsExerciseDb')}</Text>
-              <Text style={[styles.rowSub, { color: theme.textSecondary }]}>
-                {t('settingsExerciseDbSub', {
-                  base: EXERCISE_LIBRARY.length,
-                  custom: customCount,
-                  fav: favoriteCount,
-                })}
-              </Text>
-            </View>
-            <View style={[styles.smallActionPill, { backgroundColor: theme.text }]}>
-              <Text style={[styles.smallActionPillText, { color: theme.bg }]}>{t('open')}</Text>
-              <Ionicons name="chevron-forward" size={13} color={theme.bg} />
-            </View>
-          </TouchableOpacity>
+            <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>
+              {t('e2eeFingerprintLabel')}
+            </Text>
+            <Text
+              style={{
+                fontSize: 13.5,
+                fontWeight: '900',
+                color: '#10B981',
+                letterSpacing: 1,
+                fontVariant: ['tabular-nums'],
+              }}
+            >
+              {e2eeFingerprint}
+            </Text>
+          </View>
 
           <View style={styles.ioButtonsRow}>
             <TouchableOpacity
@@ -1349,6 +1638,9 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             <Text style={styles.resetDangerText}>{t('resetLocalDanger')}</Text>
           </TouchableOpacity>
         </View>
+          </>
+        )}
+        </Animated.View>
       </ScrollView>
 
       {/* Custom Exercise Library Modal */}
@@ -1440,6 +1732,36 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     marginTop: 2,
+  },
+  settingsSegDock: {
+    position: 'relative',
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: 40,
+    borderRadius: 20,
+    paddingHorizontal: 4,
+    borderWidth: StyleSheet.hairlineWidth,
+    marginTop: 12,
+  },
+  settingsSegThumb: {
+    position: 'absolute',
+    top: 4,
+    bottom: 4,
+    left: 4,
+    borderRadius: 16,
+  },
+  settingsSegBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    height: '100%',
+    zIndex: 2,
+  },
+  settingsSegText: {
+    fontSize: 11.5,
+    fontWeight: '800',
   },
   scrollContent: {
     paddingHorizontal: 20,

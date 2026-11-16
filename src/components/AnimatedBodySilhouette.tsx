@@ -183,39 +183,39 @@ function getMuscleFillStyle(
   let fillOpacity = isDark ? 0.48 : 0.54;
 
   if (stat.priorityStatus === 'neglected' || stat.priorityStatus === 'lagging') {
-    fill = '#FDE047';
-    fillOpacity = isDark ? 0.45 : 0.64;
+    fill = isDark ? '#FFE033' : '#FACC15';
+    fillOpacity = isDark ? 0.84 : 0.88;
   } else if (stat.priorityStatus === 'balanced') {
-    fill = '#10B981';
-    fillOpacity = isDark ? 0.46 : 0.52;
+    fill = isDark ? '#22C55E' : '#10B981';
+    fillOpacity = isDark ? 0.82 : 0.85;
   } else {
-    fill = '#38BDF8';
-    fillOpacity = isDark ? 0.52 : 0.58;
+    fill = isDark ? '#38BDF8' : '#0EA5E9';
+    fillOpacity = isDark ? 0.86 : 0.88;
   }
 
   const strokeColor =
     stat.priorityStatus === 'neglected' || stat.priorityStatus === 'lagging'
       ? isDark
         ? '#FEF08A'
-        : '#EAB308'
+        : '#CA8A04'
       : fill;
 
   if (hasAnySelection) {
     if (isSelected) {
       return {
         fill,
-        fillOpacity: 0.74,
+        fillOpacity: 0.96,
         stroke: isDark ? '#FFFFFF' : '#09090B',
         strokeWidth: 2.8,
-        strokeOpacity: 0.95,
+        strokeOpacity: 0.98,
       };
     }
     return {
       fill,
-      fillOpacity: 0.2,
+      fillOpacity: 0.28,
       stroke: baseStroke,
       strokeWidth: 0.9,
-      strokeOpacity: 0.4,
+      strokeOpacity: 0.45,
     };
   }
 
@@ -223,8 +223,8 @@ function getMuscleFillStyle(
     fill,
     fillOpacity,
     stroke: strokeColor,
-    strokeWidth: 1.15,
-    strokeOpacity: 0.68,
+    strokeWidth: 1.35,
+    strokeOpacity: 0.88,
   };
 }
 
@@ -472,9 +472,9 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = Rea
   const activityLegend = useMemo(
     () => [
       { label: t('legendNoSets'), color: isDark ? '#3F3F46' : '#D4D4D8' },
-      { label: t('legendLowVol'), color: isDark ? '#FDE047' : '#FACC15' },
-      { label: t('legendBalanced'), color: '#10B981' },
-      { label: t('legendDominant'), color: '#38BDF8' },
+      { label: t('legendLowVol'), color: isDark ? '#FFE033' : '#FACC15' },
+      { label: t('legendBalanced'), color: isDark ? '#22C55E' : '#10B981' },
+      { label: t('legendDominant'), color: isDark ? '#38BDF8' : '#0EA5E9' },
     ],
     [isDark, t]
   );
@@ -739,7 +739,7 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = Rea
             <View
               style={[
                 styles.legendSwatch,
-                { backgroundColor: item.color, opacity: 0.72 },
+                { backgroundColor: item.color, opacity: 0.96 },
               ]}
             />
             <Text style={[styles.legendText, { color: theme.textSecondary }]}>

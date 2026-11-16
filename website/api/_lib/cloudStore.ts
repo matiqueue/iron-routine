@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { del, get, put } from '@vercel/blob';
+import { ensureSchema, getSql } from './db.js';
 
 export type CloudAuthProvider = 'apple' | 'google';
 
@@ -11,8 +11,8 @@ export interface CloudUserRecord {
   displayName: string;
   nickname?: string;
   nicknameUpdatedAt?: string;
-  pinSalt?: string;
-  pinHash?: string;
+  e2eePublicKey?: string;
+  e2eeKeyUpdatedAt?: string;
   createdAt: string;
   updatedAt: string;
   lastSyncedAt?: string;
@@ -44,6 +44,9 @@ export interface OAuthAttemptRecord {
     email: string;
     provider: CloudAuthProvider;
     displayName: string;
+    nickname?: string | null;
+    nicknameUpdatedAt?: string | null;
+    e2eePublicKey?: string | null;
     lastSyncedAt?: string | null;
     backupSummary?: CloudUserRecord['backupSummary'] | null;
   };
@@ -57,7 +60,7 @@ function getSecret(): string {
   return (
     process.env.CLOUD_AUTH_SECRET ||
     process.env.CLERK_SECRET_KEY ||
-    process.env.BLOB_READ_WRITE_TOKEN ||
+    process.env.DATABASE_URL ||
     FALLBACK_SECRET
   );
 }
@@ -74,17 +77,6 @@ export function deriveUserId(identifier: string): string {
     .digest('hex')
     .slice(0, 28);
   return `usr_${hash}`;
-}
-
-export function hashPin(pin: string, salt: string): string {
-  return crypto.scryptSync(pin.trim(), salt, 32).toString('hex');
-}
-
-export function verifyPin(pin: string, salt: string, expectedHash: string): boolean {
-  const computed = Buffer.from(hashPin(pin, salt), 'hex');
-  const expected = Buffer.from(expectedHash, 'hex');
-  if (computed.length !== expected.length) return false;
-  return crypto.timingSafeEqual(computed, expected);
 }
 
 export function signCloudToken(payload: Omit<SignedTokenPayload, 'iat' | 'exp'>): string {
@@ -133,25 +125,25 @@ export function verifyCloudToken(rawToken?: string | null): SignedTokenPayload |
   }
 }
 
-export function encryptJsonPayload(rawJson: string): string {
+export function encryptJsonPayload(rawJson: string): Record<string, unknown> {
   const iv = crypto.randomBytes(12);
   const key = getEncryptionKey();
   const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
   const encrypted = Buffer.concat([cipher.update(rawJson, 'utf8'), cipher.final()]);
   const tag = cipher.getAuthTag();
-  return JSON.stringify({
+  return {
     v: 1,
     alg: 'aes-256-gcm',
     iv: iv.toString('base64'),
     tag: tag.toString('base64'),
     data: encrypted.toString('base64'),
-  });
+  };
 }
 
-export function decryptJsonPayload(storedText: string): string {
-  const parsed = JSON.parse(storedText);
+export function decryptJsonPayload(stored: any): string {
+  const parsed = typeof stored === 'string' ? JSON.parse(stored) : stored;
   if (!parsed || parsed.v !== 1 || !parsed.iv || !parsed.tag || !parsed.data) {
-    return storedText;
+    return typeof stored === 'string' ? stored : JSON.stringify(stored);
   }
   const key = getEncryptionKey();
   const decipher = crypto.createDecipheriv(
@@ -167,95 +159,178 @@ export function decryptJsonPayload(storedText: string): string {
   return decrypted.toString('utf8');
 }
 
-export async function readPrivateDocument(pathname: string): Promise<string | null> {
-  try {
-    const result = await get(pathname, { access: 'private' });
-    if (!result || result.statusCode !== 200 || !result.stream) return null;
-    const response = new Response(result.stream);
-    return await response.text();
-  } catch {
-    return null;
-  }
-}
-
-export async function writePrivateDocument(pathname: string, content: string): Promise<void> {
-  await put(pathname, content, {
-    access: 'private',
-    contentType: 'application/json',
-    addRandomSuffix: false,
-    allowOverwrite: true,
-  });
-}
-
-export async function deletePrivateDocuments(pathnames: string[]): Promise<void> {
-  try {
-    if (pathnames.length > 0) {
-      await del(pathnames);
-    }
-  } catch {}
+function mapUserRow(row: any): CloudUserRecord | null {
+  if (!row) return null;
+  return {
+    userId: String(row.user_id),
+    clerkUserId: row.clerk_user_id || null,
+    email: String(row.email),
+    provider: row.provider === 'apple' ? 'apple' : 'google',
+    displayName: String(row.display_name),
+    nickname: row.nickname || undefined,
+    nicknameUpdatedAt: row.nickname_updated_at
+      ? new Date(row.nickname_updated_at).toISOString()
+      : undefined,
+    e2eePublicKey: row.e2ee_public_key || undefined,
+    e2eeKeyUpdatedAt: row.e2ee_key_updated_at
+      ? new Date(row.e2ee_key_updated_at).toISOString()
+      : undefined,
+    backupSummary: row.backup_summary || undefined,
+    lastSyncedAt: row.last_synced_at
+      ? new Date(row.last_synced_at).toISOString()
+      : undefined,
+    createdAt: row.created_at ? new Date(row.created_at).toISOString() : new Date().toISOString(),
+    updatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : new Date().toISOString(),
+  };
 }
 
 export async function getCloudUser(userId: string): Promise<CloudUserRecord | null> {
-  const raw = await readPrivateDocument(`nosql/users/${userId}.json`);
-  if (!raw) return null;
-  try {
-    return JSON.parse(raw) as CloudUserRecord;
-  } catch {
-    return null;
-  }
+  await ensureSchema();
+  const sql = getSql();
+  const rows: any[] = await sql`
+    SELECT * FROM users WHERE user_id = ${userId} LIMIT 1
+  `;
+  return mapUserRow(rows[0]);
 }
 
 export async function saveCloudUser(user: CloudUserRecord): Promise<void> {
-  await writePrivateDocument(`nosql/users/${user.userId}.json`, JSON.stringify(user));
+  await ensureSchema();
+  const sql = getSql();
+  await sql`
+    INSERT INTO users (
+      user_id,
+      clerk_user_id,
+      email,
+      provider,
+      display_name,
+      nickname,
+      nickname_updated_at,
+      e2ee_public_key,
+      e2ee_key_updated_at,
+      backup_summary,
+      last_synced_at,
+      created_at,
+      updated_at
+    ) VALUES (
+      ${user.userId},
+      ${user.clerkUserId || null},
+      ${user.email},
+      ${user.provider},
+      ${user.displayName},
+      ${user.nickname || null},
+      ${user.nicknameUpdatedAt || null},
+      ${user.e2eePublicKey || null},
+      ${user.e2eeKeyUpdatedAt || null},
+      ${user.backupSummary ? JSON.stringify(user.backupSummary) : null}::jsonb,
+      ${user.lastSyncedAt || null},
+      ${user.createdAt || new Date().toISOString()},
+      ${user.updatedAt || new Date().toISOString()}
+    )
+    ON CONFLICT (user_id) DO UPDATE SET
+      clerk_user_id = COALESCE(EXCLUDED.clerk_user_id, users.clerk_user_id),
+      email = EXCLUDED.email,
+      provider = EXCLUDED.provider,
+      display_name = EXCLUDED.display_name,
+      nickname = COALESCE(EXCLUDED.nickname, users.nickname),
+      nickname_updated_at = COALESCE(EXCLUDED.nickname_updated_at, users.nickname_updated_at),
+      e2ee_public_key = COALESCE(EXCLUDED.e2ee_public_key, users.e2ee_public_key),
+      e2ee_key_updated_at = COALESCE(EXCLUDED.e2ee_key_updated_at, users.e2ee_key_updated_at),
+      backup_summary = COALESCE(EXCLUDED.backup_summary, users.backup_summary),
+      last_synced_at = COALESCE(EXCLUDED.last_synced_at, users.last_synced_at),
+      updated_at = NOW()
+  `;
 }
 
 export async function getCloudBackupJson(userId: string): Promise<string | null> {
-  const raw = await readPrivateDocument(`nosql/backups/${userId}.json`);
-  if (!raw) return null;
+  await ensureSchema();
+  const sql = getSql();
+  const rows: any[] = await sql`
+    SELECT encrypted_blob FROM cloud_backups WHERE user_id = ${userId} LIMIT 1
+  `;
+  if (!rows[0]?.encrypted_blob) return null;
   try {
-    return decryptJsonPayload(raw);
+    return decryptJsonPayload(rows[0].encrypted_blob);
   } catch {
     return null;
   }
 }
 
 export async function saveCloudBackupJson(userId: string, backupJson: string): Promise<void> {
+  await ensureSchema();
+  const sql = getSql();
   const encrypted = encryptJsonPayload(backupJson);
-  await writePrivateDocument(`nosql/backups/${userId}.json`, encrypted);
+  await sql`
+    INSERT INTO cloud_backups (user_id, encrypted_blob, updated_at)
+    VALUES (${userId}, ${JSON.stringify(encrypted)}::jsonb, NOW())
+    ON CONFLICT (user_id) DO UPDATE SET
+      encrypted_blob = EXCLUDED.encrypted_blob,
+      updated_at = NOW()
+  `;
 }
 
 export async function deleteCloudUserAndBackup(userId: string): Promise<void> {
-  try {
-    await del([`nosql/users/${userId}.json`, `nosql/backups/${userId}.json`]);
-  } catch {}
+  await ensureSchema();
+  const sql = getSql();
+  await sql`DELETE FROM users WHERE user_id = ${userId}`;
 }
 
 export async function saveOAuthAttempt(
   attemptId: string,
   payload: OAuthAttemptRecord
 ): Promise<void> {
-  await writePrivateDocument(`nosql/attempts/${attemptId}.json`, JSON.stringify(payload));
+  await ensureSchema();
+  const sql = getSql();
+  await sql`
+    INSERT INTO oauth_attempts (
+      attempt_id, provider, status, is_new_account, token, user_payload, created_at, completed_at
+    ) VALUES (
+      ${attemptId},
+      ${payload.provider || 'google'},
+      ${payload.status},
+      ${Boolean(payload.isNewAccount)},
+      ${payload.token || null},
+      ${payload.user ? JSON.stringify(payload.user) : null}::jsonb,
+      ${payload.createdAt || new Date().toISOString()},
+      ${payload.completedAt || null}
+    )
+    ON CONFLICT (attempt_id) DO UPDATE SET
+      status = EXCLUDED.status,
+      is_new_account = EXCLUDED.is_new_account,
+      token = EXCLUDED.token,
+      user_payload = EXCLUDED.user_payload,
+      completed_at = EXCLUDED.completed_at
+  `;
 }
 
 export async function getOAuthAttempt(attemptId: string): Promise<OAuthAttemptRecord | null> {
-  const raw = await readPrivateDocument(`nosql/attempts/${attemptId}.json`);
-  if (!raw) return null;
-  try {
-    return JSON.parse(raw) as OAuthAttemptRecord;
-  } catch {
-    return null;
-  }
+  await ensureSchema();
+  const sql = getSql();
+  const rows: any[] = await sql`
+    SELECT * FROM oauth_attempts WHERE attempt_id = ${attemptId} LIMIT 1
+  `;
+  const row = rows[0];
+  if (!row) return null;
+  return {
+    attemptId: String(row.attempt_id),
+    provider: row.provider === 'apple' ? 'apple' : 'google',
+    status: row.status === 'completed' ? 'completed' : 'pending',
+    isNewAccount: Boolean(row.is_new_account),
+    token: row.token || undefined,
+    user: row.user_payload || undefined,
+    createdAt: row.created_at ? new Date(row.created_at).toISOString() : undefined,
+    completedAt: row.completed_at ? new Date(row.completed_at).toISOString() : undefined,
+  };
 }
 
 export async function deleteOAuthAttempt(attemptId: string): Promise<void> {
-  try {
-    await del([`nosql/attempts/${attemptId}.json`]);
-  } catch {}
+  await ensureSchema();
+  const sql = getSql();
+  await sql`DELETE FROM oauth_attempts WHERE attempt_id = ${attemptId}`;
 }
 
 /**
  * Verifies or creates a user in Clerk Backend API so every Google / iCloud account
- * is registered in Clerk and assigned to the user's NoSQL record.
+ * is registered in Clerk and linked to their PostgreSQL record.
  */
 export async function syncClerkAccount(params: {
   clerkUserId?: string;
@@ -275,11 +350,8 @@ export async function syncClerkAccount(params: {
   };
 
   try {
-    // 1. If a clerkUserId was provided by Clerk OAuth, verify it directly
     if (clerkUserId && clerkUserId.startsWith('user_')) {
-      const res = await fetch(`https://api.clerk.com/v1/users/${clerkUserId}`, {
-        headers,
-      });
+      const res = await fetch(`https://api.clerk.com/v1/users/${clerkUserId}`, { headers });
       if (res.ok) {
         const clerkUser: any = await res.json();
         await fetch(`https://api.clerk.com/v1/users/${clerkUser.id}/metadata`, {
@@ -293,22 +365,16 @@ export async function syncClerkAccount(params: {
             },
           }),
         }).catch(() => {});
-        const primaryEmail =
-          clerkUser.email_addresses?.[0]?.email_address || email || '';
+        const primaryEmail = clerkUser.email_addresses?.[0]?.email_address || email || '';
         const fullName =
           [clerkUser.first_name, clerkUser.last_name].filter(Boolean).join(' ') ||
           displayName ||
           primaryEmail.split('@')[0] ||
-          'Użytkownik';
-        return {
-          clerkUserId: clerkUser.id,
-          email: primaryEmail,
-          displayName: fullName,
-        };
+          'Athlete';
+        return { clerkUserId: clerkUser.id, email: primaryEmail, displayName: fullName };
       }
     }
 
-    // 2. Look up by external_id or email_address in Clerk
     const queryParam = externalId
       ? `external_id=${encodeURIComponent(externalId)}`
       : `email_address=${encodeURIComponent(email)}`;
@@ -332,19 +398,17 @@ export async function syncClerkAccount(params: {
         }).catch(() => {});
         return {
           clerkUserId: existingClerk.id,
-          email:
-            existingClerk.email_addresses?.[0]?.email_address || email,
+          email: existingClerk.email_addresses?.[0]?.email_address || email,
           displayName:
             [existingClerk.first_name, existingClerk.last_name]
               .filter(Boolean)
               .join(' ') ||
             displayName ||
-            'Użytkownik',
+            'Athlete',
         };
       }
     }
 
-    // 3. Create user in Clerk Backend API so they appear in Clerk Dashboard with their provider
     const createBody = {
       external_id: externalId || ironRoutineUserId,
       first_name: displayName || (provider === 'apple' ? 'Apple iCloud' : 'Google User'),
@@ -370,7 +434,7 @@ export async function syncClerkAccount(params: {
         displayName:
           [createdClerk.first_name, createdClerk.last_name].filter(Boolean).join(' ') ||
           displayName ||
-          'Użytkownik',
+          'Athlete',
       };
     }
   } catch (err) {
