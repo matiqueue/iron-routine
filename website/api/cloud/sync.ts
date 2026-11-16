@@ -57,7 +57,7 @@ export default {
       } catch (error) {
         console.error('Cloud sync GET error:', error);
         return jsonResponse(
-          { ok: false, error: 'Nie udało się pobrać danych z chmury NoSQL.' },
+          { ok: false, error: 'Nie udało się pobrać danych z chmury PostgreSQL.' },
           500
         );
       }
@@ -119,7 +119,7 @@ export default {
       } catch (error) {
         console.error('Cloud sync POST error:', error);
         return jsonResponse(
-          { ok: false, error: 'Nie udało się zapisać danych w chmurze NoSQL.' },
+          { ok: false, error: 'Nie udało się zapisać danych w bazie PostgreSQL.' },
           500
         );
       }

@@ -1,25 +1,15 @@
 import { Platform } from 'react-native';
-import {
-  AuthorizationRequestStatus,
-  CategoryValueSleepAnalysis,
-  getRequestStatusForAuthorization,
-  isHealthDataAvailableAsync,
-  queryCategorySamples,
-  queryStatisticsForQuantity,
-  requestAuthorization,
-} from '@kingstinct/react-native-healthkit';
-import {
-  aggregateRecord,
-  getGrantedPermissions,
-  getSdkStatus,
-  initialize as initializeHealthConnect,
-  readRecords,
-  requestPermission as requestHealthConnectPermission,
-  SdkAvailabilityStatus,
-} from 'react-native-health-connect';
 import { HealthDailySummary } from '../types/workout';
 import { getCurrentAppLanguage } from './settings';
 import { getLocaleCode, translateText } from '../i18n/translations';
+
+function getIosHealthKit(): typeof import('@kingstinct/react-native-healthkit') {
+  return require('@kingstinct/react-native-healthkit');
+}
+
+function getAndroidHealthConnect(): typeof import('react-native-health-connect') {
+  return require('react-native-health-connect');
+}
 
 const IOS_READ_IDENTIFIERS = [
   'HKQuantityTypeIdentifierStepCount',
@@ -81,9 +71,11 @@ function sumMergedDurationHours(intervals: Array<[number, number]>): number | nu
 export async function isPlatformHealthAvailable(): Promise<boolean> {
   try {
     if (Platform.OS === 'ios') {
+      const { isHealthDataAvailableAsync } = getIosHealthKit();
       return await isHealthDataAvailableAsync();
     }
     if (Platform.OS === 'android') {
+      const { getSdkStatus, SdkAvailabilityStatus } = getAndroidHealthConnect();
       const status = await getSdkStatus();
       return status === SdkAvailabilityStatus.SDK_AVAILABLE;
     }
@@ -96,6 +88,7 @@ export async function isPlatformHealthAvailable(): Promise<boolean> {
 export async function requestHealthPermissions(): Promise<boolean> {
   try {
     if (Platform.OS === 'ios') {
+      const { isHealthDataAvailableAsync, requestAuthorization } = getIosHealthKit();
       const available = await isHealthDataAvailableAsync();
       if (!available) return false;
       const granted = await requestAuthorization({
@@ -106,6 +99,12 @@ export async function requestHealthPermissions(): Promise<boolean> {
     }
 
     if (Platform.OS === 'android') {
+      const {
+        getSdkStatus,
+        SdkAvailabilityStatus,
+        initialize: initializeHealthConnect,
+        requestPermission: requestHealthConnectPermission,
+      } = getAndroidHealthConnect();
       const status = await getSdkStatus();
       if (status !== SdkAvailabilityStatus.SDK_AVAILABLE) return false;
       const ok = await initializeHealthConnect();
@@ -129,6 +128,11 @@ export async function requestHealthPermissions(): Promise<boolean> {
 export async function hasHealthAccessAlreadyRequested(): Promise<boolean> {
   try {
     if (Platform.OS === 'ios') {
+      const {
+        isHealthDataAvailableAsync,
+        getRequestStatusForAuthorization,
+        AuthorizationRequestStatus,
+      } = getIosHealthKit();
       const available = await isHealthDataAvailableAsync();
       if (!available) return false;
       const status = await getRequestStatusForAuthorization({
@@ -138,6 +142,12 @@ export async function hasHealthAccessAlreadyRequested(): Promise<boolean> {
       return status === AuthorizationRequestStatus.unnecessary;
     }
     if (Platform.OS === 'android') {
+      const {
+        getSdkStatus,
+        SdkAvailabilityStatus,
+        initialize: initializeHealthConnect,
+        getGrantedPermissions,
+      } = getAndroidHealthConnect();
       const status = await getSdkStatus();
       if (status !== SdkAvailabilityStatus.SDK_AVAILABLE) return false;
       await initializeHealthConnect();
@@ -157,6 +167,12 @@ export async function fetchTodayHealthSummary(): Promise<HealthDailySummary> {
 
   try {
     if (Platform.OS === 'ios') {
+      const {
+        isHealthDataAvailableAsync,
+        queryStatisticsForQuantity,
+        queryCategorySamples,
+        CategoryValueSleepAnalysis,
+      } = getIosHealthKit();
       const available = await isHealthDataAvailableAsync();
       if (!available) return { ...EMPTY_SUMMARY, platformAvailable: false };
 
@@ -228,6 +244,14 @@ export async function fetchTodayHealthSummary(): Promise<HealthDailySummary> {
     }
 
     if (Platform.OS === 'android') {
+      const {
+        getSdkStatus,
+        SdkAvailabilityStatus,
+        initialize: initializeHealthConnect,
+        getGrantedPermissions,
+        aggregateRecord,
+        readRecords,
+      } = getAndroidHealthConnect();
       const status = await getSdkStatus();
       if (status !== SdkAvailabilityStatus.SDK_AVAILABLE) {
         return { ...EMPTY_SUMMARY, platformAvailable: false };
