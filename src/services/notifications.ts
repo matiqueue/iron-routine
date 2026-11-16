@@ -3,8 +3,9 @@ import { AppState, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AppSettings } from '../types/workout';
 import { buildActiveSupplementsSummary, formatSupplementDose } from '../data/supplements';
-import { getAppSettings } from './settings';
+import { getAppSettings, getCurrentAppLanguage } from './settings';
 import { getActiveProfile } from './storage';
+import { getTranslatedSupplement, translateText } from '../i18n/translations';
 
 // Storage keys
 const WEIGHT_NOTIF_STORAGE_KEY = '@iron_routine_daily_weight_notif_enabled';
@@ -135,18 +136,19 @@ Notifications.setNotificationHandler({
  * Allows confirming supplement intake directly from Lock Screen without opening app.
  */
 export async function setupCreatineNotificationCategories(): Promise<void> {
+  const lang = getCurrentAppLanguage();
   try {
     await Notifications.setNotificationCategoryAsync(CREATINE_CATEGORIES.MORNING, [
       {
         identifier: CREATINE_ACTIONS.TAKEN,
-        buttonTitle: 'Wziąłem porcję ✅',
+        buttonTitle: translateText(lang, 'notifSuppTakenBtn'),
         options: {
           opensAppToForeground: false,
         },
       },
       {
         identifier: CREATINE_ACTIONS.NOT_YET,
-        buttonTitle: 'Przypomnij wieczorem ⏳',
+        buttonTitle: translateText(lang, 'notifSuppRemindEveningBtn'),
         options: {
           opensAppToForeground: false,
         },
@@ -156,14 +158,14 @@ export async function setupCreatineNotificationCategories(): Promise<void> {
     await Notifications.setNotificationCategoryAsync(CREATINE_CATEGORIES.EVENING, [
       {
         identifier: CREATINE_ACTIONS.TAKEN,
-        buttonTitle: 'Wziąłem porcję ✅',
+        buttonTitle: translateText(lang, 'notifSuppTakenBtn'),
         options: {
           opensAppToForeground: false,
         },
       },
       {
         identifier: CREATINE_ACTIONS.SKIP,
-        buttonTitle: 'Dziś pomijam ❌',
+        buttonTitle: translateText(lang, 'notifSuppSkipBtn'),
         options: {
           opensAppToForeground: false,
           isDestructive: true,
@@ -180,37 +182,40 @@ async function getDynamicSupplementCopy(settings?: AppSettings): Promise<{
   body: string;
   eveningBody: string;
 }> {
-  const [resolvedSettings, profile] = await Promise.all([
-    settings ? Promise.resolve(settings) : getAppSettings(),
-    getActiveProfile().catch(() => null),
-  ]);
+  const resolvedSettings = settings || (await getAppSettings());
+  const lang = resolvedSettings.language || getCurrentAppLanguage();
+  const profile = await getActiveProfile().catch(() => null);
 
   const activeSupps = (resolvedSettings.supplements || []).filter((s) => s.enabled);
   const weightKg = profile?.weight;
 
   if (activeSupps.length === 0) {
     return {
-      title: 'Suplementacja 💧',
-      body: 'Pamiętaj o dzisiejszym nawodnieniu i witaminach.',
-      eveningBody: 'Sprawdź dzisiejszą listę suplementów przed snem.',
+      title: translateText(lang, 'notifSuppGenericTitle'),
+      body: translateText(lang, 'notifSuppGenericBody'),
+      eveningBody: translateText(lang, 'notifSuppGenericEvening'),
     };
   }
 
   if (activeSupps.length === 1) {
     const primary = activeSupps[0];
+    const primaryName = getTranslatedSupplement(primary.id, 'name', primary.name, lang);
     const doseLabel = formatSupplementDose(primary, weightKg);
     return {
-      title: `${primary.name} 💧`,
-      body: `Zalecana dawka: ${doseLabel}. Czy wziąłeś już dziś?`,
-      eveningBody: `Pamiętaj przed snem: ${primary.name} (${doseLabel}). Czy wzięte?`,
+      title: `${primaryName} 💧`,
+      body: translateText(lang, 'notifSuppSingleBody', { dose: doseLabel }),
+      eveningBody: translateText(lang, 'notifSuppSingleEvening', {
+        name: primaryName,
+        dose: doseLabel,
+      }),
     };
   }
 
   const summary = buildActiveSupplementsSummary(activeSupps, weightKg);
   return {
-    title: `Dzisiejsze suplementy (${activeSupps.length}) 💧`,
-    body: `${summary} - czy dzisiejszy zestaw już wzięty?`,
-    eveningBody: `Przed snem sprawdź zestaw: ${summary}.`,
+    title: translateText(lang, 'notifSuppMultiTitle', { count: activeSupps.length }),
+    body: translateText(lang, 'notifSuppMultiBody', { summary }),
+    eveningBody: translateText(lang, 'notifSuppMultiEvening', { summary }),
   };
 }
 
@@ -256,7 +261,7 @@ export async function scheduleEveningCreatineReminder(hour?: number): Promise<vo
     await Notifications.scheduleNotificationAsync({
       identifier: NOTIF_IDS.CREATINE_EVENING,
       content: {
-        title: 'Suplementacja przed snem 🌙',
+        title: translateText(getCurrentAppLanguage(), 'notifSuppEveningTitle'),
         body: copy.eveningBody,
         categoryIdentifier: CREATINE_CATEGORIES.EVENING,
         sound: true,
@@ -410,8 +415,8 @@ export async function setDailyWeightReminder(enabled: boolean, hour?: number): P
       await Notifications.scheduleNotificationAsync({
         identifier: NOTIF_IDS.WEIGHT,
         content: {
-          title: 'Poranne ważenie ⚖️',
-          body: 'Wejdź na wagę na czczo i zapisz dzisiejszy wynik w Iron Routine.',
+          title: translateText(getCurrentAppLanguage(), 'notifWeightTitle'),
+          body: translateText(getCurrentAppLanguage(), 'notifWeightBody'),
           sound: true,
         },
         trigger: {
@@ -455,7 +460,7 @@ async function ensureRestTimerChannel(): Promise<void> {
   if (Platform.OS !== 'android') return;
   try {
     await Notifications.setNotificationChannelAsync(REST_TIMER_CHANNEL_ID, {
-      name: 'Alarm końca przerwy',
+      name: translateText(getCurrentAppLanguage(), 'notifRestChannelName'),
       importance: Notifications.AndroidImportance.MAX,
       vibrationPattern: [0, 550, 150, 550, 150, 650],
       enableVibrate: true,
@@ -489,12 +494,16 @@ async function dispatchRestWave(
   const bodyText = nextInfo ? `${exerciseName} • ${nextInfo}` : exerciseName;
 
   const scheduleWithSound = async (soundName: 'rest_alarm.wav' | 'default') => {
+    const lang = getCurrentAppLanguage();
     await Promise.all(
       offsets.map((offset, idx) =>
         Notifications.scheduleNotificationAsync({
           identifier: REST_TIMER_NOTIF_IDS[idx],
           content: {
-            title: idx === 0 ? '⏰ KONIEC PRZERWY! WRACAJ DO SERII!' : '⏰ CZAS NA KOLEJNĄ SERIĘ!',
+            title:
+              idx === 0
+                ? translateText(lang, 'notifRestTitleFirst')
+                : translateText(lang, 'notifRestTitleFollow'),
             body: bodyText,
             sound: soundName,
             // Always use standard 'active' interruptionLevel: Personal Team iOS builds lack
@@ -565,10 +574,11 @@ export async function scheduleTestRestNotification(): Promise<NotificationPermis
   const settings = await getAppSettings();
   await cancelRestFinishedNotification();
   await ensureRestTimerChannel();
+  const lang = getCurrentAppLanguage();
   const scheduled = await dispatchRestWave(
     5,
-    'Test alarmu końca przerwy',
-    'Jeśli ekran jest zablokowany lub jesteś poza aplikacją, poczujesz serię wibracji',
+    translateText(lang, 'notifTestRestTitle'),
+    translateText(lang, 'notifTestRestSub'),
     settings.restEndMultiBuzz
   );
   return { ...perm, scheduled };

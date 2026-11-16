@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAppTheme } from '../context/ThemeContext';
+import { useLanguage } from '../context/LanguageContext';
 import { DayPlan, DayProgress, Exercise, SessionExerciseConfig, SetEntry } from '../types/workout';
 import { RestTimerBar } from './RestTimerBar';
 import { AnimatedIcon } from './AnimatedIcon';
@@ -99,6 +100,7 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
   onExitWorkout,
 }) => {
   const { theme, isDark } = useAppTheme();
+  const { t, categoryLabel, exerciseName } = useLanguage();
   const [allSessionExercises, setAllSessionExercises] = useState<Exercise[]>(() =>
     resolveOrderedSessionExercises(dayPlan.exercises || [], dayProgress.sessionConfig)
   );
@@ -337,8 +339,13 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
 
   const currentExercise = exercises[currentExerciseIndex] || exercises[0];
   const currentExerciseId = currentExercise?.id;
-  const currentExerciseName = currentExercise?.name;
+  const currentExerciseName = currentExercise
+    ? exerciseName(currentExercise.id, currentExercise.name)
+    : undefined;
   const nextExercise = exercises[currentExerciseIndex + 1];
+  const nextExerciseDisplayName = nextExercise
+    ? exerciseName(nextExercise.id, nextExercise.name)
+    : '';
 
   const dayProgressRef = useRef(dayProgress);
   const extraSetsMapRef = useRef(extraSetsMap);
@@ -637,16 +644,17 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
     setRestSecondsLeft(restDur);
     setRestModalSeedSecs(restDur);
     setRestModalTargetMs(targetEndMs);
-    setTimerLabel(currentExercise.name);
+    const currentDisplay = exerciseName(currentExercise.id, currentExercise.name);
+    setTimerLabel(currentDisplay);
     const nextInfoStr = !isExerciseFinished
-      ? `Przed serią ${nextSetIdx + 1} z ${currentTotalSets}`
+      ? t('beforeSetBanner', { set: nextSetIdx + 1, total: currentTotalSets })
       : nextExercise
-      ? `Kolejne ćwiczenie: ${nextExercise.name}`
-      : 'Wszystkie ćwiczenia ukończone!';
+      ? t('nextExerciseBanner', { name: exerciseName(nextExercise.id, nextExercise.name) })
+      : t('allExercisesDone');
     setTimerNextInfo(nextInfoStr);
     setIsResting(true);
     setIsRestModalVisible(true);
-    scheduleRestFinishedNotification(restDur, currentExercise.name, nextInfoStr);
+    scheduleRestFinishedNotification(restDur, currentDisplay, nextInfoStr);
 
     // Auto-advance to next set with spring animation
     if (!isExerciseFinished) {
@@ -704,7 +712,7 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
     setRestSecondsLeft(safeRem);
     setRestModalSeedSecs(safeRem);
     setRestModalTargetMs(newEnd);
-    scheduleRestFinishedNotification(safeRem, timerLabel || currentExerciseName, timerNextInfo);
+    scheduleRestFinishedNotification(safeRem, timerLabel || currentExerciseName || '', timerNextInfo);
   };
 
   const handleAdjustRestSeconds = (newSecs: number, paused: boolean) => {
@@ -732,7 +740,7 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
     setRestModalSeedSecs(safe);
     setRestModalTargetMs(newEnd);
     if (safe > 0) {
-      scheduleRestFinishedNotification(safe, timerLabel || currentExerciseName, timerNextInfo);
+      scheduleRestFinishedNotification(safe, timerLabel || currentExerciseName || '', timerNextInfo);
     } else {
       cancelRestFinishedNotification();
     }
@@ -871,12 +879,12 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
 
   const handlePromptExit = () => {
     Alert.alert(
-      'Przerwać trening?',
-      'Dotychczasowy postęp w seriach jest bezpiecznie zapisany.',
+      t('abortWorkoutTitle'),
+      t('abortWorkoutBody'),
       [
-        { text: 'Kontynuuj', style: 'cancel' },
+        { text: t('continueBtn'), style: 'cancel' },
         {
-          text: 'Wyjdź',
+          text: t('exitBtn'),
           style: 'destructive',
           onPress: () => {
             handleStopRestSyncImmediate();
@@ -893,7 +901,7 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
       <View style={[styles.topBar, { borderBottomColor: theme.hairline }]}>
         <TouchableOpacity onPress={handlePromptExit} style={styles.exitBtn} activeOpacity={0.7}>
           <Ionicons name="close" size={18} color={theme.text} />
-          <Text style={[styles.exitBtnText, { color: theme.text }]}>Wyjdź</Text>
+          <Text style={[styles.exitBtnText, { color: theme.text }]}>{t('exitBtn')}</Text>
         </TouchableOpacity>
 
         <View style={[styles.stopwatchPill, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
@@ -913,7 +921,7 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
           >
             <Ionicons name="checkbox-outline" size={16} color={theme.text} />
             <Text style={[styles.pickerPillText, { color: theme.text }]} numberOfLines={1}>
-              Wybór
+              {t('selectBtn')}
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
@@ -962,13 +970,23 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
               activeOpacity={0.7}
             >
               <Text style={[styles.catBadgeText, { color: theme.textMuted }]}>
-                {currentExercise.category.toUpperCase()} • ĆWICZENIE {currentExerciseIndex + 1} Z {exercises.length}
+                {t('exerciseCounter', {
+                  cat: categoryLabel(currentExercise.category).toUpperCase(),
+                  current: currentExerciseIndex + 1,
+                  total: exercises.length,
+                })}
               </Text>
               <Ionicons name="chevron-down" size={13} color={theme.textMuted} />
             </TouchableOpacity>
-            <Text style={[styles.heroTitle, { color: theme.text }]}>{currentExercise.name}</Text>
+            <Text style={[styles.heroTitle, { color: theme.text }]}>
+              {currentExerciseName}
+            </Text>
             <Text style={[styles.heroSubtitle, { color: theme.textSecondary }]}>
-              Plan: {currentTotalSets} serie × {currentExercise.reps} • {currentExercise.rest}s odpoczynku
+              {t('planSetSummary', {
+                sets: currentTotalSets,
+                reps: currentExercise.reps,
+                rest: currentExercise.rest,
+              })}
             </Text>
           </View>
 
@@ -1057,7 +1075,7 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
               activeOpacity={0.7}
             >
               <Ionicons name="add" size={13} color={theme.text} />
-              <Text style={[styles.bonusSetText, { color: theme.text }]}>Dodaj serię</Text>
+              <Text style={[styles.bonusSetText, { color: theme.text }]}>{t('addSetBtn')}</Text>
             </TouchableOpacity>
 
             {(extraSetsMap[currentExercise.id] || 0) > 0 && (
@@ -1067,7 +1085,9 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
                 activeOpacity={0.7}
               >
                 <Ionicons name="remove" size={13} color={theme.textMuted} />
-                <Text style={[styles.bonusSetText, { color: theme.textMuted }]}>Usuń dodatkową</Text>
+                <Text style={[styles.bonusSetText, { color: theme.textMuted }]}>
+                  {t('removeExtraSetBtn')}
+                </Text>
               </TouchableOpacity>
             )}
           </View>
@@ -1088,10 +1108,10 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
           <View style={styles.focusHeader}>
             <View>
               <Text style={[styles.focusTitle, { color: theme.text }]}>
-                SERIA {currentSetIndex + 1} Z {currentTotalSets}
+                {t('setCounterUpper', { current: currentSetIndex + 1, total: currentTotalSets })}
               </Text>
               <Text style={[styles.focusSubtitle, { color: theme.textMuted }]}>
-                Cel: {currentExercise.reps} powt. • {currentExercise.rest}s przerwy
+                {t('setTargetSub', { reps: currentExercise.reps, rest: currentExercise.rest })}
               </Text>
             </View>
 
@@ -1117,7 +1137,7 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
                   { color: isCurrentSetDone ? theme.primaryText : theme.textMuted },
                 ]}
               >
-                {isCurrentSetDone ? 'ZALICZONA' : 'W TRAKCIE'}
+                {isCurrentSetDone ? t('setDoneBadge') : t('setInProgressBadge')}
               </Text>
             </TouchableOpacity>
           </View>
@@ -1126,7 +1146,7 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
           <View style={styles.inputsGrid}>
             {/* Weight Input Box with Stepper */}
             <View style={styles.inputCol}>
-              <Text style={[styles.inputLabel, { color: theme.textMuted }]}>CIĘŻAR (KG)</Text>
+              <Text style={[styles.inputLabel, { color: theme.textMuted }]}>{t('weightKgUpper')}</Text>
               <View style={[styles.stepperBox, { backgroundColor: theme.card, borderColor: theme.border }]}>
                 <TouchableOpacity
                   style={[styles.stepBtn, { borderRightColor: theme.hairline }]}
@@ -1157,7 +1177,7 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
 
             {/* Reps Input Box with Stepper */}
             <View style={styles.inputCol}>
-              <Text style={[styles.inputLabel, { color: theme.textMuted }]}>POWTÓRZENIA</Text>
+              <Text style={[styles.inputLabel, { color: theme.textMuted }]}>{t('repsUpper')}</Text>
               <View style={[styles.stepperBox, { backgroundColor: theme.card, borderColor: theme.border }]}>
                 <TouchableOpacity
                   style={[styles.stepBtn, { borderRightColor: theme.hairline }]}
@@ -1198,16 +1218,20 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
                 >
                   <Ionicons name="flash-outline" size={13} color={theme.textMuted} />
                   <Text style={[styles.cleanHintText, { color: theme.textMuted }]}>
-                    Ostatnio: {lastMetrics.weight ? `${lastMetrics.weight} kg` : ''}
+                    {t('lastLabel')} {lastMetrics.weight ? `${lastMetrics.weight} kg` : ''}
                     {lastMetrics.weight && lastMetrics.reps ? ' × ' : ''}
-                    {lastMetrics.reps ? `${lastMetrics.reps}` : ''} • <Text style={{ color: theme.text, fontWeight: '700' }}>Wstaw ➔</Text>
+                    {lastMetrics.reps ? `${lastMetrics.reps}` : ''} •{' '}
+                    <Text style={{ color: theme.text, fontWeight: '700' }}>
+                      {t('insertBtn')}
+                    </Text>
                   </Text>
                 </TouchableOpacity>
               ) : <View />}
 
               {liveEst1RM > 0 && (
                 <Text style={[styles.live1rmText, { color: theme.textMuted }]}>
-                  Szac. 1RM: <Text style={{ color: theme.text, fontWeight: '800' }}>~{liveEst1RM} kg</Text>
+                  {t('est1rmLabel')}{' '}
+                  <Text style={{ color: theme.text, fontWeight: '800' }}>~{liveEst1RM} kg</Text>
                 </Text>
               )}
             </View>
@@ -1223,7 +1247,10 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
               >
                 <Ionicons name="checkmark-circle" size={20} color={theme.primaryText} />
                 <Text style={[styles.completeSetBtnText, { color: theme.primaryText }]}>
-                  ZALICZ SERIĘ {currentSetIndex + 1} Z {currentTotalSets}
+                  {t('completeSetBtn', {
+                    current: currentSetIndex + 1,
+                    total: currentTotalSets,
+                  })}
                 </Text>
               </TouchableOpacity>
             </Animated.View>
@@ -1235,7 +1262,9 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
                 activeOpacity={0.7}
               >
                 <Ionicons name="arrow-undo-outline" size={16} color={theme.text} />
-                <Text style={[styles.undoBtnText, { color: theme.text }]}>Cofnij zaliczenie</Text>
+                <Text style={[styles.undoBtnText, { color: theme.text }]}>
+                  {t('undoSetBtn')}
+                </Text>
               </TouchableOpacity>
 
               {currentSetIndex < currentTotalSets - 1 ? (
@@ -1245,7 +1274,7 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
                   activeOpacity={0.8}
                 >
                   <Text style={[styles.nextSetBtnText, { color: theme.primaryText }]}>
-                    Seria {currentSetIndex + 2} ➔
+                    {t('setLabel')} {currentSetIndex + 2} ➔
                   </Text>
                 </TouchableOpacity>
               ) : null}
@@ -1267,7 +1296,7 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
             activeOpacity={0.7}
           >
             <Ionicons name="chevron-back" size={16} color={theme.text} />
-            <Text style={[styles.navBtnText, { color: theme.text }]}>Poprzednie</Text>
+            <Text style={[styles.navBtnText, { color: theme.text }]}>{t('prevBtn')}</Text>
           </TouchableOpacity>
 
           {currentExerciseIndex < exercises.length - 1 ? (
@@ -1277,7 +1306,9 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
               activeOpacity={0.8}
             >
               <Text style={[styles.navBtnNextText, { color: theme.primaryText }]}>
-                {nextExercise ? `Następne: ${nextExercise.name.split(' ')[0]}` : 'Następne'}
+                {nextExercise
+                  ? t('nextExerciseShort', { name: nextExerciseDisplayName.split(' ')[0] })
+                  : t('nextBtn')}
               </Text>
               <Ionicons name="chevron-forward" size={16} color={theme.primaryText} />
             </TouchableOpacity>
@@ -1287,7 +1318,9 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
               onPress={handleTriggerFinish}
               activeOpacity={0.8}
             >
-              <Text style={[styles.finishBtnText, { color: theme.primaryText }]}>ZAKOŃCZ TRENING</Text>
+              <Text style={[styles.finishBtnText, { color: theme.primaryText }]}>
+                {t('finishWorkoutBtn')}
+              </Text>
             </TouchableOpacity>
           )}
         </View>
@@ -1365,7 +1398,7 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
                   </Text>
                   {!isRestFinished && (
                     <Text style={[styles.floatingTapHint, { color: theme.textMuted }]} numberOfLines={1}>
-                      • Dotknij
+                      {t('tapToExpandDot')}
                     </Text>
                   )}
                 </View>
@@ -1377,10 +1410,10 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
                   numberOfLines={1}
                 >
                   {isRestFinished
-                    ? 'Czas na kolejną serię!'
+                    ? t('timeForNextSet')
                     : isRestPaused
-                    ? 'Wstrzymana • Powiadomienie zatrzymane'
-                    : timerNextInfo || 'Odpoczynek przed kolejną serią'}
+                    ? t('pausedNotifStopped')
+                    : timerNextInfo || t('restBeforeNextSet')}
                 </Text>
               </View>
             </View>
@@ -1411,7 +1444,7 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
                   { color: isRestFinished ? theme.primary : theme.text },
                 ]}
               >
-                {isRestFinished ? 'Start' : 'Zakończ'}
+                {isRestFinished ? t('startShort') : t('endShort')}
               </Text>
             </TouchableOpacity>
           </TouchableOpacity>
@@ -1451,14 +1484,18 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
         title={
           overviewMode === 'library'
             ? swapExerciseIdx !== null
-              ? 'Zamień ćwiczenie na dziś'
-              : 'Dodaj ćwiczenie do sesji'
-            : 'Przegląd sesji treningowej'
+              ? t('sheetSwapToday')
+              : t('sheetAddSession')
+            : t('sheetSessionOverview')
         }
         subtitle={
           overviewMode === 'library'
-            ? 'Zmiana dotyczy tylko dzisiejszego treningu'
-            : `${completedSetsCount}/${totalSets} ukończonych serii • ${formatTime(elapsedSeconds)}`
+            ? t('swapTodayOnlyNote')
+            : t('setsProgressTime', {
+                done: completedSetsCount,
+                total: totalSets,
+                time: formatTime(elapsedSeconds),
+              })
         }
         initialHeightPercent={0.88}
         headerRight={
@@ -1474,7 +1511,7 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
               }}
             >
               <Ionicons name="arrow-back" size={14} color={theme.text} />
-              <Text style={[styles.sheetBackText, { color: theme.text }]}>Wróć</Text>
+              <Text style={[styles.sheetBackText, { color: theme.text }]}>{t('returnBtn')}</Text>
             </TouchableOpacity>
           ) : undefined
         }
@@ -1514,11 +1551,13 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
                     activeOpacity={0.7}
                   >
                     <Text style={[styles.sessionExCat, { color: theme.textMuted }]}>
-                      #{idx + 1} • {ex.category.toUpperCase()}
+                      #{idx + 1} • {categoryLabel(ex.category).toUpperCase()}
                     </Text>
-                    <Text style={[styles.sessionExName, { color: theme.text }]}>{ex.name}</Text>
+                    <Text style={[styles.sessionExName, { color: theme.text }]}>
+                      {exerciseName(ex.id, ex.name)}
+                    </Text>
                     <Text style={[styles.sessionExStatus, { color: theme.textSecondary }]}>
-                      {done}/{effTotal} serii • {ex.reps} powt.
+                      {done}/{effTotal} {t('setsWord')} • {ex.reps} {t('reps')}
                     </Text>
                   </TouchableOpacity>
 
@@ -1531,7 +1570,9 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
                     activeOpacity={0.7}
                   >
                     <Ionicons name="swap-horizontal" size={14} color={theme.text} />
-                    <Text style={[styles.swapMiniText, { color: theme.text }]}>Zamień</Text>
+                    <Text style={[styles.swapMiniText, { color: theme.text }]}>
+                      {t('swapShort')}
+                    </Text>
                   </TouchableOpacity>
                 </View>
               );
@@ -1550,7 +1591,7 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
             >
               <Ionicons name="add" size={18} color={theme.text} />
               <Text style={[styles.addSessionExText, { color: theme.text }]}>
-                Dodaj dodatkowe ćwiczenie do dzisiaj
+                {t('addExtraExerciseToday')}
               </Text>
             </TouchableOpacity>
 
@@ -1563,7 +1604,7 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
               activeOpacity={0.85}
             >
               <Text style={[styles.overviewFinishText, { color: theme.primaryText }]}>
-                ZAKOŃCZ TRENING ({completedSetsCount}/{totalSets})
+                {t('finishWorkoutCountBtn', { done: completedSetsCount, total: totalSets })}
               </Text>
             </TouchableOpacity>
           </BottomSheetScrollView>

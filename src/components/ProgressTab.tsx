@@ -85,10 +85,10 @@ export interface ProgressTabProps {
 type SubViewTab = 'physique' | 'exercises' | 'journal';
 type ChartRange = '7d' | '30d' | 'all';
 
-const SUB_TABS: Array<{ id: SubViewTab; icon: keyof typeof Ionicons.glyphMap; activeIcon: keyof typeof Ionicons.glyphMap; a11y: string }> = [
-  { id: 'physique', icon: 'body-outline', activeIcon: 'body', a11y: 'Sylwetka' },
-  { id: 'exercises', icon: 'barbell-outline', activeIcon: 'barbell', a11y: 'Ćwiczenia' },
-  { id: 'journal', icon: 'stats-chart-outline', activeIcon: 'stats-chart', a11y: 'Dziennik' },
+const SUB_TABS: Array<{ id: SubViewTab; icon: keyof typeof Ionicons.glyphMap; activeIcon: keyof typeof Ionicons.glyphMap; a11yKey: 'silhouetteTabLabel' | 'exercisesTabLabel' | 'journalTabLabel' }> = [
+  { id: 'physique', icon: 'body-outline', activeIcon: 'body', a11yKey: 'silhouetteTabLabel' },
+  { id: 'exercises', icon: 'barbell-outline', activeIcon: 'barbell', a11yKey: 'exercisesTabLabel' },
+  { id: 'journal', icon: 'stats-chart-outline', activeIcon: 'stats-chart', a11yKey: 'journalTabLabel' },
 ];
 
 const SLIDER_PADDING = 3;
@@ -224,7 +224,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
   const [expandedExGroups, setExpandedExGroups] = useState<Record<string, boolean>>({});
 
   // Exercise progression sheet
-  const { t, muscleLabel } = useLanguage();
+  const { t, localeCode, muscleLabel, exerciseName, rankTitle, rankSubtitle, equipmentLabel } = useLanguage();
   const [customExercises, setCustomExercises] = useState<Exercise[]>([]);
   const [favoriteIds, setFavoriteIds] = useState<string[]>([]);
   const [bestPRs, setBestPRs] = useState<{ [id: string]: PRRecord }>({});
@@ -502,7 +502,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
     const w = parseFloat(manualWeight.replace(',', '.'));
     const r = parseInt(manualReps, 10);
     if (isNaN(w) || w <= 0 || isNaN(r) || r <= 0) {
-      Alert.alert('Błędne dane', 'Podaj prawidłowy ciężar (kg) i liczbę powtórzeń.');
+      Alert.alert(t('invalidDataTitle'), t('invalidDataBody'));
       return;
     }
     const canonicalId = resolveCanonicalExerciseId(selectedExercise.id, selectedExercise.name);
@@ -537,7 +537,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
   const handleSaveWeight = async () => {
     const val = parseFloat(newWeightInput.replace(',', '.'));
     if (isNaN(val) || val < 25 || val > 300) {
-      Alert.alert('Nieprawidłowa waga', 'Wpisz wagę w kilogramach (np. 82.5).');
+      Alert.alert(t('invalidWeightTitle'), t('invalidWeightBody'));
       return;
     }
     await addWeightEntry(val, undefined, undefined, effectiveProfileId);
@@ -609,11 +609,14 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
         const a1RM = aPR?.estimated1RM || 0;
         const b1RM = bPR?.estimated1RM || 0;
         if (b1RM !== a1RM) return b1RM - a1RM;
-        return a.exercise.name.localeCompare(b.exercise.name, 'pl');
+        return exerciseName(a.exercise.id, a.exercise.name).localeCompare(
+          exerciseName(b.exercise.id, b.exercise.name),
+          localeCode
+        );
       });
     }
     return map;
-  }, [allExercises, physiqueReport, bestPRs, favoriteIds]);
+  }, [allExercises, physiqueReport, bestPRs, favoriteIds, exerciseName, localeCode]);
 
   const filteredMuscleGroups = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -623,7 +626,12 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
       if (!q) return list.length > 0;
       return (
         m.label.toLowerCase().includes(q) ||
-        list.some((ex) => ex.exercise.name.toLowerCase().includes(q))
+        muscleLabel(m.id).toLowerCase().includes(q) ||
+        list.some(
+          (ex) =>
+            ex.exercise.name.toLowerCase().includes(q) ||
+            exerciseName(ex.exercise.id, ex.exercise.name).toLowerCase().includes(q)
+        )
       );
     });
 
@@ -642,7 +650,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
       if (bScore !== aScore) return bScore - aScore;
       return 0;
     });
-  }, [muscleFilter, searchQuery, exercisesByMuscle, physiqueReport, bestPRs]);
+  }, [muscleFilter, searchQuery, exercisesByMuscle, physiqueReport, bestPRs, muscleLabel, exerciseName]);
 
   const orderedMuscleList = useMemo(() => {
     if (!physiqueReport) return [];
@@ -763,7 +771,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
       return (
         <View style={styles.emptyChartOpen}>
           <Text style={[styles.emptyChartText, { color: theme.textMuted }]}>
-            Brak zapisanych pomiarów w wybranym okresie
+            {t('noWeightInRange')}
           </Text>
         </View>
       );
@@ -930,7 +938,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                 <View
                   key={tab.id}
                   pointerEvents="none"
-                  accessibilityLabel={tab.a11y}
+                  accessibilityLabel={t(tab.a11yKey)}
                   style={styles.navPillBtn}
                 >
                   <Ionicons
@@ -987,10 +995,10 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                   </Animated.View>
                   <View style={styles.heroCrestTextCol}>
                     <Text style={[styles.heroCrestEyebrow, { color: theme.textMuted }]}>
-                      RANGA OGÓLNA
+                      {t('overallRankCaps')}
                     </Text>
                     <Text style={[styles.heroCrestTitle, { color: theme.text }]}>
-                      {physiqueReport?.overallRankMeta.title || 'Nowicjusz'}
+                      {rankTitle(physiqueReport?.overallRank || 'F')}
                     </Text>
                     <Text
                       style={[
@@ -998,7 +1006,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                         { color: physiqueReport?.overallRankMeta.color || theme.textSecondary },
                       ]}
                     >
-                      Śr. postęp tieru: {overallAverageProgress}%
+                      {t('avgTierProgress', { pct: overallAverageProgress })}
                     </Text>
                   </View>
                 </View>
@@ -1009,7 +1017,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                       {physiqueReport?.balanceScorePct ?? 100}%
                     </Text>
                     <Text style={[styles.heroMetricLabel, { color: theme.textMuted }]}>
-                      Balans
+                      {t('balanceMetricLabel')}
                     </Text>
                   </View>
 
@@ -1020,7 +1028,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                       {physiqueReport?.totalLifetimeSets ?? 0}
                     </Text>
                     <Text style={[styles.heroMetricLabel, { color: theme.textMuted }]}>
-                      Serie
+                      {t('seriesMetricLabel')}
                     </Text>
                   </View>
 
@@ -1031,7 +1039,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                       {Object.keys(bestPRs).length}
                     </Text>
                     <Text style={[styles.heroMetricLabel, { color: theme.textMuted }]}>
-                      Rekordy
+                      {t('recordsMetricLabel')}
                     </Text>
                   </View>
                 </View>
@@ -1062,10 +1070,10 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                           { color: physiqueReport.overallRankMeta.color },
                         ]}
                       >
-                        EMBLEMATY PROGRESJI (F - S+)
+                        {t('emblemsProgressionCaps')}
                       </Text>
                       <Text style={[styles.sectionHeading, { color: theme.text }]}>
-                        Drabina rang i odznak
+                        {t('rankLadderHeading')}
                       </Text>
                     </View>
                     {selectedRankTier ? (
@@ -1080,12 +1088,12 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                         activeOpacity={0.7}
                       >
                         <Text style={[styles.sectionRightMeta, { color: theme.text }]}>
-                          Pokaż wszystkie ({physiqueReport.muscleStatsList.length})
+                          {t('showAllCount', { count: physiqueReport.muscleStatsList.length })}
                         </Text>
                       </TouchableOpacity>
                     ) : (
                       <Text style={[styles.sectionRightMeta, { color: theme.textMuted }]}>
-                        Dotknij odznaki, by filtrować
+                        {t('tapBadgeToFilter')}
                       </Text>
                     )}
                   </View>
@@ -1166,12 +1174,18 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                       <RankCrestIcon tier={selectedRankTier} size={46} isSelected />
                       <View style={{ flex: 1 }}>
                         <Text style={[styles.tierSpotlightTitle, { color: theme.text }]}>
-                          Ranga {selectedRankTier} ({RANK_TIER_MAP[selectedRankTier].title}) ·{' '}
-                          {tierDistribution[selectedRankTier]} z 19 partii
+                          {t('tierSpotlightTitle', {
+                            tier: selectedRankTier,
+                            title: rankTitle(selectedRankTier),
+                            count: tierDistribution[selectedRankTier],
+                          })}
                         </Text>
                         <Text style={[styles.tierSpotlightSub, { color: theme.textSecondary }]}>
-                          {RANK_TIER_MAP[selectedRankTier].subtitle} · próg: od{' '}
-                          {RANK_TIER_MAP[selectedRankTier].minMuscleSets} serii partii ({RANK_TIER_MAP[selectedRankTier].minExerciseSets} serii ćwiczenia)
+                          {t('rankThresholdInfo', {
+                            subtitle: rankSubtitle(selectedRankTier),
+                            muscleSets: RANK_TIER_MAP[selectedRankTier].minMuscleSets,
+                            exSets: RANK_TIER_MAP[selectedRankTier].minExerciseSets,
+                          })}
                         </Text>
                       </View>
                     </View>
@@ -1183,7 +1197,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                       <View style={styles.milestoneHeaderRow}>
                         <AnimatedIcon name="sparkles-outline" preset="pulse" size={13} color="#10B981" active />
                         <Text style={[styles.milestoneHeaderTitle, { color: theme.textSecondary }]}>
-                          NAJBLIŻEJ KOLEJNEJ RANGI
+                          {t('closestRankKicker')}
                         </Text>
                       </View>
 
@@ -1198,10 +1212,13 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                           <View style={{ flex: 1, gap: 4 }}>
                             <View style={styles.milestoneTextLine}>
                               <Text style={[styles.milestoneMuscleName, { color: theme.text }]}>
-                                {mStat.meta.label}
+                                {muscleLabel(mStat.muscleId)}
                               </Text>
                               <Text style={[styles.milestoneRemaining, { color: theme.textMuted }]}>
-                                jeszcze {mStat.setsToNext} serii ({mStat.progressPct}%)
+                                {t('moreSetsNeededPct', {
+                                  sets: mStat.setsToNext,
+                                  pct: mStat.progressPct,
+                                })}
                               </Text>
                             </View>
                             <AnimatedFillBar
@@ -1237,14 +1254,14 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                   <View style={styles.openSectionHeader}>
                     <View>
                       <Text style={[styles.sectionEyebrow, { color: '#F59E0B' }]}>
-                        REKOMENDACJA TRENINGOWA
+                        {t('trainingRecCaps')}
                       </Text>
                       <Text style={[styles.sectionHeading, { color: theme.text }]}>
-                        Co teraz trenować?
+                        {t('whatToTrainNow')}
                       </Text>
                     </View>
                     <Text style={[styles.sectionRightMeta, { color: theme.textMuted }]}>
-                      Top 3 priorytety
+                      {t('top3Priorities')}
                     </Text>
                   </View>
 
@@ -1271,7 +1288,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                         <View style={{ flex: 1, gap: 4 }}>
                           <View style={styles.priorityTitleLine}>
                             <Text style={[styles.priorityName, { color: theme.text }]}>
-                              {stat.meta.label}
+                              {muscleLabel(stat.muscleId)}
                             </Text>
                             <Text
                               style={[
@@ -1280,8 +1297,10 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                               ]}
                             >
                               {stat.priorityStatus === 'untrained'
-                                ? 'Brak serii (0)'
-                                : `${Math.round(stat.relativeDevelopmentRatio * 100)}% normy`}
+                                ? t('legendNoSets')
+                                : t('normPct', {
+                                    pct: Math.round(stat.relativeDevelopmentRatio * 100),
+                                  })}
                             </Text>
                           </View>
 
@@ -1290,7 +1309,10 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                             numberOfLines={1}
                           >
                             {topEx
-                              ? `Polecane: ${topEx.exercise.name} (${topEx.totalSets} serii)`
+                              ? t('recommendedExSets', {
+                                  name: exerciseName(topEx.exercise.id, topEx.exercise.name),
+                                  sets: topEx.totalSets,
+                                })
                               : stat.recommendationText}
                           </Text>
                         </View>
@@ -1308,11 +1330,14 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                   <View>
                     <Text style={[styles.sectionEyebrow, { color: theme.textMuted }]}>
                       {selectedRankTier
-                        ? `FILTR RANGI ${selectedRankTier} (${orderedMuscleList.length})`
-                        : 'WSZYSTKIE PARTIE (19)'}
+                        ? t('rankFilterCaps', {
+                            tier: selectedRankTier,
+                            count: orderedMuscleList.length,
+                          })
+                        : t('allMuscles19Caps')}
                     </Text>
                     <Text style={[styles.sectionHeading, { color: theme.text }]}>
-                      Rangi rozwoju mięśni
+                      {t('muscleRanksTitle')}
                     </Text>
                   </View>
 
@@ -1345,7 +1370,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                           { color: muscleSortMode === 'rank' ? theme.bg : theme.textMuted },
                         ]}
                       >
-                        Wg rangi
+                        {t('sortByRank')}
                       </Text>
                     </TouchableOpacity>
                     <TouchableOpacity
@@ -1359,7 +1384,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                           { color: muscleSortMode === 'priority' ? theme.bg : theme.textMuted },
                         ]}
                       >
-                        Braki
+                        {t('sortByGaps')}
                       </Text>
                     </TouchableOpacity>
                   </View>
@@ -1367,7 +1392,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
 
                 {orderedMuscleList.length === 0 ? (
                   <Text style={[styles.inlineEmptyText, { color: theme.textMuted }]}>
-                    Brak partii mięśniowych w wybranej randze {selectedRankTier}.
+                    {t('noMusclesInTier', { tier: selectedRankTier || '' })}
                   </Text>
                 ) : (
                   <>
@@ -1409,7 +1434,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                                     { color: theme.textSecondary },
                                   ]}
                                 >
-                                  {Math.round(stat.effectiveSetsTotal)} serii
+                                  {Math.round(stat.effectiveSetsTotal)} {t('setsWord')}
                                   {stat.nextTier ? ` (+${stat.setsToNext} → ${stat.nextTier})` : ' (MAX)'}
                                 </Text>
                               </View>
@@ -1435,7 +1460,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                             <View style={styles.inlineExerciseList}>
                               {muscleExList.length === 0 ? (
                                 <Text style={[styles.inlineEmptyText, { color: theme.textMuted }]}>
-                                  Brak przypisanych ćwiczeń w bazie
+                                  {t('noAssignedExercises')}
                                 </Text>
                               ) : (
                                 muscleExList.map((exStat) => {
@@ -1453,7 +1478,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                                           style={[styles.inlineExName, { color: theme.text }]}
                                           numberOfLines={1}
                                         >
-                                          {exStat.exercise.name}
+                                          {exerciseName(exStat.exercise.id, exStat.exercise.name)}
                                         </Text>
                                         <Text
                                           style={[
@@ -1461,10 +1486,10 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                                             { color: theme.textMuted },
                                           ]}
                                         >
-                                          {exStat.totalSets} serii
+                                          {exStat.totalSets} {t('setsWord')}
                                           {pr
                                             ? ` · PR ${pr.weight} kg × ${pr.reps}`
-                                            : ' · Brak PR'}
+                                            : ` · ${t('noPrYet')}`}
                                         </Text>
                                       </View>
                                       <Ionicons
@@ -1532,7 +1557,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                 <Ionicons name="search" size={16} color={theme.textMuted} />
                 <TextInput
                   style={[styles.openSearchInput, { color: theme.text }]}
-                  placeholder="Szukaj ćwiczenia lub mięśnia..."
+                  placeholder={t('searchExOrMusclePlaceholder')}
                   placeholderTextColor={theme.textMuted}
                   value={searchQuery}
                   onChangeText={setSearchQuery}
@@ -1598,11 +1623,14 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
               {filteredMuscleGroups.map((mGroup) => {
                 const mStat = physiqueReport?.muscleStats[mGroup.id];
                 const q = searchQuery.trim().toLowerCase();
+                const translatedGroupLabel = muscleLabel(mGroup.id).toLowerCase();
                 const exList = (exercisesByMuscle[mGroup.id] || []).filter(
                   (e) =>
                     !q ||
                     e.exercise.name.toLowerCase().includes(q) ||
-                    mGroup.label.toLowerCase().includes(q)
+                    exerciseName(e.exercise.id, e.exercise.name).toLowerCase().includes(q) ||
+                    mGroup.label.toLowerCase().includes(q) ||
+                    translatedGroupLabel.includes(q)
                 );
 
                 if (exList.length === 0) return null;
@@ -1624,7 +1652,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                         </Text>
                       </View>
                       <Text style={[styles.openGroupMeta, { color: theme.textMuted }]}>
-                        {Math.round(mStat?.effectiveSetsTotal || 0)} serii
+                        {Math.round(mStat?.effectiveSetsTotal || 0)} {t('setsWord')}
                       </Text>
                     </View>
 
@@ -1652,7 +1680,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                                 style={[styles.openExTitle, { color: theme.text }]}
                                 numberOfLines={1}
                               >
-                                {exStat.exercise.name}
+                                {exerciseName(exStat.exercise.id, exStat.exercise.name)}
                               </Text>
                               <Text
                                 style={[
@@ -1660,7 +1688,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                                   { color: theme.textSecondary },
                                 ]}
                               >
-                                {exStat.totalSets} serii
+                                {exStat.totalSets} {t('setsWord')}
                               </Text>
                             </View>
 
@@ -1674,7 +1702,10 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
 
                             <View style={styles.openExBottomLine}>
                               <Text style={[styles.openExMeta, { color: theme.textMuted }]}>
-                                {exStat.exercise.equipment || 'Ćwiczenie'} · {exStat.rankMeta.title}
+                                {exStat.exercise.equipment
+                                  ? equipmentLabel(exStat.exercise.equipment)
+                                  : t('exerciseFallbackWord')}{' '}
+                                · {rankTitle(exStat.rank)}
                               </Text>
                               {pr ? (
                                 <Text style={[styles.openExPR, { color: theme.text }]}>
@@ -1742,7 +1773,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                 <View style={styles.openSectionHeader}>
                   <View>
                     <Text style={[styles.sectionEyebrow, { color: theme.textMuted }]}>
-                      MASA CIAŁA
+                      {t('bodyWeightUpper')}
                     </Text>
                     <View style={styles.weightHeroRow}>
                       <Text style={[styles.weightHeroBig, { color: theme.text }]}>
@@ -1766,11 +1797,12 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                             },
                           ]}
                         >
-                          {(
-                            weightHistory[weightHistory.length - 1].weight -
-                            weightHistory[0].weight
-                          ).toFixed(1)}{' '}
-                          kg od startu
+                          {t('fromStartKg', {
+                            diff: (
+                              weightHistory[weightHistory.length - 1].weight -
+                              weightHistory[0].weight
+                            ).toFixed(1),
+                          })}
                         </Text>
                       )}
                     </View>
@@ -1826,7 +1858,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                         color: theme.text,
                       },
                     ]}
-                    placeholder="Wpisz dzisiejszą wagę (kg)..."
+                    placeholder={t('enterTodayWeightPlaceholder')}
                     placeholderTextColor={theme.textMuted}
                     keyboardType="decimal-pad"
                     value={newWeightInput}
@@ -1838,7 +1870,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                     activeOpacity={0.8}
                   >
                     <Text style={[styles.inlineActionBtnText, { color: theme.bg }]}>
-                      Zapisz
+                      {t('save')}
                     </Text>
                   </TouchableOpacity>
                 </View>
@@ -1852,7 +1884,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                       style={[styles.simpleLogRow, { borderBottomColor: theme.hairline }]}
                     >
                       <Text style={[styles.simpleLogDate, { color: theme.textMuted }]}>
-                        {new Date(w.date).toLocaleDateString('pl-PL', {
+                        {new Date(w.date).toLocaleDateString(localeCode, {
                           day: 'numeric',
                           month: 'short',
                           year: 'numeric',
@@ -1875,14 +1907,16 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                 <View style={styles.openSectionHeader}>
                   <View>
                     <Text style={[styles.sectionEyebrow, { color: theme.textMuted }]}>
-                      REGULARNOŚĆ
+                      {t('regularityCaps')}
                     </Text>
                     <Text style={[styles.sectionHeading, { color: theme.text }]}>
-                      Ostatnie 28 dni
+                      {t('last28DaysHeading')}
                     </Text>
                   </View>
                   <Text style={[styles.sectionRightMeta, { color: theme.textSecondary }]}>
-                    {last28Days.filter((d) => d.active).length} treningów
+                    {t('workoutsCountLabel', {
+                      count: last28Days.filter((d) => d.active).length,
+                    })}
                   </Text>
                 </View>
 
@@ -1921,10 +1955,10 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                 <View style={styles.openSectionHeader}>
                   <View>
                     <Text style={[styles.sectionEyebrow, { color: theme.textMuted }]}>
-                      HISTORIA SESJI
+                      {t('sessionHistoryCaps')}
                     </Text>
                     <Text style={[styles.sectionHeading, { color: theme.text }]}>
-                      Ostatnie treningi
+                      {t('recentWorkoutsHeading')}
                     </Text>
                   </View>
                   {workoutHistory.length > 4 ? (
@@ -1935,19 +1969,21 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                       }}
                     >
                       <Text style={[styles.sectionRightMeta, { color: theme.text }]}>
-                        {showAllJournalWorkouts ? 'Mniej' : `Wszystkie (${workoutHistory.length})`}
+                        {showAllJournalWorkouts
+                          ? t('lessLabel')
+                          : t('allCountLabel', { count: workoutHistory.length })}
                       </Text>
                     </TouchableOpacity>
                   ) : (
                     <Text style={[styles.sectionRightMeta, { color: theme.textMuted }]}>
-                      Łącznie {workoutHistory.length}
+                      {t('totalCountLabel', { count: workoutHistory.length })}
                     </Text>
                   )}
                 </View>
 
                 {workoutHistory.length === 0 ? (
                   <Text style={[styles.emptyLineText, { color: theme.textMuted }]}>
-                    Nie ukończono jeszcze żadnego treningu
+                    {t('noWorkoutsCompleted')}
                   </Text>
                 ) : (
                   (showAllJournalWorkouts ? workoutHistory.slice(-15) : workoutHistory.slice(-4))
@@ -1963,19 +1999,19 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                             {entry.dayName}
                           </Text>
                           <Text style={[styles.workoutLogSub, { color: theme.textMuted }]}>
-                            {new Date(entry.date).toLocaleDateString('pl-PL', {
+                            {new Date(entry.date).toLocaleDateString(localeCode, {
                               weekday: 'short',
                               day: 'numeric',
                               month: 'long',
                             })}
                             {entry.durationMinutes ? ` · ${entry.durationMinutes} min` : ''}
                             {entry.totalVolumeKg
-                              ? ` · ${entry.totalVolumeKg.toLocaleString('pl-PL')} kg`
+                              ? ` · ${entry.totalVolumeKg.toLocaleString(localeCode)} kg`
                               : ''}
                           </Text>
                         </View>
                         <Text style={[styles.workoutLogSets, { color: theme.textSecondary }]}>
-                          {entry.completedSets}/{entry.totalSets} serii
+                          {entry.completedSets}/{entry.totalSets} {t('setsWord')}
                         </Text>
                       </View>
                     ))
@@ -1992,11 +2028,19 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
       <InteractiveBottomSheet
         visible={selectedExercise !== null}
         onClose={() => setSelectedExercise(null)}
-        title={selectedExercise?.name || 'Progresja ćwiczenia'}
+        title={
+          selectedExercise
+            ? exerciseName(selectedExercise.id, selectedExercise.name)
+            : t('exerciseProgressionTitle')
+        }
         subtitle={
           selectedExerciseRankStat
-            ? `Ranga ${selectedExerciseRankStat.rank} (${selectedExerciseRankStat.rankMeta.title}) · ${selectedExerciseRankStat.totalSets} serii`
-            : 'Historia rekordów 1RM i serii'
+            ? t('exRankSetsSub', {
+                rank: selectedExerciseRankStat.rank,
+                title: rankTitle(selectedExerciseRankStat.rank),
+                sets: selectedExerciseRankStat.totalSets,
+              })
+            : t('history1rmSub')
         }
         initialHeightPercent={0.86}
       >
@@ -2021,16 +2065,19 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                   />
                   <View style={{ flex: 1 }}>
                     <Text style={[styles.sheetRankTitle, { color: theme.text }]}>
-                      {selectedExerciseRankStat.rankMeta.title}
+                      {rankTitle(selectedExerciseRankStat.rank)}
                     </Text>
                     <Text style={[styles.sheetRankSub, { color: theme.textMuted }]}>
                       {selectedExerciseRankStat.nextTier
-                        ? `Brakuje ${selectedExerciseRankStat.setsToNext} serii do rangi ${selectedExerciseRankStat.nextTier}`
-                        : 'Osiągnięto najwyższą rangę S+'}
+                        ? t('setsMissingToRank', {
+                            sets: selectedExerciseRankStat.setsToNext,
+                            nextTier: selectedExerciseRankStat.nextTier,
+                          })
+                        : t('highestRankReached')}
                     </Text>
                   </View>
                   <Text style={[styles.sheetSetsCount, { color: theme.text }]}>
-                    {selectedExerciseRankStat.totalSets} serii
+                    {selectedExerciseRankStat.totalSets} {t('setsWord')}
                   </Text>
                 </View>
 
@@ -2047,7 +2094,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
             <View style={styles.sheetSection}>
               <View style={styles.openSectionHeader}>
                 <Text style={[styles.sectionHeading, { color: theme.text }]}>
-                  Estymowany 1RM (kg)
+                  {t('estimated1rmHeading')}
                 </Text>
                 <View style={[styles.rangePills, { backgroundColor: theme.bgSecondary }]}>
                   {(
@@ -2094,7 +2141,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
             {/* Manual PR Entry */}
             <View style={[styles.sheetSection, { borderTopColor: theme.hairline }]}>
               <Text style={[styles.sectionEyebrow, { color: theme.textMuted }]}>
-                DODAJ WYNIK RĘCZNIE
+                {t('addResultManuallyUpper')}
               </Text>
               <View style={styles.inlineInputRow}>
                 <TextInput
@@ -2102,7 +2149,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                     styles.inlineInput,
                     { backgroundColor: theme.bgSecondary, color: theme.text },
                   ]}
-                  placeholder="Ciężar (kg)"
+                  placeholder={t('weightKgPlaceholder')}
                   placeholderTextColor={theme.textMuted}
                   keyboardType="decimal-pad"
                   value={manualWeight}
@@ -2113,7 +2160,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                     styles.inlineInput,
                     { backgroundColor: theme.bgSecondary, color: theme.text },
                   ]}
-                  placeholder="Powtórzenia"
+                  placeholder={t('repsPlaceholder')}
                   placeholderTextColor={theme.textMuted}
                   keyboardType="number-pad"
                   value={manualReps}
@@ -2124,7 +2171,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                   onPress={handleAddManualPR}
                 >
                   <Text style={[styles.inlineActionBtnText, { color: theme.bg }]}>
-                    Dodaj
+                    {t('add')}
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -2133,11 +2180,11 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
             {/* PR History List */}
             <View style={[styles.sheetSection, { borderTopColor: theme.hairline }]}>
               <Text style={[styles.sectionEyebrow, { color: theme.textMuted }]}>
-                ZAPISANE REKORDY ({prHistory.length})
+                {t('savedRecordsCaps', { count: prHistory.length })}
               </Text>
               {prHistory.length === 0 ? (
                 <Text style={[styles.emptyLineText, { color: theme.textMuted }]}>
-                  Brak zapisanych wyników dla tego ćwiczenia
+                  {t('noSavedResultsForEx')}
                 </Text>
               ) : (
                 [...prHistory].reverse().map((rec) => (
@@ -2146,7 +2193,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                     style={[styles.simpleLogRow, { borderBottomColor: theme.hairline }]}
                   >
                     <Text style={[styles.simpleLogDate, { color: theme.textMuted }]}>
-                      {new Date(rec.date).toLocaleDateString('pl-PL', {
+                      {new Date(rec.date).toLocaleDateString(localeCode, {
                         day: 'numeric',
                         month: 'short',
                         year: 'numeric',

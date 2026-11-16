@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAppTheme } from '../context/ThemeContext';
+import { useLanguage } from '../context/LanguageContext';
 import { AnimatedIcon } from './AnimatedIcon';
 import {
   triggerImpactHaptic,
@@ -45,6 +46,7 @@ export const RestTimerBar: React.FC<RestTimerBarProps> = ({
   onClose,
 }) => {
   const { theme, isDark } = useAppTheme();
+  const { t } = useLanguage();
   const [secondsLeft, setSecondsLeft] = useState(initialSeconds);
   const [isRunning, setIsRunning] = useState(!isPaused && initialSeconds > 0);
   const [isFinished, setIsFinished] = useState(!isPaused && initialSeconds <= 0);
@@ -289,14 +291,14 @@ export const RestTimerBar: React.FC<RestTimerBarProps> = ({
                     ]}
                   >
                     {isFinished
-                      ? 'KONIEC PRZERWY! CZAS NA SERIĘ!'
+                      ? t('restEndCapsExclaim')
                       : isRunning
-                      ? 'ODLICZANIE PRZERWY'
-                      : 'PRZERWA WSTRZYMANA'}
+                      ? t('restCountingDown')
+                      : t('restPausedUpper')}
                   </Text>
                 </View>
                 <Text numberOfLines={1} style={[styles.exerciseTitle, { color: theme.text }]}>
-                  {exerciseName || 'Odpoczynek'}
+                  {exerciseName || t('restFallbackTitle')}
                 </Text>
                 {nextSetInfo ? (
                   <Text style={[styles.subInfo, { color: theme.textSecondary }]}>
@@ -323,14 +325,14 @@ export const RestTimerBar: React.FC<RestTimerBarProps> = ({
                   },
                 ]}
               >
-                {isFinished ? 'KONIEC PRZERWY' : formatTime(secondsLeft)}
+                {isFinished ? t('restEndCaps') : formatTime(secondsLeft)}
               </Text>
               <Text style={[styles.digitsSub, { color: isFinished ? theme.text : theme.textMuted }]}>
                 {isFinished
-                  ? 'Wracaj pod ciężar! Kolejna seria czeka!'
+                  ? t('restReturnToBar')
                   : isRunning
-                  ? 'Złap oddech, napij się wody'
-                  : 'Stoper zatrzymany (powiadomienie i Dynamic Island wstrzymane)'}
+                  ? t('restCatchBreath')
+                  : t('restStoppedSub')}
               </Text>
             </View>
 
@@ -393,7 +395,7 @@ export const RestTimerBar: React.FC<RestTimerBarProps> = ({
                   { color: isFinished ? theme.primaryText : theme.text },
                 ]}
               >
-                {isFinished ? 'ROZPOCZNIJ KOLEJNĄ SERIĘ' : 'ZAKOŃCZ PRZERWĘ (ZACZNIJ SERIĘ)'}
+                {isFinished ? t('startNextSetCta') : t('endRestCta')}
               </Text>
             </TouchableOpacity>
           </View>

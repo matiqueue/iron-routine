@@ -29,6 +29,8 @@ import {
   WeightEntry,
   WorkoutHistoryEntry,
 } from '../types/workout';
+import { getStoredLanguageSync } from './languageStore';
+import { getTranslatedDay, PLAN_MODE_LOCALE, translateText } from '../i18n/translations';
 import { triggerNotificationHaptic, triggerSelectionHaptic } from './haptics';
 import { getAppSettings, resetAppSettings, updateAppSettings } from './settings';
 
@@ -145,7 +147,7 @@ async function applyLocalDeviceSeedIfNeeded(): Promise<void> {
               id: `initial_weight_${seededProfile.id}`,
               date: new Date().toISOString().slice(0, 10),
               weight: seededProfile.weight,
-              note: 'Pomiar początkowy',
+              note: translateText(getStoredLanguageSync(), 'initialMeasurementNote'),
             } satisfies WeightEntry,
           ])
         );
@@ -259,9 +261,10 @@ export async function createProfile(
     const parsedWeight =
       options?.weight && options.weight > 0 ? Math.round(options.weight * 10) / 10 : undefined;
 
+    const lang = getStoredLanguageSync();
     const newProfile: UserProfile = {
       id: 'profile_' + Date.now(),
-      name: name.trim() || 'Mój Profil',
+      name: name.trim() || translateText(lang, 'defaultProfileName'),
       createdAt: new Date().toISOString(),
       avatarColor: randomColor,
       gender: options?.gender || 'male',
@@ -281,7 +284,7 @@ export async function createProfile(
         id: 'initial_weight_' + Date.now(),
         date: new Date().toISOString().slice(0, 10),
         weight: parsedWeight,
-        note: 'Pomiar początkowy',
+        note: translateText(lang, 'initialMeasurementNote'),
       };
       await AsyncStorage.setItem(
         `${STORAGE_KEYS.WEIGHT_PREFIX}${newProfile.id}`,
@@ -291,18 +294,33 @@ export async function createProfile(
 
     const templateKey = options?.templateKey || 'blank';
     const templateLabelMap: Record<Exclude<PlanTemplateKey, 'clone_current'>, { name: string; subtitle: string }> = {
-      blank: { name: 'Mój Plan', subtitle: 'Pusty tydzień - dodaj własne treningi' },
-      fbw3: { name: 'FBW 3 dni', subtitle: 'Full Body Workout (Pn / Śr / Pt)' },
-      upper_lower: { name: 'Upper / Lower', subtitle: 'Split 4-dniowy Góra / Dół' },
-      ppl: { name: 'Push / Pull / Legs', subtitle: 'Split 6-dniowy PPL' },
-      split4: { name: 'Split 4-dniowy', subtitle: 'Klatka+Triceps, Plecy+Biceps, Nogi, Barki' },
+      blank: {
+        name: translateText(lang, 'defaultPlanName'),
+        subtitle: translateText(lang, 'blankPlanSubtitle'),
+      },
+      fbw3: {
+        name: translateText(lang, 'fbw3PlanName'),
+        subtitle: translateText(lang, 'fbw3PlanSubtitle'),
+      },
+      upper_lower: {
+        name: translateText(lang, 'upperLowerPlanName'),
+        subtitle: translateText(lang, 'upperLowerPlanSubtitle'),
+      },
+      ppl: {
+        name: 'Push / Pull / Legs',
+        subtitle: (PLAN_MODE_LOCALE[lang] || PLAN_MODE_LOCALE.pl).ppl.subtitle,
+      },
+      split4: {
+        name: translateText(lang, 'split4PlanName'),
+        subtitle: translateText(lang, 'split4PlanSubtitle'),
+      },
     };
     const meta = templateLabelMap[templateKey] || templateLabelMap.fbw3;
     const nowIso = new Date().toISOString();
     const days =
       options?.customDays && options.customDays.length > 0
         ? cloneDays(options.customDays)
-        : buildPlanDaysFromTemplate(templateKey);
+        : buildPlanDaysFromTemplate(templateKey, undefined, lang);
     const starterPlan: WorkoutPlan = {
       id: `plan_${templateKey}_${Date.now()}`,
       name: meta.name,
@@ -866,7 +884,7 @@ export async function getWeightHistory(profileId?: string): Promise<WeightEntry[
           id: `initial_weight_${pid}`,
           date: new Date().toISOString().slice(0, 10),
           weight: targetProfile.weight,
-          note: 'Pomiar początkowy',
+          note: translateText(getStoredLanguageSync(), 'initialMeasurementNote'),
         };
         await AsyncStorage.setItem(
           `${STORAGE_KEYS.WEIGHT_PREFIX}${pid}`,
@@ -986,10 +1004,11 @@ export interface ExerciseImprovement {
   diff1RM: number;
 }
 
-const DAY_LABELS = ['Nd', 'Pn', 'Wt', 'Śr', 'Cz', 'Pt', 'So'];
+const DAY_INDEX_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 
 export async function getCreatineLog(daysCount: number = 7): Promise<CreatineDayEntry[]> {
   const result: CreatineDayEntry[] = [];
+  const lang = getStoredLanguageSync();
   const today = new Date();
   const todayStr = today.toISOString().slice(0, 10);
 
@@ -997,7 +1016,7 @@ export async function getCreatineLog(daysCount: number = 7): Promise<CreatineDay
     const d = new Date();
     d.setDate(today.getDate() - i);
     const dateStr = d.toISOString().slice(0, 10);
-    const dayLabel = DAY_LABELS[d.getDay()];
+    const dayLabel = getTranslatedDay(DAY_INDEX_KEYS[d.getDay()], lang, true);
     const dayNum = String(d.getDate());
     const isToday = dateStr === todayStr;
 
@@ -1124,12 +1143,13 @@ export async function getProfilePlans(profileId?: string): Promise<WorkoutPlan[]
       }
     }
 
+    const lang = getStoredLanguageSync();
     const nowIso = new Date().toISOString();
     const initialPlan: WorkoutPlan = {
       id: `plan_blank_${pid}`,
-      name: 'Mój Plan',
-      subtitle: 'Pusty tydzień - dodaj własne treningi',
-      days: buildPlanDaysFromTemplate('blank'),
+      name: translateText(lang, 'defaultPlanName'),
+      subtitle: translateText(lang, 'blankPlanSubtitle'),
+      days: buildPlanDaysFromTemplate('blank', undefined, lang),
       isDefault: true,
       createdAt: nowIso,
       updatedAt: nowIso,
@@ -1141,12 +1161,13 @@ export async function getProfilePlans(profileId?: string): Promise<WorkoutPlan[]
     return seeded;
   } catch (e) {
     console.error('Error loading profile plans:', e);
+    const lang = getStoredLanguageSync();
     const nowIso = new Date().toISOString();
     return [
       {
         id: 'fallback_plan',
-        name: 'Mój Plan',
-        days: buildPlanDaysFromTemplate('blank'),
+        name: translateText(lang, 'defaultPlanName'),
+        days: buildPlanDaysFromTemplate('blank', undefined, lang),
         createdAt: nowIso,
         updatedAt: nowIso,
       },
@@ -1206,21 +1227,24 @@ export async function createWorkoutPlan(params: {
   setActive?: boolean;
   profileId?: string;
 }): Promise<WorkoutPlan> {
+  const lang = getStoredLanguageSync();
   const pid = await resolveProfileId(params.profileId);
-  if (!pid) throw new Error('Brak aktywnego profilu.');
+  if (!pid) throw new Error(translateText(lang, 'errNoActiveProfile'));
   const plans = await getProfilePlans(pid);
   const nowIso = new Date().toISOString();
 
   const days =
     params.templateKey === 'clone_current'
       ? cloneDays(
-          params.cloneFromDays?.length ? params.cloneFromDays : buildPlanDaysFromTemplate('blank')
+          params.cloneFromDays?.length
+            ? params.cloneFromDays
+            : buildPlanDaysFromTemplate('blank', undefined, lang)
         )
-      : buildPlanDaysFromTemplate(params.templateKey);
+      : buildPlanDaysFromTemplate(params.templateKey, undefined, lang);
 
   const newPlan: WorkoutPlan = {
     id: `plan_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
-    name: params.name.trim() || 'Nowy plan treningowy',
+    name: params.name.trim() || translateText(lang, 'newTrainingPlanDefault'),
     subtitle: params.subtitle?.trim() || undefined,
     days,
     createdAt: nowIso,
@@ -1243,8 +1267,9 @@ export async function saveWorkoutPlan(
   updatedPlan: WorkoutPlan,
   profileId?: string
 ): Promise<WorkoutPlan[]> {
+  const lang = getStoredLanguageSync();
   const pid = await resolveProfileId(profileId);
-  if (!pid) throw new Error('Brak aktywnego profilu.');
+  if (!pid) throw new Error(translateText(lang, 'errNoActiveProfile'));
   const plans = await getProfilePlans(pid);
   const stamped: WorkoutPlan = normalizeWorkoutPlan({
     ...updatedPlan,
@@ -1265,11 +1290,12 @@ export async function updateDayInPlan(
   updatedDay: DayPlan,
   profileId?: string
 ): Promise<WorkoutPlan> {
+  const lang = getStoredLanguageSync();
   const pid = await resolveProfileId(profileId);
-  if (!pid) throw new Error('Brak aktywnego profilu.');
+  if (!pid) throw new Error(translateText(lang, 'errNoActiveProfile'));
   const plans = await getProfilePlans(pid);
   const target = plans.find((p) => p.id === planId);
-  if (!target) throw new Error('Nie znaleziono planu treningowego');
+  if (!target) throw new Error(translateText(lang, 'errPlanNotFound'));
 
   const updatedPlan: WorkoutPlan = {
     ...target,
@@ -1286,14 +1312,15 @@ export async function duplicateWorkoutPlan(
   newName?: string,
   profileId?: string
 ): Promise<WorkoutPlan> {
+  const lang = getStoredLanguageSync();
   const pid = await resolveProfileId(profileId);
-  if (!pid) throw new Error('Brak aktywnego profilu.');
+  if (!pid) throw new Error(translateText(lang, 'errNoActiveProfile'));
   const plans = await getProfilePlans(pid);
   const source = plans.find((p) => p.id === planId);
-  if (!source) throw new Error('Nie znaleziono planu źródłowego');
+  if (!source) throw new Error(translateText(lang, 'errSourcePlanNotFound'));
 
   return createWorkoutPlan({
-    name: newName || `${source.name} (kopia)`,
+    name: newName || `${source.name} (${translateText(lang, 'copySuffix')})`,
     subtitle: source.subtitle,
     templateKey: 'clone_current',
     cloneFromDays: source.days,
@@ -1303,8 +1330,9 @@ export async function duplicateWorkoutPlan(
 }
 
 export async function deleteWorkoutPlan(planId: string, profileId?: string): Promise<string> {
+  const lang = getStoredLanguageSync();
   const pid = await resolveProfileId(profileId);
-  if (!pid) throw new Error('Brak aktywnego profilu.');
+  if (!pid) throw new Error(translateText(lang, 'errNoActiveProfile'));
   const plans = await getProfilePlans(pid);
   const remaining = plans.filter((p) => p.id !== planId);
 
@@ -1312,9 +1340,9 @@ export async function deleteWorkoutPlan(planId: string, profileId?: string): Pro
     const nowIso = new Date().toISOString();
     const blankReplacement: WorkoutPlan = normalizeWorkoutPlan({
       id: `plan_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
-      name: 'Pusty plan',
-      subtitle: 'Pusty tydzień - dodaj własne treningi',
-      days: buildPlanDaysFromTemplate('blank'),
+      name: (PLAN_MODE_LOCALE[lang] || PLAN_MODE_LOCALE.pl).blank.label,
+      subtitle: translateText(lang, 'blankPlanSubtitle'),
+      days: buildPlanDaysFromTemplate('blank', undefined, lang),
       createdAt: nowIso,
       updatedAt: nowIso,
     });
@@ -1562,11 +1590,12 @@ export async function importProfileBackup(
   rawJson: string,
   mode: 'overwrite_active' | 'create_new' = 'overwrite_active'
 ): Promise<{ profile: UserProfile; plansCount: number; prsCount: number }> {
+  const lang = getStoredLanguageSync();
   let payload: Partial<ProfileBackupPayload> & Partial<LocalDeviceSeedConfig>;
   try {
     payload = JSON.parse(rawJson.trim());
   } catch {
-    throw new Error('Nieprawidłowy format JSON.');
+    throw new Error(translateText(lang, 'invalidJsonError'));
   }
 
   const isValidFormat =
@@ -1577,7 +1606,7 @@ export async function importProfileBackup(
     payload.plans.length > 0;
 
   if (!isValidFormat || !payload.profile || !payload.plans) {
-    throw new Error('Ten plik nie wygląda jak poprawna kopia lub seed Iron Routine.');
+    throw new Error(translateText(lang, 'errInvalidBackupFile'));
   }
 
   const profiles = await getProfiles();
@@ -1602,7 +1631,7 @@ export async function importProfileBackup(
     targetProfile = {
       ...payload.profile,
       id: active ? active.id : payload.profile.id || `profile_${Date.now()}`,
-      name: payload.profile.name?.trim() || 'Mój Profil',
+      name: payload.profile.name?.trim() || translateText(lang, 'defaultProfileName'),
       gender: payload.profile.gender || active?.gender || 'male',
       isOwner: false,
       createdAt: active?.createdAt || payload.profile.createdAt || new Date().toISOString(),
@@ -1686,21 +1715,22 @@ export async function importProfileBackup(
 export async function importPlansFromSeedOrBackupJson(
   rawJson: string
 ): Promise<{ importedCount: number; activePlanId: string }> {
+  const lang = getStoredLanguageSync();
   let parsed: Partial<ProfileBackupPayload> & Partial<LocalDeviceSeedConfig>;
   try {
     parsed = JSON.parse(rawJson.trim());
   } catch {
-    throw new Error('Nieprawidłowy format JSON.');
+    throw new Error(translateText(lang, 'invalidJsonError'));
   }
 
   const incomingPlans = Array.isArray(parsed?.plans) ? parsed.plans.map(normalizeWorkoutPlan) : [];
   if (incomingPlans.length === 0) {
-    throw new Error('Plik JSON nie zawiera żadnych planów treningowych.');
+    throw new Error(translateText(lang, 'errNoPlansInJson'));
   }
 
   const active = await getActiveProfile();
   if (!active) {
-    throw new Error('Najpierw utwórz profil użytkownika.');
+    throw new Error(translateText(lang, 'errCreateProfileFirst'));
   }
 
   if (Array.isArray(parsed.customExercises) && parsed.customExercises.length > 0) {

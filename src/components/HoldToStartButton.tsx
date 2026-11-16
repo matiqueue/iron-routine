@@ -10,6 +10,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useAppTheme } from '../context/ThemeContext';
+import { useLanguage } from '../context/LanguageContext';
 
 interface HoldToStartButtonProps {
   onComplete: () => void;
@@ -19,10 +20,13 @@ interface HoldToStartButtonProps {
 
 export const HoldToStartButton: React.FC<HoldToStartButtonProps> = ({
   onComplete,
-  title = 'PRZYTRZYMAJ, ABY ROZPOCZĄĆ',
-  subtitle = 'Tryb treningu prowadzony krok po kroku',
+  title,
+  subtitle,
 }) => {
   const { theme, isDark } = useAppTheme();
+  const { t } = useLanguage();
+  const resolvedTitle = title || t('holdToStartDefault');
+  const resolvedSubtitle = subtitle || t('todayEditSession');
   const [isHolding, setIsHolding] = useState(false);
   const progressAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(1)).current;
@@ -187,10 +191,10 @@ export const HoldToStartButton: React.FC<HoldToStartButtonProps> = ({
 
           <View style={styles.textCol}>
             <Text style={[styles.title, { color: theme.primaryText }]}>
-              {isHolding ? 'TRZYMAJ, ABY ZACZĄĆ...' : title}
+              {isHolding ? t('holdKeepPressing') : resolvedTitle}
             </Text>
             <Text style={[styles.subtitle, { color: isDark ? '#71717A' : '#D1D5DB' }]}>
-              {subtitle}
+              {resolvedSubtitle}
             </Text>
           </View>
 

@@ -18,6 +18,8 @@ import {
   SdkAvailabilityStatus,
 } from 'react-native-health-connect';
 import { HealthDailySummary } from '../types/workout';
+import { getCurrentAppLanguage } from './settings';
+import { getLocaleCode, translateText } from '../i18n/translations';
 
 const IOS_READ_IDENTIFIERS = [
   'HKQuantityTypeIdentifierStepCount',
@@ -299,12 +301,15 @@ export function generateHealthCoachingInsight(
   summary: HealthDailySummary | null,
   isWorkoutDay: boolean
 ): HealthCoachingInsight {
+  const lang = getCurrentAppLanguage();
+  const locale = getLocaleCode(lang);
+
   if (!summary || !summary.authorized) {
     return {
       id: 'connect-tip',
       icon: 'moon-outline',
-      headline: 'Pamiętaj, ilość snu i regeneracja się liczą',
-      tip: 'Połącz Apple Health / Health Connect, aby dopasować wskazówki kroków i snu do Twojego treningu.',
+      headline: translateText(lang, 'healthTipConnectHead'),
+      tip: translateText(lang, 'healthTipConnectBody'),
       tone: 'neutral',
     };
   }
@@ -313,10 +318,10 @@ export function generateHealthCoachingInsight(
     return {
       id: 'low-sleep',
       icon: 'moon-outline',
-      headline: `Krótki sen (${summary.sleepHours} h) · pamiętaj, ilość snu się liczy!`,
+      headline: translateText(lang, 'healthTipLowSleepHead', { hours: summary.sleepHours }),
       tip: isWorkoutDay
-        ? 'Po krótkiej nocy wydłuż rozgrzewkę o 5 minut i kontroluj RPE w seriach roboczych.'
-        : 'Dzisiaj postaw na spokojny spacer, nawodnienie i wcześniejszy sen na regenerację układu nerwowego.',
+        ? translateText(lang, 'healthTipLowSleepWork')
+        : translateText(lang, 'healthTipLowSleepRest'),
       tone: 'warning',
     };
   }
@@ -325,8 +330,10 @@ export function generateHealthCoachingInsight(
     return {
       id: 'low-steps',
       icon: 'footsteps-outline',
-      headline: `Mało ruchu poza treningiem (${summary.steps.toLocaleString('pl-PL')} kroków)`,
-      tip: 'Dorzuć krótki marsz po posiłku albo po treningu. NEAT poprawia regenerację i metabolizm.',
+      headline: translateText(lang, 'healthTipLowStepsHead', {
+        steps: summary.steps.toLocaleString(locale),
+      }),
+      tip: translateText(lang, 'healthTipLowStepsBody'),
       tone: 'neutral',
     };
   }
@@ -335,8 +342,8 @@ export function generateHealthCoachingInsight(
     return {
       id: 'optimal-recovery',
       icon: 'battery-charging-outline',
-      headline: `Świetna regeneracja (${summary.sleepHours} h snu)`,
-      tip: 'Wysoka gotowość fizyczna! Dobry dzień na dołożenie ciężaru lub walkę o nowy rekord PR.',
+      headline: translateText(lang, 'healthTipOptimalHead', { hours: summary.sleepHours }),
+      tip: translateText(lang, 'healthTipOptimalBody'),
       tone: 'good',
     };
   }
@@ -344,8 +351,8 @@ export function generateHealthCoachingInsight(
   return {
     id: 'steady-recovery',
     icon: 'flame-outline',
-    headline: 'Stały rytm regeneracji · trzymaj sen, kroki i nawodnienie',
-    tip: 'Pamiętaj, że jakość snu i systematyczne kroki w tygodniu budują formę równie mocno jak ciężary.',
+    headline: translateText(lang, 'healthTipSteadyHead'),
+    tip: translateText(lang, 'healthTipSteadyBody'),
     tone: 'good',
   };
 }

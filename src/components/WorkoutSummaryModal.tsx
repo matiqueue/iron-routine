@@ -28,7 +28,7 @@ export const WorkoutSummaryModal: React.FC<WorkoutSummaryModalProps> = ({
   onClose,
 }) => {
   const { theme } = useAppTheme();
-  const { t } = useLanguage();
+  const { t, exerciseName } = useLanguage();
   const completionPct =
     totalSets > 0 ? Math.min(100, Math.round((completedSets / totalSets) * 100)) : 100;
 
@@ -48,7 +48,7 @@ export const WorkoutSummaryModal: React.FC<WorkoutSummaryModalProps> = ({
               <Text style={[styles.statNumber, { color: theme.text }]}>
                 {completedSets}/{totalSets}
               </Text>
-              <Text style={[styles.statLabel, { color: theme.textMuted }]}>Serie</Text>
+              <Text style={[styles.statLabel, { color: theme.textMuted }]}>{t('sets')}</Text>
             </View>
 
             <View style={[styles.statDivider, { backgroundColor: theme.border }]} />
@@ -58,7 +58,7 @@ export const WorkoutSummaryModal: React.FC<WorkoutSummaryModalProps> = ({
                 {totalVolumeKg && totalVolumeKg > 0 ? `${totalVolumeKg}` : `${completionPct}%`}
               </Text>
               <Text style={[styles.statLabel, { color: theme.textMuted }]}>
-                {totalVolumeKg && totalVolumeKg > 0 ? 'Objętość (kg)' : 'Realizacja'}
+                {totalVolumeKg && totalVolumeKg > 0 ? t('summaryVolumeKg') : t('summaryCompletion')}
               </Text>
             </View>
 
@@ -69,7 +69,7 @@ export const WorkoutSummaryModal: React.FC<WorkoutSummaryModalProps> = ({
                 {durationMinutes ? `${durationMinutes}m` : `${completionPct}%`}
               </Text>
               <Text style={[styles.statLabel, { color: theme.textMuted }]}>
-                {durationMinutes ? 'Czas' : 'Zrealizowano'}
+                {durationMinutes ? t('summaryTime') : t('summaryCompletedPct')}
               </Text>
             </View>
           </View>
@@ -77,11 +77,11 @@ export const WorkoutSummaryModal: React.FC<WorkoutSummaryModalProps> = ({
           {newPRs.length > 0 && (
             <View style={[styles.prBox, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
               <Text style={[styles.prBoxTitle, { color: theme.text }]}>
-                NOWE REKORDY PR ({newPRs.length})
+                {t('summaryNewPrsTitle', { count: newPRs.length })}
               </Text>
               {newPRs.slice(0, 3).map((pr) => (
                 <Text key={pr.exerciseId} style={[styles.prItemText, { color: theme.textSecondary }]}>
-                  • {pr.exerciseName}: {pr.weight} kg × {pr.reps} (~{pr.estimated1RM} kg 1RM)
+                  • {exerciseName(pr.exerciseId, pr.exerciseName)}: {pr.weight} kg × {pr.reps} (~{pr.estimated1RM} kg 1RM)
                 </Text>
               ))}
             </View>

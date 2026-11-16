@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { RankTier } from '../types/workout';
 import { RANK_TIER_MAP } from '../data/muscleMap';
+import { useLanguage } from '../context/LanguageContext';
 
 interface RankBadgeProps {
   tier: RankTier;
@@ -16,6 +17,7 @@ export const RankBadge: React.FC<RankBadgeProps> = ({
   showLabel = false,
   progressPct,
 }) => {
+  const { rankTitle } = useLanguage();
   const meta = RANK_TIER_MAP[tier] || RANK_TIER_MAP.F;
   const isTopTier = tier === 'S' || tier === 'S+' || tier === 'A';
 
@@ -60,7 +62,7 @@ export const RankBadge: React.FC<RankBadgeProps> = ({
 
       {showLabel && (
         <Text style={[styles.label, { color: meta.color }]} numberOfLines={1}>
-          {meta.title}
+          {rankTitle(tier)}
         </Text>
       )}
 

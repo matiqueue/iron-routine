@@ -88,21 +88,12 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
   onSwitchToPlanTab,
 }) => {
   const { theme, isDark, toggleTheme } = useAppTheme();
-  const { t, language } = useLanguage();
-  const dateLocale =
-    language === 'en'
-      ? 'en-US'
-      : language === 'de'
-      ? 'de-DE'
-      : language === 'fr'
-      ? 'fr-FR'
-      : language === 'es'
-      ? 'es-ES'
-      : 'pl-PL';
+  const { t, language, dayTagLabel, localeCode } = useLanguage();
+  const dateLocale = localeCode;
 
   const bannerTag = resolveDayBannerTag(currentPlan);
   const tagMeta = getDayBannerTagMeta(bannerTag);
-  const firstName = activeProfile?.name?.trim().split(' ')[0] || 'Zawodniku';
+  const firstName = activeProfile?.name?.trim().split(' ')[0] || t('athleteFallback');
   const skippedIds = dayProgress.sessionConfig?.skippedIds || [];
 
   const { ordered: sessionPreviewExercises, active: activePreviewList } = useMemo(
@@ -159,7 +150,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
             adjustsFontSizeToFit
             minimumFontScale={0.78}
           >
-            Cześć, {firstName}
+            {t('greetingHello', { name: firstName })}
           </Text>
         </View>
 
@@ -178,7 +169,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
               toggleTheme();
             }}
             activeOpacity={0.7}
-            accessibilityLabel="Przełącz motyw"
+            accessibilityLabel={t('switchThemeA11y')}
           >
             <Ionicons
               name={isDark ? 'sunny-outline' : 'moon-outline'}
@@ -200,11 +191,11 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
               onOpenPlanManager();
             }}
             activeOpacity={0.75}
-            accessibilityLabel="Zmień aktywny plan treningowy"
+            accessibilityLabel={t('switchPlanA11y')}
           >
             <Ionicons name="layers-outline" size={14} color={theme.text} />
             <Text style={[styles.planPillText, { color: theme.text }]} numberOfLines={1}>
-              {activePlan?.name || 'Wybierz plan'}
+              {activePlan?.name || t('choosePlanBtn')}
             </Text>
             <Ionicons name="chevron-down" size={13} color={theme.textMuted} />
           </TouchableOpacity>
@@ -247,10 +238,10 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
           </View>
           <View style={styles.streakTextCol}>
             <Text style={[styles.streakEyebrow, { color: theme.textMuted }]}>
-              REGULARNOŚĆ TRENINGOWA
+              {t('trainingRegularityKicker')}
             </Text>
             <Text style={[styles.streakTitle, { color: theme.text }]} numberOfLines={1}>
-              {streak} {streak === 1 ? 'dzień' : 'dni'} serii
+              {streak} {streak === 1 ? t('streakDayOne') : t('streakDaysMany')}
             </Text>
           </View>
         </View>
@@ -263,7 +254,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
                   {completedSetsToday}/{totalSets}
                 </Text>
                 <Text style={[styles.telemetryMiniLabel, { color: theme.textMuted }]}>
-                  Serie dziś
+                  {t('setsTodayLabel')}
                 </Text>
               </View>
               <View style={[styles.verticalHairline, { backgroundColor: theme.hairline }]} />
@@ -283,7 +274,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
             </Text>
             <View style={styles.telemetryWeightSubRow}>
               <Text style={[styles.telemetryMiniLabel, { color: '#38BDF8' }]}>
-                Waga
+                {t('weightShort')}
               </Text>
               <Ionicons name="chevron-forward" size={10} color="#38BDF8" />
             </View>
@@ -336,7 +327,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
                     active
                   />
                   <Text style={[styles.heroTagText, { color: theme.primaryText }]}>
-                    {tagMeta.label.toUpperCase()}
+                    {dayTagLabel(bannerTag, tagMeta.label).toUpperCase()}
                   </Text>
                 </View>
 
@@ -378,7 +369,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
                     ]}
                   >
                     <Text style={[styles.heroMetaText, { color: theme.text }]}>
-                      {totalExercises} ćwiczeń
+                      {t('exercisesCountText', { count: totalExercises })}
                     </Text>
                   </View>
                   <View
@@ -391,7 +382,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
                     ]}
                   >
                     <Text style={[styles.heroMetaText, { color: theme.text }]}>
-                      {totalSets} serii
+                      {totalSets} {t('setsWord')}
                     </Text>
                   </View>
                 </View>
@@ -415,7 +406,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
               <View style={styles.warmupHeaderLine}>
                 <AnimatedIcon name="sparkles-outline" preset="pulse" size={13} color="#10B981" active />
                 <Text style={[styles.warmupEyebrow, { color: '#10B981' }]}>
-                  ROZGRZEWKA I MOBILIZACJA
+                  {t('warmupMobilityUpper')}
                 </Text>
               </View>
               <Text style={[styles.warmupBody, { color: theme.textSecondary }]}>
@@ -448,7 +439,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
             >
               <Ionicons name="add-circle-outline" size={18} color={theme.text} />
               <Text style={[styles.emptySetupBtnText, { color: theme.text }]}>
-                Dodaj ćwiczenia w zakładce Plan
+                {t('addExercisesInPlanHint')}
               </Text>
             </TouchableOpacity>
           )}
@@ -471,10 +462,10 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
               <View style={styles.openSectionHeader}>
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.sectionEyebrow, { color: theme.textMuted }]}>
-                    PLAN DZISIEJSZEJ SESJI ({activeExercisesCount}/{totalExercises})
+                    {t('exercisesInDayUpper', { count: activeExercisesCount })} ({activeExercisesCount}/{totalExercises})
                   </Text>
                   <Text style={[styles.sectionHeading, { color: theme.text }]}>
-                    Ćwiczenia w bloku
+                    {t('exercisesInBlock')}
                   </Text>
                 </View>
 
@@ -490,7 +481,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
                   activeOpacity={0.75}
                 >
                   <Text style={[styles.weekGlassPillText, { color: theme.text }]}>
-                    Cały tydzień
+                    {t('wholeWeek')}
                   </Text>
                   <Ionicons name="arrow-forward" size={12} color={theme.textSecondary} />
                 </TouchableOpacity>
@@ -534,6 +525,7 @@ const OpenBiometricsAndRecoverySection: React.FC<
   onConnect,
 }) => {
   const { theme, isDark } = useAppTheme();
+  const { t, localeCode } = useLanguage();
   const isConnected = Boolean(summary?.authorized);
   const platformLabel = Platform.OS === 'ios' ? 'APPLE HEALTH' : 'HEALTH CONNECT';
 
@@ -571,11 +563,11 @@ const OpenBiometricsAndRecoverySection: React.FC<
               active={isConnected}
             />
             <Text style={[styles.sectionEyebrow, { color: theme.textMuted, marginBottom: 0 }]}>
-              BIOMETRIA · {platformLabel}
+              {t('biometricsKicker')} · {platformLabel}
             </Text>
           </View>
           <Text style={[styles.sectionHeading, { color: theme.text, marginTop: 2 }]}>
-            Gotowość i parametry
+            {t('readinessAndParams')}
           </Text>
         </View>
 
@@ -593,7 +585,7 @@ const OpenBiometricsAndRecoverySection: React.FC<
           >
             <Ionicons name="scale-outline" size={13} color={theme.text} />
             <Text style={[styles.glassMiniActionText, { color: theme.text }]}>
-              Waga
+              {t('weightShort')}
             </Text>
           </TouchableOpacity>
 
@@ -629,7 +621,7 @@ const OpenBiometricsAndRecoverySection: React.FC<
                 <>
                   <Ionicons name="link-outline" size={13} color={theme.bg} />
                   <Text style={[styles.healthConnectText, { color: theme.bg }]}>
-                    Połącz
+                    {t('connectAction')}
                   </Text>
                 </>
               )}
@@ -649,7 +641,7 @@ const OpenBiometricsAndRecoverySection: React.FC<
           activeOpacity={0.7}
         >
           <Text style={[styles.telemetryCellLabel, { color: theme.textMuted }]}>
-            MASA CIAŁA
+            {t('bodyWeightUpper')}
           </Text>
           <Text style={[styles.telemetryCellValue, { color: theme.text }]}>
             {weight ? `${weight} kg` : '-- kg'}
@@ -661,7 +653,7 @@ const OpenBiometricsAndRecoverySection: React.FC<
             delayMs={0}
           />
           <Text style={[styles.telemetryCellSub, { color: theme.textSecondary }]}>
-            {bmiValue ? `BMI ${bmiValue}` : height ? `${height} cm` : 'Ustaw wagę'}
+            {bmiValue ? `BMI ${bmiValue}` : height ? `${height} cm` : t('setWeightAction')}
           </Text>
         </TouchableOpacity>
 
@@ -669,11 +661,11 @@ const OpenBiometricsAndRecoverySection: React.FC<
 
         <View style={styles.telemetryCell}>
           <Text style={[styles.telemetryCellLabel, { color: theme.textMuted }]}>
-            KROKI DZIŚ
+            {t('stepsTodayUpper')}
           </Text>
           <Text style={[styles.telemetryCellValue, { color: theme.text }]}>
             {isConnected && summary?.steps !== null && summary?.steps !== undefined
-              ? summary.steps.toLocaleString('pl-PL')
+              ? summary.steps.toLocaleString(localeCode)
               : '--'}
           </Text>
           <AnimatedMiniBar
@@ -684,8 +676,8 @@ const OpenBiometricsAndRecoverySection: React.FC<
           />
           <Text style={[styles.telemetryCellSub, { color: theme.textSecondary }]}>
             {isConnected && summary?.steps
-              ? `${Math.min(100, Math.round((summary.steps / 10000) * 100))}% celu`
-              : 'Cel 10 tys.'}
+              ? t('goalPctLabel', { pct: Math.min(100, Math.round((summary.steps / 10000) * 100)) })
+              : t('goal10kLabel')}
           </Text>
         </View>
 
@@ -693,7 +685,7 @@ const OpenBiometricsAndRecoverySection: React.FC<
 
         <View style={styles.telemetryCell}>
           <Text style={[styles.telemetryCellLabel, { color: theme.textMuted }]}>
-            SEN NOCNY
+            {t('sleepNightUpper')}
           </Text>
           <Text style={[styles.telemetryCellValue, { color: theme.text }]}>
             {isConnected && summary?.sleepHours !== null && summary?.sleepHours !== undefined
@@ -709,9 +701,9 @@ const OpenBiometricsAndRecoverySection: React.FC<
           <Text style={[styles.telemetryCellSub, { color: theme.textSecondary }]}>
             {isConnected && summary?.sleepHours
               ? summary.sleepHours >= 7
-                ? 'Optymalny'
-                : 'Krótki sen'
-              : 'Norma 7-8h'}
+                ? t('optimalSleep')
+                : t('shortSleep')
+              : t('sleepNormSub')}
           </Text>
         </View>
 
@@ -719,7 +711,7 @@ const OpenBiometricsAndRecoverySection: React.FC<
 
         <View style={styles.telemetryCell}>
           <Text style={[styles.telemetryCellLabel, { color: theme.textMuted }]}>
-            AKTYWNE KCAL
+            {t('activeKcalUpper')}
           </Text>
           <Text style={[styles.telemetryCellValue, { color: theme.text }]}>
             {isConnected &&
@@ -738,8 +730,8 @@ const OpenBiometricsAndRecoverySection: React.FC<
           />
           <Text style={[styles.telemetryCellSub, { color: theme.textSecondary }]}>
             {isConnected && summary?.activeCalories !== null
-              ? 'Spalone dziś'
-              : 'Brak danych'}
+              ? t('burnedToday')
+              : t('noDataLabel')}
           </Text>
         </View>
       </View>
