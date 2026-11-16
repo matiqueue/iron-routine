@@ -16,6 +16,7 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAppTheme } from '../context/ThemeContext';
 import { useLanguage } from '../context/LanguageContext';
 import {
@@ -98,6 +99,7 @@ export const FriendsTab: React.FC<FriendsTabProps> = ({
 }) => {
   const { theme, isDark } = useAppTheme();
   const { t, localeCode } = useLanguage();
+  const insets = useSafeAreaInsets();
 
   const [cloudSession, setCloudSession] = useState<CloudSession | null>(null);
   const [busyProvider, setBusyProvider] = useState<'apple' | 'google' | null>(null);
@@ -473,10 +475,18 @@ export const FriendsTab: React.FC<FriendsTabProps> = ({
 
   return (
     <View style={[styles.container, { backgroundColor: theme.bg }]}>
-      <MinimalistBackdrop variant="dots" accentColor="#38BDF8" />
+      <MinimalistBackdrop variant="contours" accentColor="#38BDF8" />
 
       {/* Open Editorial Header */}
-      <View style={[styles.header, { borderBottomColor: theme.hairline }]}>
+      <View
+        style={[
+          styles.header,
+          {
+            borderBottomColor: theme.hairline,
+            paddingTop: Math.max(insets.top + 8, 16),
+          },
+        ]}
+      >
         <View style={styles.headerTopRow}>
           <View style={{ flex: 1, minWidth: 0 }}>
             <Text style={[styles.eyebrow, { color: '#38BDF8' }]}>{t('friendsEyebrow')}</Text>

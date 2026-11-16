@@ -15,7 +15,9 @@ import {
 } from 'react-native';
 import Svg, { Circle, Defs, LinearGradient, Line, Path, Stop } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
+import { MinimalistBackdrop } from './MinimalistBackdrop';
 import { useAppTheme } from '../context/ThemeContext';
 import { useLanguage } from '../context/LanguageContext';
 import { SmartScrollView } from './SmartScrollView';
@@ -224,6 +226,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
 
   // Exercise progression sheet
   const { t, localeCode, muscleLabel, exerciseName, rankTitle, rankSubtitle, equipmentLabel } = useLanguage();
+  const insets = useSafeAreaInsets();
   const [customExercises, setCustomExercises] = useState<Exercise[]>([]);
   const [favoriteIds, setFavoriteIds] = useState<string[]>([]);
   const [bestPRs, setBestPRs] = useState<{ [id: string]: PRRecord }>({});
@@ -897,8 +900,17 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
 
   return (
     <View style={[styles.container, { backgroundColor: theme.bg }]}>
+      <MinimalistBackdrop variant="contours" accentColor="#F59E0B" />
       {/* Open Editorial Header with Silky 120fps Icon-Only Glass Pill Slider */}
-      <View style={[styles.header, { borderBottomColor: theme.hairline }]}>
+      <View
+        style={[
+          styles.header,
+          {
+            borderBottomColor: theme.hairline,
+            paddingTop: Math.max(insets.top + 8, 16),
+          },
+        ]}
+      >
         <View style={styles.headerTopRow}>
           <Text style={[styles.title, { color: theme.text }]}>{t('progressTitle')}</Text>
 

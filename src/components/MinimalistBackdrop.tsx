@@ -13,20 +13,31 @@ import Svg, {
 import { useAppTheme } from '../context/ThemeContext';
 
 interface MinimalistBackdropProps {
-  variant?: 'dots' | 'grid';
+  variant?: 'dots' | 'grid' | 'contours';
   accentColor?: string;
 }
 
 /**
- * Crisp minimalist architectural backdrop with clear visual depth in both
- * Light and Dark modes without competing with foreground typography or cards.
+ * Precision architectural & kinetic contour backdrop.
+ * Zero dots: pairs crisp micro-crosshair instrumentation marks with subtle
+ * concentric orbital arcs that extend smoothly behind the Dynamic Island.
  */
 export const MinimalistBackdrop: React.FC<MinimalistBackdropProps> = React.memo(
-  ({ variant = 'dots', accentColor }) => {
+  ({ variant = 'contours', accentColor }) => {
     const { isDark } = useAppTheme();
     const uid = useId().replace(/:/g, '_');
     const primaryGlow = accentColor || (isDark ? '#38BDF8' : '#0EA5E9');
-    const secondaryGlow = isDark ? '#10B981' : '#10B981';
+    const secondaryGlow = '#10B981';
+
+    const hairlineStroke = isDark
+      ? 'rgba(255, 255, 255, 0.068)'
+      : 'rgba(15, 23, 42, 0.065)';
+    const crossStroke = isDark
+      ? 'rgba(255, 255, 255, 0.145)'
+      : 'rgba(15, 23, 42, 0.145)';
+    const arcStroke = isDark
+      ? 'rgba(255, 255, 255, 0.075)'
+      : 'rgba(15, 23, 42, 0.075)';
 
     return (
       <Svg
@@ -37,50 +48,61 @@ export const MinimalistBackdrop: React.FC<MinimalistBackdropProps> = React.memo(
       >
         <Defs>
           {variant === 'grid' ? (
-            <Pattern id={`bg_pat_${uid}`} width={44} height={44} patternUnits="userSpaceOnUse">
+            <Pattern id={`bg_pat_${uid}`} width={52} height={52} patternUnits="userSpaceOnUse">
               <Path
-                d="M 44 0 L 0 0 0 44"
+                d="M 52 0 L 0 0 0 52"
                 fill="none"
-                stroke={isDark ? 'rgba(255,255,255,0.088)' : 'rgba(15,23,42,0.085)'}
-                strokeWidth={0.95}
+                stroke={hairlineStroke}
+                strokeWidth={0.85}
               />
-              <Circle
-                cx={0}
-                cy={0}
-                r={1.35}
-                fill={isDark ? 'rgba(255,255,255,0.18)' : 'rgba(15,23,42,0.16)'}
+              {/* Precision "+" crosshair mark at intersections (no dots) */}
+              <Path
+                d="M 0 5 L 0 -5 M -5 0 L 5 0"
+                fill="none"
+                stroke={crossStroke}
+                strokeWidth={1.1}
               />
             </Pattern>
           ) : (
-            <Pattern id={`bg_pat_${uid}`} width={26} height={26} patternUnits="userSpaceOnUse">
-              <Circle
-                cx={2}
-                cy={2}
-                r={1.3}
-                fill={isDark ? 'rgba(255,255,255,0.13)' : 'rgba(15,23,42,0.135)'}
+            <Pattern id={`bg_pat_${uid}`} width={56} height={56} patternUnits="userSpaceOnUse">
+              {/* Subtle diagonal architectural micro-mesh + "+" ticks */}
+              <Line
+                x1={0}
+                y1={56}
+                x2={56}
+                y2={0}
+                stroke={isDark ? 'rgba(255,255,255,0.032)' : 'rgba(15,23,42,0.035)'}
+                strokeWidth={0.8}
+              />
+              <Path
+                d="M 28 24.5 L 28 31.5 M 24.5 28 L 31.5 28"
+                fill="none"
+                stroke={crossStroke}
+                strokeWidth={1}
+                strokeLinecap="round"
               />
             </Pattern>
           )}
 
-          <RadialGradient id={`bg_glow_top_${uid}`} cx="85%" cy="6%" r="62%">
+          <RadialGradient id={`bg_glow_top_${uid}`} cx="82%" cy="5%" r="64%">
             <Stop
               offset="0%"
               stopColor={primaryGlow}
-              stopOpacity={isDark ? 0.17 : 0.125}
+              stopOpacity={isDark ? 0.19 : 0.14}
             />
             <Stop
-              offset="58%"
+              offset="55%"
               stopColor={primaryGlow}
-              stopOpacity={isDark ? 0.055 : 0.04}
+              stopOpacity={isDark ? 0.065 : 0.048}
             />
             <Stop offset="100%" stopColor={isDark ? '#000000' : '#FFFFFF'} stopOpacity={0} />
           </RadialGradient>
 
-          <RadialGradient id={`bg_glow_btm_${uid}`} cx="12%" cy="88%" r="56%">
+          <RadialGradient id={`bg_glow_btm_${uid}`} cx="14%" cy="90%" r="58%">
             <Stop
               offset="0%"
               stopColor={secondaryGlow}
-              stopOpacity={isDark ? 0.11 : 0.085}
+              stopOpacity={isDark ? 0.12 : 0.095}
             />
             <Stop offset="100%" stopColor={isDark ? '#000000' : '#FFFFFF'} stopOpacity={0} />
           </RadialGradient>
@@ -90,13 +112,40 @@ export const MinimalistBackdrop: React.FC<MinimalistBackdropProps> = React.memo(
         <Rect x={0} y={0} width="100%" height="100%" fill={`url(#bg_glow_top_${uid})`} />
         <Rect x={0} y={0} width="100%" height="100%" fill={`url(#bg_glow_btm_${uid})`} />
 
-        {/* Subtle Top-to-Bottom Architectural Rule */}
+        {/* Concentric Telemetry Arcs sweeping behind Dynamic Island & lower corner */}
+        <Circle
+          cx="86%"
+          cy="6%"
+          r={130}
+          fill="none"
+          stroke={arcStroke}
+          strokeWidth={1}
+        />
+        <Circle
+          cx="86%"
+          cy="6%"
+          r={225}
+          fill="none"
+          stroke={arcStroke}
+          strokeWidth={0.85}
+          strokeDasharray="6 6"
+        />
+        <Circle
+          cx="10%"
+          cy="92%"
+          r={175}
+          fill="none"
+          stroke={arcStroke}
+          strokeWidth={0.85}
+        />
+
+        {/* Vertical Editorial Guide Line */}
         <Line
-          x1="8%"
+          x1="7%"
           y1="0"
-          x2="8%"
+          x2="7%"
           y2="100%"
-          stroke={isDark ? 'rgba(255,255,255,0.035)' : 'rgba(15,23,42,0.045)'}
+          stroke={isDark ? 'rgba(255,255,255,0.042)' : 'rgba(15,23,42,0.05)'}
           strokeWidth={1}
         />
       </Svg>

@@ -125,6 +125,14 @@ export interface AppSettings {
   defaultRestSeconds: number;
   supplements: SupplementItem[];
   healthSyncEnabled: boolean;
+  calendarSyncEnabled: boolean;
+  remindersSyncEnabled: boolean;
+  preferredWorkoutHour: number;
+  preferredWorkoutMinute: number;
+  workoutDurationMinutes: number;
+  lastCalendarSyncAt?: string;
+  calendarSyncedIds?: string[];
+  reminderSyncedIds?: string[];
 }
 
 export type PlanTemplateKey = 'blank' | 'fbw3' | 'ppl' | 'upper_lower' | 'split4' | 'clone_current';

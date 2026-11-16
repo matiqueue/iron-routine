@@ -16,6 +16,7 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAppTheme } from '../context/ThemeContext';
 import { useLanguage } from '../context/LanguageContext';
 import { TranslationKey } from '../i18n/translations';
@@ -48,6 +49,18 @@ import {
 } from '../services/notifications';
 import { fetchTodayHealthSummary, requestHealthPermissions } from '../services/health';
 import { buildActiveSupplementsSummary } from '../data/supplements';
+import {
+  clearAllSyncedCalendarItems,
+  getCalendarSyncCapabilities,
+  requestCalendarAccess,
+  syncWorkoutScheduleWithDevice,
+} from '../services/calendarSync';
+import {
+  ALEXA_ENDPOINT_URL,
+  buildAlexaInteractionModelJson,
+  VOICE_DEEP_LINKS,
+} from '../services/voiceCommands';
+import { getActiveWorkoutPlan } from '../services/storage';
 import {
   exportProfileBackup,
   getCustomExercises,
@@ -130,6 +143,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 }) => {
   const { theme, isDark, toggleTheme } = useAppTheme();
   const { t, localeCode } = useLanguage();
+  const insets = useSafeAreaInsets();
 
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_APP_SETTINGS);
   const [nameInput, setNameInput] = useState(activeProfile.name || '');
@@ -154,6 +168,8 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 
   const [healthSummary, setHealthSummary] = useState<HealthDailySummary | null>(null);
   const [isSyncingHealth, setIsSyncingHealth] = useState(false);
+  const [isSyncingCalendar, setIsSyncingCalendar] = useState(false);
+  const [calendarLabel, setCalendarLabel] = useState<string | null>(null);
   const [notifPerm, setNotifPerm] = useState<NotificationPermissionSummary | null>(null);
 
   const [showImportSheet, setShowImportSheet] = useState(false);
@@ -224,18 +240,20 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   ]);
 
   const loadMeta = async () => {
-    const [loadedSettings, custom, favorites, permSummary, session] = await Promise.all([
+    const [loadedSettings, custom, favorites, permSummary, session, calCap] = await Promise.all([
       getAppSettings(),
       getCustomExercises(),
       getFavoriteExerciseIds(),
       getNotificationPermissionSummary(),
       getStoredCloudSession(),
+      getCalendarSyncCapabilities(),
     ]);
     setSettings(loadedSettings);
     setCustomCount(custom.length);
     setFavoriteCount(favorites.length);
     setNotifPerm(permSummary);
     setCloudSession(session);
+    setCalendarLabel(calCap.targetCalendarTitle || calCap.providerLabel);
     if (loadedSettings.healthSyncEnabled) {
       const h = await fetchTodayHealthSummary();
       setHealthSummary(h);
@@ -257,6 +275,82 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
     if (resyncNotifications) {
       await syncRemindersWithSettings(next);
     }
+  };
+
+  const runCalendarSync = async (nextSettings: AppSettings, notifyUser = true) => {
+    setIsSyncingCalendar(true);
+    try {
+      const { activePlan } = await getActiveWorkoutPlan(activeProfile.id);
+      if (!activePlan) return;
+      const res = await syncWorkoutScheduleWithDevice(activePlan, nextSettings);
+      const refreshed = await getAppSettings();
+      setSettings(refreshed);
+      if (res.targetCalendarName) setCalendarLabel(res.targetCalendarName);
+      if (!res.ok && res.error) {
+        Alert.alert(t('errorTitle'), res.error);
+      } else if (notifyUser) {
+        triggerNotificationHaptic('success');
+        Alert.alert(
+          t('calendarSyncedSuccessTitle'),
+          t('calendarSyncedSuccessBody', {
+            events: res.eventsCreated,
+            reminders: res.remindersCreated,
+          })
+        );
+      }
+    } finally {
+      setIsSyncingCalendar(false);
+    }
+  };
+
+  const handleToggleCalendarSync = async (enabled: boolean) => {
+    triggerSelectionHaptic();
+    if (!enabled) {
+      const next = await updateAppSettings({ calendarSyncEnabled: false });
+      setSettings(next);
+      onSettingsUpdated?.(next);
+      if (!next.remindersSyncEnabled) {
+        await clearAllSyncedCalendarItems();
+      } else {
+        await runCalendarSync(next, false);
+      }
+      return;
+    }
+
+    const perms = await requestCalendarAccess(settings.remindersSyncEnabled);
+    if (!perms.calendarGranted) {
+      Alert.alert(t('errorTitle'), t('calendarPermDeniedError'));
+      return;
+    }
+    const next = await updateAppSettings({ calendarSyncEnabled: true });
+    setSettings(next);
+    onSettingsUpdated?.(next);
+    await runCalendarSync(next, true);
+  };
+
+  const handleToggleRemindersSync = async (enabled: boolean) => {
+    triggerSelectionHaptic();
+    if (!enabled) {
+      const next = await updateAppSettings({ remindersSyncEnabled: false });
+      setSettings(next);
+      onSettingsUpdated?.(next);
+      if (!next.calendarSyncEnabled) {
+        await clearAllSyncedCalendarItems();
+      } else {
+        await runCalendarSync(next, false);
+      }
+      return;
+    }
+
+    const perms = await requestCalendarAccess(true);
+    if (Platform.OS === 'ios' && !perms.remindersGranted) {
+      Alert.alert(t('errorTitle'), t('calendarPermDeniedError'));
+      return;
+    }
+    const next = await updateAppSettings({ remindersSyncEnabled: true });
+    setSettings(next);
+    onSettingsUpdated?.(next);
+    await runCalendarSync(next, true);
   };
 
   const handleSupplementsChange = async (nextSupps: SupplementItem[]) => {
@@ -596,9 +690,17 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 
   return (
     <View style={[styles.container, { backgroundColor: theme.bg }]}>
-      <MinimalistBackdrop variant="dots" accentColor="#10B981" />
+      <MinimalistBackdrop variant="contours" accentColor="#10B981" />
       {/* Open Editorial Header + Tabbed Glass Switcher */}
-      <View style={[styles.header, { borderBottomColor: theme.hairline }]}>
+      <View
+        style={[
+          styles.header,
+          {
+            borderBottomColor: theme.hairline,
+            paddingTop: Math.max(insets.top + 8, 16),
+          },
+        ]}
+      >
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 12 }}>
           <View style={{ flex: 1, minWidth: 0 }}>
             <Text style={[styles.headerTitle, { color: theme.text }]}>{t('settingsTitle')}</Text>
@@ -1240,6 +1342,156 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             </View>
           )}
         </View>
+
+        {/* =========================================================
+            VOICE ASSISTANTS: APPLE SIRI (APP INTENTS) & AMAZON ALEXA
+           ========================================================= */}
+        <View style={[styles.openSection, { borderBottomColor: theme.hairline }]}>
+          <View style={styles.sectionHeaderRow}>
+            <View>
+              <Text style={[styles.sectionEyebrow, { color: '#38BDF8' }]}>
+                {t('voiceEyebrow')}
+              </Text>
+              <Text style={[styles.sectionHeading, { color: theme.text }]}>
+                {t('voiceTitle')}
+              </Text>
+            </View>
+            <View style={[styles.statusBadge, { backgroundColor: 'rgba(56, 189, 248, 0.14)' }]}>
+              <Ionicons name="mic-outline" size={13} color="#38BDF8" />
+              <Text style={[styles.statusBadgeText, { color: '#38BDF8' }]}>Siri · Alexa</Text>
+            </View>
+          </View>
+
+          <Text style={[styles.sectionLead, { color: theme.textSecondary }]}>
+            {t('voiceDesc')}
+          </Text>
+
+          <View
+            style={[
+              styles.cloudAccountBar,
+              {
+                backgroundColor: theme.bgSecondary,
+                borderWidth: StyleSheet.hairlineWidth,
+                borderColor: theme.border,
+                marginBottom: 12,
+                alignItems: 'flex-start',
+              },
+            ]}
+          >
+            <Ionicons name="sparkles" size={18} color="#38BDF8" style={{ marginTop: 2 }} />
+            <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
+              <Text style={[styles.cloudEmailTitle, { color: theme.text }]}>
+                {t('voiceSiriTitle')}
+              </Text>
+              <Text style={[styles.rowSub, { color: theme.textSecondary, marginTop: 0 }]}>
+                {t('voiceSiriHint')}
+              </Text>
+              <Text style={[styles.rowSub, { color: '#10B981', marginTop: 2, fontWeight: '700' }]}>
+                {t('voiceSiriPhrases')}
+              </Text>
+              <View style={[styles.cloudActionsRow, { marginTop: 8 }]}>
+                {Platform.OS === 'ios' && (
+                  <TouchableOpacity
+                    style={[styles.cloudActionSecondary, { backgroundColor: theme.bg, paddingVertical: 10 }]}
+                    onPress={() => {
+                      triggerSelectionHaptic();
+                      Linking.openURL('shortcuts://').catch(() => Linking.openSettings());
+                    }}
+                    activeOpacity={0.8}
+                  >
+                    <Ionicons name="apps-outline" size={14} color={theme.text} />
+                    <Text style={[styles.cloudActionSecondaryText, { color: theme.text, fontSize: 12 }]}>
+                      {t('voiceOpenShortcutsBtn')}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+                <TouchableOpacity
+                  style={[styles.cloudActionPrimary, { backgroundColor: theme.primary, paddingVertical: 10 }]}
+                  onPress={() => {
+                    triggerSelectionHaptic();
+                    Linking.openURL(VOICE_DEEP_LINKS.startWorkout).catch(() => {});
+                  }}
+                  activeOpacity={0.85}
+                >
+                  <Ionicons name="play" size={13} color={theme.primaryText} />
+                  <Text style={[styles.cloudActionPrimaryText, { color: theme.primaryText, fontSize: 12 }]}>
+                    {t('voiceTestStartBtn')}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+
+          <View
+            style={[
+              styles.cloudAccountBar,
+              {
+                backgroundColor: theme.bgSecondary,
+                borderWidth: StyleSheet.hairlineWidth,
+                borderColor: theme.border,
+                alignItems: 'flex-start',
+              },
+            ]}
+          >
+            <Ionicons name="radio-outline" size={18} color="#F59E0B" style={{ marginTop: 2 }} />
+            <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
+              <Text style={[styles.cloudEmailTitle, { color: theme.text }]}>
+                {t('voiceAlexaTitle')}
+              </Text>
+              <Text style={[styles.rowSub, { color: theme.textSecondary, marginTop: 0 }]}>
+                {t('voiceAlexaHint')}
+              </Text>
+              <Text style={[styles.fieldLabel, { color: theme.textMuted, marginTop: 6, marginBottom: 2 }]}>
+                {t('voiceAlexaEndpointLabel')}
+              </Text>
+              <Text
+                selectable
+                style={{ fontSize: 11.5, fontWeight: '800', color: '#F59E0B' }}
+              >
+                {ALEXA_ENDPOINT_URL}
+              </Text>
+              <View style={[styles.cloudActionsRow, { marginTop: 8 }]}>
+                <TouchableOpacity
+                  style={[styles.cloudActionSecondary, { backgroundColor: theme.bg, paddingVertical: 10 }]}
+                  onPress={async () => {
+                    triggerSelectionHaptic();
+                    await Share.share({
+                      title: 'Iron Routine Alexa Endpoint',
+                      message: ALEXA_ENDPOINT_URL,
+                    }).catch(() => {});
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="share-outline" size={14} color={theme.text} />
+                  <Text style={[styles.cloudActionSecondaryText, { color: theme.text, fontSize: 12 }]}>
+                    {t('voiceCopyEndpointBtn')}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.cloudActionSecondary, { backgroundColor: theme.bg, paddingVertical: 10 }]}
+                  onPress={async () => {
+                    triggerSelectionHaptic();
+                    const modelJson = JSON.stringify(
+                      buildAlexaInteractionModelJson(savedNick || undefined),
+                      null,
+                      2
+                    );
+                    await Share.share({
+                      title: 'Iron Routine Alexa Skill Model JSON',
+                      message: modelJson,
+                    }).catch(() => {});
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="code-slash-outline" size={14} color={theme.text} />
+                  <Text style={[styles.cloudActionSecondaryText, { color: theme.text, fontSize: 12 }]}>
+                    {t('voiceShareSkillBtn')}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </View>
           </>
         )}
 
@@ -1383,6 +1635,222 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                 <Text style={[styles.healthChipText, { color: theme.text }]}>{t('refreshBtn')}</Text>
               </TouchableOpacity>
             </View>
+          )}
+        </View>
+
+        {/* =========================================================
+            CALENDAR & REMINDERS (APPLE CALENDAR / GOOGLE CALENDAR)
+           ========================================================= */}
+        <View style={[styles.openSection, { borderBottomColor: theme.hairline }]}>
+          <View style={styles.sectionHeaderRow}>
+            <View>
+              <Text style={[styles.sectionEyebrow, { color: '#38BDF8' }]}>
+                {t('calendarSyncEyebrow')}
+              </Text>
+              <Text style={[styles.sectionHeading, { color: theme.text }]}>
+                {Platform.OS === 'ios' ? 'Apple Calendar & Reminders' : 'Google Calendar & Reminders'}
+              </Text>
+            </View>
+            <View
+              style={[
+                styles.statusBadge,
+                {
+                  backgroundColor:
+                    settings.calendarSyncEnabled || settings.remindersSyncEnabled
+                      ? 'rgba(16, 185, 129, 0.14)'
+                      : theme.bgSecondary,
+                },
+              ]}
+            >
+              <Ionicons
+                name="calendar"
+                size={12}
+                color={
+                  settings.calendarSyncEnabled || settings.remindersSyncEnabled
+                    ? '#10B981'
+                    : theme.textMuted
+                }
+              />
+              <Text
+                style={[
+                  styles.statusBadgeText,
+                  {
+                    color:
+                      settings.calendarSyncEnabled || settings.remindersSyncEnabled
+                        ? '#10B981'
+                        : theme.textMuted,
+                  },
+                ]}
+              >
+                {calendarLabel || (Platform.OS === 'ios' ? 'iCloud' : 'Google')}
+              </Text>
+            </View>
+          </View>
+
+          <Text style={[styles.sectionLead, { color: theme.textSecondary }]}>
+            {Platform.OS === 'ios' ? t('calendarSyncDescIos') : t('calendarSyncDescAndroid')}
+          </Text>
+
+          <View style={[styles.openSwitchLine, { borderBottomColor: theme.hairline }]}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
+              <Ionicons
+                name="calendar-outline"
+                size={18}
+                color={settings.calendarSyncEnabled ? '#10B981' : theme.text}
+              />
+              <View style={styles.switchLabelWrap}>
+                <Text style={[styles.rowTitle, { color: theme.text }]}>
+                  {t('calendarEnableSwitch')}
+                </Text>
+                <Text style={[styles.rowSub, { color: theme.textSecondary }]}>
+                  {Platform.OS === 'ios' ? 'Apple Calendar' : 'Google / Android Calendar'}
+                </Text>
+              </View>
+            </View>
+            <Switch
+              value={settings.calendarSyncEnabled}
+              disabled={isSyncingCalendar}
+              onValueChange={handleToggleCalendarSync}
+              trackColor={switchTrack}
+              thumbColor={switchThumb}
+            />
+          </View>
+
+          <View style={[styles.openSwitchLine, { borderBottomColor: theme.hairline }]}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
+              <Ionicons
+                name="checkmark-done-circle-outline"
+                size={18}
+                color={settings.remindersSyncEnabled ? '#38BDF8' : theme.text}
+              />
+              <View style={styles.switchLabelWrap}>
+                <Text style={[styles.rowTitle, { color: theme.text }]}>
+                  {t('remindersEnableSwitch')}
+                </Text>
+                <Text style={[styles.rowSub, { color: theme.textSecondary }]}>
+                  {Platform.OS === 'ios' ? 'Apple Reminders' : 'Google / System Reminders'}
+                </Text>
+              </View>
+            </View>
+            <Switch
+              value={settings.remindersSyncEnabled}
+              disabled={isSyncingCalendar}
+              onValueChange={handleToggleRemindersSync}
+              trackColor={switchTrack}
+              thumbColor={switchThumb}
+            />
+          </View>
+
+          <Text style={[styles.fieldLabel, { color: theme.textMuted, marginTop: 14 }]}>
+            {t('calendarWorkoutHourLabel')}
+          </Text>
+          <View style={styles.segmentRow}>
+            {[7, 9, 12, 17, 18, 20].map((hr) => {
+              const active = settings.preferredWorkoutHour === hr;
+              return (
+                <TouchableOpacity
+                  key={hr}
+                  style={[
+                    styles.segmentBtn,
+                    { backgroundColor: active ? theme.text : theme.bgSecondary },
+                  ]}
+                  onPress={async () => {
+                    triggerSelectionHaptic();
+                    const next = await updateAppSettings({
+                      preferredWorkoutHour: hr,
+                      preferredWorkoutMinute: 0,
+                    });
+                    setSettings(next);
+                    if (next.calendarSyncEnabled || next.remindersSyncEnabled) {
+                      await runCalendarSync(next, false);
+                    }
+                  }}
+                  activeOpacity={0.75}
+                >
+                  <Text style={[styles.segmentText, { color: active ? theme.bg : theme.text }]}>
+                    {String(hr).padStart(2, '0')}:00
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          <Text style={[styles.fieldLabel, { color: theme.textMuted, marginTop: 14 }]}>
+            {t('calendarDurationLabel')}
+          </Text>
+          <View style={styles.segmentRow}>
+            {[45, 60, 75, 90].map((mins) => {
+              const active = settings.workoutDurationMinutes === mins;
+              return (
+                <TouchableOpacity
+                  key={mins}
+                  style={[
+                    styles.segmentBtn,
+                    { backgroundColor: active ? theme.text : theme.bgSecondary },
+                  ]}
+                  onPress={async () => {
+                    triggerSelectionHaptic();
+                    const next = await updateAppSettings({ workoutDurationMinutes: mins });
+                    setSettings(next);
+                    if (next.calendarSyncEnabled || next.remindersSyncEnabled) {
+                      await runCalendarSync(next, false);
+                    }
+                  }}
+                  activeOpacity={0.75}
+                >
+                  <Text style={[styles.segmentText, { color: active ? theme.bg : theme.text }]}>
+                    {mins}m
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          <TouchableOpacity
+            style={[
+              styles.cloudActionPrimary,
+              { backgroundColor: theme.primary, marginTop: 16, width: '100%' },
+            ]}
+            disabled={isSyncingCalendar}
+            onPress={async () => {
+              const target =
+                !settings.calendarSyncEnabled && !settings.remindersSyncEnabled
+                  ? await (async () => {
+                      const perms = await requestCalendarAccess(true);
+                      if (!perms.calendarGranted) {
+                        Alert.alert(t('errorTitle'), t('calendarPermDeniedError'));
+                        return null;
+                      }
+                      const next = await updateAppSettings({
+                        calendarSyncEnabled: true,
+                        remindersSyncEnabled: Platform.OS !== 'ios' || perms.remindersGranted,
+                      });
+                      setSettings(next);
+                      return next;
+                    })()
+                  : settings;
+              if (target) {
+                await runCalendarSync(target, true);
+              }
+            }}
+            activeOpacity={0.85}
+          >
+            {isSyncingCalendar ? (
+              <ActivityIndicator size="small" color={theme.primaryText} />
+            ) : (
+              <>
+                <Ionicons name="sync-outline" size={16} color={theme.primaryText} />
+                <Text style={[styles.cloudActionPrimaryText, { color: theme.primaryText }]}>
+                  {t('calendarSyncNowBtn')}
+                </Text>
+              </>
+            )}
+          </TouchableOpacity>
+
+          {settings.lastCalendarSyncAt && (
+            <Text style={[styles.rowSub, { color: theme.textMuted, textAlign: 'center', marginTop: 8 }]}>
+              {t('calendarLastSyncedLabel')}: {new Date(settings.lastCalendarSyncAt).toLocaleString(localeCode)}
+            </Text>
           )}
         </View>
           </>
