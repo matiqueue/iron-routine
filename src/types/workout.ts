@@ -157,6 +157,10 @@ export type UserGender = 'male' | 'female';
 export interface UserProfile {
   id: string;
   name: string;
+  nickname?: string;
+  nicknameUpdatedAt?: string;
+  statusNote?: string;
+  showActivityToFriends?: boolean;
   isOwner?: boolean;
   createdAt: string;
   avatarColor?: string;
@@ -167,6 +171,111 @@ export interface UserProfile {
   cloudProvider?: 'apple' | 'google';
   cloudEmail?: string;
   lastCloudSyncAt?: string;
+}
+
+export interface FriendMuscleHighlight {
+  muscleId: MuscleSubGroupId;
+  rank: RankTier;
+  effectiveSetsTotal: number;
+}
+
+export interface FriendPRHighlight {
+  exerciseId: string;
+  exerciseName: string;
+  weight: number;
+  reps: number;
+  date: string;
+}
+
+export interface FriendProfileSummary {
+  userId: string;
+  nickname: string;
+  displayName: string;
+  avatarColor?: string;
+  gender?: UserGender;
+  overallRank: RankTier;
+  overallProgressPct: number;
+  balanceScorePct: number;
+  streak: number;
+  totalWorkouts: number;
+  totalSets: number;
+  weeklyWorkouts: number;
+  topMuscles: FriendMuscleHighlight[];
+  recentPrs: FriendPRHighlight[];
+  lastWorkoutAt?: string | null;
+  lastActiveAt?: string | null;
+  statusNote?: string;
+  showActivityToFriends?: boolean;
+  cheersCount?: number;
+  cheeredByMe?: boolean;
+}
+
+export interface FriendRequestRecord {
+  id: string;
+  fromUserId: string;
+  fromNickname: string;
+  fromDisplayName: string;
+  fromRank?: RankTier;
+  fromAvatarColor?: string;
+  toUserId: string;
+  toNickname: string;
+  toDisplayName?: string;
+  createdAt: string;
+}
+
+export type SocialActivityType = 'workout' | 'pr' | 'rank' | 'cheer' | 'status';
+
+export interface SocialActivityItem {
+  id: string;
+  userId: string;
+  nickname: string;
+  displayName: string;
+  avatarColor?: string;
+  type: SocialActivityType;
+  title: string;
+  subtitle?: string;
+  rankTier?: RankTier;
+  createdAt: string;
+  cheersCount: number;
+  cheeredByMe?: boolean;
+}
+
+export type ChatMessageType = 'text' | 'cheer' | 'workout_share' | 'rank_card';
+
+export interface ChatMessagePayload {
+  title?: string;
+  subtitle?: string;
+  rank?: RankTier;
+  streak?: number;
+  sets?: number;
+  volumeKg?: number;
+  emoji?: string;
+}
+
+export interface ChatMessage {
+  id: string;
+  senderId: string;
+  recipientId: string;
+  type: ChatMessageType;
+  text: string;
+  payload?: ChatMessagePayload;
+  createdAt: string;
+  reactions?: Record<string, string[]>;
+}
+
+export interface FriendChatThreadSummary {
+  friend: FriendProfileSummary;
+  lastMessage?: ChatMessage | null;
+  unreadCount: number;
+}
+
+export interface SocialHubData {
+  myProfile: FriendProfileSummary | null;
+  friends: FriendChatThreadSummary[];
+  incomingRequests: FriendRequestRecord[];
+  outgoingRequests: FriendRequestRecord[];
+  activities: SocialActivityItem[];
+  totalUnread: number;
 }
 
 export interface WeightEntry {

@@ -15,11 +15,12 @@ import { useLanguage } from '../context/LanguageContext';
 import { TranslationKey } from '../i18n/translations';
 import { triggerSelectionHaptic } from '../services/haptics';
 
-export type AppTabKey = 'today' | 'plan' | 'progress' | 'settings';
+export type AppTabKey = 'today' | 'plan' | 'progress' | 'friends' | 'settings';
 
 interface BottomTabBarProps {
   activeTab: AppTabKey;
   onSelectTab: (tab: AppTabKey) => void;
+  friendsBadgeCount?: number;
 }
 
 const TABS: {
@@ -31,10 +32,15 @@ const TABS: {
   { key: 'today', labelKey: 'tabToday', iconActive: 'barbell', iconInactive: 'barbell-outline' },
   { key: 'plan', labelKey: 'tabPlan', iconActive: 'calendar', iconInactive: 'calendar-outline' },
   { key: 'progress', labelKey: 'tabProgress', iconActive: 'analytics', iconInactive: 'analytics-outline' },
+  { key: 'friends', labelKey: 'tabFriends', iconActive: 'people', iconInactive: 'people-outline' },
   { key: 'settings', labelKey: 'tabSettings', iconActive: 'settings', iconInactive: 'settings-outline' },
 ];
 
-export const BottomTabBar: React.FC<BottomTabBarProps> = ({ activeTab, onSelectTab }) => {
+export const BottomTabBar: React.FC<BottomTabBarProps> = ({
+  activeTab,
+  onSelectTab,
+  friendsBadgeCount = 0,
+}) => {
   const { theme, isDark } = useAppTheme();
   const { t } = useLanguage();
   const insets = useSafeAreaInsets();
@@ -158,8 +164,8 @@ export const BottomTabBar: React.FC<BottomTabBarProps> = ({ activeTab, onSelectT
 
   const slotWidth = barWidth > 10 ? (barWidth - 10) / TABS.length : 0;
   const thumbTranslateX = thumbAnim.interpolate({
-    inputRange: [0, 1, 2, 3],
-    outputRange: [0, slotWidth, slotWidth * 2, slotWidth * 3],
+    inputRange: [0, 1, 2, 3, 4],
+    outputRange: [0, slotWidth, slotWidth * 2, slotWidth * 3, slotWidth * 4],
   });
 
   return (
@@ -254,14 +260,22 @@ export const BottomTabBar: React.FC<BottomTabBarProps> = ({ activeTab, onSelectT
             >
               <Animated.View
                 style={{
+                  position: 'relative',
                   transform: [{ scale: iconScale }, { translateY: iconLift }],
                 }}
               >
                 <Ionicons
                   name={isActive ? tab.iconActive : tab.iconInactive}
-                  size={20}
+                  size={19}
                   color={isActive ? theme.text : theme.textMuted}
                 />
+                {tab.key === 'friends' && friendsBadgeCount > 0 && (
+                  <View style={styles.badgePill}>
+                    <Text style={styles.badgeText}>
+                      {friendsBadgeCount > 9 ? '9+' : friendsBadgeCount}
+                    </Text>
+                  </View>
+                )}
               </Animated.View>
               <Text
                 style={[
@@ -272,6 +286,8 @@ export const BottomTabBar: React.FC<BottomTabBarProps> = ({ activeTab, onSelectT
                   },
                 ]}
                 numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.78}
               >
                 {t(tab.labelKey)}
               </Text>
@@ -330,7 +346,24 @@ const styles = StyleSheet.create({
     zIndex: 2,
   },
   navLabel: {
-    fontSize: 10.5,
-    letterSpacing: -0.1,
+    fontSize: 10,
+    letterSpacing: -0.15,
+  },
+  badgePill: {
+    position: 'absolute',
+    top: -4,
+    right: -8,
+    minWidth: 15,
+    height: 15,
+    borderRadius: 8,
+    paddingHorizontal: 3.5,
+    backgroundColor: '#10B981',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  badgeText: {
+    color: '#04120B',
+    fontSize: 8.5,
+    fontWeight: '900',
   },
 });

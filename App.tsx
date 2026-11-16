@@ -58,7 +58,9 @@ import { AppTabKey, BottomTabBar } from './src/components/BottomTabBar';
 import { TodayScreen } from './src/screens/TodayScreen';
 import { PlanTab } from './src/components/PlanTab';
 import { ProgressTab } from './src/components/ProgressTab';
+import { FriendsTab } from './src/components/FriendsTab';
 import { SettingsScreen } from './src/screens/SettingsScreen';
+import { fetchSocialHub } from './src/services/social';
 import { WorkoutSummaryModal } from './src/components/WorkoutSummaryModal';
 import { ExerciseDetailModal } from './src/components/ExerciseDetailModal';
 import { BodyStatsModal } from './src/components/BodyStatsModal';
@@ -87,6 +89,7 @@ function MainApp() {
   const [showBodyStatsModal, setShowBodyStatsModal] = useState(false);
   const [showPlanManagerModal, setShowPlanManagerModal] = useState(false);
   const [progressRefreshKey, setProgressRefreshKey] = useState(0);
+  const [unreadSocialCount, setUnreadSocialCount] = useState(0);
 
   // Active workout mode & Pre-workout Session Picker
   const [isActiveWorkout, setIsActiveWorkout] = useState(false);
@@ -214,6 +217,18 @@ function MainApp() {
       setStreak(curStreak);
       setDayProgress(prog);
       setBestPRs(prs);
+
+      if (profile.cloudUserId) {
+        fetchSocialHub()
+          .then((res) => {
+            if (res.ok && res.hub) {
+              setUnreadSocialCount(res.hub.totalUnread || 0);
+            }
+          })
+          .catch(() => {});
+      } else {
+        setUnreadSocialCount(0);
+      }
     },
     [todayDayId]
   );
@@ -647,6 +662,18 @@ function MainApp() {
             />
           )}
 
+          {activeTab === 'friends' && (
+            <FriendsTab
+              activeProfile={activeProfile}
+              onProfileUpdated={(updated) => {
+                setActiveProfile(updated);
+                setProgressRefreshKey((k) => k + 1);
+              }}
+              onUnreadCountChanged={setUnreadSocialCount}
+              onDataImported={handleFullDataRefresh}
+            />
+          )}
+
           {activeTab === 'settings' && (
             <SettingsScreen
               activeProfile={activeProfile}
@@ -667,8 +694,12 @@ function MainApp() {
           )}
         </Animated.View>
 
-        {/* Extracted 4-Tab Bottom Navigation Bar */}
-        <BottomTabBar activeTab={activeTab} onSelectTab={handleSwitchTab} />
+        {/* Extracted 5-Tab Bottom Navigation Bar */}
+        <BottomTabBar
+          activeTab={activeTab}
+          onSelectTab={handleSwitchTab}
+          friendsBadgeCount={unreadSocialCount}
+        />
 
         {/* Pre-Workout Session Checklist & Drag-Drop Order Picker */}
         {sessionPickerTarget && (

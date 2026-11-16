@@ -23,6 +23,12 @@ export interface CloudBackupSummary {
   historyCount: number;
 }
 
+let postCloudPushHook: ((profileId: string) => void) | null = null;
+
+export function registerPostCloudPushHook(fn: (profileId: string) => void): void {
+  postCloudPushHook = fn;
+}
+
 export interface CloudSession {
   token: string;
   userId: string;
@@ -30,6 +36,8 @@ export interface CloudSession {
   email: string;
   provider: CloudAuthProvider;
   displayName: string;
+  nickname?: string | null;
+  nicknameUpdatedAt?: string | null;
   lastSyncedAt?: string | null;
   backupSummary?: CloudBackupSummary | null;
 }
@@ -273,6 +281,12 @@ export async function pushProfileToCloud(profileId: string): Promise<{
       },
       { skipCloudSync: true }
     ).catch(() => {});
+
+    if (postCloudPushHook) {
+      try {
+        postCloudPushHook(profileId);
+      } catch {}
+    }
 
     return {
       ok: true,

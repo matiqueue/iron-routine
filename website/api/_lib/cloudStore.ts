@@ -9,6 +9,8 @@ export interface CloudUserRecord {
   email: string;
   provider: CloudAuthProvider;
   displayName: string;
+  nickname?: string;
+  nicknameUpdatedAt?: string;
   pinSalt?: string;
   pinHash?: string;
   createdAt: string;
@@ -165,7 +167,7 @@ export function decryptJsonPayload(storedText: string): string {
   return decrypted.toString('utf8');
 }
 
-async function readPrivateDocument(pathname: string): Promise<string | null> {
+export async function readPrivateDocument(pathname: string): Promise<string | null> {
   try {
     const result = await get(pathname, { access: 'private' });
     if (!result || result.statusCode !== 200 || !result.stream) return null;
@@ -176,13 +178,21 @@ async function readPrivateDocument(pathname: string): Promise<string | null> {
   }
 }
 
-async function writePrivateDocument(pathname: string, content: string): Promise<void> {
+export async function writePrivateDocument(pathname: string, content: string): Promise<void> {
   await put(pathname, content, {
     access: 'private',
     contentType: 'application/json',
     addRandomSuffix: false,
     allowOverwrite: true,
   });
+}
+
+export async function deletePrivateDocuments(pathnames: string[]): Promise<void> {
+  try {
+    if (pathnames.length > 0) {
+      await del(pathnames);
+    }
+  } catch {}
 }
 
 export async function getCloudUser(userId: string): Promise<CloudUserRecord | null> {

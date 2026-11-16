@@ -19,6 +19,7 @@ import { useAppTheme } from '../context/ThemeContext';
 import { useLanguage } from '../context/LanguageContext';
 import { TranslationKey } from '../i18n/translations';
 import { LanguageSwitcher } from '../components/LanguageSwitcher';
+import { MinimalistBackdrop } from '../components/MinimalistBackdrop';
 import {
   AppSettings,
   HealthDailySummary,
@@ -61,6 +62,17 @@ import {
   signInWithAppleCloud,
   signInWithGoogleCloud,
 } from '../services/cloudSync';
+import {
+  buildAndPublishSocialProfile,
+  claimNicknameInCloud,
+} from '../services/social';
+import {
+  generateRandomNickname,
+  getNicknameCooldownInfo,
+  isValidNickname,
+  normalizeNickname,
+  sanitizeNicknameInput,
+} from '../utils/nickname';
 import { EXERCISE_LIBRARY } from '../data/exerciseLibrary';
 import { ExerciseLibraryModal } from '../components/ExerciseLibraryModal';
 import { InteractiveBottomSheet } from '../components/InteractiveBottomSheet';
@@ -99,6 +111,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_APP_SETTINGS);
   const [nameInput, setNameInput] = useState(activeProfile.name || '');
+  const [nicknameInput, setNicknameInput] = useState(activeProfile.nickname || '');
   const [genderInput, setGenderInput] = useState<UserGender>(activeProfile.gender || 'male');
   const [heightInput, setHeightInput] = useState(
     activeProfile.height ? String(activeProfile.height) : ''
@@ -127,12 +140,14 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 
   useEffect(() => {
     setNameInput(activeProfile.name || '');
+    setNicknameInput(activeProfile.nickname || '');
     setGenderInput(activeProfile.gender || 'male');
     setHeightInput(activeProfile.height ? String(activeProfile.height) : '');
     setWeightInput(activeProfile.weight ? String(activeProfile.weight) : '');
   }, [
     activeProfile.id,
     activeProfile.name,
+    activeProfile.nickname,
     activeProfile.gender,
     activeProfile.height,
     activeProfile.weight,
@@ -325,16 +340,65 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
       Alert.alert(t('missingNameSettingsTitle'), t('enterNameSettingsBody'));
       return;
     }
+
+    const currentSavedNick = activeProfile.nickname || '';
+    const nextCleanNick = normalizeNickname(nicknameInput);
+    const isNicknameChanging = Boolean(nextCleanNick && nextCleanNick !== currentSavedNick);
+
+    if (nicknameInput.trim() && !isValidNickname(nextCleanNick)) {
+      Alert.alert(t('errorTitle'), t('nicknameInvalidError'));
+      return;
+    }
+
+    const cooldownInfo = getNicknameCooldownInfo(
+      activeProfile.nicknameUpdatedAt,
+      Boolean(currentSavedNick)
+    );
+    if (isNicknameChanging && !cooldownInfo.canEdit) {
+      Alert.alert(
+        t('errorTitle'),
+        t('nicknameLockedDays', { days: cooldownInfo.daysRemaining })
+      );
+      return;
+    }
+
     const parsedHeight = parseFloat(heightInput.replace(',', '.'));
     const parsedWeight = parseFloat(weightInput.replace(',', '.'));
     setIsSavingProfile(true);
     try {
+      let claimedNick = currentSavedNick || undefined;
+      let claimedAt = activeProfile.nicknameUpdatedAt;
+
+      if (isNicknameChanging && nextCleanNick) {
+        const claimRes = await claimNicknameInCloud({
+          nickname: nextCleanNick,
+          displayName: cleanName,
+          enforceCooldown: Boolean(currentSavedNick),
+        });
+        if (!claimRes.ok) {
+          Alert.alert(
+            t('errorTitle'),
+            claimRes.daysRemaining
+              ? t('nicknameLockedDays', { days: claimRes.daysRemaining })
+              : claimRes.error || t('nicknameTakenError')
+          );
+          setIsSavingProfile(false);
+          return;
+        }
+        claimedNick = claimRes.nickname || nextCleanNick;
+        claimedAt = claimRes.nicknameUpdatedAt || new Date().toISOString();
+      }
+
       const updated = await updateProfile(activeProfile.id, {
         name: cleanName,
+        ...(isNicknameChanging && claimedNick
+          ? { nickname: claimedNick, nicknameUpdatedAt: claimedAt }
+          : {}),
         gender: genderInput,
         height: !isNaN(parsedHeight) && parsedHeight > 50 ? parsedHeight : undefined,
         weight: !isNaN(parsedWeight) && parsedWeight > 20 ? parsedWeight : undefined,
       });
+      await buildAndPublishSocialProfile(updated.id).catch(() => {});
       triggerNotificationHaptic('success');
       onProfileUpdated(updated);
       Alert.alert(t('savedTitle'), t('profileUpdatedBody'));
@@ -439,16 +503,23 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   );
 
   const savedName = (activeProfile.name || '').trim();
+  const savedNick = (activeProfile.nickname || '').trim();
   const savedHeight = activeProfile.height ? String(activeProfile.height) : '';
   const savedWeight = activeProfile.weight ? String(activeProfile.weight) : '';
+  const nickCooldown = getNicknameCooldownInfo(
+    activeProfile.nicknameUpdatedAt,
+    Boolean(savedNick)
+  );
   const hasProfileChanges =
     nameInput.trim() !== savedName ||
+    (nickCooldown.canEdit && normalizeNickname(nicknameInput) !== savedNick) ||
     heightInput.trim() !== savedHeight ||
     weightInput.trim() !== savedWeight ||
     genderInput !== (activeProfile.gender || 'male');
 
   return (
     <View style={[styles.container, { backgroundColor: theme.bg }]}>
+      <MinimalistBackdrop variant="dots" accentColor="#10B981" />
       {/* Open Editorial Header */}
       <View style={[styles.header, { borderBottomColor: theme.hairline, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }]}>
         <View style={{ flex: 1, minWidth: 0 }}>
@@ -591,14 +662,93 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           </View>
 
           <View style={[styles.underlineField, { borderBottomColor: theme.hairline }]}>
-            <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>{t('nameUpper')}</Text>
+            <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>{t('fullNameUpper')}</Text>
             <TextInput
               style={[styles.underlineInput, { color: theme.text }]}
               value={nameInput}
               onChangeText={setNameInput}
-              placeholder={t('yourNamePlaceholder')}
+              placeholder={t('fullNamePlaceholder')}
               placeholderTextColor={theme.textMuted}
             />
+          </View>
+
+          <View style={[styles.underlineField, { borderBottomColor: theme.hairline }]}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+              <Text style={[styles.fieldLabel, { color: theme.textMuted, marginBottom: 0 }]}>
+                {t('nicknameUpper')}
+              </Text>
+              {nickCooldown.canEdit ? (
+                <TouchableOpacity
+                  onPress={() => {
+                    triggerSelectionHaptic();
+                    setNicknameInput(generateRandomNickname(nameInput));
+                  }}
+                  activeOpacity={0.75}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 4,
+                    paddingHorizontal: 9,
+                    paddingVertical: 4,
+                    borderRadius: 999,
+                    backgroundColor: isDark ? 'rgba(16, 185, 129, 0.16)' : 'rgba(16, 185, 129, 0.12)',
+                  }}
+                >
+                  <Ionicons name="sparkles" size={11} color="#10B981" />
+                  <Text style={{ fontSize: 10.5, fontWeight: '800', color: '#10B981' }}>
+                    {t('autoGenerateBtn')}
+                  </Text>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  onPress={() => {
+                    triggerSelectionHaptic();
+                    if (savedNick) {
+                      Share.share({ message: `@${savedNick}` }).catch(() => {});
+                    }
+                  }}
+                  activeOpacity={0.75}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 4,
+                    paddingHorizontal: 9,
+                    paddingVertical: 4,
+                    borderRadius: 999,
+                    backgroundColor: theme.bgSecondary,
+                  }}
+                >
+                  <Ionicons name="lock-closed-outline" size={11} color={theme.textMuted} />
+                  <Text style={{ fontSize: 10.5, fontWeight: '700', color: theme.textMuted }}>
+                    {nickCooldown.daysRemaining} {t('friendsDaysShort')}
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              <Text style={{ fontSize: 16, fontWeight: '900', color: '#10B981' }}>@</Text>
+              <TextInput
+                style={[
+                  styles.underlineInput,
+                  {
+                    color: nickCooldown.canEdit ? theme.text : theme.textSecondary,
+                    flex: 1,
+                  },
+                ]}
+                value={nicknameInput}
+                editable={nickCooldown.canEdit}
+                onChangeText={(txt) => setNicknameInput(sanitizeNicknameInput(txt))}
+                autoCapitalize="none"
+                autoCorrect={false}
+                placeholder={t('nicknamePlaceholder')}
+                placeholderTextColor={theme.textMuted}
+              />
+            </View>
+            <Text style={{ fontSize: 11, color: theme.textMuted, marginTop: 4 }}>
+              {nickCooldown.canEdit
+                ? t('nicknameUnlockedInfo')
+                : t('nicknameLockedDays', { days: nickCooldown.daysRemaining })}
+            </Text>
           </View>
 
           <View style={styles.twoColRow}>

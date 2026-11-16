@@ -19,6 +19,7 @@ import { ExerciseLibraryModal } from './ExerciseLibraryModal';
 import { DayBannerArtwork } from './DayBannerArtwork';
 import { DayExercisePreviewList } from './DayExercisePreviewList';
 import { AnimatedIcon } from './AnimatedIcon';
+import { MinimalistBackdrop } from './MinimalistBackdrop';
 import { updateDayInPlan } from '../services/storage';
 import { triggerSelectionHaptic } from '../services/haptics';
 
@@ -98,6 +99,7 @@ export const PlanTab: React.FC<PlanTabProps> = ({
 
   return (
     <View style={[styles.container, { backgroundColor: theme.bg }]}>
+      <MinimalistBackdrop variant="grid" accentColor="#A855F7" />
       {/* Editorial Title + Plan Switcher */}
       <View style={styles.header}>
         <View style={styles.headerTopRow}>

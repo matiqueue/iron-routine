@@ -27,6 +27,7 @@ import { AnimatedIcon } from '../components/AnimatedIcon';
 import { DayBannerArtwork } from '../components/DayBannerArtwork';
 import { DayExercisePreviewList } from '../components/DayExercisePreviewList';
 import { HoldToStartButton } from '../components/HoldToStartButton';
+import { MinimalistBackdrop } from '../components/MinimalistBackdrop';
 import { RestDayView } from '../components/RestDayView';
 
 interface TodayScreenProps {
@@ -127,11 +128,13 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
     : 'rgba(24, 24, 27, 0.08)';
 
   return (
-    <ScrollView
-      style={styles.tabScroll}
-      contentContainerStyle={styles.tabContent}
-      showsVerticalScrollIndicator={false}
-    >
+    <View style={{ flex: 1, backgroundColor: theme.bg }}>
+      <MinimalistBackdrop variant="dots" accentColor={isRestOrWalk ? '#38BDF8' : '#10B981'} />
+      <ScrollView
+        style={[styles.tabScroll, { backgroundColor: 'transparent' }]}
+        contentContainerStyle={styles.tabContent}
+        showsVerticalScrollIndicator={false}
+      >
       {/* Open Editorial Header with Glassmorphic Action Pills */}
       <View style={styles.topHeader}>
         <View style={styles.greetingCol}>
@@ -498,7 +501,8 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
           )}
         </>
       )}
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 };
 

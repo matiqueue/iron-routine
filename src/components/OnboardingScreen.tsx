@@ -61,6 +61,16 @@ import {
   signInWithAppleCloud,
   signInWithGoogleCloud,
 } from '../services/cloudSync';
+import {
+  buildAndPublishSocialProfile,
+  claimNicknameInCloud,
+} from '../services/social';
+import {
+  generateRandomNickname,
+  isValidNickname,
+  normalizeNickname,
+  sanitizeNicknameInput,
+} from '../utils/nickname';
 import { triggerNotificationHaptic, triggerSelectionHaptic } from '../services/haptics';
 import { AnimatedIcon } from './AnimatedIcon';
 import { SupplementConfigurator } from './SupplementConfigurator';
@@ -158,10 +168,12 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
   const [showWelcomeIntro, setShowWelcomeIntro] = useState(true);
   const [step, setStep] = useState(0);
   const [name, setName] = useState('');
+  const [nickname, setNickname] = useState('');
   const [gender, setGender] = useState<UserGender>('male');
   const [weightText, setWeightText] = useState('');
   const [heightText, setHeightText] = useState('');
-  const [focusedField, setFocusedField] = useState<'name' | 'weight' | 'height' | null>(null);
+  const [focusedField, setFocusedField] = useState<'name' | 'nickname' | 'weight' | 'height' | null>(null);
+  const nickSpinAnim = useRef(new Animated.Value(0)).current;
   const [supplements, setSupplements] = useState<SupplementItem[]>(() =>
     DEFAULT_SUPPLEMENTS.map((s) => ({ ...s }))
   );
@@ -449,11 +461,38 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
     });
   };
 
+  const handleGenerateNickname = () => {
+    triggerSelectionHaptic();
+    nickSpinAnim.setValue(0);
+    Animated.timing(nickSpinAnim, {
+      toValue: 1,
+      duration: 380,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+    setNickname(generateRandomNickname(name));
+  };
+
   const handleNextStep = () => {
-    if (step === 0 && !name.trim()) {
-      triggerNotificationHaptic('warning');
-      Alert.alert(t('enterNameAlertTitle'), t('enterNameAlertBody'));
-      return;
+    if (step === 0) {
+      if (!name.trim()) {
+        triggerNotificationHaptic('warning');
+        Alert.alert(t('enterNameAlertTitle'), t('enterNameAlertBody'));
+        return;
+      }
+      const trimmedNick = nickname.trim();
+      if (!trimmedNick) {
+        const autoNick = generateRandomNickname(name);
+        setNickname(autoNick);
+      } else {
+        const clean = normalizeNickname(trimmedNick);
+        if (!isValidNickname(clean)) {
+          triggerNotificationHaptic('warning');
+          Alert.alert(t('errorTitle'), t('nicknameInvalidError'));
+          return;
+        }
+        setNickname(clean);
+      }
     }
     if (step < TOTAL_STEPS - 1) {
       animateToStep(step + 1);
@@ -508,9 +547,34 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
         setIsSubmitting(true);
         try {
           await applyOnboardingSettings();
+          const finalName = name.trim() || session.displayName || t('athleteFallback');
+          const cleanNick = normalizeNickname(nickname);
+          let resolvedNick = isValidNickname(cleanNick)
+            ? cleanNick
+            : generateRandomNickname(finalName);
+
+          const claimRes = await claimNicknameInCloud({
+            nickname: resolvedNick,
+            displayName: finalName,
+            enforceCooldown: false,
+          });
+          if (!claimRes.ok) {
+            if (nickname.trim() && claimRes.error === t('nicknameTakenError')) {
+              resolvedNick = generateRandomNickname(finalName);
+              await claimNicknameInCloud({
+                nickname: resolvedNick,
+                displayName: finalName,
+                enforceCooldown: false,
+              }).catch(() => {});
+            }
+          } else if (claimRes.nickname) {
+            resolvedNick = claimRes.nickname;
+          }
+
           const profile = await createProfile(
-            name.trim() || session.displayName || t('athleteFallback'),
+            finalName,
             {
+              nickname: resolvedNick,
               gender,
               weight: parsedWeight,
               height: parsedHeight,
@@ -522,6 +586,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
             }
           );
           await pushProfileToCloud(profile.id).catch(() => {});
+          await buildAndPublishSocialProfile(profile.id).catch(() => {});
           triggerNotificationHaptic('success');
           await onCompleted(profile);
         } finally {
@@ -590,6 +655,9 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
       await applyOnboardingSettings();
       triggerNotificationHaptic('success');
       const profile = await createProfile(trimmed, {
+        nickname: isValidNickname(normalizeNickname(nickname))
+          ? normalizeNickname(nickname)
+          : generateRandomNickname(trimmed),
         gender,
         weight: parsedWeight,
         height: parsedHeight,
@@ -1135,18 +1203,89 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
                       { color: focusedField === 'name' ? meta.accent : theme.textMuted },
                     ]}
                   >
-                    {t('nameOrNickPlaceholder')}
+                    {t('fullNameUpper')}
                   </Text>
                   <TextInput
                     style={[styles.openBigInput, { color: theme.text }]}
-                    placeholder={t('nameExamplePlaceholder')}
+                    placeholder={t('fullNamePlaceholder')}
                     placeholderTextColor={theme.textMuted}
                     value={name}
                     onChangeText={setName}
                     onFocus={() => setFocusedField('name')}
                     onBlur={() => setFocusedField((f) => (f === 'name' ? null : f))}
-                    returnKeyType="done"
+                    returnKeyType="next"
                   />
+                </View>
+
+                <View
+                  style={[
+                    styles.underlineInputGroup,
+                    {
+                      borderBottomColor: focusedField === 'nickname' ? meta.accent : theme.hairline,
+                      borderBottomWidth: focusedField === 'nickname' ? 1.5 : StyleSheet.hairlineWidth,
+                    },
+                  ]}
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                    <Text
+                      style={[
+                        styles.fieldLabel,
+                        { color: focusedField === 'nickname' ? meta.accent : theme.textMuted, marginBottom: 0 },
+                      ]}
+                    >
+                      {t('nicknameUpper')}
+                    </Text>
+                    <TouchableOpacity
+                      onPress={handleGenerateNickname}
+                      activeOpacity={0.75}
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: 4,
+                        paddingHorizontal: 10,
+                        paddingVertical: 5,
+                        borderRadius: 999,
+                        backgroundColor: isDark ? 'rgba(16, 185, 129, 0.16)' : 'rgba(16, 185, 129, 0.12)',
+                      }}
+                    >
+                      <Animated.View
+                        style={{
+                          transform: [
+                            {
+                              rotate: nickSpinAnim.interpolate({
+                                inputRange: [0, 1],
+                                outputRange: ['0deg', '360deg'],
+                              }),
+                            },
+                          ],
+                        }}
+                      >
+                        <Ionicons name="sparkles" size={12} color="#10B981" />
+                      </Animated.View>
+                      <Text style={{ fontSize: 11, fontWeight: '800', color: '#10B981' }}>
+                        {t('autoGenerateBtn')}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                    <Text style={{ fontSize: 18, fontWeight: '900', color: meta.accent }}>@</Text>
+                    <TextInput
+                      style={[styles.openBigInput, { color: theme.text, flex: 1 }]}
+                      placeholder={t('nicknamePlaceholder')}
+                      placeholderTextColor={theme.textMuted}
+                      value={nickname}
+                      onChangeText={(txt) => setNickname(sanitizeNicknameInput(txt))}
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      onFocus={() => setFocusedField('nickname')}
+                      onBlur={() => setFocusedField((f) => (f === 'nickname' ? null : f))}
+                      returnKeyType="done"
+                    />
+                  </View>
+                  <Text style={{ fontSize: 11, lineHeight: 15, color: theme.textMuted, marginTop: 4 }}>
+                    {t('nicknameHint30Days')}
+                  </Text>
                 </View>
 
                 <View style={styles.twoColsOpen}>
