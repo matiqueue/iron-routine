@@ -216,6 +216,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
   const onboardingAvatarHandledRef = useRef(false);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const swapKeyboardHeight = useKeyboardHeight(swapTarget !== null, true);
 
   useEffect(() => {
     getFavoriteExerciseIds().then(setFavoriteIds).catch(() => {});
@@ -1014,8 +1015,6 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
       </View>
     );
   }
-
-  const swapKeyboardHeight = useKeyboardHeight(swapTarget !== null, true);
 
   return (
     <KeyboardAvoidingView
