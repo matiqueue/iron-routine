@@ -89,21 +89,7 @@ export const BetaStatusModal: React.FC<BetaStatusModalProps> = ({ visible, onClo
             </View>
           </View>
 
-          {/* Test Button */}
-          <TouchableOpacity
-            style={styles.testBtn}
-            activeOpacity={0.8}
-            onPress={runDiagnostics}
-          >
-            <Ionicons name="flash-outline" size={18} color="#000" />
-            <Text style={styles.testBtnText}>{t('testTapticAndStorageBtn')}</Text>
-          </TouchableOpacity>
-
-          {testStatus ? (
-            <View style={styles.testResultBox}>
-              <Text style={styles.testResultText}>{testStatus}</Text>
-            </View>
-          ) : null}
+          {/* Device Info Header */}
 
           {/* How to deploy step by step */}
           <Text style={styles.sectionHeader}>{t('betaHowToTitle')}</Text>
