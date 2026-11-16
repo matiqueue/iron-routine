@@ -20,6 +20,7 @@ import { RestTimerBar } from './RestTimerBar';
 import { AnimatedIcon } from './AnimatedIcon';
 import { ExerciseDetailModal } from './ExerciseDetailModal';
 import { BottomSheetScrollView, InteractiveBottomSheet } from './InteractiveBottomSheet';
+import { SmartScrollView } from './SmartScrollView';
 import { ExerciseLibraryContent } from './ExerciseLibraryContent';
 import { SessionExercisePickerModal } from './SessionExercisePickerModal';
 import { calculate1RM, getLastExerciseMetrics } from '../services/storage';
@@ -950,7 +951,12 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
         <View style={[styles.progressBar, { width: `${progressPercent}%`, backgroundColor: theme.text }]} />
       </View>
 
-      <ScrollView style={styles.scrollArea} showsVerticalScrollIndicator={false}>
+      <SmartScrollView
+        style={styles.scrollArea}
+        showsVerticalScrollIndicator={false}
+        lockWhenFits={false}
+        liftForKeyboard={true}
+      >
         {/* Animated Exercise Content Container */}
         <Animated.View
           style={{
@@ -1324,7 +1330,7 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
             </TouchableOpacity>
           )}
         </View>
-      </ScrollView>
+      </SmartScrollView>
 
       {/* Floating Minimized Rest / Rest-Finished Alert Banner */}
       {(isResting || isRestFinished) && !isRestModalVisible && (

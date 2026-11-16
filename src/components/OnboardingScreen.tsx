@@ -17,6 +17,8 @@ import {
 } from 'react-native';
 import Svg, { Circle, Defs, Path, Pattern, Rect } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
+import { SmartScrollView } from './SmartScrollView';
+import { useKeyboardHeight } from '../hooks/useKeyboardHeight';
 import { useAppTheme } from '../context/ThemeContext';
 import { useLanguage } from '../context/LanguageContext';
 import { PLAN_MODE_LOCALE } from '../i18n/translations';
@@ -970,10 +972,12 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
     );
   }
 
+  const swapKeyboardHeight = useKeyboardHeight(swapTarget !== null, true);
+
   return (
     <KeyboardAvoidingView
       style={[styles.container, { backgroundColor: theme.bg }]}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       {/* Open Editorial Header */}
       <View style={[styles.headerShell, { borderBottomColor: theme.hairline }]}>
@@ -1053,11 +1057,13 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
         </View>
       </View>
 
-      <ScrollView
+      <SmartScrollView
         ref={scrollRef}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
+        lockWhenFits={false}
+        liftForKeyboard={true}
       >
         <Animated.View
           style={{
@@ -2046,7 +2052,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
             </View>
           )}
         </Animated.View>
-      </ScrollView>
+      </SmartScrollView>
 
       {/* Open Minimalist Footer */}
       {step < TOTAL_STEPS - 1 && (
@@ -2077,7 +2083,12 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
         presentationStyle="pageSheet"
         onRequestClose={() => setSwapTarget(null)}
       >
-        <View style={[styles.swapModalContainer, { backgroundColor: theme.bg }]}>
+        <View
+          style={[
+            styles.swapModalContainer,
+            { backgroundColor: theme.bg, paddingBottom: swapKeyboardHeight },
+          ]}
+        >
           <View style={[styles.swapModalHeader, { borderBottomColor: theme.hairline }]}>
             <View style={{ flex: 1, minWidth: 0 }}>
               <Text style={[styles.swapModalTitle, { color: theme.text }]}>

@@ -20,6 +20,7 @@ import { DayBannerArtwork } from './DayBannerArtwork';
 import { DayExercisePreviewList } from './DayExercisePreviewList';
 import { AnimatedIcon } from './AnimatedIcon';
 import { MinimalistBackdrop } from './MinimalistBackdrop';
+import { SmartScrollView } from './SmartScrollView';
 import { updateDayInPlan } from '../services/storage';
 import { triggerSelectionHaptic } from '../services/haptics';
 
@@ -175,7 +176,7 @@ export const PlanTab: React.FC<PlanTabProps> = ({
       </View>
 
       {/* Day Content */}
-      <ScrollView
+      <SmartScrollView
         style={styles.contentScroll}
         contentContainerStyle={styles.contentInner}
         showsVerticalScrollIndicator={false}
@@ -356,7 +357,7 @@ export const PlanTab: React.FC<PlanTabProps> = ({
           </View>
         )}
         </Animated.View>
-      </ScrollView>
+      </SmartScrollView>
 
       <ExerciseDetailModal
         visible={modalExercise !== null}
@@ -436,7 +437,7 @@ const styles = StyleSheet.create({
   contentInner: {
     paddingHorizontal: 18,
     paddingTop: 16,
-    paddingBottom: 112,
+    paddingBottom: 92,
   },
   bannerWrapper: {
     width: '100%',

@@ -5,7 +5,6 @@ import {
   Animated,
   Easing,
   LayoutAnimation,
-  PanResponder,
   RefreshControl,
   ScrollView,
   Share,
@@ -56,6 +55,9 @@ import {
   CrewRadarOrb,
   SquadAvatarRing,
 } from './CrewCustomComponents';
+import { SegmentedGlassTabItem, SegmentedGlassTabs } from './SegmentedGlassTabs';
+import { SmartScrollView } from './SmartScrollView';
+import { StatusPickerModal } from './StatusPickerModal';
 import { FriendProfileModal } from './FriendProfileModal';
 import { FriendChatModal } from './FriendChatModal';
 
@@ -80,11 +82,12 @@ const SUB_TABS: Array<{
   key: FriendsSubTab;
   icon: keyof typeof Ionicons.glyphMap;
   labelKey: 'friendsSegChats' | 'friendsSegFeed' | 'friendsSegRank' | 'friendsSegAdd';
+  accent: string;
 }> = [
-  { key: 'chats', icon: 'chatbubbles-outline', labelKey: 'friendsSegChats' },
-  { key: 'feed', icon: 'flame-outline', labelKey: 'friendsSegFeed' },
-  { key: 'rank', icon: 'trophy-outline', labelKey: 'friendsSegRank' },
-  { key: 'add', icon: 'person-add-outline', labelKey: 'friendsSegAdd' },
+  { key: 'chats', icon: 'chatbubbles-outline', labelKey: 'friendsSegChats', accent: '#10B981' },
+  { key: 'feed', icon: 'flame-outline', labelKey: 'friendsSegFeed', accent: '#F59E0B' },
+  { key: 'rank', icon: 'trophy-outline', labelKey: 'friendsSegRank', accent: '#38BDF8' },
+  { key: 'add', icon: 'person-add-outline', labelKey: 'friendsSegAdd', accent: '#A855F7' },
 ];
 
 export const FriendsTab: React.FC<FriendsTabProps> = ({
@@ -101,11 +104,6 @@ export const FriendsTab: React.FC<FriendsTabProps> = ({
 
   const [subTab, setSubTab] = useState<FriendsSubTab>('chats');
   const subTabRef = useRef<FriendsSubTab>('chats');
-  const [segWidth, setSegWidth] = useState(0);
-  const segWidthRef = useRef(0);
-  const segDragStartIdxRef = useRef(0);
-  const segThumbAnim = useRef(new Animated.Value(0)).current;
-  const segThumbScale = useRef(new Animated.Value(1)).current;
 
   const [hub, setHub] = useState<SocialHubData>({
     myProfile: null,
@@ -191,69 +189,17 @@ export const FriendsTab: React.FC<FriendsTabProps> = ({
     [contentFade]
   );
 
+  const hasLoadedHubRef = useRef(false);
+  const onUnreadRef = useRef(onUnreadCountChanged);
+  onUnreadRef.current = onUnreadCountChanged;
+
   useEffect(() => {
     subTabRef.current = subTab;
-    const idx = Math.max(0, SUB_TABS.findIndex((s) => s.key === subTab));
-    Animated.spring(segThumbAnim, {
-      toValue: idx,
-      friction: 7,
-      tension: 92,
-      useNativeDriver: true,
-    }).start();
-  }, [subTab, segThumbAnim]);
+  }, [subTab]);
 
-  const segPanResponder = useMemo(
-    () =>
-      PanResponder.create({
-        onStartShouldSetPanResponder: () => false,
-        onMoveShouldSetPanResponder: (_, g) =>
-          Math.abs(g.dx) > 5 && Math.abs(g.dx) > Math.abs(g.dy),
-        onMoveShouldSetPanResponderCapture: (_, g) =>
-          Math.abs(g.dx) > 6 && Math.abs(g.dx) > Math.abs(g.dy),
-        onPanResponderGrant: () => {
-          segDragStartIdxRef.current = Math.max(
-            0,
-            SUB_TABS.findIndex((s) => s.key === subTabRef.current)
-          );
-          Animated.spring(segThumbScale, {
-            toValue: 0.96,
-            friction: 7,
-            tension: 120,
-            useNativeDriver: true,
-          }).start();
-        },
-        onPanResponderMove: (_, g) => {
-          const totalW = segWidthRef.current;
-          const slotW = totalW > 10 ? (totalW - 8) / SUB_TABS.length : 72;
-          const rawIdx = segDragStartIdxRef.current + g.dx / slotW;
-          const clamped = Math.max(0, Math.min(SUB_TABS.length - 1, rawIdx));
-          segThumbAnim.setValue(clamped);
-          const nextTab = SUB_TABS[Math.round(clamped)]?.key;
-          if (nextTab && nextTab !== subTabRef.current) {
-            triggerSelectionHaptic();
-            switchSubTab(nextTab);
-          }
-        },
-        onPanResponderRelease: () => {
-          const idx = Math.max(0, SUB_TABS.findIndex((s) => s.key === subTabRef.current));
-          Animated.parallel([
-            Animated.spring(segThumbAnim, {
-              toValue: idx,
-              friction: 7,
-              tension: 92,
-              useNativeDriver: true,
-            }),
-            Animated.spring(segThumbScale, {
-              toValue: 1,
-              friction: 6,
-              tension: 120,
-              useNativeDriver: true,
-            }),
-          ]).start();
-        },
-      }),
-    [segThumbAnim, segThumbScale, switchSubTab]
-  );
+  useEffect(() => {
+    hasLoadedHubRef.current = false;
+  }, [activeProfile.id]);
 
   const loadSocialState = useCallback(
     async (withPublish = false) => {
@@ -262,9 +208,10 @@ export const FriendsTab: React.FC<FriendsTabProps> = ({
       if (!session?.token) return;
 
       const cached = await getCachedSocialHub(session.userId);
-      if (cached && !hub.myProfile) {
+      if (cached && !hasLoadedHubRef.current) {
+        hasLoadedHubRef.current = true;
         setHub(cached);
-        onUnreadCountChanged?.(cached.totalUnread || 0);
+        onUnreadRef.current?.(cached.totalUnread || 0);
       }
 
       if (withPublish) {
@@ -273,12 +220,17 @@ export const FriendsTab: React.FC<FriendsTabProps> = ({
 
       const res = await fetchSocialHub();
       if (res.ok && res.hub) {
+        hasLoadedHubRef.current = true;
         setHub(res.hub);
-        onUnreadCountChanged?.(res.hub.totalUnread || 0);
+        onUnreadRef.current?.(res.hub.totalUnread || 0);
       }
     },
-    [activeProfile.id, hub.myProfile, onUnreadCountChanged]
+    [activeProfile.id]
   );
+
+  const handleChatMessagesChanged = useCallback(() => {
+    void loadSocialState(false);
+  }, [loadSocialState]);
 
   useEffect(() => {
     setLoadingHub(true);
@@ -503,20 +455,21 @@ export const FriendsTab: React.FC<FriendsTabProps> = ({
     });
   }, [hub.myProfile, hub.friends, leaderboardMetric]);
 
-  const slotWidth = segWidth > 10 ? (segWidth - 8) / SUB_TABS.length : 0;
-  const thumbTranslateX = segThumbAnim.interpolate({
-    inputRange: [0, 1, 2, 3],
-    outputRange: [0, slotWidth, slotWidth * 2, slotWidth * 3],
-  });
   const cardFloatY = heroFloat.interpolate({ inputRange: [0, 1], outputRange: [0, -3] });
   const liveScale = liveDotPulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.35] });
 
-  const STATUS_PRESETS = [
-    t('friendsStatusPreset1'),
-    t('friendsStatusPreset2'),
-    t('friendsStatusPreset3'),
-    t('friendsStatusPreset4'),
-  ];
+  const friendSegItems: SegmentedGlassTabItem<FriendsSubTab>[] = SUB_TABS.map((item) => ({
+    key: item.key,
+    label: t(item.labelKey),
+    icon: item.icon,
+    accent: item.accent,
+    badge:
+      item.key === 'chats'
+        ? hub.friends.reduce((acc, f) => acc + (f.unreadCount || 0), 0)
+        : item.key === 'add'
+        ? hub.incomingRequests.length
+        : 0,
+  }));
 
   return (
     <View style={[styles.container, { backgroundColor: theme.bg }]}>
@@ -560,150 +513,51 @@ export const FriendsTab: React.FC<FriendsTabProps> = ({
 
         {isCloudLoggedIn && (
           <>
-            {/* Quick Live Status Selector */}
+            {/* Live Status Pill Trigger -> opens dedicated StatusPickerModal */}
             <TouchableOpacity
               onPress={() => {
                 triggerSelectionHaptic();
-                LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-                setShowStatusPicker((v) => !v);
+                setShowStatusPicker(true);
               }}
-              activeOpacity={0.75}
-              style={styles.statusInlineBtn}
-            >
-              <Ionicons name="radio-outline" size={13} color="#38BDF8" />
-              <Text style={[styles.statusInlineText, { color: theme.textSecondary }]} numberOfLines={1}>
-                {activeProfile.statusNote || t('friendsStatusChipHint')}
-              </Text>
-              <Ionicons
-                name={showStatusPicker ? 'chevron-up' : 'chevron-down'}
-                size={12}
-                color={theme.textMuted}
-              />
-            </TouchableOpacity>
-
-            {showStatusPicker && (
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.statusPresetsRow}
-              >
-                {STATUS_PRESETS.map((preset) => (
-                  <TouchableOpacity
-                    key={preset}
-                    onPress={() => handleSetStatusPreset(preset)}
-                    style={[
-                      styles.statusPresetChip,
-                      {
-                        backgroundColor:
-                          activeProfile.statusNote === preset
-                            ? theme.text
-                            : theme.bgSecondary,
-                        borderColor: theme.border,
-                      },
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.statusPresetText,
-                        {
-                          color:
-                            activeProfile.statusNote === preset
-                              ? theme.bg
-                              : theme.text,
-                        },
-                      ]}
-                    >
-                      {preset}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            )}
-
-            {/* Draggable 4-Segment Glass Switcher */}
-            <View
-              {...segPanResponder.panHandlers}
-              onLayout={(e) => {
-                const w = e.nativeEvent.layout.width;
-                segWidthRef.current = w;
-                setSegWidth(w);
-              }}
+              activeOpacity={0.78}
               style={[
-                styles.segDock,
+                styles.statusModalTrigger,
                 {
                   backgroundColor: isDark
-                    ? 'rgba(24, 24, 28, 0.85)'
-                    : 'rgba(244, 244, 246, 0.9)',
-                  borderColor: theme.border,
+                    ? 'rgba(56, 189, 248, 0.10)'
+                    : 'rgba(56, 189, 248, 0.08)',
+                  borderColor: isDark
+                    ? 'rgba(56, 189, 248, 0.28)'
+                    : 'rgba(56, 189, 248, 0.25)',
                 },
               ]}
             >
-              {slotWidth > 0 && (
-                <Animated.View
-                  pointerEvents="none"
-                  style={[
-                    styles.segThumb,
-                    {
-                      width: slotWidth,
-                      backgroundColor: isDark ? '#FAFAFA' : '#111114',
-                      transform: [
-                        { translateX: thumbTranslateX },
-                        { scale: segThumbScale },
-                      ],
-                    },
-                  ]}
-                />
-              )}
+              <View style={styles.statusLiveDot} />
+              <Text
+                style={[
+                  styles.statusInlineText,
+                  { color: activeProfile.statusNote ? theme.text : theme.textSecondary, flex: 1 },
+                ]}
+                numberOfLines={1}
+              >
+                {activeProfile.statusNote || t('friendsStatusChipHint')}
+              </Text>
+              <Ionicons name="sparkles-outline" size={13} color="#38BDF8" />
+            </TouchableOpacity>
 
-              {SUB_TABS.map((item) => {
-                const active = subTab === item.key;
-                const badge =
-                  item.key === 'chats'
-                    ? hub.friends.reduce((acc, f) => acc + (f.unreadCount || 0), 0)
-                    : item.key === 'add'
-                    ? hub.incomingRequests.length
-                    : 0;
-
-                return (
-                  <TouchableOpacity
-                    key={item.key}
-                    style={styles.segBtn}
-                    onPress={() => {
-                      triggerSelectionHaptic();
-                      switchSubTab(item.key);
-                    }}
-                    activeOpacity={0.8}
-                  >
-                    <Ionicons
-                      name={item.icon}
-                      size={14}
-                      color={active ? (isDark ? '#09090B' : '#FFFFFF') : theme.textMuted}
-                    />
-                    <Text
-                      style={[
-                        styles.segText,
-                        {
-                          color: active ? (isDark ? '#09090B' : '#FFFFFF') : theme.textSecondary,
-                        },
-                      ]}
-                      numberOfLines={1}
-                    >
-                      {t(item.labelKey)}
-                    </Text>
-                    {badge > 0 && (
-                      <View style={styles.segBadge}>
-                        <Text style={styles.segBadgeText}>{badge}</Text>
-                      </View>
-                    )}
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
+            <SegmentedGlassTabs
+              items={friendSegItems}
+              activeKey={subTab}
+              onChange={(key) => {
+                triggerSelectionHaptic();
+                switchSubTab(key);
+              }}
+            />
           </>
         )}
       </View>
 
-      <ScrollView
+      <SmartScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
         refreshControl={
@@ -1406,7 +1260,7 @@ export const FriendsTab: React.FC<FriendsTabProps> = ({
             )}
           </Animated.View>
         )}
-      </ScrollView>
+      </SmartScrollView>
 
       <FriendProfileModal
         visible={selectedProfileFriend !== null}
@@ -1428,7 +1282,15 @@ export const FriendsTab: React.FC<FriendsTabProps> = ({
         myUserId={myUserId}
         onClose={() => setActiveChatFriend(null)}
         onOpenProfile={(f) => setSelectedProfileFriend(f)}
-        onMessagesChanged={() => void loadSocialState(false)}
+        onMessagesChanged={handleChatMessagesChanged}
+      />
+
+      <StatusPickerModal
+        visible={showStatusPicker}
+        nickname={myNick}
+        currentStatus={activeProfile.statusNote}
+        onClose={() => setShowStatusPicker(false)}
+        onSaveStatus={handleSetStatusPreset}
       />
     </View>
   );
@@ -1489,79 +1351,29 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     flexShrink: 1,
   },
-  statusInlineBtn: {
+  statusModalTrigger: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    alignSelf: 'flex-start',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  statusLiveDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    backgroundColor: '#38BDF8',
   },
   statusInlineText: {
     fontSize: 12.5,
-    fontWeight: '600',
-  },
-  statusPresetsRow: {
-    flexDirection: 'row',
-    gap: 7,
-    paddingVertical: 2,
-  },
-  statusPresetChip: {
-    paddingHorizontal: 11,
-    paddingVertical: 6,
-    borderRadius: 999,
-    borderWidth: StyleSheet.hairlineWidth,
-  },
-  statusPresetText: {
-    fontSize: 11.5,
     fontWeight: '700',
-  },
-  segDock: {
-    position: 'relative',
-    flexDirection: 'row',
-    alignItems: 'center',
-    height: 42,
-    borderRadius: 21,
-    paddingHorizontal: 4,
-    borderWidth: StyleSheet.hairlineWidth,
-    marginTop: 2,
-  },
-  segThumb: {
-    position: 'absolute',
-    top: 4,
-    bottom: 4,
-    left: 4,
-    borderRadius: 17,
-  },
-  segBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
-    height: '100%',
-    zIndex: 2,
-  },
-  segText: {
-    fontSize: 11,
-    fontWeight: '800',
-  },
-  segBadge: {
-    minWidth: 15,
-    height: 15,
-    borderRadius: 8,
-    paddingHorizontal: 4,
-    backgroundColor: '#10B981',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  segBadgeText: {
-    color: '#04120B',
-    fontSize: 9,
-    fontWeight: '900',
   },
   scrollContent: {
     paddingHorizontal: 18,
     paddingTop: 16,
-    paddingBottom: 110,
+    paddingBottom: 92,
   },
   connectGateWrap: {
     gap: 18,

@@ -1,6 +1,15 @@
 import React, { useId } from 'react';
 import { StyleSheet } from 'react-native';
-import Svg, { Circle, Defs, Path, Pattern, RadialGradient, Rect, Stop } from 'react-native-svg';
+import Svg, {
+  Circle,
+  Defs,
+  Line,
+  Path,
+  Pattern,
+  RadialGradient,
+  Rect,
+  Stop,
+} from 'react-native-svg';
 import { useAppTheme } from '../context/ThemeContext';
 
 interface MinimalistBackdropProps {
@@ -9,14 +18,15 @@ interface MinimalistBackdropProps {
 }
 
 /**
- * Ultra-subtle architectural backdrop rendered cleanly behind designated app tabs.
- * Never intercepts touches and stays soft enough to keep all editorial typography legible.
+ * Crisp minimalist architectural backdrop with clear visual depth in both
+ * Light and Dark modes without competing with foreground typography or cards.
  */
 export const MinimalistBackdrop: React.FC<MinimalistBackdropProps> = React.memo(
   ({ variant = 'dots', accentColor }) => {
     const { isDark } = useAppTheme();
     const uid = useId().replace(/:/g, '_');
-    const glowColor = accentColor || (isDark ? '#38BDF8' : '#10B981');
+    const primaryGlow = accentColor || (isDark ? '#38BDF8' : '#0EA5E9');
+    const secondaryGlow = isDark ? '#10B981' : '#10B981';
 
     return (
       <Svg
@@ -27,38 +37,68 @@ export const MinimalistBackdrop: React.FC<MinimalistBackdropProps> = React.memo(
       >
         <Defs>
           {variant === 'grid' ? (
-            <Pattern id={`bg_pat_${uid}`} width={48} height={48} patternUnits="userSpaceOnUse">
+            <Pattern id={`bg_pat_${uid}`} width={44} height={44} patternUnits="userSpaceOnUse">
               <Path
-                d="M 48 0 L 0 0 0 48"
+                d="M 44 0 L 0 0 0 44"
                 fill="none"
-                stroke={isDark ? 'rgba(255,255,255,0.036)' : 'rgba(24,24,27,0.032)'}
-                strokeWidth={0.85}
+                stroke={isDark ? 'rgba(255,255,255,0.088)' : 'rgba(15,23,42,0.085)'}
+                strokeWidth={0.95}
+              />
+              <Circle
+                cx={0}
+                cy={0}
+                r={1.35}
+                fill={isDark ? 'rgba(255,255,255,0.18)' : 'rgba(15,23,42,0.16)'}
               />
             </Pattern>
           ) : (
             <Pattern id={`bg_pat_${uid}`} width={26} height={26} patternUnits="userSpaceOnUse">
               <Circle
-                cx={1.5}
-                cy={1.5}
-                r={1}
-                fill={isDark ? 'rgba(255,255,255,0.065)' : 'rgba(24,24,27,0.055)'}
+                cx={2}
+                cy={2}
+                r={1.3}
+                fill={isDark ? 'rgba(255,255,255,0.13)' : 'rgba(15,23,42,0.135)'}
               />
             </Pattern>
           )}
-          <RadialGradient id={`bg_glow_top_${uid}`} cx="82%" cy="8%" r="58%">
-            <Stop offset="0%" stopColor={glowColor} stopOpacity={isDark ? 0.095 : 0.05} />
-            <Stop offset="60%" stopColor={glowColor} stopOpacity={isDark ? 0.025 : 0.015} />
-            <Stop offset="100%" stopColor="#000000" stopOpacity={0} />
+
+          <RadialGradient id={`bg_glow_top_${uid}`} cx="85%" cy="6%" r="62%">
+            <Stop
+              offset="0%"
+              stopColor={primaryGlow}
+              stopOpacity={isDark ? 0.17 : 0.125}
+            />
+            <Stop
+              offset="58%"
+              stopColor={primaryGlow}
+              stopOpacity={isDark ? 0.055 : 0.04}
+            />
+            <Stop offset="100%" stopColor={isDark ? '#000000' : '#FFFFFF'} stopOpacity={0} />
           </RadialGradient>
-          <RadialGradient id={`bg_glow_btm_${uid}`} cx="14%" cy="86%" r="52%">
-            <Stop offset="0%" stopColor="#10B981" stopOpacity={isDark ? 0.05 : 0.028} />
-            <Stop offset="100%" stopColor="#000000" stopOpacity={0} />
+
+          <RadialGradient id={`bg_glow_btm_${uid}`} cx="12%" cy="88%" r="56%">
+            <Stop
+              offset="0%"
+              stopColor={secondaryGlow}
+              stopOpacity={isDark ? 0.11 : 0.085}
+            />
+            <Stop offset="100%" stopColor={isDark ? '#000000' : '#FFFFFF'} stopOpacity={0} />
           </RadialGradient>
         </Defs>
 
         <Rect x={0} y={0} width="100%" height="100%" fill={`url(#bg_pat_${uid})`} />
         <Rect x={0} y={0} width="100%" height="100%" fill={`url(#bg_glow_top_${uid})`} />
         <Rect x={0} y={0} width="100%" height="100%" fill={`url(#bg_glow_btm_${uid})`} />
+
+        {/* Subtle Top-to-Bottom Architectural Rule */}
+        <Line
+          x1="8%"
+          y1="0"
+          x2="8%"
+          y2="100%"
+          stroke={isDark ? 'rgba(255,255,255,0.035)' : 'rgba(15,23,42,0.045)'}
+          strokeWidth={1}
+        />
       </Svg>
     );
   }

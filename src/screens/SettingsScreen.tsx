@@ -6,9 +6,7 @@ import {
   Easing,
   LayoutAnimation,
   Linking,
-  PanResponder,
   Platform,
-  ScrollView,
   Share,
   StyleSheet,
   Switch,
@@ -23,6 +21,8 @@ import { useLanguage } from '../context/LanguageContext';
 import { TranslationKey } from '../i18n/translations';
 import { LanguageSwitcher } from '../components/LanguageSwitcher';
 import { MinimalistBackdrop } from '../components/MinimalistBackdrop';
+import { SegmentedGlassTabItem, SegmentedGlassTabs } from '../components/SegmentedGlassTabs';
+import { SmartScrollView } from '../components/SmartScrollView';
 import {
   AppSettings,
   HealthDailySummary,
@@ -83,7 +83,7 @@ import {
 } from '../utils/nickname';
 import { EXERCISE_LIBRARY } from '../data/exerciseLibrary';
 import { ExerciseLibraryModal } from '../components/ExerciseLibraryModal';
-import { InteractiveBottomSheet } from '../components/InteractiveBottomSheet';
+import { BottomSheetScrollView, InteractiveBottomSheet } from '../components/InteractiveBottomSheet';
 import { SupplementConfigurator } from '../components/SupplementConfigurator';
 import { AnimatedIcon } from '../components/AnimatedIcon';
 
@@ -111,11 +111,12 @@ const SETTINGS_TABS: Array<{
   key: SettingsSubTab;
   icon: keyof typeof Ionicons.glyphMap;
   labelKey: 'settingsTabProfile' | 'settingsTabTraining' | 'settingsTabSystem' | 'settingsTabData';
+  accent: string;
 }> = [
-  { key: 'profile', icon: 'person-outline', labelKey: 'settingsTabProfile' },
-  { key: 'training', icon: 'barbell-outline', labelKey: 'settingsTabTraining' },
-  { key: 'system', icon: 'options-outline', labelKey: 'settingsTabSystem' },
-  { key: 'data', icon: 'shield-checkmark-outline', labelKey: 'settingsTabData' },
+  { key: 'profile', icon: 'person-outline', labelKey: 'settingsTabProfile', accent: '#10B981' },
+  { key: 'training', icon: 'barbell-outline', labelKey: 'settingsTabTraining', accent: '#38BDF8' },
+  { key: 'system', icon: 'options-outline', labelKey: 'settingsTabSystem', accent: '#F59E0B' },
+  { key: 'data', icon: 'shield-checkmark-outline', labelKey: 'settingsTabData', accent: '#A855F7' },
 ];
 
 export const SettingsScreen: React.FC<SettingsScreenProps> = ({
@@ -161,11 +162,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 
   const [settingsTab, setSettingsTab] = useState<SettingsSubTab>('profile');
   const settingsTabRef = useRef<SettingsSubTab>('profile');
-  const [segWidth, setSegWidth] = useState(0);
-  const segWidthRef = useRef(0);
-  const segStartIdxRef = useRef(0);
-  const segThumbAnim = useRef(new Animated.Value(0)).current;
-  const segThumbScale = useRef(new Animated.Value(1)).current;
   const tabContentFade = useRef(new Animated.Value(1)).current;
   const tabContentSlide = useRef(new Animated.Value(0)).current;
   const [e2eeFingerprint, setE2eeFingerprint] = useState('---- · ---- · ---- · ----');
@@ -200,70 +196,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 
   useEffect(() => {
     settingsTabRef.current = settingsTab;
-    const idx = Math.max(0, SETTINGS_TABS.findIndex((s) => s.key === settingsTab));
-    Animated.spring(segThumbAnim, {
-      toValue: idx,
-      friction: 7,
-      tension: 92,
-      useNativeDriver: true,
-    }).start();
-  }, [settingsTab, segThumbAnim]);
-
-  const segPanResponder = useMemo(
-    () =>
-      PanResponder.create({
-        onStartShouldSetPanResponder: () => false,
-        onMoveShouldSetPanResponder: (_, g) =>
-          Math.abs(g.dx) > 5 && Math.abs(g.dx) > Math.abs(g.dy),
-        onMoveShouldSetPanResponderCapture: (_, g) =>
-          Math.abs(g.dx) > 6 && Math.abs(g.dx) > Math.abs(g.dy),
-        onPanResponderGrant: () => {
-          segStartIdxRef.current = Math.max(
-            0,
-            SETTINGS_TABS.findIndex((s) => s.key === settingsTabRef.current)
-          );
-          Animated.spring(segThumbScale, {
-            toValue: 0.96,
-            friction: 7,
-            tension: 120,
-            useNativeDriver: true,
-          }).start();
-        },
-        onPanResponderMove: (_, g) => {
-          const totalW = segWidthRef.current;
-          const slotW = totalW > 10 ? (totalW - 8) / SETTINGS_TABS.length : 72;
-          const rawIdx = segStartIdxRef.current + g.dx / slotW;
-          const clamped = Math.max(0, Math.min(SETTINGS_TABS.length - 1, rawIdx));
-          segThumbAnim.setValue(clamped);
-          const nextTab = SETTINGS_TABS[Math.round(clamped)]?.key;
-          if (nextTab && nextTab !== settingsTabRef.current) {
-            triggerSelectionHaptic();
-            switchSettingsTab(nextTab);
-          }
-        },
-        onPanResponderRelease: () => {
-          const idx = Math.max(
-            0,
-            SETTINGS_TABS.findIndex((s) => s.key === settingsTabRef.current)
-          );
-          Animated.parallel([
-            Animated.spring(segThumbAnim, {
-              toValue: idx,
-              friction: 7,
-              tension: 92,
-              useNativeDriver: true,
-            }),
-            Animated.spring(segThumbScale, {
-              toValue: 1,
-              friction: 6,
-              tension: 120,
-              useNativeDriver: true,
-            }),
-          ]).start();
-        },
-      }),
-    [segThumbAnim, segThumbScale, switchSettingsTab]
-  );
+  }, [settingsTab]);
 
   useEffect(() => {
     const uid = cloudSession?.userId || activeProfile.cloudUserId || 'device';
@@ -654,18 +587,19 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
     weightInput.trim() !== savedWeight ||
     genderInput !== (activeProfile.gender || 'male');
 
-  const slotWidth = segWidth > 10 ? (segWidth - 8) / SETTINGS_TABS.length : 0;
-  const settingsThumbX = segThumbAnim.interpolate({
-    inputRange: [0, 1, 2, 3],
-    outputRange: [0, slotWidth, slotWidth * 2, slotWidth * 3],
-  });
+  const settingsSegItems: SegmentedGlassTabItem<SettingsSubTab>[] = SETTINGS_TABS.map((tab) => ({
+    key: tab.key,
+    label: t(tab.labelKey),
+    icon: tab.icon,
+    accent: tab.accent,
+  }));
 
   return (
     <View style={[styles.container, { backgroundColor: theme.bg }]}>
       <MinimalistBackdrop variant="dots" accentColor="#10B981" />
-      {/* Open Editorial Header + Tabbed Segmented Switcher */}
+      {/* Open Editorial Header + Tabbed Glass Switcher */}
       <View style={[styles.header, { borderBottomColor: theme.hairline }]}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 12 }}>
           <View style={{ flex: 1, minWidth: 0 }}>
             <Text style={[styles.headerTitle, { color: theme.text }]}>{t('settingsTitle')}</Text>
             <Text style={[styles.headerSub, { color: theme.textMuted }]} numberOfLines={1}>
@@ -676,67 +610,18 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           <LanguageSwitcher variant="pill" />
         </View>
 
-        <View
-          {...segPanResponder.panHandlers}
-          onLayout={(e) => {
-            const w = e.nativeEvent.layout.width;
-            segWidthRef.current = w;
-            setSegWidth(w);
+        <SegmentedGlassTabs
+          items={settingsSegItems}
+          activeKey={settingsTab}
+          onChange={(key) => {
+            triggerSelectionHaptic();
+            switchSettingsTab(key);
           }}
-          style={[
-            styles.settingsSegDock,
-            {
-              backgroundColor: isDark ? 'rgba(24,24,28,0.85)' : 'rgba(244,244,246,0.92)',
-              borderColor: theme.border,
-            },
-          ]}
-        >
-          {slotWidth > 0 && (
-            <Animated.View
-              pointerEvents="none"
-              style={[
-                styles.settingsSegThumb,
-                {
-                  width: slotWidth,
-                  backgroundColor: isDark ? '#FAFAFA' : '#111114',
-                  transform: [{ translateX: settingsThumbX }, { scale: segThumbScale }],
-                },
-              ]}
-            />
-          )}
-          {SETTINGS_TABS.map((tab) => {
-            const active = settingsTab === tab.key;
-            return (
-              <TouchableOpacity
-                key={tab.key}
-                style={styles.settingsSegBtn}
-                onPress={() => {
-                  triggerSelectionHaptic();
-                  switchSettingsTab(tab.key);
-                }}
-                activeOpacity={0.8}
-              >
-                <Ionicons
-                  name={tab.icon}
-                  size={14}
-                  color={active ? (isDark ? '#09090B' : '#FFFFFF') : theme.textMuted}
-                />
-                <Text
-                  style={[
-                    styles.settingsSegText,
-                    { color: active ? (isDark ? '#09090B' : '#FFFFFF') : theme.textSecondary },
-                  ]}
-                  numberOfLines={1}
-                >
-                  {t(tab.labelKey)}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
+        />
       </View>
 
-      <ScrollView
+      <SmartScrollView
+        style={{ backgroundColor: 'transparent' }}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
@@ -1641,7 +1526,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           </>
         )}
         </Animated.View>
-      </ScrollView>
+      </SmartScrollView>
 
       {/* Custom Exercise Library Modal */}
       <ExerciseLibraryModal
@@ -1662,7 +1547,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
         subtitle={t('importModalSub')}
         initialHeightPercent={0.78}
       >
-        <ScrollView
+        <BottomSheetScrollView
           style={{ flex: 1 }}
           contentContainerStyle={{ padding: 20, paddingBottom: 36 }}
           keyboardShouldPersistTaps="handled"
@@ -1707,7 +1592,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               {t('restoreFullBackup')}
             </Text>
           </TouchableOpacity>
-        </ScrollView>
+        </BottomSheetScrollView>
       </InteractiveBottomSheet>
     </View>
   );
@@ -1733,39 +1618,9 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginTop: 2,
   },
-  settingsSegDock: {
-    position: 'relative',
-    flexDirection: 'row',
-    alignItems: 'center',
-    height: 40,
-    borderRadius: 20,
-    paddingHorizontal: 4,
-    borderWidth: StyleSheet.hairlineWidth,
-    marginTop: 12,
-  },
-  settingsSegThumb: {
-    position: 'absolute',
-    top: 4,
-    bottom: 4,
-    left: 4,
-    borderRadius: 16,
-  },
-  settingsSegBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 5,
-    height: '100%',
-    zIndex: 2,
-  },
-  settingsSegText: {
-    fontSize: 11.5,
-    fontWeight: '800',
-  },
   scrollContent: {
     paddingHorizontal: 20,
-    paddingBottom: 130,
+    paddingBottom: 92,
   },
   openSection: {
     paddingVertical: 22,
