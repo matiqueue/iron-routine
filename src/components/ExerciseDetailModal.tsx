@@ -30,7 +30,7 @@ export const ExerciseDetailModal: React.FC<ExerciseDetailModalProps> = ({
   onOpenPR,
 }) => {
   const { theme } = useAppTheme();
-  const { t, muscleLabel, categoryLabel } = useLanguage();
+  const { t, muscleLabel, categoryLabel, exerciseName, equipmentLabel } = useLanguage();
   const [imageLoading, setImageLoading] = useState(true);
   const [imageError, setImageError] = useState(false);
   const [favoriteIds, setFavoriteIds] = useState<string[]>([]);
@@ -56,7 +56,7 @@ export const ExerciseDetailModal: React.FC<ExerciseDetailModalProps> = ({
     <InteractiveBottomSheet
       visible={visible}
       onClose={onClose}
-      title={exercise.name}
+      title={exerciseName(exercise.id, exercise.name)}
       subtitle={`${categoryLabel(exercise.category).toUpperCase()} • ${exercise.sets} ${t('sets')} × ${exercise.reps} • ${exercise.rest}s ${t('rest').toLowerCase()}`}
       initialHeightPercent={0.88}
     >
@@ -96,7 +96,9 @@ export const ExerciseDetailModal: React.FC<ExerciseDetailModalProps> = ({
             <View style={styles.imagePlaceholder}>
               <Ionicons name="barbell-outline" size={32} color={theme.textMuted} />
               <Text style={[styles.imagePlaceholderText, { color: theme.textMuted }]}>
-                {exercise.equipment ? `Sprzęt: ${exercise.equipment}` : 'Podgląd techniki ćwiczenia'}
+                {exercise.equipment
+                  ? t('equipmentLabelText', { equipment: equipmentLabel(exercise.equipment) })
+                  : t('techniquePreview')}
               </Text>
             </View>
           )}
@@ -111,7 +113,7 @@ export const ExerciseDetailModal: React.FC<ExerciseDetailModalProps> = ({
           >
             <Text style={[styles.categoryBadgeText, { color: theme.primaryText }]}>
               {muscleLabel(anatomy.primary).toUpperCase()}
-              {exercise.equipment ? ` • ${exercise.equipment.toUpperCase()}` : ''}
+              {exercise.equipment ? ` • ${equipmentLabel(exercise.equipment).toUpperCase()}` : ''}
             </Text>
           </View>
 
@@ -217,7 +219,7 @@ export const ExerciseDetailModal: React.FC<ExerciseDetailModalProps> = ({
           {/* Note */}
           {exercise.note ? (
             <View style={[styles.noteBox, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
-              <Text style={[styles.noteTitle, { color: theme.text }]}>Wskazówka</Text>
+              <Text style={[styles.noteTitle, { color: theme.text }]}>{t('tipLabel')}</Text>
               <Text style={[styles.noteText, { color: theme.textSecondary }]}>
                 {exercise.note}
               </Text>
@@ -237,7 +239,7 @@ export const ExerciseDetailModal: React.FC<ExerciseDetailModalProps> = ({
               >
                 <Ionicons name="trophy-outline" size={16} color={theme.primaryText} />
                 <Text style={[styles.prBtnText, { color: theme.primaryText }]}>
-                  Zobacz lub dodaj wynik w Osiągach
+                  {t('viewOrAddInProgress')}
                 </Text>
               </TouchableOpacity>
             )}
@@ -247,7 +249,9 @@ export const ExerciseDetailModal: React.FC<ExerciseDetailModalProps> = ({
               onPress={onClose}
               activeOpacity={0.8}
             >
-              <Text style={[styles.dismissBtnText, { color: theme.textMuted }]}>Zamknij</Text>
+              <Text style={[styles.dismissBtnText, { color: theme.textMuted }]}>
+                {t('close')}
+              </Text>
             </TouchableOpacity>
           </View>
         </View>

@@ -164,7 +164,7 @@ export const PlanTab: React.FC<PlanTabProps> = ({
                     { color: isSelected ? theme.primaryText : theme.textMuted },
                   ]}
                 >
-                  {isRest ? 'Wolne' : 'Trening'}
+                  {isRest ? t('restTagShort') : t('workoutTagShort')}
                 </Text>
               </TouchableOpacity>
             );
@@ -192,7 +192,7 @@ export const PlanTab: React.FC<PlanTabProps> = ({
           >
             <Ionicons name="layers-outline" size={15} color={theme.text} />
             <Text style={[styles.planSelectorText, { color: theme.text }]} numberOfLines={1}>
-              {activePlan?.name || 'Mój Plan'}
+              {activePlan?.name || t('defaultPlanName')}
             </Text>
             <Text style={[styles.planCountBadge, { color: theme.textMuted }]}>
               ({allPlansCount})
@@ -272,11 +272,11 @@ export const PlanTab: React.FC<PlanTabProps> = ({
               <>
                 <Text style={[styles.monoMetaDot, { color: theme.textMuted }]}>•</Text>
                 <Text style={[styles.monoMetaText, { color: theme.textSecondary }]}>
-                  {currentPlan.exercises?.length || 0} ćwiczeń
+                  {t('exercisesCountText', { count: currentPlan.exercises?.length || 0 })}
                 </Text>
                 <Text style={[styles.monoMetaDot, { color: theme.textMuted }]}>•</Text>
                 <Text style={[styles.monoMetaText, { color: theme.textSecondary }]}>
-                  {(currentPlan.exercises || []).reduce((acc, e) => acc + e.sets, 0)} serii
+                  {(currentPlan.exercises || []).reduce((acc, e) => acc + e.sets, 0)} {t('setsWord')}
                 </Text>
               </>
             )}
@@ -295,7 +295,7 @@ export const PlanTab: React.FC<PlanTabProps> = ({
             >
               <AnimatedIcon name="play" preset="pulse" size={16} color={theme.primaryText} active />
               <Text style={[styles.startWorkoutBtnText, { color: theme.primaryText }]}>
-                ROZPOCZNIJ TEN TRENING
+                {t('todayStartWorkout').toUpperCase()}
               </Text>
             </TouchableOpacity>
           )}
@@ -305,7 +305,7 @@ export const PlanTab: React.FC<PlanTabProps> = ({
           <View style={[styles.warmupNotice, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
             <Ionicons name="information-circle-outline" size={20} color={theme.text} style={{ marginTop: 1 }} />
             <View style={{ flex: 1 }}>
-              <Text style={[styles.warmupTitle, { color: theme.text }]}>Wskazówka rozgrzewkowa</Text>
+              <Text style={[styles.warmupTitle, { color: theme.text }]}>{t('warmupTipTitle')}</Text>
               <Text style={[styles.warmupDesc, { color: theme.textSecondary }]}>
                 {currentPlan.warmup}
               </Text>
@@ -326,10 +326,10 @@ export const PlanTab: React.FC<PlanTabProps> = ({
             >
               <Ionicons name="add-circle-outline" size={28} color={theme.text} />
               <Text style={[styles.emptyDayTitle, { color: theme.text }]}>
-                Ten dzień nie ma jeszcze ćwiczeń
+                {t('emptyDayTitle')}
               </Text>
               <Text style={[styles.emptyDaySub, { color: theme.textMuted }]}>
-                Dotknij, aby dobrać ćwiczenia z bazy siłowni lub zmienić dzień na regenerację.
+                {t('emptyDaySub')}
               </Text>
             </TouchableOpacity>
           )}
@@ -339,10 +339,10 @@ export const PlanTab: React.FC<PlanTabProps> = ({
           <View style={styles.exerciseSection}>
             <View style={[styles.sectionDivider, { borderTopColor: theme.hairline }]}>
               <Text style={[styles.sectionTitle, { color: theme.textMuted }]}>
-                ĆWICZENIA W DNIU ({currentPlan.exercises.length})
+                {t('exercisesInDayUpper', { count: currentPlan.exercises.length })}
               </Text>
               <Text style={[styles.sectionHint, { color: theme.textMuted }]}>
-                Dotknij po technikę i PR
+                {t('tapForTechAndPr')}
               </Text>
             </View>
 

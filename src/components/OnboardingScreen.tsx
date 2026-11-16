@@ -21,6 +21,7 @@ import { useAppTheme } from '../context/ThemeContext';
 import { useLanguage } from '../context/LanguageContext';
 import { PLAN_MODE_LOCALE } from '../i18n/translations';
 import {
+  AppLanguage,
   DayPlan,
   Exercise,
   PlanTemplateKey,
@@ -77,34 +78,63 @@ const PLAN_VISUAL_META: Record<
   Exclude<PlanTemplateKey, 'clone_current'>,
   {
     accent: string;
-    duration: string;
-    dayCodes: string[];
+    duration?: string;
+    dayCodes: Record<AppLanguage, string[]>;
   }
 > = {
   fbw3: {
     accent: '#10B981',
     duration: '~55 min',
-    dayCodes: ['T', '·', 'T', '·', 'T', '·', '·'],
+    dayCodes: {
+      pl: ['T', '·', 'T', '·', 'T', '·', '·'],
+      en: ['W', '·', 'W', '·', 'W', '·', '·'],
+      de: ['T', '·', 'T', '·', 'T', '·', '·'],
+      fr: ['S', '·', 'S', '·', 'S', '·', '·'],
+      es: ['E', '·', 'E', '·', 'E', '·', '·'],
+    },
   },
   upper_lower: {
     accent: '#38BDF8',
     duration: '~60 min',
-    dayCodes: ['G', 'D', '·', 'G', 'D', '·', '·'],
+    dayCodes: {
+      pl: ['G', 'D', '·', 'G', 'D', '·', '·'],
+      en: ['U', 'L', '·', 'U', 'L', '·', '·'],
+      de: ['O', 'U', '·', 'O', 'U', '·', '·'],
+      fr: ['H', 'B', '·', 'H', 'B', '·', '·'],
+      es: ['T', 'P', '·', 'T', 'P', '·', '·'],
+    },
   },
   ppl: {
     accent: '#A855F7',
     duration: '~65 min',
-    dayCodes: ['P', 'P', 'L', 'P', 'P', 'L', '·'],
+    dayCodes: {
+      pl: ['P', 'P', 'L', 'P', 'P', 'L', '·'],
+      en: ['P', 'P', 'L', 'P', 'P', 'L', '·'],
+      de: ['P', 'P', 'L', 'P', 'P', 'L', '·'],
+      fr: ['P', 'P', 'L', 'P', 'P', 'L', '·'],
+      es: ['P', 'P', 'L', 'P', 'P', 'L', '·'],
+    },
   },
   split4: {
     accent: '#EC4899',
     duration: '~60 min',
-    dayCodes: ['K', 'P', '·', 'N', 'B', '·', '·'],
+    dayCodes: {
+      pl: ['K', 'P', '·', 'N', 'B', '·', '·'],
+      en: ['C', 'B', '·', 'L', 'S', '·', '·'],
+      de: ['B', 'R', '·', 'B', 'S', '·', '·'],
+      fr: ['P', 'D', '·', 'J', 'E', '·', '·'],
+      es: ['P', 'E', '·', 'P', 'H', '·', '·'],
+    },
   },
   blank: {
     accent: '#F59E0B',
-    duration: 'Own',
-    dayCodes: ['+', '+', '+', '+', '+', '+', '+'],
+    dayCodes: {
+      pl: ['+', '+', '+', '+', '+', '+', '+'],
+      en: ['+', '+', '+', '+', '+', '+', '+'],
+      de: ['+', '+', '+', '+', '+', '+', '+'],
+      fr: ['+', '+', '+', '+', '+', '+', '+'],
+      es: ['+', '+', '+', '+', '+', '+', '+'],
+    },
   },
 };
 
@@ -123,7 +153,7 @@ const SWAP_CAT_COLORS: Record<string, string> = {
 
 export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted }) => {
   const { theme, isDark, toggleTheme } = useAppTheme();
-  const { language, t, muscleLabel, equipmentLabel, dayLabel } = useLanguage();
+  const { language, t, muscleLabel, equipmentLabel, dayLabel, exerciseName } = useLanguage();
 
   const [showWelcomeIntro, setShowWelcomeIntro] = useState(true);
   const [step, setStep] = useState(0);
@@ -144,8 +174,9 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
 
   const [templateKey, setTemplateKey] =
     useState<Exclude<PlanTemplateKey, 'clone_current'>>('fbw3');
+  const [hasCustomizedDays, setHasCustomizedDays] = useState(false);
   const [customDays, setCustomDays] = useState<DayPlan[]>(() =>
-    buildPlanDaysFromTemplate('fbw3')
+    buildPlanDaysFromTemplate('fbw3', undefined, language)
   );
   const [selectedPreviewDayId, setSelectedPreviewDayId] = useState<string>('mon');
   const [swapTarget, setSwapTarget] = useState<{
@@ -169,11 +200,18 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
     getFavoriteExerciseIds().then(setFavoriteIds).catch(() => {});
   }, []);
 
+  useEffect(() => {
+    if (!hasCustomizedDays) {
+      setCustomDays(buildPlanDaysFromTemplate(templateKey, undefined, language));
+    }
+  }, [language, templateKey, hasCustomizedDays]);
+
   const handleSelectTrainingMode = (nextKey: Exclude<PlanTemplateKey, 'clone_current'>) => {
     triggerSelectionHaptic();
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setHasCustomizedDays(false);
     setTemplateKey(nextKey);
-    const nextDays = buildPlanDaysFromTemplate(nextKey);
+    const nextDays = buildPlanDaysFromTemplate(nextKey, undefined, language);
     setCustomDays(nextDays);
     const firstWorkout = nextDays.find((d) => d.type === 'workout') || nextDays[0];
     if (firstWorkout) setSelectedPreviewDayId(firstWorkout.id);
@@ -189,6 +227,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
     triggerSelectionHaptic();
     const cloned = cloneExercise(picked);
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setHasCustomizedDays(true);
     setCustomDays((prev) =>
       prev.map((d) => {
         if (d.id !== swapTarget.dayId) return d;
@@ -213,6 +252,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
   const handleRemoveProposedExercise = (dayId: string, exIndex: number) => {
     triggerSelectionHaptic();
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setHasCustomizedDays(true);
     setCustomDays((prev) =>
       prev.map((d) => {
         if (d.id !== dayId) return d;
@@ -412,7 +452,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
   const handleNextStep = () => {
     if (step === 0 && !name.trim()) {
       triggerNotificationHaptic('warning');
-      Alert.alert('Podaj imię', 'Wpisz swoje imię lub pseudonim, aby utworzyć profil.');
+      Alert.alert(t('enterNameAlertTitle'), t('enterNameAlertBody'));
       return;
     }
     if (step < TOTAL_STEPS - 1) {
@@ -456,8 +496,8 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
 
       if (!authRes.ok || !authRes.session) {
         Alert.alert(
-          'Logowanie w chmurze',
-          authRes.error || 'Nie udało się połączyć z kontem w chmurze.'
+          t('cloudAuthTitle'),
+          authRes.error || t('cloudConnectFailed')
         );
         return;
       }
@@ -469,7 +509,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
         try {
           await applyOnboardingSettings();
           const profile = await createProfile(
-            name.trim() || session.displayName || 'Sportowiec',
+            name.trim() || session.displayName || t('athleteFallback'),
             {
               gender,
               weight: parsedWeight,
@@ -491,17 +531,21 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
 
       if (!authRes.isNewAccount && session.backupSummary) {
         Alert.alert(
-          'Znaleziono konto w chmurze',
-          `Wykryto zapisany profil "${session.backupSummary.profileName}" (${session.backupSummary.plansCount} planów, ${session.backupSummary.prsCount} rekordów PR). Czy przywrócić zapisane dane na ten telefon?`,
+          t('cloudAccountFoundTitle'),
+          t('cloudExistingBackupBody', {
+            name: session.backupSummary.profileName,
+            plans: session.backupSummary.plansCount,
+            prs: session.backupSummary.prsCount,
+          }),
           [
             {
-              text: 'Użyj nowej konfiguracji',
+              text: t('useNewSetupBtn'),
               onPress: () => {
                 createAndUploadProfile();
               },
             },
             {
-              text: 'Przywróć konto',
+              text: t('restoreAccountBtn'),
               onPress: async () => {
                 try {
                   setIsSubmitting(true);
@@ -511,14 +555,14 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
                     await onCompleted(restored.profile);
                   } else {
                     Alert.alert(
-                      'Błąd przywracania',
-                      restored.error || 'Nie znaleziono pełnej kopii w chmurze.'
+                      t('restoreErrorTitle'),
+                      restored.error || t('restoreNotFoundError')
                     );
                   }
                 } catch (err: any) {
                   Alert.alert(
-                    'Błąd przywracania',
-                    err?.message || 'Nie udało się pobrać kopii.'
+                    t('restoreErrorTitle'),
+                    err?.message || t('restoreFetchError')
                   );
                 } finally {
                   setIsSubmitting(false);
@@ -531,7 +575,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
         await createAndUploadProfile();
       }
     } catch (e: any) {
-      Alert.alert('Logowanie w chmurze', e?.message || 'Nie udało się połączyć z chmurą.');
+      Alert.alert(t('cloudAuthTitle'), e?.message || t('cloudConnectNetworkError'));
     } finally {
       setBusyProvider(null);
     }
@@ -539,7 +583,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
 
   const handleFinishSetupLocal = async () => {
     if (isSubmitting || busyProvider) return;
-    const trimmed = name.trim() || 'Sportowiec';
+    const trimmed = name.trim() || t('athleteFallback');
 
     setIsSubmitting(true);
     try {
@@ -554,7 +598,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
       });
       await onCompleted(profile);
     } catch (e: any) {
-      Alert.alert('Błąd', e?.message || 'Nie udało się skonfigurować konta.');
+      Alert.alert(t('errorTitle'), e?.message || t('setupFailedError'));
     } finally {
       setIsSubmitting(false);
     }
@@ -576,10 +620,10 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
         triggerNotificationHaptic('success');
       } else {
         Alert.alert(
-          'Brak dostępu',
+          t('noAccessTitle'),
           Platform.OS === 'ios'
-            ? 'Możesz włączyć uprawnienia Apple Health później w Ustawieniach lub w aplikacji Zdrowie.'
-            : 'Możesz włączyć uprawnienia Health Connect później w Ustawieniach.'
+            ? t('onboardingHealthIosHint')
+            : t('onboardingHealthAndroidHint')
         );
       }
     } finally {
@@ -599,7 +643,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
   const handleImportJson = async () => {
     if (isSubmitting) return;
     if (!importText.trim()) {
-      Alert.alert('Brak danych', 'Wklej najpierw JSON kopii zapasowej lub planu.');
+      Alert.alert(t('missingDataTitle'), t('pasteJsonBackupBody'));
       return;
     }
 
@@ -610,7 +654,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
       triggerNotificationHaptic('success');
       await onCompleted(result.profile);
     } catch (e: any) {
-      Alert.alert('Błąd importu', e?.message || 'Nieprawidłowy format JSON.');
+      Alert.alert(t('importErrorTitle'), e?.message || t('invalidJsonError'));
     } finally {
       setIsSubmitting(false);
     }
@@ -879,7 +923,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
                 }
               }}
               activeOpacity={0.75}
-              accessibilityLabel="Wstecz"
+              accessibilityLabel={t('back')}
             >
               <Ionicons name="arrow-back" size={18} color={theme.text} />
             </TouchableOpacity>
@@ -967,7 +1011,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
               {/* Open Gender & Anatomical Model Picker */}
               <View style={[styles.openSection, { borderTopColor: theme.hairline }]}>
                 <Text style={[styles.sectionEyebrow, { color: theme.textMuted }]}>
-                  MODEL ANATOMICZNY SYLWETKI
+                  {t('onboardingAnatomyModelUpper')}
                 </Text>
 
                 <View style={styles.genderShowcaseRow}>
@@ -976,14 +1020,14 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
                       [
                         {
                           id: 'male',
-                          label: 'Mężczyzna',
-                          sub: 'Sylwetka męska w zakładce Osiągi',
+                          label: t('maleLabel'),
+                          sub: t('maleSub'),
                           icon: 'male-outline' as const,
                         },
                         {
                           id: 'female',
-                          label: 'Kobieta',
-                          sub: 'Sylwetka kobieca w zakładce Osiągi',
+                          label: t('femaleLabel'),
+                          sub: t('femaleSub'),
                           icon: 'female-outline' as const,
                         },
                       ] as const
@@ -1073,7 +1117,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
               {/* Open Name & Body Metrics Fields */}
               <View style={[styles.openSection, { borderTopColor: theme.hairline }]}>
                 <Text style={[styles.sectionEyebrow, { color: theme.textMuted }]}>
-                  TWOJE PARAMETRY
+                  {t('onboardingYourParamsUpper')}
                 </Text>
 
                 <View
@@ -1091,11 +1135,11 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
                       { color: focusedField === 'name' ? meta.accent : theme.textMuted },
                     ]}
                   >
-                    Imię lub pseudonim
+                    {t('nameOrNickPlaceholder')}
                   </Text>
                   <TextInput
                     style={[styles.openBigInput, { color: theme.text }]}
-                    placeholder="np. Szymon, Kasia..."
+                    placeholder={t('nameExamplePlaceholder')}
                     placeholderTextColor={theme.textMuted}
                     value={name}
                     onChangeText={setName}
@@ -1122,11 +1166,11 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
                         { color: focusedField === 'weight' ? meta.accent : theme.textMuted },
                       ]}
                     >
-                      Masa ciała (kg)
+                      {t('bodyWeightKgPlaceholder')}
                     </Text>
                     <TextInput
                       style={[styles.openBigInput, { color: theme.text }]}
-                      placeholder="np. 76.5"
+                      placeholder={t('weightExamplePlaceholder')}
                       placeholderTextColor={theme.textMuted}
                       keyboardType="decimal-pad"
                       value={weightText}
@@ -1152,11 +1196,11 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
                         { color: focusedField === 'height' ? meta.accent : theme.textMuted },
                       ]}
                     >
-                      Wzrost (cm)
+                      {t('heightCmPlaceholder')}
                     </Text>
                     <TextInput
                       style={[styles.openBigInput, { color: theme.text }]}
-                      placeholder="np. 178"
+                      placeholder={t('heightExamplePlaceholder')}
                       placeholderTextColor={theme.textMuted}
                       keyboardType="number-pad"
                       value={heightText}
@@ -1182,7 +1226,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
                     <Ionicons name="code-slash-outline" size={18} color={theme.textSecondary} />
                     <Text style={[styles.expandTitle, { color: theme.textSecondary }]}>
-                      Importuj ręcznie z pliku JSON
+                      {t('importJsonManualBtn')}
                     </Text>
                   </View>
                   <Ionicons
@@ -1214,7 +1258,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
                     >
                       <Ionicons name="download-outline" size={18} color={theme.primaryText} />
                       <Text style={[styles.primaryBtnText, { color: theme.primaryText }]}>
-                        Zaimportuj profil i plany
+                        {t('onboardingImportProfileBtn')}
                       </Text>
                     </TouchableOpacity>
                   </View>
@@ -1230,11 +1274,11 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
             <View style={[styles.openSection, { borderTopColor: theme.hairline }]}>
               <View style={styles.stepHeaderInline}>
                 <Text style={[styles.sectionEyebrow, { color: '#F59E0B', marginBottom: 0 }]}>
-                  WYBRANE SUPLEMENTY ({enabledSuppCount})
+                  {t('onboardingSelectedSuppsUpper', { count: enabledSuppCount })}
                 </Text>
                 {parsedWeight ? (
                   <Text style={[styles.weightInlineText, { color: theme.textSecondary }]}>
-                    Przelicznik wg {parsedWeight} kg m.c.
+                    {t('onboardingCalcByWeight', { weight: parsedWeight })}
                   </Text>
                 ) : null}
               </View>
@@ -1255,7 +1299,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
             <View style={styles.openStepFlow}>
               <View style={[styles.openSection, { borderTopColor: theme.hairline }]}>
                 <Text style={[styles.sectionEyebrow, { color: '#EF4444' }]}>
-                  SYSTEMOWE ZDROWIE
+                  {t('onboardingSystemHealthUpper')}
                 </Text>
 
                 <TouchableOpacity
@@ -1269,10 +1313,14 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
                   </View>
                   <View style={{ flex: 1, minWidth: 0 }}>
                     <Text style={[styles.optionTitle, { color: theme.text }]}>
-                      {Platform.OS === 'ios' ? 'Apple Health (Zdrowie)' : 'Health Connect'}
+                      {Platform.OS === 'ios'
+                        ? language === 'pl'
+                          ? 'Apple Health (Zdrowie)'
+                          : 'Apple Health'
+                        : 'Health Connect'}
                     </Text>
                     <Text style={[styles.optionSub, { color: theme.textMuted }]}>
-                      Automatyczny odczyt kroków, snu i aktywnych kalorii
+                      {t('healthSyncDescShort')}
                     </Text>
                   </View>
 
@@ -1293,7 +1341,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
                           { color: healthSyncEnabled ? '#FFFFFF' : theme.text },
                         ]}
                       >
-                        {healthSyncEnabled ? 'Aktywne' : 'Połącz'}
+                        {healthSyncEnabled ? t('activeBadge') : t('connectAction')}
                       </Text>
                     </View>
                   )}
@@ -1302,7 +1350,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
 
               <View style={[styles.openSection, { borderTopColor: theme.hairline }]}>
                 <Text style={[styles.sectionEyebrow, { color: theme.textMuted }]}>
-                  DOMYŚLNY CZAS PRZERWY MIĘDZY SERIAMI
+                  {t('defaultRestBetweenSetsUpper')}
                 </Text>
 
                 <View style={styles.restPresetsRow}>
@@ -1329,7 +1377,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
                             { color: active ? theme.bg : theme.text },
                           ]}
                         >
-                          {secs} sekund
+                          {t('secondsWord', { seconds: secs })}
                         </Text>
                       </TouchableOpacity>
                     );
@@ -1346,10 +1394,10 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
                 >
                   <View style={{ flex: 1, minWidth: 0 }}>
                     <Text style={[styles.optionTitle, { color: theme.text }]}>
-                      Budzik i wibracje końca przerwy
+                      {t('restAlarmOnboardingTitle')}
                     </Text>
                     <Text style={[styles.optionSub, { color: theme.textMuted }]}>
-                      Wielokrotny sygnał dźwiękowy na ekranie blokady przy wyłączonej aplikacji
+                      {t('restAlarmOnboardingSub')}
                     </Text>
                   </View>
                   <Ionicons
@@ -1369,10 +1417,10 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
                 >
                   <View style={{ flex: 1, minWidth: 0 }}>
                     <Text style={[styles.optionTitle, { color: theme.text }]}>
-                      Codzienne przypomnienie o suplementach
+                      {t('suppRemindersTitle')}
                     </Text>
                     <Text style={[styles.optionSub, { color: theme.textMuted }]}>
-                      Wieczorne powiadomienie z listą Twoich dawek
+                      {t('suppEveningOnboardingSub')}
                     </Text>
                   </View>
                   <Ionicons
@@ -1414,7 +1462,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
                     {t('onboardingModeDuration')}
                   </Text>
                   <Text style={[styles.planTelemetryVal, { color: theme.text }]}>
-                    {selectedPlanMeta.duration}
+                    {selectedPlanMeta.duration || t('onboardingBlankDuration')}
                   </Text>
                 </View>
                 <View style={[styles.planTelemetryDivider, { backgroundColor: theme.hairline }]} />
@@ -1504,7 +1552,8 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
                       {/* Visual 7-Day Week Split Mini-Timeline */}
                       <View style={styles.weekMatrixRow}>
                         {WEEK_DAY_IDS.map((dayId, dayIdx) => {
-                          const code = pMeta.dayCodes[dayIdx] || '·';
+                          const code =
+                            (pMeta.dayCodes[language] || pMeta.dayCodes.pl)[dayIdx] || '·';
                           const isWorkout = code !== '·';
                           return (
                             <View key={dayId} style={styles.weekMatrixCol}>
@@ -1675,7 +1724,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
                                 style={[styles.proposedExName, { color: theme.text }]}
                                 numberOfLines={2}
                               >
-                                {exItem.name}
+                                {exerciseName(exItem.id, exItem.name)}
                               </Text>
                               <Text
                                 style={[styles.proposedExMeta, { color: theme.textSecondary }]}
@@ -1899,7 +1948,10 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
               </Text>
               <Text style={[styles.swapModalSub, { color: theme.textMuted }]} numberOfLines={2}>
                 {swapTarget?.currentExercise
-                  ? `${swapTarget.currentExercise.name} · ${t('onboardingSwapSubtitle')}`
+                  ? `${exerciseName(
+                      swapTarget.currentExercise.id,
+                      swapTarget.currentExercise.name
+                    )} · ${t('onboardingSwapSubtitle')}`
                   : t('onboardingSwapSubtitle')}
               </Text>
             </View>
@@ -1974,9 +2026,10 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
                   if (!q) return true;
                   const anatomy = resolveExerciseMuscles(cand);
                   return (
+                    exerciseName(cand.id, cand.name).toLowerCase().includes(q) ||
                     cand.name.toLowerCase().includes(q) ||
                     muscleLabel(anatomy.primary).toLowerCase().includes(q) ||
-                    (cand.equipment || '').toLowerCase().includes(q)
+                    (cand.equipment ? equipmentLabel(cand.equipment).toLowerCase().includes(q) : false)
                   );
                 })
                 .sort((a, b) => {
@@ -2026,7 +2079,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
                           style={[styles.swapOptionTitle, { color: theme.text }]}
                           numberOfLines={2}
                         >
-                          {cand.name}
+                          {exerciseName(cand.id, cand.name)}
                         </Text>
 
                         <TouchableOpacity

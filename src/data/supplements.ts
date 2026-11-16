@@ -1,4 +1,6 @@
-import { SupplementDosingMode, SupplementItem } from '../types/workout';
+import { AppLanguage, SupplementDosingMode, SupplementItem } from '../types/workout';
+import { getStoredLanguageSync } from '../services/languageStore';
+import { getTranslatedSupplement, translateText } from '../i18n/translations';
 
 export const DEFAULT_SUPPLEMENTS: SupplementItem[] = [
   {
@@ -95,7 +97,18 @@ export function mergeWithDefaultSupplements(saved?: SupplementItem[] | null): Su
   return [...mergedDefaults, ...customOnes];
 }
 
-export function formatSupplementDose(item: SupplementItem, weightKg?: number): string {
+export function formatSupplementDose(
+  item: SupplementItem,
+  weightKg?: number,
+  lang: AppLanguage = getStoredLanguageSync()
+): string {
+  const localizedRec = getTranslatedSupplement(
+    item.id,
+    'recommendedDoseLabel',
+    item.recommendedText,
+    lang
+  );
+
   if (item.dosingMode === 'per_kg') {
     const ratio = item.perKgGrams && item.perKgGrams > 0 ? item.perKgGrams : 0.05;
     if (weightKg && weightKg > 25) {
@@ -103,30 +116,32 @@ export function formatSupplementDose(item: SupplementItem, weightKg?: number): s
       const gramsStr = Number.isInteger(computed) ? `${computed}` : computed.toFixed(1);
       return `${gramsStr} g (${ratio} g/kg)`;
     }
-    return `Zalecane (${ratio} g/kg m.c.)`;
+    return translateText(lang, 'suppRecommendedPerKg', { ratio });
   }
 
   if (item.dosingMode === 'fixed') {
     const clean = item.fixedAmountText?.trim();
-    return clean ? clean : item.recommendedText;
+    return clean ? clean : localizedRec;
   }
 
-  return item.recommendedText || 'Zalecane';
+  return localizedRec || translateText(lang, 'suppRecommendedFallback');
 }
 
 export function buildActiveSupplementsSummary(
   supplements: SupplementItem[],
-  weightKg?: number
+  weightKg?: number,
+  lang: AppLanguage = getStoredLanguageSync()
 ): string {
   const active = supplements.filter((s) => s.enabled);
   if (active.length === 0) {
-    return 'Brak wybranych suplementów';
+    return translateText(lang, 'suppNoneSelected');
   }
+  const firstName = getTranslatedSupplement(active[0].id, 'name', active[0].name, lang);
+  const primary = `${firstName} (${formatSupplementDose(active[0], weightKg, lang)})`;
   if (active.length === 1) {
-    return `${active[0].name} (${formatSupplementDose(active[0], weightKg)})`;
+    return primary;
   }
-  const primary = `${active[0].name} (${formatSupplementDose(active[0], weightKg)})`;
-  return `${primary} + ${active.length - 1} inne`;
+  return translateText(lang, 'suppPlusMore', { primary, count: active.length - 1 });
 }
 
 export function createCustomSupplement(params: {
@@ -141,13 +156,14 @@ export function createCustomSupplement(params: {
     params.perKgGrams && !isNaN(params.perKgGrams) && params.perKgGrams > 0
       ? Math.round(params.perKgGrams * 100) / 100
       : 0.05;
+  const lang = getStoredLanguageSync();
 
   return {
     id: `supp_custom_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
     name: trimmedName,
     enabled: true,
     dosingMode: params.dosingMode,
-    recommendedText: 'Wg indywidualnych zaleceń',
+    recommendedText: translateText(lang, 'suppCustomDefaultRec'),
     perKgGrams: cleanPerKg,
     fixedAmountText: cleanFixed || undefined,
     timing: 'anytime',

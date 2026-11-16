@@ -17,6 +17,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useAppTheme } from '../context/ThemeContext';
 import { useLanguage } from '../context/LanguageContext';
+import { TranslationKey } from '../i18n/translations';
 import { LanguageSwitcher } from '../components/LanguageSwitcher';
 import {
   AppSettings,
@@ -76,10 +77,10 @@ interface SettingsScreenProps {
   onAppReset: () => void;
 }
 
-const INTENSITY_OPTIONS: Array<{ value: AppSettings['hapticsIntensity']; label: string }> = [
-  { value: 'subtle', label: 'Delikatna' },
-  { value: 'medium', label: 'Średnia' },
-  { value: 'strong', label: 'Mocna' },
+const INTENSITY_OPTIONS: Array<{ value: AppSettings['hapticsIntensity']; labelKey: TranslationKey }> = [
+  { value: 'subtle', labelKey: 'hapticsSubtle' },
+  { value: 'medium', labelKey: 'hapticsMedium' },
+  { value: 'strong', labelKey: 'hapticsStrong' },
 ];
 
 const REST_PRESETS = [60, 90, 120, 180];
@@ -94,7 +95,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   onAppReset,
 }) => {
   const { theme, isDark, toggleTheme } = useAppTheme();
-  const { t } = useLanguage();
+  const { t, localeCode } = useLanguage();
 
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_APP_SETTINGS);
   const [nameInput, setNameInput] = useState(activeProfile.name || '');
@@ -198,7 +199,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           : await signInWithGoogleCloud(nameInput.trim() || activeProfile.name);
 
       if (!res.ok || !res.session) {
-        Alert.alert('Logowanie w chmurze', res.error || 'Nie udało się połączyć konta.');
+        Alert.alert(t('cloudAuthTitle'), res.error || t('cloudConnectFailed'));
         return;
       }
 
@@ -222,33 +223,40 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           onProfileUpdated(updatedProfile);
         }
         Alert.alert(
-          'Połączono konto',
-          `Połączono z ${
-            session.provider === 'apple' ? 'iCloud' : 'Google'
-          }. Od teraz Twoje dane będą się automatycznie zapisywać w chmurze.`
+          t('accountConnectedTitle'),
+          t('accountConnectedBody', {
+            provider: session.provider === 'apple' ? 'iCloud' : 'Google',
+            email: session.email ? ` (${session.email})` : '',
+          })
         );
       };
 
       if (!res.isNewAccount && session.backupSummary) {
         Alert.alert(
-          'Znaleziono konto w chmurze',
-          `Na tym koncie zapisany jest profil "${session.backupSummary.profileName}" (${session.backupSummary.plansCount} planów). Przywrócić go czy zapisać obecne dane lokalne?`,
+          t('cloudAccountFoundTitle'),
+          t('accountBackupSettingsBody', {
+            name: session.backupSummary.profileName,
+            plans: session.backupSummary.plansCount,
+          }),
           [
             {
-              text: 'Zapisz obecne',
+              text: t('keepCurrentBtn'),
               onPress: () => {
                 uploadCurrent();
               },
             },
             {
-              text: 'Przywróć z chmury',
+              text: t('restoreFromCloudBtn'),
               onPress: async () => {
                 const pullRes = await pullProfileFromCloud();
                 if (pullRes.ok && pullRes.profile) {
                   await onDataImported();
                   await loadMeta();
                   triggerNotificationHaptic('success');
-                  Alert.alert('Przywrócono', `Załadowano profil "${pullRes.profile.name}".`);
+                  Alert.alert(
+                    t('restoredTitle'),
+                    t('restoredProfileBody', { name: pullRes.profile.name })
+                  );
                 } else {
                   await uploadCurrent();
                 }
@@ -260,7 +268,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
         await uploadCurrent();
       }
     } catch (e: any) {
-      Alert.alert('Logowanie w chmurze', e?.message || 'Nie udało się połączyć z chmurą.');
+      Alert.alert(t('cloudAuthTitle'), e?.message || t('cloudConnectNetworkError'));
     } finally {
       setBusyCloudProvider(null);
     }
@@ -280,10 +288,10 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
       const granted = await requestHealthPermissions();
       if (!granted) {
         Alert.alert(
-          'Brak dostępu',
+          t('noAccessTitle'),
           Platform.OS === 'ios'
-            ? 'Włącz uprawnienia dla Iron Routine w aplikacji Zdrowie (Apple Health) -> Udostępnianie.'
-            : 'Zezwól Iron Routine na odczyt danych w Health Connect.'
+            ? t('settingsHealthIosPerm')
+            : t('settingsHealthAndroidPerm')
         );
         await handlePatchSettings({ healthSyncEnabled: false });
         return;
@@ -314,7 +322,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   const handleSaveProfile = async () => {
     const cleanName = nameInput.trim();
     if (!cleanName) {
-      Alert.alert('Brak imienia', 'Wpisz swoje imię lub pseudonim.');
+      Alert.alert(t('missingNameSettingsTitle'), t('enterNameSettingsBody'));
       return;
     }
     const parsedHeight = parseFloat(heightInput.replace(',', '.'));
@@ -329,9 +337,9 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
       });
       triggerNotificationHaptic('success');
       onProfileUpdated(updated);
-      Alert.alert('Zapisano', 'Dane profilu zostały zaktualizowane.');
+      Alert.alert(t('savedTitle'), t('profileUpdatedBody'));
     } catch (e: any) {
-      Alert.alert('Błąd', e?.message || 'Nie udało się zapisać profilu.');
+      Alert.alert(t('errorTitle'), e?.message || t('saveProfileError'));
     } finally {
       setIsSavingProfile(false);
     }
@@ -347,7 +355,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
         message: jsonStr,
       });
     } catch (e: any) {
-      Alert.alert('Błąd eksportu', e?.message || 'Nie udało się wyeksportować danych.');
+      Alert.alert(t('exportErrorTitle'), e?.message || t('exportErrorBody'));
     } finally {
       setIsBusyIO(false);
     }
@@ -355,7 +363,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 
   const handleImportPlansOnly = async () => {
     if (!importJsonText.trim()) {
-      Alert.alert('Puste pole', 'Wklej najpierw kod JSON planu lub backupu.');
+      Alert.alert(t('emptyFieldTitle'), t('pasteJsonFirstBody'));
       return;
     }
     setIsBusyIO(true);
@@ -366,11 +374,14 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
       setImportJsonText('');
       setShowImportSheet(false);
       Alert.alert(
-        'Plany dodane',
-        `Zaimportowano ${res.importedCount} ${res.importedCount === 1 ? 'plan' : 'planów'}. Twoje statystyki i rekordy zostały zachowane.`
+        t('plansAddedTitle'),
+        t('importedPlansBody', {
+          count: res.importedCount,
+          unit: res.importedCount === 1 ? t('planWordOne') : t('planWordMany'),
+        })
       );
     } catch (e: any) {
-      Alert.alert('Błąd importu', e?.message || 'Nieprawidłowy format JSON.');
+      Alert.alert(t('importErrorTitle'), e?.message || t('invalidJsonError'));
     } finally {
       setIsBusyIO(false);
     }
@@ -378,7 +389,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 
   const handleImportFullBackup = async () => {
     if (!importJsonText.trim()) {
-      Alert.alert('Puste pole', 'Wklej najpierw kod JSON backupu.');
+      Alert.alert(t('emptyFieldTitle'), t('pasteBackupJsonFirstBody'));
       return;
     }
     setIsBusyIO(true);
@@ -389,11 +400,11 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
       setImportJsonText('');
       setShowImportSheet(false);
       Alert.alert(
-        'Przywrócono profil',
-        `Załadowano ${res.plansCount} planów oraz rekordy z ${res.prsCount} ćwiczeń.`
+        t('profileRestoredTitle'),
+        t('profileRestoredBody', { plans: res.plansCount, prs: res.prsCount })
       );
     } catch (e: any) {
-      Alert.alert('Błąd importu', e?.message || 'Nieprawidłowy format JSON.');
+      Alert.alert(t('importErrorTitle'), e?.message || t('invalidJsonError'));
     } finally {
       setIsBusyIO(false);
     }
@@ -401,12 +412,12 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 
   const handleConfirmResetApp = () => {
     Alert.alert(
-      'Wyzerować aplikację?',
-      'Usuniesz lokalnie profil, wszystkie plany treningowe, historię sesji, wagę oraz rekordy 1RM. Operacji nie można cofnąć.',
+      t('resetAppTitle'),
+      t('resetAppBody'),
       [
-        { text: 'Anuluj', style: 'cancel' },
+        { text: t('cancel'), style: 'cancel' },
         {
-          text: 'Wyzeruj wszystko',
+          text: t('resetAllBtn'),
           style: 'destructive',
           onPress: async () => {
             await resetAllAppData();
@@ -462,16 +473,16 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             <View style={styles.sectionHeaderRow}>
               <View>
                 <Text style={[styles.sectionEyebrow, { color: '#38BDF8' }]}>
-                  CHMURA KONTA (CLERK)
+                  {t('cloudClerkEyebrow')}
                 </Text>
                 <Text style={[styles.sectionHeading, { color: theme.text }]}>
-                  Chcesz połączyć konto z chmurą?
+                  {t('connectCloudQuestion')}
                 </Text>
               </View>
             </View>
 
             <Text style={[styles.sectionLead, { color: theme.textSecondary }]}>
-              Połącz iCloud lub Google, aby automatycznie synchronizować swoje plany i rekordy w bazie NoSQL.
+              {t('connectCloudSub')}
             </Text>
 
             <View style={styles.cloudTwoBtnRow}>
@@ -530,22 +541,22 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           <View style={styles.sectionHeaderRow}>
             <View>
               <Text style={[styles.sectionEyebrow, { color: theme.textMuted }]}>
-                TOŻSAMOŚĆ I ANATOMIA
+                {t('identityAnatomyUpper')}
               </Text>
               <Text style={[styles.sectionHeading, { color: theme.text }]}>
-                Profil sportowca
+                {t('athleteProfileHeading')}
               </Text>
             </View>
           </View>
 
           <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>
-            MODEL SYLWETKI W OSIĄGACH
+            {t('silhouetteModelUpper')}
           </Text>
           <View style={styles.providerPillsRow}>
             {(
               [
-                { id: 'male', label: 'Mężczyzna', icon: 'male-outline' as const },
-                { id: 'female', label: 'Kobieta', icon: 'female-outline' as const },
+                { id: 'male', label: t('maleLabel'), icon: 'male-outline' as const },
+                { id: 'female', label: t('femaleLabel'), icon: 'female-outline' as const },
               ] as const
             ).map((g) => {
               const active = genderInput === g.id;
@@ -580,19 +591,19 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           </View>
 
           <View style={[styles.underlineField, { borderBottomColor: theme.hairline }]}>
-            <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>IMIĘ / PSEUDONIM</Text>
+            <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>{t('nameUpper')}</Text>
             <TextInput
               style={[styles.underlineInput, { color: theme.text }]}
               value={nameInput}
               onChangeText={setNameInput}
-              placeholder="Twoje imię"
+              placeholder={t('yourNamePlaceholder')}
               placeholderTextColor={theme.textMuted}
             />
           </View>
 
           <View style={styles.twoColRow}>
             <View style={[styles.underlineField, { flex: 1, borderBottomColor: theme.hairline }]}>
-              <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>WZROST (CM)</Text>
+              <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>{t('heightUpper')}</Text>
               <TextInput
                 style={[styles.underlineInput, { color: theme.text }]}
                 value={heightInput}
@@ -603,7 +614,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               />
             </View>
             <View style={[styles.underlineField, { flex: 1, borderBottomColor: theme.hairline }]}>
-              <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>MASA CIAŁA (KG)</Text>
+              <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>{t('weightUpper')}</Text>
               <TextInput
                 style={[styles.underlineInput, { color: theme.text }]}
                 value={weightInput}
@@ -640,10 +651,10 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           <View style={styles.sectionHeaderRow}>
             <View>
               <Text style={[styles.sectionEyebrow, { color: theme.textMuted }]}>
-                CZAS I CZUCIE
+                {t('timeAndFeelEyebrow')}
               </Text>
               <Text style={[styles.sectionHeading, { color: theme.text }]}>
-                Haptyka i przerwy
+                {t('hapticsAndRestHeading')}
               </Text>
             </View>
             <TouchableOpacity
@@ -652,15 +663,15 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               activeOpacity={0.75}
             >
               <Ionicons name="radio-outline" size={13} color={theme.text} />
-              <Text style={[styles.smallActionPillText, { color: theme.text }]}>Testuj</Text>
+              <Text style={[styles.smallActionPillText, { color: theme.text }]}>{t('testBtn')}</Text>
             </TouchableOpacity>
           </View>
 
           <View style={[styles.openSwitchLine, { borderBottomColor: theme.hairline }]}>
             <View style={styles.switchLabelWrap}>
-              <Text style={[styles.rowTitle, { color: theme.text }]}>Wibracje haptyczne</Text>
+              <Text style={[styles.rowTitle, { color: theme.text }]}>{t('hapticVibrationsTitle')}</Text>
               <Text style={[styles.rowSub, { color: theme.textSecondary }]}>
-                Informacja zwrotna przy seriach i nawigacji
+                {t('hapticsFeedbackRowSub')}
               </Text>
             </View>
             <Switch
@@ -676,7 +687,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           </View>
 
           <Text style={[styles.fieldLabel, { color: theme.textMuted, marginTop: 14 }]}>
-            SIŁA WIBRACJI
+            {t('vibrationStrengthUpper')}
           </Text>
           <View style={[styles.segmentRow, { opacity: settings.hapticsEnabled ? 1 : 0.45 }]}>
             {INTENSITY_OPTIONS.map((opt) => {
@@ -706,7 +717,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                     ]}
                     numberOfLines={1}
                   >
-                    {opt.label}
+                    {t(opt.labelKey)}
                   </Text>
                 </TouchableOpacity>
               );
@@ -715,9 +726,9 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 
           <View style={[styles.openSwitchLine, { borderBottomColor: theme.hairline, marginTop: 8 }]}>
             <View style={styles.switchLabelWrap}>
-              <Text style={[styles.rowTitle, { color: theme.text }]}>Potrójny sygnał w tle</Text>
+              <Text style={[styles.rowTitle, { color: theme.text }]}>{t('tripleBgSignalTitle')}</Text>
               <Text style={[styles.rowSub, { color: theme.textSecondary }]}>
-                Seria 3 powiadomień co 2s po skończonej przerwie poza aplikacją
+                {t('tripleBgSignalSub')}
               </Text>
             </View>
             <Switch
@@ -730,7 +741,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           </View>
 
           <Text style={[styles.fieldLabel, { color: theme.textMuted, marginTop: 14 }]}>
-            DOMYŚLNA PRZERWA NOWYCH ĆWICZEŃ
+            {t('defaultRestNewExUpper')}
           </Text>
           <View style={styles.segmentRow}>
             {REST_PRESETS.map((secs) => {
@@ -771,10 +782,10 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           <View style={styles.sectionHeaderRow}>
             <View>
               <Text style={[styles.sectionEyebrow, { color: theme.textMuted }]}>
-                ALERTY SYSTEMOWE
+                {t('systemAlertsEyebrow')}
               </Text>
               <Text style={[styles.sectionHeading, { color: theme.text }]}>
-                Powiadomienia i przypomnienia
+                {t('notificationsRemindersHeading')}
               </Text>
             </View>
             <AnimatedIcon
@@ -789,10 +800,10 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           <View style={[styles.openSwitchLine, { borderBottomColor: theme.hairline }]}>
             <View style={styles.switchLabelWrap}>
               <Text style={[styles.rowTitle, { color: theme.text }]}>
-                Alarm końca przerwy poza aplikacją
+                {t('restAlarmTitle')}
               </Text>
               <Text style={[styles.rowSub, { color: theme.textSecondary }]}>
-                Lokalny alarm z dźwiękiem i wibracją gdy wyjdziesz z aplikacji
+                {t('restAlarmSub')}
               </Text>
             </View>
             <Switch
@@ -817,7 +828,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             >
               <Ionicons name="warning-outline" size={16} color="#F59E0B" />
               <Text style={[styles.permWarnText, { color: theme.text }]}>
-                System blokuje dźwięk lub alerty powiadomień. Dotknij, aby otworzyć Ustawienia.
+                {t('systemAlertsBlocked')}
               </Text>
             </TouchableOpacity>
           )}
@@ -825,10 +836,10 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           <View style={[styles.openSwitchLine, { borderBottomColor: theme.hairline }]}>
             <View style={styles.switchLabelWrap}>
               <Text style={[styles.rowTitle, { color: theme.text }]}>
-                Przypomnienia o suplementach
+                {t('suppRemindersTitle')}
               </Text>
               <Text style={[styles.rowSub, { color: theme.textSecondary }]}>
-                Poranne oraz wieczorne przypomnienie o Twojej liście dawek
+                {t('suppNotifSub')}
               </Text>
             </View>
             <Switch
@@ -842,7 +853,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           {settings.creatineRemindersEnabled && (
             <View style={styles.hoursGrid}>
               <View style={[styles.hourBox, { backgroundColor: theme.bgSecondary }]}>
-                <Text style={[styles.hourLabel, { color: theme.textMuted }]}>RANO</Text>
+                <Text style={[styles.hourLabel, { color: theme.textMuted }]}>{t('morningUpper')}</Text>
                 <View style={styles.hourControls}>
                   <TouchableOpacity
                     style={[styles.hourBtn, { backgroundColor: theme.bg }]}
@@ -869,7 +880,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               </View>
 
               <View style={[styles.hourBox, { backgroundColor: theme.bgSecondary }]}>
-                <Text style={[styles.hourLabel, { color: theme.textMuted }]}>WIECZÓR</Text>
+                <Text style={[styles.hourLabel, { color: theme.textMuted }]}>{t('eveningUpper')}</Text>
                 <View style={styles.hourControls}>
                   <TouchableOpacity
                     style={[styles.hourBtn, { backgroundColor: theme.bg }]}
@@ -899,9 +910,9 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 
           <View style={styles.openSwitchLine}>
             <View style={styles.switchLabelWrap}>
-              <Text style={[styles.rowTitle, { color: theme.text }]}>Codzienne ważenie</Text>
+              <Text style={[styles.rowTitle, { color: theme.text }]}>{t('dailyWeightTitle')}</Text>
               <Text style={[styles.rowSub, { color: theme.textSecondary }]}>
-                Przypomnienie o porannym wpisaniu masy ciała
+                {t('dailyWeightSub')}
               </Text>
             </View>
             <Switch
@@ -914,7 +925,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 
           {settings.weightReminderEnabled && (
             <View style={[styles.hourSingleRow, { backgroundColor: theme.bgSecondary }]}>
-              <Text style={[styles.hourLabel, { color: theme.textMuted }]}>GODZINA WAŻENIA</Text>
+              <Text style={[styles.hourLabel, { color: theme.textMuted }]}>{t('weighHourUpper')}</Text>
               <View style={styles.hourControls}>
                 <TouchableOpacity
                   style={[styles.hourBtn, { backgroundColor: theme.bg }]}
@@ -949,10 +960,12 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           <View style={styles.sectionHeaderRow}>
             <View>
               <Text style={[styles.sectionEyebrow, { color: '#F59E0B' }]}>
-                REGENERACJA I ZDROWIE
+                {t('recoveryAndHealthEyebrow')}
               </Text>
               <Text style={[styles.sectionHeading, { color: theme.text }]}>
-                Suplementacja i {Platform.OS === 'ios' ? 'Apple Health' : 'Health Connect'}
+                {t('suppsAndHealthHeading', {
+                  platform: Platform.OS === 'ios' ? 'Apple Health' : 'Health Connect',
+                })}
               </Text>
             </View>
             <TouchableOpacity
@@ -965,7 +978,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               activeOpacity={0.75}
             >
               <Text style={[styles.smallActionPillText, { color: theme.text }]}>
-                {showSuppEditor ? 'Zwiń' : 'Dawki'}
+                {showSuppEditor ? t('collapseLabel') : t('dosesLabel')}
               </Text>
             </TouchableOpacity>
           </View>
@@ -995,10 +1008,12 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               />
               <View style={styles.switchLabelWrap}>
                 <Text style={[styles.rowTitle, { color: theme.text }]}>
-                  Synchronizuj kroki i sen ({Platform.OS === 'ios' ? 'Apple Health' : 'Health Connect'})
+                  {t('syncStepsSleepTitle', {
+                    platform: Platform.OS === 'ios' ? 'Apple Health' : 'Health Connect',
+                  })}
                 </Text>
                 <Text style={[styles.rowSub, { color: theme.textSecondary }]}>
-                  Pobiera kroki, czas snu i aktywne kalorie do wskazówek dnia
+                  {t('healthNotifSub')}
                 </Text>
               </View>
             </View>
@@ -1017,14 +1032,16 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                 <AnimatedIcon name="footsteps-outline" preset="footsteps" size={13} color={theme.text} active />
                 <Text style={[styles.healthChipText, { color: theme.text }]}>
                   {healthSummary.steps !== null
-                    ? `${healthSummary.steps.toLocaleString('pl-PL')} kroków`
-                    : '- kroków'}
+                    ? t('stepsValue', { steps: healthSummary.steps.toLocaleString(localeCode) })
+                    : t('noStepsDash')}
                 </Text>
               </View>
               <View style={[styles.healthChip, { backgroundColor: theme.bgSecondary }]}>
                 <AnimatedIcon name="moon-outline" preset="moon" size={13} color={theme.text} active />
                 <Text style={[styles.healthChipText, { color: theme.text }]}>
-                  {healthSummary.sleepHours !== null ? `${healthSummary.sleepHours} h snu` : '- h snu'}
+                  {healthSummary.sleepHours !== null
+                    ? t('sleepHoursValue', { hours: healthSummary.sleepHours })
+                    : t('noSleepDash')}
                 </Text>
               </View>
               <TouchableOpacity
@@ -1033,7 +1050,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                 disabled={isSyncingHealth}
               >
                 <Ionicons name="refresh-outline" size={13} color={theme.text} />
-                <Text style={[styles.healthChipText, { color: theme.text }]}>Odśwież</Text>
+                <Text style={[styles.healthChipText, { color: theme.text }]}>{t('refreshBtn')}</Text>
               </TouchableOpacity>
             </View>
           )}
@@ -1132,10 +1149,10 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           <View style={styles.sectionHeaderRow}>
             <View>
               <Text style={[styles.sectionEyebrow, { color: theme.textMuted }]}>
-                MAIN CONTRIBUTOR
+                {t('settingsContributorEyebrow')}
               </Text>
               <Text style={[styles.sectionHeading, { color: theme.text }]}>
-                Twórca i wsparcie projektu
+                {t('settingsContributorHeading')}
               </Text>
             </View>
           </View>
@@ -1151,7 +1168,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             <View style={styles.switchLabelWrap}>
               <Text style={[styles.rowTitle, { color: theme.text }]}>matique (@matiqueue)</Text>
               <Text style={[styles.rowSub, { color: theme.textSecondary }]}>
-                Kod źródłowy, nowe wydania i zgłoszenia na GitHub
+                {t('githubNote')}
               </Text>
             </View>
             <View style={[styles.smallActionPill, { backgroundColor: theme.bgSecondary }]}>
@@ -1169,7 +1186,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             activeOpacity={0.85}
           >
             <AnimatedIcon name="cafe-outline" preset="pulse" size={18} color="#09090B" active />
-            <Text style={styles.coffeeBtnText}>Buy Me a Coffee · Wesprzyj autora</Text>
+            <Text style={styles.coffeeBtnText}>{t('coffeeNote')}</Text>
             <Ionicons name="open-outline" size={15} color="#09090B" />
           </TouchableOpacity>
 
@@ -1179,7 +1196,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             activeOpacity={0.75}
           >
             <Ionicons name="trash-outline" size={15} color="#EF4444" />
-            <Text style={styles.resetDangerText}>Wyzeruj dane lokalne na tym urządzeniu</Text>
+            <Text style={styles.resetDangerText}>{t('resetLocalDanger')}</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -1199,8 +1216,8 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
       <InteractiveBottomSheet
         visible={showImportSheet}
         onClose={() => setShowImportSheet(false)}
-        title="Import planu lub backupu"
-        subtitle="Wklej JSON ze swojego seeda lub eksportu Iron Routine"
+        title={t('importModalTitle')}
+        subtitle={t('importModalSub')}
         initialHeightPercent={0.78}
       >
         <ScrollView
@@ -1230,7 +1247,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             activeOpacity={0.85}
           >
             <Text style={[styles.openPrimaryActionText, { color: theme.primaryText }]}>
-              Dodaj plany do obecnego profilu
+              {t('addPlansToCurrentBtn')}
             </Text>
           </TouchableOpacity>
 
@@ -1245,7 +1262,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           >
             <Ionicons name="refresh-outline" size={16} color={theme.text} />
             <Text style={[styles.cloudActionSecondaryText, { color: theme.text }]}>
-              Przywróć pełny backup (z rekordami)
+              {t('restoreFullBackup')}
             </Text>
           </TouchableOpacity>
         </ScrollView>

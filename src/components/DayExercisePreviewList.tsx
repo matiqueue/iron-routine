@@ -52,7 +52,7 @@ export const DayExercisePreviewList: React.FC<DayExercisePreviewListProps> = ({
   compact = false,
 }) => {
   const { theme, isDark } = useAppTheme();
-  const { muscleLabel, equipmentLabel } = useLanguage();
+  const { t, muscleLabel, equipmentLabel, exerciseName } = useLanguage();
   const skippedSet = React.useMemo(() => new Set(skippedIds), [skippedIds]);
 
   return (
@@ -151,7 +151,7 @@ export const DayExercisePreviewList: React.FC<DayExercisePreviewListProps> = ({
                   ]}
                   numberOfLines={2}
                 >
-                  {ex.name}
+                  {exerciseName(canonicalId, ex.name)}
                 </Text>
 
                 {/* Sets x Reps Glass Pill */}
@@ -211,7 +211,7 @@ export const DayExercisePreviewList: React.FC<DayExercisePreviewListProps> = ({
 
                 {isSkipped && (
                   <Text style={[styles.skippedTag, { color: theme.textMuted }]}>
-                    POMINIĘTE
+                    {t('skippedBadge')}
                   </Text>
                 )}
               </View>

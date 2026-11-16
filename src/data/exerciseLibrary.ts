@@ -1,4 +1,5 @@
 import {
+  AppLanguage,
   DayMetaInfo,
   DayPlan,
   EquipmentType,
@@ -6,6 +7,8 @@ import {
   MuscleCategory,
   PlanTemplateKey,
 } from '../types/workout';
+import { getStoredLanguageSync } from '../services/languageStore';
+import { localizeTemplateDayList } from '../i18n/templateDayLocale';
 import {
   EXERCISE_MUSCLE_MAP,
   getInvolvedMuscleCategories,
@@ -1866,11 +1869,16 @@ function makeRestDay(
 
 export function buildPlanDaysFromTemplate(
   templateKey: Exclude<PlanTemplateKey, 'clone_current'>,
-  fallbackDays?: DayPlan[]
+  fallbackDays?: DayPlan[],
+  lang: AppLanguage = getStoredLanguageSync()
 ): DayPlan[] {
+  const finish = (days: DayPlan[]): DayPlan[] => localizeTemplateDayList(days, lang);
+
   if (templateKey === 'blank') {
-    return DEFAULT_DAYS_OF_WEEK.map((d) =>
-      makeRestDay(d.id, 'Wolny dzień', 'Skonfiguruj jako trening lub regenerację', 'rest')
+    return finish(
+      DEFAULT_DAYS_OF_WEEK.map((d) =>
+        makeRestDay(d.id, 'Wolny dzień', 'Skonfiguruj jako trening lub regenerację', 'rest')
+      )
     );
   }
 
@@ -1927,7 +1935,7 @@ export function buildPlanDaysFromTemplate(
       ]),
     };
 
-    return [
+    return finish([
       dayA,
       makeRestDay('tue', 'Regeneracja aktywna', 'Spacer i lekka mobilność', 'walk'),
       dayB,
@@ -1935,7 +1943,7 @@ export function buildPlanDaysFromTemplate(
       dayC,
       makeRestDay('sat', 'Spacer & Rozciąganie', 'Aktywna regeneracja weekendowa', 'walk'),
       makeRestDay('sun', 'Pełen odpoczynek', 'Reset układu nerwowego przed poniedziałkiem', 'rest'),
-    ];
+    ]);
   }
 
   if (templateKey === 'upper_lower') {
@@ -2010,7 +2018,7 @@ export function buildPlanDaysFromTemplate(
       ]),
     };
 
-    return [
+    return finish([
       upperA,
       lowerA,
       makeRestDay('wed', 'Dzień regeneracji', 'Sen, białko i spacer', 'rest'),
@@ -2018,7 +2026,7 @@ export function buildPlanDaysFromTemplate(
       lowerB,
       makeRestDay('sat', 'Aktywny spacer', 'Cardio w strefie tlenowej', 'walk'),
       makeRestDay('sun', 'Odpoczynek', 'Pełna regeneracja przed nowym cyklem', 'rest'),
-    ];
+    ]);
   }
 
   if (templateKey === 'ppl') {
@@ -2077,7 +2085,7 @@ export function buildPlanDaysFromTemplate(
       ]),
     });
 
-    return [
+    return finish([
       pushDay('mon', 'Push A · Wypychanie'),
       pullDay('tue', 'Pull A · Przyciąganie'),
       legsDay('wed', 'Legs A · Nogi'),
@@ -2085,7 +2093,7 @@ export function buildPlanDaysFromTemplate(
       pullDay('fri', 'Pull B · Przyciąganie'),
       legsDay('sat', 'Legs B · Nogi'),
       makeRestDay('sun', 'Regeneracja', 'Odpoczynek po 6 dniach treningu', 'rest'),
-    ];
+    ]);
   }
 
   if (templateKey === 'split4') {
@@ -2158,7 +2166,7 @@ export function buildPlanDaysFromTemplate(
       ]),
     };
 
-    return [
+    return finish([
       chestTriceps,
       backBiceps,
       makeRestDay('wed', 'Dzień regeneracji', 'Odpoczynek, sen i nawodnienie', 'rest'),
@@ -2166,8 +2174,10 @@ export function buildPlanDaysFromTemplate(
       shouldersAbs,
       makeRestDay('sat', 'Aktywny spacer', 'Cardio w strefie tlenowej', 'walk'),
       makeRestDay('sun', 'Odpoczynek', 'Pełna regeneracja przed kolejnym tygodniem', 'rest'),
-    ];
+    ]);
   }
 
-  return fallbackDays ? cloneDays(fallbackDays) : DEFAULT_DAYS_OF_WEEK.map((d) => makeRestDay(d.id));
+  return fallbackDays
+    ? cloneDays(fallbackDays)
+    : finish(DEFAULT_DAYS_OF_WEEK.map((d) => makeRestDay(d.id)));
 }

@@ -9,6 +9,12 @@ import {
   WorkoutHistoryEntry,
 } from '../types/workout';
 import { resolveCanonicalExerciseId } from '../data/exerciseLibrary';
+import { getCurrentAppLanguage } from './settings';
+import {
+  getTranslatedExerciseName,
+  getTranslatedMuscle,
+  translateText,
+} from '../i18n/translations';
 import {
   getExerciseRankMeta,
   getMuscleRankMeta,
@@ -341,39 +347,72 @@ export async function computePhysiqueAnalytics(params: {
       priorityScore += 17;
     }
 
+    const lang = getCurrentAppLanguage();
+    const localizedMuscleLabel = getTranslatedMuscle(m.id, lang, true);
+
     if (effTotal === 0) {
       priorityStatus = 'untrained';
-      statusLabel = 'Brak aktywności';
+      statusLabel = translateText(lang, 'statusUntrained');
     } else if (rankGap >= 2 && relativeRatio < 0.28) {
       priorityStatus = 'neglected';
-      statusLabel = 'Niska objętość';
+      statusLabel = translateText(lang, 'statusNeglected');
     } else if (rankGap >= 1 && relativeRatio < 0.55) {
       priorityStatus = 'lagging';
-      statusLabel = 'Warto dopracować';
+      statusLabel = translateText(lang, 'statusLagging');
     } else if (relativeRatio >= 0.78 && effTotal >= 15) {
       priorityStatus = 'dominant';
-      statusLabel = 'Partia dominująca';
+      statusLabel = translateText(lang, 'statusDominant');
     } else {
       priorityStatus = 'balanced';
-      statusLabel = 'Zbalansowana';
+      statusLabel = translateText(lang, 'statusBalanced');
     }
 
     const topRecEx = primaryExercisesForMuscle.slice(0, 3);
-    const recNames = topRecEx.slice(0, 2).map((e) => e.name).join(' lub ');
+    const orSep = ` ${translateText(lang, 'orWord')} `;
+    const recNames = topRecEx
+      .slice(0, 2)
+      .map((e) => getTranslatedExerciseName(e.id, e.name, lang))
+      .join(orSep);
     let recommendationText = '';
     if (priorityStatus === 'untrained') {
-      recommendationText = `Brak zarejestrowanych serii dla partii ${m.shortLabel}. Dodaj np. ${recNames || 'ćwiczenie bazowe'}, aby rozpocząć progres.`;
+      recommendationText = translateText(lang, 'recUntrained', {
+        muscle: localizedMuscleLabel,
+        ex: recNames || translateText(lang, 'baseExerciseWord'),
+      });
     } else if (priorityStatus === 'neglected') {
       recommendationText =
         planned === 0
-          ? `Brak bezpośrednich serii w Twoim obecnym planie (${m.shortLabel}: Ranga ${rankInfo.meta.tier}). Dodaj ${recNames || 'ćwiczenie izolowane'} (${rankInfo.setsToNext} serii do rangi ${rankInfo.nextTier || 'E'}).`
-          : `Partia odstaje względem reszty sylwetki (Ranga ${rankInfo.meta.tier}). Wykonaj ${rankInfo.setsToNext} serii (${recNames}), aby awansować na rangę ${rankInfo.nextTier || 'wyższą'}.`;
+          ? translateText(lang, 'recNeglectedUnplanned', {
+              muscle: localizedMuscleLabel,
+              rank: rankInfo.meta.tier,
+              ex: recNames || translateText(lang, 'isoExerciseWord'),
+              sets: rankInfo.setsToNext,
+              nextRank: rankInfo.nextTier || 'E',
+            })
+          : translateText(lang, 'recNeglectedPlanned', {
+              rank: rankInfo.meta.tier,
+              sets: rankInfo.setsToNext,
+              ex: recNames,
+              nextRank: rankInfo.nextTier || translateText(lang, 'higherRankWord'),
+            });
     } else if (priorityStatus === 'lagging') {
-      recommendationText = `Brakuje ${rankInfo.setsToNext} efektywnych serii do rangi ${rankInfo.nextTier || 'S+'}. Dobry wybór na dziś: ${recNames}.`;
+      recommendationText = translateText(lang, 'recLagging', {
+        sets: rankInfo.setsToNext,
+        nextRank: rankInfo.nextTier || 'S+',
+        ex: recNames,
+      });
     } else if (priorityStatus === 'dominant') {
-      recommendationText = `Jedna z Twoich najmocniej przepracowanych partii (${effTotal} serii efektywnych, Ranga ${rankInfo.meta.tier}). Podtrzymuj objętość.`;
+      recommendationText = translateText(lang, 'recDominant', {
+        sets: effTotal,
+        rank: rankInfo.meta.tier,
+      });
     } else {
-      recommendationText = `Rozwija się proporcjonalnie (${effTotal} serii, Ranga ${rankInfo.meta.tier}). Do rangi ${rankInfo.nextTier || 'S+'} zostało ${rankInfo.setsToNext} serii.`;
+      recommendationText = translateText(lang, 'recBalanced', {
+        sets: effTotal,
+        rank: rankInfo.meta.tier,
+        nextRank: rankInfo.nextTier || 'S+',
+        needed: rankInfo.setsToNext,
+      });
     }
 
     muscleStats[m.id] = {

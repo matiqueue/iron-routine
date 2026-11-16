@@ -11,6 +11,8 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAppTheme } from '../context/ThemeContext';
+import { useLanguage } from '../context/LanguageContext';
+import { PLAN_MODE_LOCALE } from '../i18n/translations';
 import { PlanTemplateKey, UserProfile, WorkoutPlan } from '../types/workout';
 import { PLAN_TEMPLATE_OPTIONS } from '../data/exerciseLibrary';
 import {
@@ -22,16 +24,6 @@ import {
 } from '../services/storage';
 import { triggerImpactHaptic, triggerNotificationHaptic, triggerSelectionHaptic } from '../services/haptics';
 import { BottomSheetScrollView, InteractiveBottomSheet } from './InteractiveBottomSheet';
-
-const SHORT_DAY_LABELS: Record<string, string> = {
-  mon: 'Pn',
-  tue: 'Wt',
-  wed: 'Śr',
-  thu: 'Cz',
-  fri: 'Pt',
-  sat: 'Sb',
-  sun: 'Nd',
-};
 
 const TEMPLATE_ICONS: Record<PlanTemplateKey, keyof typeof Ionicons.glyphMap> = {
   fbw3: 'barbell-outline',
@@ -60,6 +52,8 @@ export const PlanManagerModal: React.FC<PlanManagerModalProps> = ({
   onPlansUpdated,
 }) => {
   const { theme } = useAppTheme();
+  const { t, language, dayLabel } = useLanguage();
+  const modeLocale = PLAN_MODE_LOCALE[language];
 
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [newName, setNewName] = useState('');
@@ -84,17 +78,18 @@ export const PlanManagerModal: React.FC<PlanManagerModalProps> = ({
 
   const handleCreatePlan = async () => {
     const trimmed = newName.trim();
-    const fallbackTemplate = PLAN_TEMPLATE_OPTIONS.find((t) => t.id === selectedTemplate);
+    const fallbackLocale =
+      selectedTemplate !== 'clone_current' ? modeLocale[selectedTemplate] : undefined;
     const finalName =
       trimmed ||
       (selectedTemplate === 'clone_current'
-        ? `${activePlan.name} (Nowy)`
-        : fallbackTemplate?.label || 'Nowy plan');
+        ? `${activePlan.name} (${t('newSuffix')})`
+        : fallbackLocale?.label || t('newPlanDefault'));
 
     triggerNotificationHaptic('success');
     const created = await createWorkoutPlan({
       name: finalName,
-      subtitle: newSubtitle.trim() || fallbackTemplate?.subtitle,
+      subtitle: newSubtitle.trim() || fallbackLocale?.subtitle,
       templateKey: selectedTemplate,
       cloneFromDays: selectedTemplate === 'clone_current' ? activePlan.days : undefined,
       setActive: true,
@@ -110,7 +105,11 @@ export const PlanManagerModal: React.FC<PlanManagerModalProps> = ({
 
   const handleDuplicate = async (plan: WorkoutPlan) => {
     triggerSelectionHaptic();
-    const dup = await duplicateWorkoutPlan(plan.id, `${plan.name} (kopia)`, activeProfile.id);
+    const dup = await duplicateWorkoutPlan(
+      plan.id,
+      `${plan.name} (${t('copySuffix')})`,
+      activeProfile.id
+    );
     await onPlansUpdated(dup.id);
   };
 
@@ -128,7 +127,7 @@ export const PlanManagerModal: React.FC<PlanManagerModalProps> = ({
   const handleConfirmRename = async (plan: WorkoutPlan) => {
     const trimmed = renameText.trim();
     if (!trimmed) {
-      Alert.alert('Brak nazwy', 'Nazwa planu nie może być pusta.');
+      Alert.alert(t('missingNameTitle'), t('emptyPlanNameError'));
       return;
     }
     triggerNotificationHaptic('success');
@@ -148,21 +147,21 @@ export const PlanManagerModal: React.FC<PlanManagerModalProps> = ({
     triggerImpactHaptic('medium');
     const isLastPlan = plans.length <= 1;
     Alert.alert(
-      'Usunąć plan treningowy?',
+      t('deletePlanTitle'),
       isLastPlan
-        ? `Plan „${plan.name}” zostanie usunięty i zastąpiony pustym planem startowym. Twoje rekordy (PR) i historia serii pozostają bezpieczne.`
-        : `Plan „${plan.name}” zostanie trwale usunięty. Twoje rekordy (PR) i historia serii pozostają bezpieczne.`,
+        ? t('deletePlanLastBody', { name: plan.name })
+        : t('deletePlanBody', { name: plan.name }),
       [
-        { text: 'Anuluj', style: 'cancel' },
+        { text: t('cancel'), style: 'cancel' },
         {
-          text: 'Usuń plan',
+          text: t('deletePlanBtn'),
           style: 'destructive',
           onPress: async () => {
             try {
               const nextActiveId = await deleteWorkoutPlan(plan.id, activeProfile.id);
               await onPlansUpdated(nextActiveId);
             } catch (e: any) {
-              Alert.alert('Błąd', e?.message || 'Nie udało się usunąć planu.');
+              Alert.alert(t('errorTitle'), e?.message || t('deletePlanError'));
             }
           },
         },
@@ -185,12 +184,20 @@ export const PlanManagerModal: React.FC<PlanManagerModalProps> = ({
   };
 
   const templates: { id: PlanTemplateKey; label: string; subtitle: string; summary: string }[] = [
-    ...PLAN_TEMPLATE_OPTIONS,
+    ...PLAN_TEMPLATE_OPTIONS.map((tpl) => {
+      const loc =
+        tpl.id !== 'clone_current'
+          ? modeLocale[tpl.id as Exclude<PlanTemplateKey, 'clone_current'>]
+          : undefined;
+      return loc
+        ? { ...tpl, label: loc.label, subtitle: loc.subtitle, summary: loc.summary }
+        : tpl;
+    }),
     {
       id: 'clone_current',
-      label: 'Kopia bieżącego',
-      subtitle: `Na bazie: ${activePlan.name}`,
-      summary: 'Sklonuj wszystkie dni i ćwiczenia obecnie wybranego planu.',
+      label: t('cloneCurrentLabel'),
+      subtitle: t('cloneCurrentSub', { name: activePlan.name }),
+      summary: t('cloneCurrentSummary'),
     },
   ];
 
@@ -198,8 +205,11 @@ export const PlanManagerModal: React.FC<PlanManagerModalProps> = ({
     <InteractiveBottomSheet
       visible={visible}
       onClose={onClose}
-      title="Plany treningowe"
-      subtitle={`${plans.length} ${plans.length === 1 ? 'plan' : 'plany'} • Wspólne rekordy PR`}
+      title={t('plansTitle')}
+      subtitle={t('sharedPrHeaderSub', {
+        count: plans.length,
+        unit: plans.length === 1 ? t('planWordOne') : t('planWordMany'),
+      })}
       initialHeightPercent={0.86}
     >
       <BottomSheetScrollView
@@ -219,7 +229,7 @@ export const PlanManagerModal: React.FC<PlanManagerModalProps> = ({
               <Ionicons name="trophy-outline" size={15} color={theme.text} />
             </View>
             <Text style={[styles.infoBannerText, { color: theme.textSecondary }]}>
-              Statystyki i rekordy ćwiczeń są wspólne dla wszystkich planów konta {activeProfile.name}.
+              {t('sharedPrBanner', { name: activeProfile.name })}
             </Text>
           </View>
 
@@ -246,7 +256,7 @@ export const PlanManagerModal: React.FC<PlanManagerModalProps> = ({
                 { color: showCreateForm ? theme.text : theme.primaryText },
               ]}
             >
-              {showCreateForm ? 'Anuluj tworzenie planu' : 'Utwórz nowy plan treningowy'}
+              {showCreateForm ? t('cancelCreatePlan') : t('createNewPlanBtn')}
             </Text>
           </TouchableOpacity>
 
@@ -259,7 +269,7 @@ export const PlanManagerModal: React.FC<PlanManagerModalProps> = ({
               ]}
             >
               <Text style={[styles.sectionKicker, { color: theme.textMuted }]}>
-                NOWY PLAN TRENINGOWY
+                {t('newWorkoutPlanUpper')}
               </Text>
 
               <TextInput
@@ -267,7 +277,7 @@ export const PlanManagerModal: React.FC<PlanManagerModalProps> = ({
                   styles.input,
                   { backgroundColor: theme.card, borderColor: theme.border, color: theme.text },
                 ]}
-                placeholder="Nazwa planu (np. Masa - Push Pull Legs)"
+                placeholder={t('planNameExamplePlaceholder')}
                 placeholderTextColor={theme.textMuted}
                 value={newName}
                 onChangeText={setNewName}
@@ -278,14 +288,14 @@ export const PlanManagerModal: React.FC<PlanManagerModalProps> = ({
                   styles.input,
                   { backgroundColor: theme.card, borderColor: theme.border, color: theme.text },
                 ]}
-                placeholder="Krótki cel lub notatka (opcjonalnie)"
+                placeholder={t('planGoalPlaceholder')}
                 placeholderTextColor={theme.textMuted}
                 value={newSubtitle}
                 onChangeText={setNewSubtitle}
               />
 
               <Text style={[styles.sectionKicker, { color: theme.textMuted, marginTop: 8 }]}>
-                SZABLON STARTOWY
+                {t('starterTemplateUpper')}
               </Text>
 
               <View style={styles.templateGrid}>
@@ -360,7 +370,7 @@ export const PlanManagerModal: React.FC<PlanManagerModalProps> = ({
               >
                 <Ionicons name="checkmark" size={18} color={theme.primaryText} />
                 <Text style={[styles.confirmCreateText, { color: theme.primaryText }]}>
-                  Utwórz i aktywuj plan
+                  {t('createAndActivatePlan')}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -369,10 +379,10 @@ export const PlanManagerModal: React.FC<PlanManagerModalProps> = ({
           {/* Plans List */}
           <View style={styles.listHeaderRow}>
             <Text style={[styles.listTitle, { color: theme.textMuted }]}>
-              TWOJE PLANY ({plans.length})
+              {t('yourPlansUpper', { count: plans.length })}
             </Text>
             <Text style={[styles.listHint, { color: theme.textMuted }]}>
-              Dotknij, aby przełączyć
+              {t('tapToSwitch')}
             </Text>
           </View>
 
@@ -409,7 +419,7 @@ export const PlanManagerModal: React.FC<PlanManagerModalProps> = ({
                       {isActive && (
                         <View style={[styles.activeBadge, { backgroundColor: theme.primary }]}>
                           <Text style={[styles.activeBadgeText, { color: theme.primaryText }]}>
-                            AKTYWNY
+                            {t('activeBadgeUpper')}
                           </Text>
                         </View>
                       )}
@@ -462,7 +472,7 @@ export const PlanManagerModal: React.FC<PlanManagerModalProps> = ({
                                 },
                               ]}
                             >
-                              {SHORT_DAY_LABELS[d.id] || d.name.slice(0, 2)}
+                              {dayLabel(d.id, true) || d.name.slice(0, 2)}
                             </Text>
                           </View>
                         );
@@ -470,8 +480,8 @@ export const PlanManagerModal: React.FC<PlanManagerModalProps> = ({
                     </View>
 
                     <Text style={[styles.planStats, { color: theme.textMuted }]}>
-                      {metrics.workoutDaysCount} dni tren. · {metrics.exCount} ćwiczeń ·{' '}
-                      {metrics.totalSets} serii
+                      {metrics.workoutDaysCount} {t('workoutDaysShort')} · {metrics.exCount}{' '}
+                      {t('exercisesShortWord')} · {metrics.totalSets} {t('setsWord')}
                     </Text>
                   </View>
 
@@ -486,7 +496,9 @@ export const PlanManagerModal: React.FC<PlanManagerModalProps> = ({
                         { backgroundColor: theme.card, borderColor: theme.borderDark },
                       ]}
                     >
-                      <Text style={[styles.usePillText, { color: theme.text }]}>Aktywuj</Text>
+                      <Text style={[styles.usePillText, { color: theme.text }]}>
+                        {t('activateBtn')}
+                      </Text>
                     </View>
                   )}
                 </TouchableOpacity>
@@ -505,7 +517,7 @@ export const PlanManagerModal: React.FC<PlanManagerModalProps> = ({
                       ]}
                       value={renameText}
                       onChangeText={setRenameText}
-                      placeholder="Nazwa planu..."
+                      placeholder={t('planNamePlaceholder')}
                       placeholderTextColor={theme.textMuted}
                     />
                     <TextInput
@@ -515,7 +527,7 @@ export const PlanManagerModal: React.FC<PlanManagerModalProps> = ({
                       ]}
                       value={renameSubText}
                       onChangeText={setRenameSubText}
-                      placeholder="Podtytuł (opcjonalnie)..."
+                      placeholder={t('subtitleOptionalPlaceholder')}
                       placeholderTextColor={theme.textMuted}
                     />
                     <View style={styles.renameBtns}>
@@ -523,13 +535,17 @@ export const PlanManagerModal: React.FC<PlanManagerModalProps> = ({
                         style={[styles.smallBtn, { borderColor: theme.border, backgroundColor: theme.card }]}
                         onPress={() => setRenamingPlanId(null)}
                       >
-                        <Text style={[styles.smallBtnText, { color: theme.textMuted }]}>Anuluj</Text>
+                        <Text style={[styles.smallBtnText, { color: theme.textMuted }]}>
+                          {t('cancel')}
+                        </Text>
                       </TouchableOpacity>
                       <TouchableOpacity
                         style={[styles.smallBtnSolid, { backgroundColor: theme.primary }]}
                         onPress={() => handleConfirmRename(plan)}
                       >
-                        <Text style={[styles.smallBtnText, { color: theme.primaryText }]}>Zapisz</Text>
+                        <Text style={[styles.smallBtnText, { color: theme.primaryText }]}>
+                          {t('save')}
+                        </Text>
                       </TouchableOpacity>
                     </View>
                   </View>
@@ -547,7 +563,7 @@ export const PlanManagerModal: React.FC<PlanManagerModalProps> = ({
                     >
                       <Ionicons name="pencil-outline" size={13} color={theme.textSecondary} />
                       <Text style={[styles.actionChipText, { color: theme.textSecondary }]}>
-                        Edytuj nazwę
+                        {t('editNameBtn')}
                       </Text>
                     </TouchableOpacity>
 
@@ -558,7 +574,7 @@ export const PlanManagerModal: React.FC<PlanManagerModalProps> = ({
                     >
                       <Ionicons name="copy-outline" size={13} color={theme.textSecondary} />
                       <Text style={[styles.actionChipText, { color: theme.textSecondary }]}>
-                        Duplikuj
+                        {t('duplicateBtn')}
                       </Text>
                     </TouchableOpacity>
 
@@ -575,7 +591,7 @@ export const PlanManagerModal: React.FC<PlanManagerModalProps> = ({
                     >
                       <Ionicons name="trash-outline" size={13} color="#EF4444" />
                       <Text style={[styles.actionChipText, { color: '#EF4444' }]}>
-                        Usuń
+                        {t('deleteBtn')}
                       </Text>
                     </TouchableOpacity>
                   </View>

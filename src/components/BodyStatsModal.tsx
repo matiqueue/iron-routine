@@ -13,6 +13,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useAppTheme } from '../context/ThemeContext';
+import { useLanguage } from '../context/LanguageContext';
 import { UserProfile, WeightEntry } from '../types/workout';
 import {
   getWeightHistory,
@@ -45,6 +46,7 @@ export const BodyStatsModal: React.FC<BodyStatsModalProps> = ({
   onProfileUpdated,
 }) => {
   const { theme } = useAppTheme();
+  const { t, localeCode } = useLanguage();
 
   const [history, setHistory] = useState<WeightEntry[]>([]);
   const [currentWeight, setCurrentWeight] = useState<number>(profile.weight || 0);
@@ -58,7 +60,7 @@ export const BodyStatsModal: React.FC<BodyStatsModalProps> = ({
   // Notification toggles
   const [notifEnabled, setNotifEnabled] = useState<boolean>(false);
   const [creatineNotifEnabled, setCreatineNotifEnabled] = useState<boolean>(true);
-  const [supplementsSummary, setSupplementsSummary] = useState<string>('Suplementacja i przypomnienia');
+  const [supplementsSummary, setSupplementsSummary] = useState<string>(t('bodySuppNotifTitle'));
 
   const loadData = useCallback(async () => {
     try {
@@ -99,12 +101,12 @@ export const BodyStatsModal: React.FC<BodyStatsModalProps> = ({
   }, [currentWeight, currentHeight]);
 
   const bmiCategory = useMemo(() => {
-    if (bmi <= 0) return 'Uzupełnij wagę i wzrost';
-    if (bmi < 18.5) return 'Szczupła sylwetka (budowanie masy)';
-    if (bmi < 25) return 'Prawidłowa masa ciała (zdrowy zakres)';
-    if (bmi < 30) return 'Masa podwyższona';
-    return 'Wysoka masa ciała';
-  }, [bmi]);
+    if (bmi <= 0) return t('bmiNeedData');
+    if (bmi < 18.5) return t('bmiUnder');
+    if (bmi < 25) return t('bmiNormal');
+    if (bmi < 30) return t('bmiOver');
+    return t('bmiHigh');
+  }, [bmi, t]);
 
   const handleAdjustWeight = (delta: number) => {
     const cur = parseFloat(inputWeight.replace(',', '.')) || currentWeight || 70;
@@ -118,7 +120,7 @@ export const BodyStatsModal: React.FC<BodyStatsModalProps> = ({
   const handleSaveWeight = async () => {
     const val = parseFloat(inputWeight.replace(',', '.'));
     if (isNaN(val) || val < 30 || val > 300) {
-      Alert.alert('Błędna waga', 'Podaj poprawną masę ciała w kg (np. 72.5).');
+      Alert.alert(t('badWeightTitle'), t('badWeightBody'));
       return;
     }
 
@@ -139,7 +141,7 @@ export const BodyStatsModal: React.FC<BodyStatsModalProps> = ({
   const handleSaveHeight = async () => {
     const h = parseInt(inputHeight, 10);
     if (isNaN(h) || h < 100 || h > 250) {
-      Alert.alert('Błędny wzrost', 'Podaj poprawny wzrost w cm (np. 180).');
+      Alert.alert(t('badHeightTitle'), t('badHeightBody'));
       return;
     }
 
@@ -159,21 +161,25 @@ export const BodyStatsModal: React.FC<BodyStatsModalProps> = ({
   };
 
   const handleDeleteEntry = (entry: WeightEntry) => {
-    Alert.alert('Usunąć wpis wagi?', `${entry.weight} kg z dnia ${entry.date}`, [
-      { text: 'Anuluj', style: 'cancel' },
-      {
-        text: 'Usuń',
-        style: 'destructive',
-        onPress: async () => {
-          await deleteWeightEntry(entry.id, profile.id);
-          const updatedHist = await getWeightHistory(profile.id);
-          setHistory(updatedHist);
-          if (updatedHist.length > 0) {
-            setCurrentWeight(updatedHist[0].weight);
-          }
+    Alert.alert(
+      t('deleteWeightEntryTitle'),
+      t('deleteWeightEntrySub', { weight: entry.weight, date: entry.date }),
+      [
+        { text: t('cancel'), style: 'cancel' },
+        {
+          text: t('deleteBtn'),
+          style: 'destructive',
+          onPress: async () => {
+            await deleteWeightEntry(entry.id, profile.id);
+            const updatedHist = await getWeightHistory(profile.id);
+            setHistory(updatedHist);
+            if (updatedHist.length > 0) {
+              setCurrentWeight(updatedHist[0].weight);
+            }
+          },
         },
-      },
-    ]);
+      ]
+    );
   };
 
   const handleToggleNotif = async (val: boolean) => {
@@ -182,10 +188,7 @@ export const BodyStatsModal: React.FC<BodyStatsModalProps> = ({
       const success = await setDailyWeightReminder(val);
       setNotifEnabled(success);
       if (val && !success) {
-        Alert.alert(
-          'Brak uprawnień',
-          'Włącz powiadomienia w ustawieniach systemu iOS, aby otrzymywać codzienne przypomnienie o ważeniu.'
-        );
+        Alert.alert(t('noPermTitle'), t('weighPermBody'));
       }
     } catch (e) {
       console.warn('Error toggling notif', e);
@@ -198,10 +201,7 @@ export const BodyStatsModal: React.FC<BodyStatsModalProps> = ({
       const success = await setCreatineReminderEnabled(val);
       setCreatineNotifEnabled(success);
       if (val && !success) {
-        Alert.alert(
-          'Brak uprawnień',
-          'Włącz powiadomienia w ustawieniach systemu, aby otrzymywać interaktywne przypomnienia o suplementacji.'
-        );
+        Alert.alert(t('noPermTitle'), t('suppPermBody'));
       }
     } catch (e) {
       console.warn('Error toggling supplement notif', e);
@@ -212,10 +212,7 @@ export const BodyStatsModal: React.FC<BodyStatsModalProps> = ({
     try {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       await sendTestCreatineNotification();
-      Alert.alert(
-        'Powiadomienie testowe wysłane! 💧',
-        'Zablokuj telefon lub odczekaj 3 sekundy. Na ekranie blokady pojawią się szybkie akcje potwierdzenia dzisiejszych suplementów:\n\n• [Wziąłem porcję ✅]\n• [Przypomnij wieczorem ⏳]'
-      );
+      Alert.alert(t('testNotifSentTitle'), t('testNotifSentBody'));
     } catch (e) {
       console.warn('Error sending test notif', e);
     }
@@ -225,8 +222,8 @@ export const BodyStatsModal: React.FC<BodyStatsModalProps> = ({
     <InteractiveBottomSheet
       visible={visible}
       onClose={onClose}
-      title="Waga & Sylwetka"
-      subtitle="Pomiary ciała i codzienne monitorowanie"
+      title={t('bodyStatsTitle')}
+      subtitle={t('bodyStatsSub')}
       initialHeightPercent={0.88}
     >
       <BottomSheetScrollView
@@ -241,7 +238,7 @@ export const BodyStatsModal: React.FC<BodyStatsModalProps> = ({
                 <Text style={[styles.kpiVal, { color: theme.text }]}>
                   {currentWeight > 0 ? `${currentWeight} kg` : '-'}
                 </Text>
-                <Text style={[styles.kpiLbl, { color: theme.textMuted }]}>Aktualna waga</Text>
+                <Text style={[styles.kpiLbl, { color: theme.textMuted }]}>{t('currentWeightKpi')}</Text>
               </View>
 
               <TouchableOpacity
@@ -253,7 +250,7 @@ export const BodyStatsModal: React.FC<BodyStatsModalProps> = ({
                 <Text style={[styles.kpiVal, { color: theme.text }]}>
                   {currentHeight > 0 ? `${currentHeight} cm` : '-'}
                 </Text>
-                <Text style={[styles.kpiLbl, { color: theme.textMuted }]}>Wzrost (edytuj)</Text>
+                <Text style={[styles.kpiLbl, { color: theme.textMuted }]}>{t('heightEditKpi')}</Text>
               </TouchableOpacity>
 
               <View style={[styles.kpiCard, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
@@ -261,7 +258,7 @@ export const BodyStatsModal: React.FC<BodyStatsModalProps> = ({
                 <Text style={[styles.kpiVal, { color: theme.text }]}>
                   {bmi > 0 ? bmi : '-'}
                 </Text>
-                <Text style={[styles.kpiLbl, { color: theme.textMuted }]}>Wskaźnik BMI</Text>
+                <Text style={[styles.kpiLbl, { color: theme.textMuted }]}>{t('bmiKpi')}</Text>
               </View>
             </View>
 
@@ -272,8 +269,8 @@ export const BodyStatsModal: React.FC<BodyStatsModalProps> = ({
                 <Text style={[styles.statusTitle, { color: theme.text }]}>{bmiCategory}</Text>
                 <Text style={[styles.statusSub, { color: theme.textMuted }]}>
                   {bmi > 0
-                    ? `BMI ${bmi} wyliczone na podstawie wagi ${currentWeight} kg i wzrostu ${currentHeight} cm.`
-                    : 'Wpisz aktualną wagę oraz wzrost, aby wyliczyć wskaźnik BMI i śledzić progres.'}
+                    ? t('bmiCalculatedSub', { bmi, weight: currentWeight, height: currentHeight })
+                    : t('bmiMissingSub')}
                 </Text>
               </View>
             </View>
@@ -281,12 +278,12 @@ export const BodyStatsModal: React.FC<BodyStatsModalProps> = ({
             {/* Height Edit Inline */}
             {isEditingHeight && (
               <View style={[styles.editBox, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
-                <Text style={[styles.boxTitle, { color: theme.text }]}>Zmień wzrost (cm)</Text>
+                <Text style={[styles.boxTitle, { color: theme.text }]}>{t('changeHeightCmTitle')}</Text>
                 <View style={styles.editRow}>
                   <TextInput
                     style={[styles.input, { backgroundColor: theme.card, borderColor: theme.border, color: theme.text }]}
                     keyboardType="number-pad"
-                    placeholder="np. 178"
+                    placeholder={t('heightExamplePlaceholder')}
                     placeholderTextColor={theme.textMuted}
                     value={inputHeight}
                     onChangeText={setInputHeight}
@@ -295,13 +292,13 @@ export const BodyStatsModal: React.FC<BodyStatsModalProps> = ({
                     style={[styles.saveSmallBtn, { backgroundColor: theme.primary }]}
                     onPress={handleSaveHeight}
                   >
-                    <Text style={[styles.saveSmallBtnText, { color: theme.primaryText }]}>Zapisz</Text>
+                    <Text style={[styles.saveSmallBtnText, { color: theme.primaryText }]}>{t('save')}</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={[styles.cancelSmallBtn, { backgroundColor: theme.bgTertiary }]}
                     onPress={() => setIsEditingHeight(false)}
                   >
-                    <Text style={[styles.cancelSmallBtnText, { color: theme.text }]}>Anuluj</Text>
+                    <Text style={[styles.cancelSmallBtnText, { color: theme.text }]}>{t('cancel')}</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -309,7 +306,7 @@ export const BodyStatsModal: React.FC<BodyStatsModalProps> = ({
 
             {/* Daily Weight Logger Card */}
             <View style={[styles.cardSection, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
-              <Text style={[styles.boxTitle, { color: theme.text }]}>Zapisz wagę na dziś</Text>
+              <Text style={[styles.boxTitle, { color: theme.text }]}>{t('bodyLogTodayTitle')}</Text>
 
               <View style={styles.stepperWrapper}>
                 <TouchableOpacity
@@ -348,7 +345,7 @@ export const BodyStatsModal: React.FC<BodyStatsModalProps> = ({
               >
                 <Ionicons name="checkmark-circle-outline" size={17} color={theme.primaryText} />
                 <Text style={[styles.saveBtnText, { color: theme.primaryText }]}>
-                  ZAPISZ DZISIEJSZĄ WAGĘ
+                  {t('bodyLogTodayBtn')}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -360,10 +357,10 @@ export const BodyStatsModal: React.FC<BodyStatsModalProps> = ({
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={[styles.notifTitle, { color: theme.text }]}>
-                  Codzienne ważenie (08:00)
+                  {t('bodyDailyWeighTitle')}
                 </Text>
                 <Text style={[styles.notifSub, { color: theme.textMuted }]}>
-                  Przypomnienie o porannym pomiarze na czczo
+                  {t('bodyDailyWeighSub')}
                 </Text>
               </View>
               <Switch
@@ -381,10 +378,10 @@ export const BodyStatsModal: React.FC<BodyStatsModalProps> = ({
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={[styles.notifTitle, { color: theme.text }]}>
-                  Przypomnienia o suplementacji
+                  {t('bodySuppNotifTitle')}
                 </Text>
                 <Text style={[styles.notifSub, { color: theme.textMuted }]}>
-                  {supplementsSummary} • interaktywnie z ekranu blokady (dawki skonfigurujesz w Ustawieniach)
+                  {t('bodySuppNotifSub', { summary: supplementsSummary })}
                 </Text>
               </View>
               <Switch
@@ -403,7 +400,7 @@ export const BodyStatsModal: React.FC<BodyStatsModalProps> = ({
               >
                 <Ionicons name="flash-outline" size={15} color={theme.text} />
                 <Text style={[styles.testNotifBtnText, { color: theme.text }]}>
-                  Przetestuj interaktywne powiadomienie (3s)
+                  {t('bodyTestSuppNotifBtn')}
                 </Text>
               </TouchableOpacity>
             )}
@@ -411,12 +408,12 @@ export const BodyStatsModal: React.FC<BodyStatsModalProps> = ({
             {/* Weight History List */}
             <View style={styles.historySection}>
               <Text style={[styles.historyHeader, { color: theme.text }]}>
-                Historia pomiarów ({history.length})
+                {t('bodyHistoryTitle', { count: history.length })}
               </Text>
 
               {history.length === 0 ? (
                 <Text style={[styles.emptyHist, { color: theme.textMuted }]}>
-                  Brak wcześniejszych wpisów. Zapisz swój pierwszy pomiar powyżej!
+                  {t('bodyHistoryEmpty')}
                 </Text>
               ) : (
                 history.map((entry, idx) => {
@@ -430,7 +427,7 @@ export const BodyStatsModal: React.FC<BodyStatsModalProps> = ({
                     >
                       <View>
                         <Text style={[styles.histDate, { color: theme.text }]}>
-                          {new Date(entry.date).toLocaleDateString('pl-PL', {
+                          {new Date(entry.date).toLocaleDateString(localeCode, {
                             weekday: 'short',
                             day: 'numeric',
                             month: 'long',
@@ -438,7 +435,7 @@ export const BodyStatsModal: React.FC<BodyStatsModalProps> = ({
                         </Text>
                         {entry.note ? (
                           <Text style={[styles.histNote, { color: theme.textMuted }]}>
-                            {entry.note}
+                            {entry.note === 'Pomiar początkowy' ? t('initialMeasurementNote') : entry.note}
                           </Text>
                         ) : null}
                       </View>

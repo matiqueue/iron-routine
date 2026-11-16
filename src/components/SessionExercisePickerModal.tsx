@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAppTheme } from '../context/ThemeContext';
+import { useLanguage } from '../context/LanguageContext';
 import { BottomSheetScrollView, InteractiveBottomSheet, useBottomSheetContext } from './InteractiveBottomSheet';
 import { ExerciseLibraryContent } from './ExerciseLibraryContent';
 import { DayProgress, Exercise, SessionExerciseConfig } from '../types/workout';
@@ -67,14 +68,15 @@ const SessionChecklistView: React.FC<{
   onConfirm,
 }) => {
   const { theme } = useAppTheme();
+  const { t, exerciseName } = useLanguage();
   const activeCount = orderedExercises.filter((e) => !skippedSet.has(e.id)).length;
 
   return (
     <View style={styles.wrapper}>
       <View style={styles.toolbar}>
         <Text style={[styles.countLabel, { color: theme.textSecondary }]}>
-          Wybrane: <Text style={{ color: theme.text, fontWeight: '800' }}>{activeCount}</Text> z{' '}
-          {orderedExercises.length}
+          {t('selectedCountLabel')} <Text style={{ color: theme.text, fontWeight: '800' }}>{activeCount}</Text>{' '}
+          {t('ofTotalWord', { total: orderedExercises.length })}
         </Text>
         <View style={styles.toolbarActions}>
           {skippedSet.size > 0 && (
@@ -82,14 +84,14 @@ const SessionChecklistView: React.FC<{
               style={[styles.toolBtn, { backgroundColor: theme.bgTertiary }]}
               onPress={onSelectAll}
             >
-              <Text style={[styles.toolBtnText, { color: theme.text }]}>Wszystkie</Text>
+              <Text style={[styles.toolBtnText, { color: theme.text }]}>{t('all')}</Text>
             </TouchableOpacity>
           )}
           <TouchableOpacity
             style={[styles.toolBtn, { backgroundColor: theme.bgTertiary }]}
             onPress={onResetOrder}
           >
-            <Text style={[styles.toolBtnText, { color: theme.textSecondary }]}>Domyślna</Text>
+            <Text style={[styles.toolBtnText, { color: theme.textSecondary }]}>{t('defaultOrderBtn')}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -177,12 +179,12 @@ const SessionChecklistView: React.FC<{
                       ]}
                       numberOfLines={2}
                     >
-                      {ex.name}
+                      {exerciseName(ex.id, ex.name)}
                     </Text>
                   </View>
                   <Text style={[styles.rowSub, { color: theme.textSecondary }]} numberOfLines={1}>
-                    {isSkipped ? 'Pominięte na dziś' : `${ex.sets} × ${ex.reps} powt.`}
-                    {loggedCount > 0 ? ` • Zrobiono ${loggedCount}/${ex.sets}` : ''}
+                    {isSkipped ? t('skippedForToday') : `${ex.sets} × ${ex.reps} ${t('reps')}`}
+                    {loggedCount > 0 ? t('doneCountInline', { done: loggedCount, total: ex.sets }) : ''}
                   </Text>
                 </View>
               </TouchableOpacity>
@@ -196,7 +198,7 @@ const SessionChecklistView: React.FC<{
                     borderColor: isDragging ? theme.primary : theme.border,
                   },
                 ]}
-                accessibilityLabel="Przeciągnij, aby zmienić kolejność"
+                accessibilityLabel={t('dragReorderA11y')}
               >
                 <Ionicons
                   name="reorder-three"
@@ -224,7 +226,7 @@ const SessionChecklistView: React.FC<{
         >
           <Ionicons name="add-circle-outline" size={18} color={theme.text} />
           <Text style={[styles.secondaryBtnText, { color: theme.text }]}>
-            Dodaj dodatkowe ćwiczenie z bazy
+            {t('addExtraExFromDb')}
           </Text>
         </TouchableOpacity>
 
@@ -236,8 +238,8 @@ const SessionChecklistView: React.FC<{
           <Ionicons name={mode === 'start' ? 'play' : 'checkmark-done'} size={18} color={theme.bg} />
           <Text style={[styles.confirmBtnText, { color: theme.bg }]}>
             {mode === 'start'
-              ? `Rozpocznij trening (${activeCount} ćw.)`
-              : `Zastosuj wybór (${activeCount} ćw.)`}
+              ? t('startWorkoutCountBtn', { count: activeCount })
+              : t('applySelectionCountBtn', { count: activeCount })}
           </Text>
         </TouchableOpacity>
       </View>
@@ -257,6 +259,7 @@ export const SessionExercisePickerModal: React.FC<SessionExercisePickerModalProp
   onLibraryChanged,
 }) => {
   const { theme } = useAppTheme();
+  const { t } = useLanguage();
   const [viewMode, setViewMode] = useState<'order' | 'library'>('order');
   const [addedExercises, setAddedExercises] = useState<Exercise[]>([]);
   const [orderedIds, setOrderedIds] = useState<string[]>([]);
@@ -454,8 +457,8 @@ export const SessionExercisePickerModal: React.FC<SessionExercisePickerModalProp
   const handleConfirm = () => {
     if (activeCount === 0) {
       Alert.alert(
-        'Wybierz minimum jedno ćwiczenie',
-        'Zaznacz przynajmniej jedno ćwiczenie do wykonania w dzisiejszym treningu.'
+        t('selectMinOneExTitle'),
+        t('selectMinOneExBody')
       );
       return;
     }
@@ -474,15 +477,15 @@ export const SessionExercisePickerModal: React.FC<SessionExercisePickerModalProp
       onClose={onClose}
       title={
         viewMode === 'library'
-          ? 'Dodaj ćwiczenie do sesji'
+          ? t('sheetAddSession')
           : mode === 'start'
-          ? 'Konfiguracja dzisiejszej sesji'
-          : 'Kolejność i wybór ćwiczeń'
+          ? t('todaySessionSetupTitle')
+          : t('orderAndSelectionTitle')
       }
       subtitle={
         viewMode === 'library'
-          ? 'Wybierz z bazy lub utwórz własne na dzisiejszy trening'
-          : 'Odznacz pomijane lub przytrzymaj ≡ i przeciągnij'
+          ? t('pickOrCreateTodaySub')
+          : t('uncheckOrDragSub')
       }
       initialHeightPercent={0.86}
       headerRight={
@@ -499,7 +502,7 @@ export const SessionExercisePickerModal: React.FC<SessionExercisePickerModalProp
             activeOpacity={0.75}
           >
             <Ionicons name="arrow-back" size={14} color={theme.text} />
-            <Text style={[styles.backPillText, { color: theme.text }]}>Wróć</Text>
+            <Text style={[styles.backPillText, { color: theme.text }]}>{t('returnBtn')}</Text>
           </TouchableOpacity>
         ) : undefined
       }

@@ -8,6 +8,8 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAppTheme } from '../context/ThemeContext';
+import { useLanguage } from '../context/LanguageContext';
+import { TranslationKey } from '../i18n/translations';
 import { SupplementDosingMode, SupplementItem } from '../types/workout';
 import {
   createCustomSupplement,
@@ -22,10 +24,10 @@ interface SupplementConfiguratorProps {
   compact?: boolean;
 }
 
-const MODE_LABELS: Array<{ value: SupplementDosingMode; label: string }> = [
-  { value: 'recommended', label: 'Zalecane' },
-  { value: 'per_kg', label: 'Wg masy' },
-  { value: 'fixed', label: 'Własna' },
+const MODE_LABELS: Array<{ value: SupplementDosingMode; labelKey: TranslationKey }> = [
+  { value: 'recommended', labelKey: 'dosingRecommended' },
+  { value: 'per_kg', labelKey: 'dosingPerKg' },
+  { value: 'fixed', labelKey: 'dosingFixed' },
 ];
 
 const PER_KG_PRESETS = [0.03, 0.05, 0.08, 0.1];
@@ -37,6 +39,7 @@ export const SupplementConfigurator: React.FC<SupplementConfiguratorProps> = ({
   compact = false,
 }) => {
   const { theme } = useAppTheme();
+  const { t, supplementName, supplementRec } = useLanguage();
 
   const [expandedId, setExpandedId] = useState<string | null>(
     compact ? null : supplements.find((s) => s.enabled)?.id || null
@@ -131,12 +134,12 @@ export const SupplementConfigurator: React.FC<SupplementConfiguratorProps> = ({
                 <View style={{ flex: 1, minWidth: 0 }}>
                   <View style={styles.titleLine}>
                     <Text style={[styles.nameText, { color: theme.text }]} numberOfLines={1}>
-                      {item.name}
+                      {supplementName(item.id, item.name)}
                     </Text>
                     {item.isCustom && (
                       <View style={[styles.customPill, { backgroundColor: theme.bgTertiary }]}>
                         <Text style={[styles.customPillText, { color: theme.textMuted }]}>
-                          WŁASNY
+                          {t('customUpperBadge')}
                         </Text>
                       </View>
                     )}
@@ -148,7 +151,9 @@ export const SupplementConfigurator: React.FC<SupplementConfiguratorProps> = ({
                     ]}
                     numberOfLines={1}
                   >
-                    {item.enabled ? `Dawka: ${doseLabel}` : item.recommendedText}
+                    {item.enabled
+                      ? t('dosePreviewLabel', { dose: doseLabel })
+                      : supplementRec(item.id, item.recommendedText)}
                   </Text>
                 </View>
               </TouchableOpacity>
@@ -164,7 +169,7 @@ export const SupplementConfigurator: React.FC<SupplementConfiguratorProps> = ({
                     activeOpacity={0.75}
                   >
                     <Text style={[styles.editPillText, { color: theme.text }]}>
-                      {isExpanded ? 'Zwiń' : 'Dawka'}
+                      {isExpanded ? t('collapseLabel') : t('dosesLabel')}
                     </Text>
                     <Ionicons
                       name={isExpanded ? 'chevron-up' : 'chevron-down'}
@@ -189,7 +194,7 @@ export const SupplementConfigurator: React.FC<SupplementConfiguratorProps> = ({
             {isExpanded && (
               <View style={[styles.dosingDrawer, { borderTopColor: theme.hairline }]}>
                 <Text style={[styles.dosingKicker, { color: theme.textMuted }]}>
-                  SPOSÓB DAWKOWANIA
+                  {t('dosingModeUpper')}
                 </Text>
 
                 <View style={styles.modeRow}>
@@ -218,7 +223,7 @@ export const SupplementConfigurator: React.FC<SupplementConfiguratorProps> = ({
                           ]}
                           numberOfLines={1}
                         >
-                          {mode.label}
+                          {t(mode.labelKey)}
                         </Text>
                       </TouchableOpacity>
                     );
@@ -228,7 +233,7 @@ export const SupplementConfigurator: React.FC<SupplementConfiguratorProps> = ({
                 {item.dosingMode === 'per_kg' && (
                   <View style={styles.perKgBox}>
                     <Text style={[styles.hintLabel, { color: theme.textSecondary }]}>
-                      Ilość gramów na kilogram masy ciała:
+                      {t('gramsPerKgPrompt')}
                     </Text>
                     <View style={styles.presetRow}>
                       {PER_KG_PRESETS.map((val) => {
@@ -261,7 +266,7 @@ export const SupplementConfigurator: React.FC<SupplementConfiguratorProps> = ({
                       })}
                     </View>
                     <Text style={[styles.liveCalcNote, { color: theme.text }]}>
-                      Dla Twojej wagi:{' '}
+                      {t('forYourWeightLabel')}{' '}
                       <Text style={{ fontWeight: '800' }}>{formatSupplementDose(item, weightKg)}</Text>
                     </Text>
                   </View>
@@ -276,7 +281,7 @@ export const SupplementConfigurator: React.FC<SupplementConfiguratorProps> = ({
                       ]}
                       value={item.fixedAmountText || ''}
                       onChangeText={(txt) => handleUpdateItem(item.id, { fixedAmountText: txt })}
-                      placeholder="np. 4 g, 2000 IU, 1 miarka"
+                      placeholder={t('suppFixedDosePlaceholder')}
                       placeholderTextColor={theme.textMuted}
                     />
                   </View>
@@ -284,7 +289,7 @@ export const SupplementConfigurator: React.FC<SupplementConfiguratorProps> = ({
 
                 {item.dosingMode === 'recommended' && (
                   <Text style={[styles.hintLabel, { color: theme.textSecondary, marginTop: 4 }]}>
-                    Wytyczna: {item.recommendedText}
+                    {t('guidelineLabel', { text: supplementRec(item.id, item.recommendedText) })}
                   </Text>
                 )}
               </View>
@@ -301,7 +306,7 @@ export const SupplementConfigurator: React.FC<SupplementConfiguratorProps> = ({
             { backgroundColor: theme.bgSecondary, borderColor: theme.borderDark },
           ]}
         >
-          <Text style={[styles.dosingKicker, { color: theme.textMuted }]}>NOWY WŁASNY SUPLEMENT</Text>
+          <Text style={[styles.dosingKicker, { color: theme.textMuted }]}>{t('newCustomSuppUpper')}</Text>
           <TextInput
             style={[
               styles.input,
@@ -309,7 +314,7 @@ export const SupplementConfigurator: React.FC<SupplementConfiguratorProps> = ({
             ]}
             value={customName}
             onChangeText={setCustomName}
-            placeholder="Nazwa (np. Ashwagandha, Beta-alanina, Cynk)"
+            placeholder={t('customSuppNamePlaceholder')}
             placeholderTextColor={theme.textMuted}
           />
 
@@ -337,7 +342,7 @@ export const SupplementConfigurator: React.FC<SupplementConfiguratorProps> = ({
                       { color: selected ? theme.primaryText : theme.text },
                     ]}
                   >
-                    {mode.label}
+                    {t(mode.labelKey)}
                   </Text>
                 </TouchableOpacity>
               );
@@ -352,7 +357,7 @@ export const SupplementConfigurator: React.FC<SupplementConfiguratorProps> = ({
               ]}
               value={customFixedDose}
               onChangeText={setCustomFixedDose}
-              placeholder="Ile przyjmujesz? (np. 3 g, 500 mg, 1 kaps.)"
+              placeholder={t('customSuppDosePlaceholder')}
               placeholderTextColor={theme.textMuted}
             />
           )}
@@ -366,7 +371,7 @@ export const SupplementConfigurator: React.FC<SupplementConfiguratorProps> = ({
               value={customPerKg}
               onChangeText={setCustomPerKg}
               keyboardType="decimal-pad"
-              placeholder="Dawka g / kg m.c. (np. 0.05)"
+              placeholder={t('customSuppPerKgPlaceholder')}
               placeholderTextColor={theme.textMuted}
             />
           )}
@@ -376,14 +381,14 @@ export const SupplementConfigurator: React.FC<SupplementConfiguratorProps> = ({
               style={[styles.cancelCustomBtn, { borderColor: theme.border, backgroundColor: theme.card }]}
               onPress={() => setShowAddCustom(false)}
             >
-              <Text style={[styles.cancelCustomText, { color: theme.textMuted }]}>Anuluj</Text>
+              <Text style={[styles.cancelCustomText, { color: theme.textMuted }]}>{t('cancel')}</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.saveCustomBtn, { backgroundColor: theme.primary }]}
               onPress={handleCreateCustom}
               disabled={!customName.trim()}
             >
-              <Text style={[styles.saveCustomText, { color: theme.primaryText }]}>Dodaj suplement</Text>
+              <Text style={[styles.saveCustomText, { color: theme.primaryText }]}>{t('addSupplementBtn')}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -400,7 +405,7 @@ export const SupplementConfigurator: React.FC<SupplementConfiguratorProps> = ({
           activeOpacity={0.75}
         >
           <Ionicons name="add-circle-outline" size={17} color={theme.text} />
-          <Text style={[styles.addCustomText, { color: theme.text }]}>Dodaj własny suplement</Text>
+          <Text style={[styles.addCustomText, { color: theme.text }]}>{t('addCustomSupplementBtn')}</Text>
         </TouchableOpacity>
       )}
     </View>

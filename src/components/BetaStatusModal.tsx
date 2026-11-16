@@ -11,6 +11,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { THEME } from '../constants/theme';
+import { useLanguage } from '../context/LanguageContext';
 
 interface BetaStatusModalProps {
   visible: boolean;
@@ -18,11 +19,12 @@ interface BetaStatusModalProps {
 }
 
 export const BetaStatusModal: React.FC<BetaStatusModalProps> = ({ visible, onClose }) => {
+  const { t } = useLanguage();
   const [testStatus, setTestStatus] = useState<string | null>(null);
 
   const runDiagnostics = async () => {
     try {
-      setTestStatus('Testowanie pamięci lokalnej...');
+      setTestStatus(t('diagTestingTaptic'));
       const testKey = '@beta_diag_test';
       await AsyncStorage.setItem(testKey, JSON.stringify({ ts: Date.now(), ok: true }));
       const retrieved = await AsyncStorage.getItem(testKey);
@@ -30,12 +32,12 @@ export const BetaStatusModal: React.FC<BetaStatusModalProps> = ({ visible, onClo
 
       if (!retrieved) throw new Error('AsyncStorage read/write failed');
 
-      setTestStatus('Test wibracji i silnika Taptic Engine...');
+      setTestStatus(t('diagTestingTaptic'));
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
-      setTestStatus('✅ Wszystkie testy lokalne zaliczone pomyślnie!');
+      setTestStatus(t('betaTestsPassed'));
     } catch (err: any) {
-      setTestStatus(`❌ Błąd testu: ${err.message}`);
+      setTestStatus(t('betaTestFailed', { msg: err.message }));
     }
   };
 
@@ -48,7 +50,7 @@ export const BetaStatusModal: React.FC<BetaStatusModalProps> = ({ visible, onClo
             <View style={styles.betaTag}>
               <Text style={styles.betaTagText}>BETA v1.0</Text>
             </View>
-            <Text style={styles.title}>Diagnostyka & Zgrywanie</Text>
+            <Text style={styles.title}>{t('diagTitle')}</Text>
           </View>
           <TouchableOpacity onPress={onClose} style={styles.closeBtn} activeOpacity={0.7}>
             <Ionicons name="close" size={24} color={THEME.colors.textSecondary} />
@@ -61,10 +63,8 @@ export const BetaStatusModal: React.FC<BetaStatusModalProps> = ({ visible, onClo
             <View style={styles.statusRow}>
               <Ionicons name="phone-portrait-outline" size={20} color={THEME.colors.primary} />
               <View style={styles.statusTextCol}>
-                <Text style={styles.statusLabel}>Praca offline (bez kabla i Maca)</Text>
-                <Text style={styles.statusValue}>
-                  Kompilacja Release zawiera cały kod JS w aplikacji – telefon nie szuka komputera.
-                </Text>
+                <Text style={styles.statusLabel}>{t('offlineWorkLabel')}</Text>
+                <Text style={styles.statusValue}>{t('betaReleaseHint')}</Text>
               </View>
             </View>
 
@@ -73,10 +73,8 @@ export const BetaStatusModal: React.FC<BetaStatusModalProps> = ({ visible, onClo
             <View style={styles.statusRow}>
               <Ionicons name="server-outline" size={20} color={THEME.colors.accentBlue} />
               <View style={styles.statusTextCol}>
-                <Text style={styles.statusLabel}>Konto Apple Developer ($0 zł)</Text>
-                <Text style={styles.statusValue}>
-                  Personal Team (darmowe konto Apple ID). Certyfikat działa 7 dni, odnawiany kliknięciem Run.
-                </Text>
+                <Text style={styles.statusLabel}>{t('betaAppleAccount')}</Text>
+                <Text style={styles.statusValue}>{t('betaAppleSub')}</Text>
               </View>
             </View>
 
@@ -85,10 +83,8 @@ export const BetaStatusModal: React.FC<BetaStatusModalProps> = ({ visible, onClo
             <View style={styles.statusRow}>
               <Ionicons name="save-outline" size={20} color={THEME.colors.accentOrange} />
               <View style={styles.statusTextCol}>
-                <Text style={styles.statusLabel}>Baza danych urządzenia</Text>
-                <Text style={styles.statusValue}>
-                  AsyncStorage (100% lokalnie na iPhonie, bez chmury).
-                </Text>
+                <Text style={styles.statusLabel}>{t('betaDeviceDb')}</Text>
+                <Text style={styles.statusValue}>{t('asyncStorageLocalDesc')}</Text>
               </View>
             </View>
           </View>
@@ -100,7 +96,7 @@ export const BetaStatusModal: React.FC<BetaStatusModalProps> = ({ visible, onClo
             onPress={runDiagnostics}
           >
             <Ionicons name="flash-outline" size={18} color="#000" />
-            <Text style={styles.testBtnText}>Przetestuj Taptic Engine & Zapis danych</Text>
+            <Text style={styles.testBtnText}>{t('testTapticAndStorageBtn')}</Text>
           </TouchableOpacity>
 
           {testStatus ? (
@@ -110,17 +106,15 @@ export const BetaStatusModal: React.FC<BetaStatusModalProps> = ({ visible, onClo
           ) : null}
 
           {/* How to deploy step by step */}
-          <Text style={styles.sectionHeader}>Jak zgrać na iPhone bez kabla na zawsze?</Text>
+          <Text style={styles.sectionHeader}>{t('betaHowToTitle')}</Text>
 
           <View style={styles.stepCard}>
             <View style={styles.stepNumberBadge}>
               <Text style={styles.stepNumberText}>1</Text>
             </View>
             <View style={styles.stepContent}>
-              <Text style={styles.stepTitle}>Włącz Tryb Dewelopera w iPhone</Text>
-              <Text style={styles.stepDesc}>
-                Ustawienia ➔ Prywatność i ochrona ➔ Tryb dewelopera (na samym dole) ➔ Włącz i zrestartuj iPhone.
-              </Text>
+              <Text style={styles.stepTitle}>{t('betaStep1Title')}</Text>
+              <Text style={styles.stepDesc}>{t('betaStep1Sub')}</Text>
             </View>
           </View>
 
@@ -129,10 +123,8 @@ export const BetaStatusModal: React.FC<BetaStatusModalProps> = ({ visible, onClo
               <Text style={styles.stepNumberText}>2</Text>
             </View>
             <View style={styles.stepContent}>
-              <Text style={styles.stepTitle}>Podłącz iPhone do Maca</Text>
-              <Text style={styles.stepDesc}>
-                Podepnij kabel (lub upewnij się, że iPhone jest w tej samej sieci Wi-Fi i odblokowany).
-              </Text>
+              <Text style={styles.stepTitle}>{t('betaStep2Title')}</Text>
+              <Text style={styles.stepDesc}>{t('betaStep2Sub')}</Text>
             </View>
           </View>
 
@@ -141,16 +133,11 @@ export const BetaStatusModal: React.FC<BetaStatusModalProps> = ({ visible, onClo
               <Text style={styles.stepNumberText}>3</Text>
             </View>
             <View style={styles.stepContent}>
-              <Text style={styles.stepTitle}>Uruchom komendę Release</Text>
-              <Text style={styles.stepDesc}>
-                W terminalu projektu wpisz:
-              </Text>
+              <Text style={styles.stepTitle}>{t('betaStep3Title')}</Text>
+              <Text style={styles.stepDesc}>{t('step3RunCmdPrefix')}</Text>
               <View style={styles.codeSnippet}>
                 <Text style={styles.codeText}>npm run ios:release</Text>
               </View>
-              <Text style={styles.stepDesc}>
-                lub otwórz folder <Text style={{ color: THEME.colors.primary }}>ios</Text> w Xcode i wybierz Scheme: <Text style={{ color: THEME.colors.primary }}>Release</Text>.
-              </Text>
             </View>
           </View>
 
@@ -159,18 +146,14 @@ export const BetaStatusModal: React.FC<BetaStatusModalProps> = ({ visible, onClo
               <Text style={styles.stepNumberText}>4</Text>
             </View>
             <View style={styles.stepContent}>
-              <Text style={styles.stepTitle}>Zaufaj certyfikatowi na iPhone</Text>
-              <Text style={styles.stepDesc}>
-                Po instalacji na telefonie: Ustawienia ➔ Ogólne ➔ VPN i zarządzanie urządzeniem ➔ Wybierz swój Apple ID ➔ Zaufaj.
-              </Text>
+              <Text style={styles.stepTitle}>{t('trustCertTitle')}</Text>
+              <Text style={styles.stepDesc}>{t('betaTrustSub')}</Text>
             </View>
           </View>
 
           <View style={styles.finalTip}>
             <Ionicons name="checkmark-circle" size={20} color={THEME.colors.primary} />
-            <Text style={styles.finalTipText}>
-              Gotowe! Odłączasz kabel, a aplikacja działa w 100% offline na siłowni bez Maca!
-            </Text>
+            <Text style={styles.finalTipText}>{t('betaDoneNote')}</Text>
           </View>
         </ScrollView>
       </View>

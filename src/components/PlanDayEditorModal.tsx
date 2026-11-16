@@ -14,6 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAppTheme } from '../context/ThemeContext';
+import { useLanguage } from '../context/LanguageContext';
 import { DayBannerTag, DayPlan, DayType, Exercise } from '../types/workout';
 import { cloneExercise } from '../data/exerciseLibrary';
 import { DAY_BANNER_TAG_OPTIONS, resolveDayBannerTag } from '../data/dayTags';
@@ -31,10 +32,10 @@ interface PlanDayEditorModalProps {
   onLibraryChanged?: () => void;
 }
 
-const DAY_TYPE_OPTIONS: { id: DayType; label: string; icon: string }[] = [
-  { id: 'workout', label: 'Trening', icon: 'barbell-outline' },
-  { id: 'walk', label: 'Cardio / Spacer', icon: 'walk-outline' },
-  { id: 'rest', label: 'Odpoczynek', icon: 'bed-outline' },
+const DAY_TYPE_KEYS: { id: DayType; labelKey: 'workoutTagShort' | 'cardioWalkType' | 'restType'; icon: string }[] = [
+  { id: 'workout', labelKey: 'workoutTagShort', icon: 'barbell-outline' },
+  { id: 'walk', labelKey: 'cardioWalkType', icon: 'walk-outline' },
+  { id: 'rest', labelKey: 'restType', icon: 'bed-outline' },
 ];
 
 export const PlanDayEditorModal: React.FC<PlanDayEditorModalProps> = ({
@@ -47,6 +48,7 @@ export const PlanDayEditorModal: React.FC<PlanDayEditorModalProps> = ({
   onLibraryChanged,
 }) => {
   const { theme } = useAppTheme();
+  const { t, categoryLabel, exerciseName, dayTagLabel } = useLanguage();
   const insets = useSafeAreaInsets();
 
   const [viewMode, setViewMode] = useState<'day' | 'library'>('day');
@@ -84,21 +86,21 @@ export const PlanDayEditorModal: React.FC<PlanDayEditorModalProps> = ({
     setDayType(nextType);
     if (nextType === 'rest' && (!name.trim() || name === dayPlan.name)) {
       if (dayPlan.type === 'workout') {
-        setName('Dzień regeneracji');
-        setSubtitle('Odpoczynek, sen i nawodnienie');
-        setTime('Regeneracja');
+        setName(t('dayTypeRest'));
+        setSubtitle(t('defaultRestSubtitle'));
+        setTime(t('recoveryWord'));
       }
       setBannerTag('rest');
     } else if (nextType === 'walk') {
       if (dayPlan.type === 'workout') {
-        setName('Aktywna regeneracja');
-        setSubtitle('Spacer 8 000 kroków & mobilność');
+        setName(t('activeRecoveryName'));
+        setSubtitle(t('defaultRestSubtitle'));
         setTime('35-45 min');
       }
       setBannerTag('cardio');
     } else if (nextType === 'workout' && dayPlan.type !== 'workout') {
-      setName('Nowy trening');
-      setSubtitle('Skonfiguruj partie i ćwiczenia');
+      setName(t('newWorkoutName'));
+      setSubtitle(t('defaultWorkoutSubtitle'));
       setTime('60 min');
       if (bannerTag === 'rest') setBannerTag('fbw');
     }
@@ -176,9 +178,9 @@ export const PlanDayEditorModal: React.FC<PlanDayEditorModalProps> = ({
       type: dayType,
       iconName,
       bannerTag,
-      name: name.trim() || (dayType === 'workout' ? 'Trening' : 'Dzień regeneracji'),
+      name: name.trim() || (dayType === 'workout' ? t('workoutTagShort') : t('dayTypeRest')),
       subtitle: subtitle.trim(),
-      time: time.trim() || (dayType === 'workout' ? '60 min' : 'Regeneracja'),
+      time: time.trim() || (dayType === 'workout' ? '60 min' : t('recoveryWord')),
       warmup: warmup.trim() || undefined,
       exercises: dayType === 'workout' ? exercises : [],
     };
@@ -197,14 +199,14 @@ export const PlanDayEditorModal: React.FC<PlanDayEditorModalProps> = ({
       title={
         viewMode === 'library'
           ? swapIndex !== null
-            ? 'Zamień ćwiczenie'
-            : 'Dodaj ćwiczenie z bazy'
-          : `Edycja: ${dayLabel}`
+            ? t('swapExerciseTitle')
+            : t('libraryTitlePick')
+          : t('editDayTitle', { day: dayLabel })
       }
       subtitle={
         viewMode === 'library'
-          ? 'Wybierz pozycję z bazy lub utwórz własne ćwiczenie'
-          : 'Typ dnia, opis oraz dobór ćwiczeń i serii'
+          ? t('pickOrCreateExSub')
+          : t('dayEditorSub')
       }
       initialHeightPercent={0.92}
       headerRight={
@@ -218,7 +220,7 @@ export const PlanDayEditorModal: React.FC<PlanDayEditorModalProps> = ({
             activeOpacity={0.75}
           >
             <Ionicons name="arrow-back" size={14} color={theme.text} />
-            <Text style={[styles.backPillText, { color: theme.text }]}>Wróć</Text>
+            <Text style={[styles.backPillText, { color: theme.text }]}>{t('returnBtn')}</Text>
           </TouchableOpacity>
         ) : undefined
       }
@@ -243,17 +245,20 @@ export const PlanDayEditorModal: React.FC<PlanDayEditorModalProps> = ({
               },
             ]}
             theme={theme}
+            saveLabel={t('saveDayInPlan')}
             onSave={handleSave}
           >
               {/* Day Type Selector */}
-              <Text style={[styles.kicker, { color: theme.textMuted }]}>CHARAKTER DNIA</Text>
+              <Text style={[styles.kicker, { color: theme.textMuted }]}>
+                {t('dayCharacterUpper')}
+              </Text>
               <View
                 style={[
                   styles.segmentedWrap,
                   { backgroundColor: theme.bgSecondary, borderColor: theme.border },
                 ]}
               >
-                {DAY_TYPE_OPTIONS.map((opt) => {
+                {DAY_TYPE_KEYS.map((opt) => {
                   const active = dayType === opt.id;
                   return (
                     <TouchableOpacity
@@ -276,7 +281,7 @@ export const PlanDayEditorModal: React.FC<PlanDayEditorModalProps> = ({
                           { color: active ? theme.text : theme.textMuted },
                         ]}
                       >
-                        {opt.label}
+                        {t(opt.labelKey)}
                       </Text>
                     </TouchableOpacity>
                   );
@@ -284,7 +289,9 @@ export const PlanDayEditorModal: React.FC<PlanDayEditorModalProps> = ({
               </View>
 
               {/* Banner Tag & Artwork Selector */}
-              <Text style={[styles.kicker, { color: theme.textMuted }]}>TAG I GRAFIKA BANERA</Text>
+              <Text style={[styles.kicker, { color: theme.textMuted }]}>
+                {t('bannerTagGraphicUpper')}
+              </Text>
               <View
                 style={[
                   styles.bannerPreviewBox,
@@ -294,10 +301,13 @@ export const PlanDayEditorModal: React.FC<PlanDayEditorModalProps> = ({
                 <DayBannerArtwork tag={bannerTag} compact />
                 <View style={styles.bannerPreviewOverlay}>
                   <Text style={[styles.bannerPreviewTitle, { color: theme.text }]} numberOfLines={1}>
-                    {DAY_BANNER_TAG_OPTIONS.find((t) => t.id === bannerTag)?.badge || 'FULL BODY'}
+                    {DAY_BANNER_TAG_OPTIONS.find((tOpt) => tOpt.id === bannerTag)?.badge || 'FULL BODY'}
                   </Text>
                   <Text style={[styles.bannerPreviewSub, { color: theme.textSecondary }]} numberOfLines={1}>
-                    {DAY_BANNER_TAG_OPTIONS.find((t) => t.id === bannerTag)?.label || ''}
+                    {(() => {
+                      const opt = DAY_BANNER_TAG_OPTIONS.find((tOpt) => tOpt.id === bannerTag);
+                      return opt ? dayTagLabel(opt.id, opt.label, false) : '';
+                    })()}
                   </Text>
                 </View>
               </View>
@@ -338,7 +348,7 @@ export const PlanDayEditorModal: React.FC<PlanDayEditorModalProps> = ({
                           { color: selected ? theme.primaryText : theme.text },
                         ]}
                       >
-                        {tagOpt.shortLabel}
+                        {dayTagLabel(tagOpt.id, tagOpt.shortLabel, true)}
                       </Text>
                     </TouchableOpacity>
                   );
@@ -347,7 +357,9 @@ export const PlanDayEditorModal: React.FC<PlanDayEditorModalProps> = ({
 
               {/* Metadata Inputs */}
               <View style={styles.metaCard}>
-                <Text style={[styles.kicker, { color: theme.textMuted }]}>NAZWA DNIA</Text>
+                <Text style={[styles.kicker, { color: theme.textMuted }]}>
+                  {t('dayNameUpper')}
+                </Text>
                 <TextInput
                   style={[
                     styles.input,
@@ -355,13 +367,15 @@ export const PlanDayEditorModal: React.FC<PlanDayEditorModalProps> = ({
                   ]}
                   value={name}
                   onChangeText={setName}
-                  placeholder="np. Push - Klatka i Barki"
+                  placeholder={t('dayNamePlaceholder')}
                   placeholderTextColor={theme.textMuted}
                 />
 
                 <View style={styles.twoCol}>
                   <View style={{ flex: 1.4 }}>
-                    <Text style={[styles.kicker, { color: theme.textMuted }]}>PODTYTUŁ / PARTIE</Text>
+                    <Text style={[styles.kicker, { color: theme.textMuted }]}>
+                      {t('daySubtitleKicker')}
+                    </Text>
                     <TextInput
                       style={[
                         styles.input,
@@ -369,13 +383,15 @@ export const PlanDayEditorModal: React.FC<PlanDayEditorModalProps> = ({
                       ]}
                       value={subtitle}
                       onChangeText={setSubtitle}
-                      placeholder="np. Klatka • Barki • Triceps"
+                      placeholder={t('daySubtitlePlaceholder')}
                       placeholderTextColor={theme.textMuted}
                     />
                   </View>
 
                   <View style={{ flex: 0.8 }}>
-                    <Text style={[styles.kicker, { color: theme.textMuted }]}>CZAS</Text>
+                    <Text style={[styles.kicker, { color: theme.textMuted }]}>
+                      {t('timeUpper')}
+                    </Text>
                     <TextInput
                       style={[
                         styles.input,
@@ -390,7 +406,7 @@ export const PlanDayEditorModal: React.FC<PlanDayEditorModalProps> = ({
                 </View>
 
                 <Text style={[styles.kicker, { color: theme.textMuted }]}>
-                  {dayType === 'workout' ? 'ROZGRZEWKA / NOTATKA' : 'WSKAZÓWKI REGENERACYJNE'}
+                  {dayType === 'workout' ? t('warmupNoteUpper') : t('restTipsUpper')}
                 </Text>
                 <TextInput
                   style={[
@@ -399,7 +415,7 @@ export const PlanDayEditorModal: React.FC<PlanDayEditorModalProps> = ({
                   ]}
                   value={warmup}
                   onChangeText={setWarmup}
-                  placeholder="np. 5 min orbitrek, rotatory barków gumą..."
+                  placeholder={t('warmupPlaceholder')}
                   placeholderTextColor={theme.textMuted}
                   multiline
                 />
@@ -410,7 +426,7 @@ export const PlanDayEditorModal: React.FC<PlanDayEditorModalProps> = ({
                 <View style={styles.exSection}>
                   <View style={styles.exSectionHeader}>
                     <Text style={[styles.kicker, { color: theme.textMuted, marginBottom: 0 }]}>
-                      ĆWICZENIA W TYM DNIU ({exercises.length})
+                      {t('exercisesInThisDayUpper', { count: exercises.length })}
                     </Text>
 
                     <TouchableOpacity
@@ -420,7 +436,7 @@ export const PlanDayEditorModal: React.FC<PlanDayEditorModalProps> = ({
                     >
                       <Ionicons name="add" size={16} color={theme.primaryText} />
                       <Text style={[styles.addExBtnText, { color: theme.primaryText }]}>
-                        Dodaj z bazy
+                        {t('addFromLibraryBtn')}
                       </Text>
                     </TouchableOpacity>
                   </View>
@@ -436,10 +452,10 @@ export const PlanDayEditorModal: React.FC<PlanDayEditorModalProps> = ({
                     >
                       <Ionicons name="barbell-outline" size={26} color={theme.textMuted} />
                       <Text style={[styles.emptyExTitle, { color: theme.text }]}>
-                        Brak ćwiczeń w tym dniu
+                        {t('noExercisesInDayTitle')}
                       </Text>
                       <Text style={[styles.emptyExDesc, { color: theme.textMuted }]}>
-                        Dotknij tutaj, aby wybrać ćwiczenia z bazy lub utworzyć własne.
+                        {t('noExercisesInDaySub')}
                       </Text>
                     </TouchableOpacity>
                   ) : (
@@ -454,9 +470,11 @@ export const PlanDayEditorModal: React.FC<PlanDayEditorModalProps> = ({
                         <View style={styles.exEditorHeader}>
                           <View style={{ flex: 1 }}>
                             <Text style={[styles.exIdxLabel, { color: theme.textMuted }]}>
-                              #{idx + 1} • {ex.category.toUpperCase()}
+                              #{idx + 1} • {categoryLabel(ex.category).toUpperCase()}
                             </Text>
-                            <Text style={[styles.exTitle, { color: theme.text }]}>{ex.name}</Text>
+                            <Text style={[styles.exTitle, { color: theme.text }]}>
+                              {exerciseName(ex.id, ex.name)}
+                            </Text>
                           </View>
 
                           <View style={styles.exTopActions}>
@@ -504,7 +522,9 @@ export const PlanDayEditorModal: React.FC<PlanDayEditorModalProps> = ({
                         <View style={styles.controlsGrid}>
                           {/* Sets */}
                           <View style={styles.ctrlBox}>
-                            <Text style={[styles.ctrlLabel, { color: theme.textMuted }]}>SERIE</Text>
+                            <Text style={[styles.ctrlLabel, { color: theme.textMuted }]}>
+                              {t('sets').toUpperCase()}
+                            </Text>
                             <View
                               style={[
                                 styles.stepperRow,
@@ -542,7 +562,7 @@ export const PlanDayEditorModal: React.FC<PlanDayEditorModalProps> = ({
                           {/* Reps */}
                           <View style={styles.ctrlBox}>
                             <Text style={[styles.ctrlLabel, { color: theme.textMuted }]}>
-                              POWTÓRZENIA
+                              {t('repsUpper')}
                             </Text>
                             <TextInput
                               style={[
@@ -559,7 +579,7 @@ export const PlanDayEditorModal: React.FC<PlanDayEditorModalProps> = ({
                           {/* Rest */}
                           <View style={styles.ctrlBox}>
                             <Text style={[styles.ctrlLabel, { color: theme.textMuted }]}>
-                              PRZERWA (S)
+                              {t('restSecondsUpper')}
                             </Text>
                             <View
                               style={[
@@ -603,7 +623,7 @@ export const PlanDayEditorModal: React.FC<PlanDayEditorModalProps> = ({
                           ]}
                           value={ex.note || ''}
                           onChangeText={(txt) => handleUpdateExerciseField(idx, 'note', txt)}
-                          placeholder="Opcjonalna wskazówka / tempo / RIR..."
+                          placeholder={t('optionalTipPlaceholder')}
                           placeholderTextColor={theme.textMuted}
                         />
                       </View>
@@ -621,9 +641,10 @@ const PlanDayEditorBody: React.FC<{
   scrollContentStyle: any;
   footerStyle: any;
   theme: ReturnType<typeof useAppTheme>['theme'];
+  saveLabel: string;
   onSave: () => void;
   children: React.ReactNode;
-}> = ({ scrollContentStyle, footerStyle, theme, onSave, children }) => {
+}> = ({ scrollContentStyle, footerStyle, theme, saveLabel, onSave, children }) => {
   return (
     <View style={{ flex: 1 }}>
       <BottomSheetScrollView
@@ -643,7 +664,7 @@ const PlanDayEditorBody: React.FC<{
         >
           <Ionicons name="checkmark" size={18} color={theme.primaryText} />
           <Text style={[styles.saveBtnText, { color: theme.primaryText }]}>
-            Zapisz dzień w planie
+            {saveLabel}
           </Text>
         </TouchableOpacity>
       </View>

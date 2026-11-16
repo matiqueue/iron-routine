@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { AppSettings } from '../types/workout';
+import { AppLanguage, AppSettings } from '../types/workout';
 import { DEFAULT_SUPPLEMENTS, mergeWithDefaultSupplements } from '../data/supplements';
+import { getStoredLanguageSync, setStoredLanguageSync } from './languageStore';
 
 const SETTINGS_STORAGE_KEY = '@iron_routine_app_settings';
 
@@ -30,6 +31,10 @@ export function getCachedAppSettings(): AppSettings {
   return cachedSettings;
 }
 
+export function getCurrentAppLanguage(): AppLanguage {
+  return cachedSettings.language || getStoredLanguageSync() || 'pl';
+}
+
 export async function getAppSettings(): Promise<AppSettings> {
   try {
     const raw = await AsyncStorage.getItem(SETTINGS_STORAGE_KEY);
@@ -38,6 +43,7 @@ export async function getAppSettings(): Promise<AppSettings> {
         ...DEFAULT_APP_SETTINGS,
         supplements: DEFAULT_SUPPLEMENTS.map((s) => ({ ...s })),
       };
+      setStoredLanguageSync(cachedSettings.language);
       return cachedSettings;
     }
     const parsed = JSON.parse(raw) as Partial<AppSettings>;
@@ -46,12 +52,14 @@ export async function getAppSettings(): Promise<AppSettings> {
       ...parsed,
       supplements: mergeWithDefaultSupplements(parsed.supplements),
     };
+    setStoredLanguageSync(cachedSettings.language || 'pl');
     return cachedSettings;
   } catch {
     cachedSettings = {
       ...DEFAULT_APP_SETTINGS,
       supplements: DEFAULT_SUPPLEMENTS.map((s) => ({ ...s })),
     };
+    setStoredLanguageSync(cachedSettings.language);
     return cachedSettings;
   }
 }
@@ -66,6 +74,7 @@ export async function updateAppSettings(patch: Partial<AppSettings>): Promise<Ap
       : current.supplements,
   };
   cachedSettings = next;
+  setStoredLanguageSync(next.language || 'pl');
   await AsyncStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(next));
   return next;
 }
@@ -75,6 +84,7 @@ export async function resetAppSettings(): Promise<AppSettings> {
     ...DEFAULT_APP_SETTINGS,
     supplements: DEFAULT_SUPPLEMENTS.map((s) => ({ ...s })),
   };
+  setStoredLanguageSync(cachedSettings.language);
   await AsyncStorage.removeItem(SETTINGS_STORAGE_KEY);
   return cachedSettings;
 }

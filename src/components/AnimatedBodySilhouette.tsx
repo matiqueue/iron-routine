@@ -22,6 +22,7 @@ import Svg, {
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useAppTheme } from '../context/ThemeContext';
+import { useLanguage } from '../context/LanguageContext';
 import { Exercise, MuscleSubGroupId, UserGender } from '../types/workout';
 import {
   BODY_BACK_PARTS,
@@ -228,6 +229,7 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = Rea
   onPressExercise,
 }) => {
   const { theme, isDark } = useAppTheme();
+  const { t, muscleLabel, exerciseName } = useLanguage();
   const [viewSide, setViewSide] = useState<SilhouetteViewSide>('front');
   const viewSideRef = useRef<SilhouetteViewSide>('front');
   const isAnimatingRef = useRef(false);
@@ -461,12 +463,12 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = Rea
 
   const activityLegend = useMemo(
     () => [
-      { label: 'Brak serii (0)', color: isDark ? '#3F3F46' : '#D4D4D8' },
-      { label: 'Niska objętość', color: '#F59E0B' },
-      { label: 'W balansie', color: '#10B981' },
-      { label: 'Dominuje', color: '#38BDF8' },
+      { label: t('legendNoSets'), color: isDark ? '#3F3F46' : '#D4D4D8' },
+      { label: t('legendLowVol'), color: '#F59E0B' },
+      { label: t('legendBalanced'), color: '#10B981' },
+      { label: t('legendDominant'), color: '#38BDF8' },
     ],
-    [isDark]
+    [isDark, t]
   );
 
   return (
@@ -476,7 +478,7 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = Rea
         <View style={styles.sideTagWrap}>
           <View style={[styles.liveDot, { backgroundColor: '#10B981' }]} />
           <Text style={[styles.sideTagText, { color: theme.text }]}>
-            {viewSide === 'front' ? 'PRZÓD SYLWETKI' : 'TYŁ SYLWETKI'}
+            {viewSide === 'front' ? t('frontSilhouetteCaps') : t('backSilhouetteCaps')}
           </Text>
         </View>
         <TouchableOpacity
@@ -496,7 +498,7 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = Rea
         >
           <Ionicons name="sync-outline" size={12} color={theme.textSecondary} />
           <Text style={[styles.sideCounterText, { color: theme.textSecondary }]}>
-            {viewSide === 'front' ? 'Widok 1/2' : 'Widok 2/2'}
+            {viewSide === 'front' ? t('viewCounterFront') : t('viewCounterBack')}
           </Text>
         </TouchableOpacity>
       </View>
@@ -714,10 +716,14 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = Rea
               />
               <View style={{ flex: 1 }}>
                 <Text style={[styles.focusMuscleName, { color: theme.text }]}>
-                  {selectedStat.meta.label}
+                  {muscleLabel(selectedStat.meta.id)}
                 </Text>
                 <Text style={[styles.focusStatusSub, { color: theme.textMuted }]}>
-                  {selectedStat.statusLabel} · {Math.round(selectedStat.effectiveSetsTotal)} serii łącznie ({Math.round(selectedStat.effectiveSets30d)} w 30 dni)
+                  {selectedStat.statusLabel} ·{' '}
+                  {t('setsTotal30d', {
+                    total: Math.round(selectedStat.effectiveSetsTotal),
+                    d30: Math.round(selectedStat.effectiveSets30d),
+                  })}
                 </Text>
               </View>
             </View>
@@ -755,7 +761,9 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = Rea
               />
             </View>
             <Text style={[styles.focusSetsText, { color: theme.textSecondary }]}>
-              {Math.round(selectedStat.relativeDevelopmentRatio * 100)}% balansu
+              {t('balancePct', {
+                pct: Math.round(selectedStat.relativeDevelopmentRatio * 100),
+              })}
             </Text>
           </View>
 
@@ -773,10 +781,10 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = Rea
                     style={[styles.focusExName, { color: theme.text }]}
                     numberOfLines={1}
                   >
-                    {exStat.exercise.name}
+                    {exerciseName(exStat.exercise.id, exStat.exercise.name)}
                   </Text>
                   <Text style={[styles.focusExSets, { color: theme.textMuted }]}>
-                    {exStat.totalSets} serii
+                    {exStat.totalSets} {t('setsWord')}
                   </Text>
                   <Ionicons name="chevron-forward" size={12} color={theme.textMuted} />
                 </TouchableOpacity>
@@ -786,7 +794,7 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = Rea
         </View>
       ) : (
         <Text style={[styles.tapHint, { color: theme.textMuted }]}>
-          Dotknij dowolnego mięśnia na sylwetce, aby zobaczyć bilans objętości i ćwiczenia
+          {t('tapMuscleHint')}
         </Text>
       )}
     </View>

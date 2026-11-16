@@ -6,7 +6,7 @@ import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import * as Notifications from 'expo-notifications';
 
 import { ThemeProvider, useAppTheme } from './src/context/ThemeContext';
-import { LanguageProvider } from './src/context/LanguageContext';
+import { LanguageProvider, useLanguage } from './src/context/LanguageContext';
 import { WORKOUT_PLAN } from './src/data/planData';
 import {
   DayPlan,
@@ -67,6 +67,7 @@ import { SessionExercisePickerModal } from './src/components/SessionExercisePick
 
 function MainApp() {
   const { theme, isDark } = useAppTheme();
+  const { t } = useLanguage();
 
   // Startup splash
   const [showSplash, setShowSplash] = useState(true);
@@ -147,10 +148,10 @@ function MainApp() {
       const granted = await requestHealthPermissions();
       if (!granted) {
         Alert.alert(
-          'Brak dostępu do Zdrowia',
+          t('noHealthAccessTitle'),
           Platform.OS === 'ios'
-            ? 'Włącz uprawnienia dla Iron Routine w aplikacji Zdrowie -> Udostępnianie, aby pobierać kroki i sen.'
-            : 'Zezwól Iron Routine na odczyt kroków i snu w Health Connect.'
+            ? t('healthAccessIosMsg')
+            : t('healthAccessAndroidMsg')
         );
         return;
       }
@@ -161,7 +162,7 @@ function MainApp() {
     } finally {
       setIsHealthLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     registerCloudAutoSyncTrigger(scheduleAutoCloudSync);
@@ -453,8 +454,8 @@ function MainApp() {
 
   const handleExitWorkout = async () => {
     await stopWorkoutLiveActivity({
-      summaryTitle: 'Trening przerwany',
-      summarySubtitle: 'Sesja została zakończona',
+      summaryTitle: t('workoutAbortedTitle'),
+      summarySubtitle: t('workoutAbortedSub'),
     });
     setIsActiveWorkout(false);
     if (activeProfile && activeWorkoutDayId !== todayDayId) {
@@ -514,8 +515,8 @@ function MainApp() {
     }
 
     await stopWorkoutLiveActivity({
-      summaryTitle: 'Trening ukończony!',
-      summarySubtitle: `${done} z ${total} serii zaliczonych`,
+      summaryTitle: t('workoutCompletedTitle'),
+      summarySubtitle: t('workoutCompletedSub', { done, total }),
     });
 
     setSummaryDayName(workoutDayPlan.name);

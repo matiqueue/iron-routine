@@ -1,5 +1,7 @@
 import { Platform } from 'react-native';
 import * as LiveActivity from 'expo-live-activity';
+import { getCurrentAppLanguage } from './settings';
+import { translateText } from '../i18n/translations';
 
 let currentActivityId: string | null = null;
 let startPromise: Promise<string | null> | null = null;
@@ -44,11 +46,13 @@ export async function startWorkoutLiveActivity(params: WorkoutLiveActivityParams
 
   startPromise = (async () => {
     try {
+      const lang = getCurrentAppLanguage();
+
       // Stop any prior tracked activity first to prevent duplicate Dynamic Island pills
       if (currentActivityId) {
         await stopWorkoutLiveActivity({
-          summaryTitle: 'Nowy trening',
-          summarySubtitle: 'Rozpoczęto nową sesję',
+          summaryTitle: translateText(lang, 'laNewWorkout'),
+          summarySubtitle: translateText(lang, 'laNewSession'),
         });
       }
 
@@ -60,7 +64,10 @@ export async function startWorkoutLiveActivity(params: WorkoutLiveActivityParams
       const activityId = LiveActivity.startActivity(
         {
           title: params.exerciseName,
-          subtitle: `Seria ${params.currentSet} z ${params.totalSets} • ${params.workoutName}`,
+          subtitle: `${translateText(lang, 'laSetOfTotal', {
+            current: params.currentSet,
+            total: params.totalSets,
+          })} • ${params.workoutName}`,
           progressBar: { progress },
         },
         DEFAULT_CONFIG
@@ -102,34 +109,43 @@ export async function updateWorkoutLiveActivity(params: WorkoutLiveActivityParam
         ? Math.min(1, Math.max(0, params.completedSets / params.totalWorkoutSets))
         : 0;
 
+    const lang = getCurrentAppLanguage();
+    const setLabel = translateText(lang, 'laSetOfTotal', {
+      current: params.currentSet,
+      total: params.totalSets,
+    });
+
     if (params.isRestPaused) {
       const pausedTime = formatLiveRestSeconds(params.pausedRestSeconds ?? params.restSeconds ?? 0);
       LiveActivity.updateActivity(currentActivityId, {
-        title: `Przerwa wstrzymana • ${pausedTime}`,
-        subtitle: `${params.exerciseName} • Seria ${params.currentSet} z ${params.totalSets}`,
+        title: translateText(lang, 'laRestPaused', { time: pausedTime }),
+        subtitle: `${params.exerciseName} • ${setLabel}`,
         progressBar: { progress },
       });
     } else if (params.isRestFinished) {
       LiveActivity.updateActivity(currentActivityId, {
-        title: 'Koniec przerwy!',
-        subtitle: `${params.exerciseName} • Seria ${params.currentSet} z ${params.totalSets}`,
+        title: translateText(lang, 'laRestFinished'),
+        subtitle: `${params.exerciseName} • ${setLabel}`,
         progressBar: { progress },
       });
     } else if (params.isRest && params.restSeconds && params.restSeconds > 0) {
       const targetDate = Date.now() + params.restSeconds * 1000;
       const subtitle = params.nextExerciseName
-        ? `Następnie: ${params.nextExerciseName}`
-        : `Następnie: Seria ${params.currentSet} z ${params.totalSets}`;
+        ? translateText(lang, 'laNextEx', { name: params.nextExerciseName })
+        : translateText(lang, 'laNextSet', {
+            current: params.currentSet,
+            total: params.totalSets,
+          });
 
       LiveActivity.updateActivity(currentActivityId, {
-        title: 'Odpoczynek',
+        title: translateText(lang, 'restFallbackTitle'),
         subtitle,
         progressBar: { date: targetDate },
       });
     } else {
       LiveActivity.updateActivity(currentActivityId, {
         title: params.exerciseName,
-        subtitle: `Seria ${params.currentSet} z ${params.totalSets} • ${params.workoutName}`,
+        subtitle: `${setLabel} • ${params.workoutName}`,
         progressBar: { progress },
       });
     }
@@ -149,9 +165,10 @@ export async function stopWorkoutLiveActivity(summary?: {
 
   try {
     if (currentActivityId) {
+      const lang = getCurrentAppLanguage();
       LiveActivity.stopActivity(currentActivityId, {
-        title: summary?.summaryTitle || 'Trening ukończony! 🏆',
-        subtitle: summary?.summarySubtitle || 'Świetna robota, regeneruj siły!',
+        title: summary?.summaryTitle || `${translateText(lang, 'workoutCompletedTitle')} 🏆`,
+        subtitle: summary?.summarySubtitle || translateText(lang, 'laGreatJob'),
         progressBar: { progress: 1.0 },
       });
       currentActivityId = null;

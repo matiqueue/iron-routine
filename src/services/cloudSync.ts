@@ -7,6 +7,8 @@ import {
   updateProfile,
 } from './storage';
 import { UserProfile } from '../types/workout';
+import { getCurrentAppLanguage } from './settings';
+import { translateText } from '../i18n/translations';
 
 const CLOUD_API_BASE = 'https://iron-routine-app.vercel.app/api/cloud';
 const CLOUD_SESSION_KEY = '@iron_routine:cloud_session_v2';
@@ -106,7 +108,9 @@ export async function signInWithClerkCloud(
         ok: false,
         error:
           startData?.error ||
-          `Nie udało się zainicjować sesji Clerk (${provider === 'apple' ? 'iCloud' : 'Google'}).`,
+          translateText(getCurrentAppLanguage(), 'cloudErrInitClerk', {
+            provider: provider === 'apple' ? 'iCloud' : 'Google',
+          }),
       };
     }
 
@@ -150,7 +154,7 @@ export async function signInWithClerkCloud(
               displayName:
                 pollData.user.displayName ||
                 displayName?.trim() ||
-                (resolvedProvider === 'apple' ? 'Apple iCloud' : 'Konto Google'),
+                (resolvedProvider === 'apple' ? 'Apple iCloud' : 'Google'),
               lastSyncedAt: pollData.user.lastSyncedAt || null,
               backupSummary: pollData.user.backupSummary || null,
             };
@@ -169,7 +173,7 @@ export async function signInWithClerkCloud(
           cleanup();
           resolve({
             ok: false,
-            error: 'Przekroczono czas oczekiwania na autoryzację Clerk w przeglądarce.',
+            error: translateText(getCurrentAppLanguage(), 'cloudErrTimeout'),
           });
         }
       };
@@ -193,7 +197,9 @@ export async function signInWithClerkCloud(
   } catch {
     return {
       ok: false,
-      error: `Nie udało się otworzyć logowania Clerk (${provider === 'apple' ? 'iCloud' : 'Google'}).`,
+      error: translateText(getCurrentAppLanguage(), 'cloudErrOpenClerk', {
+        provider: provider === 'apple' ? 'iCloud' : 'Google',
+      }),
     };
   }
 }
@@ -226,7 +232,7 @@ export async function pushProfileToCloud(profileId: string): Promise<{
   if (!session) {
     return {
       ok: false,
-      error: 'Najpierw połącz konto Google lub Apple iCloud.',
+      error: translateText(getCurrentAppLanguage(), 'cloudErrNoAccount'),
     };
   }
 
@@ -246,7 +252,7 @@ export async function pushProfileToCloud(profileId: string): Promise<{
     if (!res.ok || !data?.ok) {
       return {
         ok: false,
-        error: data?.error || 'Nie udało się wysłać danych profilu do chmury.',
+        error: data?.error || translateText(getCurrentAppLanguage(), 'cloudErrPushFailed'),
       };
     }
 
@@ -276,7 +282,7 @@ export async function pushProfileToCloud(profileId: string): Promise<{
   } catch {
     return {
       ok: false,
-      error: 'Błąd połączenia podczas wysyłania kopii do chmury NoSQL.',
+      error: translateText(getCurrentAppLanguage(), 'cloudErrPushNetwork'),
     };
   }
 }
@@ -291,7 +297,7 @@ export async function pullProfileFromCloud(): Promise<{
   if (!session) {
     return {
       ok: false,
-      error: 'Najpierw połącz konto Google lub Apple iCloud.',
+      error: translateText(getCurrentAppLanguage(), 'cloudErrNoAccount'),
     };
   }
 
@@ -309,7 +315,7 @@ export async function pullProfileFromCloud(): Promise<{
         ok: false,
         error:
           data?.error ||
-          'Na tym koncie nie ma jeszcze zapisanej kopii treningowej w chmurze.',
+          translateText(getCurrentAppLanguage(), 'cloudErrNoCloudBackup'),
       };
     }
 
@@ -343,7 +349,7 @@ export async function pullProfileFromCloud(): Promise<{
   } catch {
     return {
       ok: false,
-      error: 'Błąd połączenia podczas pobierania profilu z chmury NoSQL.',
+      error: translateText(getCurrentAppLanguage(), 'cloudErrPullNetwork'),
     };
   }
 }

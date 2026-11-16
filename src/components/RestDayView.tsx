@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAppTheme } from '../context/ThemeContext';
+import { useLanguage } from '../context/LanguageContext';
 import { DayPlan } from '../types/workout';
 import { getDayBannerTagMeta, resolveDayBannerTag } from '../data/dayTags';
 import { triggerImpactHaptic } from '../services/haptics';
@@ -15,6 +16,7 @@ interface RestDayViewProps {
 
 export const RestDayView: React.FC<RestDayViewProps> = ({ dayPlan }) => {
   const { theme } = useAppTheme();
+  const { t, dayTagLabel } = useLanguage();
   const isWalk = dayPlan.type === 'walk';
   const storageKey = `@iron_routine_rest_habits_${dayPlan.id}`;
 
@@ -56,7 +58,7 @@ export const RestDayView: React.FC<RestDayViewProps> = ({ dayPlan }) => {
           <View style={[styles.tagBadge, { backgroundColor: theme.primary }]}>
             <Ionicons name={tagMeta.icon as any} size={11} color={theme.primaryText} />
             <Text style={[styles.tag, { color: theme.primaryText }]}>
-              {tagMeta.label.toUpperCase()}
+              {dayTagLabel(bannerTag, tagMeta.label).toUpperCase()}
             </Text>
           </View>
           <Text style={[styles.title, { color: theme.text }]}>{dayPlan.name}</Text>
@@ -69,7 +71,7 @@ export const RestDayView: React.FC<RestDayViewProps> = ({ dayPlan }) => {
         </View>
       </View>
 
-      <Text style={[styles.sectionTitle, { color: theme.textMuted }]}>CELE REGENERACYJNE</Text>
+      <Text style={[styles.sectionTitle, { color: theme.textMuted }]}>{t('recoveryGoalsKicker')}</Text>
 
       {isWalk ? (
         <TouchableOpacity
@@ -93,9 +95,9 @@ export const RestDayView: React.FC<RestDayViewProps> = ({ dayPlan }) => {
             />
           </View>
           <View style={styles.habitTextCol}>
-            <Text style={[styles.habitTitle, { color: theme.text }]}>Aktywny spacer</Text>
+            <Text style={[styles.habitTitle, { color: theme.text }]}>{t('activeWalkTitle')}</Text>
             <Text style={[styles.habitDesc, { color: theme.textMuted }]}>
-              6 000 – 10 000 kroków na świeżym powietrzu
+              {t('activeWalkSub')}
             </Text>
           </View>
           <View style={[styles.checkCircle, habits.walk && { backgroundColor: theme.text }]}>
@@ -119,9 +121,9 @@ export const RestDayView: React.FC<RestDayViewProps> = ({ dayPlan }) => {
           <Ionicons name="water-outline" size={20} color={theme.text} />
         </View>
         <View style={styles.habitTextCol}>
-          <Text style={[styles.habitTitle, { color: theme.text }]}>Nawodnienie</Text>
+          <Text style={[styles.habitTitle, { color: theme.text }]}>{t('hydrationTitle')}</Text>
           <Text style={[styles.habitDesc, { color: theme.textMuted }]}>
-            Minimum 3 litry wody w ciągu dnia
+            {t('hydrationSub')}
           </Text>
         </View>
         <View style={[styles.checkCircle, habits.water && { backgroundColor: theme.text }]}>
@@ -150,9 +152,9 @@ export const RestDayView: React.FC<RestDayViewProps> = ({ dayPlan }) => {
           />
         </View>
         <View style={styles.habitTextCol}>
-          <Text style={[styles.habitTitle, { color: theme.text }]}>Głęboki sen</Text>
+          <Text style={[styles.habitTitle, { color: theme.text }]}>{t('deepSleepTitle')}</Text>
           <Text style={[styles.habitDesc, { color: theme.textMuted }]}>
-            7.5 – 8.5 godzin nieprzerwanego snu
+            {t('deepSleepSub')}
           </Text>
         </View>
         <View style={[styles.checkCircle, habits.sleep && { backgroundColor: theme.text }]}>

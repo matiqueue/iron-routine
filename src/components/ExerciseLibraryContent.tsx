@@ -54,7 +54,7 @@ export const ExerciseLibraryContent: React.FC<ExerciseLibraryContentProps> = ({
   onLibraryChanged,
 }) => {
   const { theme } = useAppTheme();
-  const { t, muscleLabel, categoryLabel, equipmentLabel } = useLanguage();
+  const { t, muscleLabel, categoryLabel, equipmentLabel, exerciseName } = useLanguage();
 
   const [customExercises, setCustomExercises] = useState<Exercise[]>([]);
   const [favoriteIds, setFavoriteIds] = useState<string[]>([]);
@@ -134,9 +134,12 @@ export const ExerciseLibraryContent: React.FC<ExerciseLibraryContentProps> = ({
         .toLowerCase();
       return (
         ex.name.toLowerCase().includes(q) ||
+        exerciseName(ex.id, ex.name).toLowerCase().includes(q) ||
         ex.category.toLowerCase().includes(q) ||
+        categoryLabel(ex.category).toLowerCase().includes(q) ||
         muscleText.includes(q) ||
         (ex.equipment || '').toLowerCase().includes(q) ||
+        (ex.equipment ? equipmentLabel(ex.equipment).toLowerCase().includes(q) : false) ||
         (ex.description || '').toLowerCase().includes(q)
       );
     });
@@ -158,7 +161,7 @@ export const ExerciseLibraryContent: React.FC<ExerciseLibraryContentProps> = ({
       }
       return 0;
     });
-  }, [allLibrary, selectedCategory, searchQuery, isFavoriteEx, muscleLabel]);
+  }, [allLibrary, selectedCategory, searchQuery, isFavoriteEx, muscleLabel, categoryLabel, equipmentLabel, exerciseName]);
 
   const handleToggleCreateForm = () => {
     try {
@@ -171,7 +174,7 @@ export const ExerciseLibraryContent: React.FC<ExerciseLibraryContentProps> = ({
   const handleCreateCustomExercise = async () => {
     const trimmedName = newName.trim();
     if (!trimmedName) {
-      Alert.alert('Brak nazwy', 'Wpisz nazwę nowego ćwiczenia.');
+      Alert.alert(t('missingNameTitle'), t('enterExerciseNameBody'));
       return;
     }
 
@@ -189,7 +192,7 @@ export const ExerciseLibraryContent: React.FC<ExerciseLibraryContentProps> = ({
       rest: parsedRest,
       description:
         newDesc.trim() ||
-        'Kontroluj pełen zakres ruchu i utrzymuj stabilną pozycję ciała w każdej serii.',
+        t('defaultTechniqueDesc'),
       note: newNote.trim() || undefined,
       ab: newCategory === 'brzuch' ? true : undefined,
     });
@@ -208,12 +211,12 @@ export const ExerciseLibraryContent: React.FC<ExerciseLibraryContentProps> = ({
 
   const handleDeleteCustom = (ex: Exercise) => {
     Alert.alert(
-      'Usunąć własne ćwiczenie?',
-      `Ćwiczenie „${ex.name}” zostanie usunięte z Twojej bazy (pozostanie w zapisanych już dniach planu).`,
+      t('deleteCustomExTitle'),
+      t('deleteCustomExBody', { name: exerciseName(ex.id, ex.name) }),
       [
-        { text: 'Anuluj', style: 'cancel' },
+        { text: t('cancel'), style: 'cancel' },
         {
-          text: 'Usuń',
+          text: t('deleteBtn'),
           style: 'destructive',
           onPress: async () => {
             await deleteCustomExercise(ex.id);
@@ -367,25 +370,27 @@ export const ExerciseLibraryContent: React.FC<ExerciseLibraryContentProps> = ({
             ]}
           >
             <Text style={[styles.formTitle, { color: theme.text }]}>
-              Nowe własne ćwiczenie
+              {t('newCustomExTitle')}
             </Text>
             <Text style={[styles.formSub, { color: theme.textMuted }]}>
-              Zostanie zapisane lokalnie i będzie dostępne we wszystkich planach oraz Osiągach.
+              {t('newCustomExSub')}
             </Text>
 
-            <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>NAZWA ĆWICZENIA</Text>
+            <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>{t('exNameUpper')}</Text>
             <TextInput
               style={[
                 styles.input,
                 { backgroundColor: theme.card, borderColor: theme.border, color: theme.text },
               ]}
-              placeholder="np. Wyciskanie na maszynie Smitha..."
+              placeholder={t('customNamePlaceholder')}
               placeholderTextColor={theme.textMuted}
               value={newName}
               onChangeText={setNewName}
             />
 
-            <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>PARTIA MIĘŚNIOWA</Text>
+            <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>
+              {t('muscleGroupUpper')}
+            </Text>
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
@@ -418,7 +423,7 @@ export const ExerciseLibraryContent: React.FC<ExerciseLibraryContentProps> = ({
                         { color: active ? theme.primaryText : theme.text },
                       ]}
                     >
-                      {cat.label}
+                      {categoryLabel(cat.id)}
                     </Text>
                   </TouchableOpacity>
                 );
@@ -428,7 +433,7 @@ export const ExerciseLibraryContent: React.FC<ExerciseLibraryContentProps> = ({
             {MUSCLE_SUBGROUPS.some((m) => m.parentCategory === newCategory) && (
               <>
                 <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>
-                  MIĘSIEŃ ANATOMICZNY (MODEL 3D & RANGI)
+                  {t('anatomyMuscleUpper')}
                 </Text>
                 <ScrollView
                   horizontal
@@ -456,7 +461,7 @@ export const ExerciseLibraryContent: React.FC<ExerciseLibraryContentProps> = ({
                             { color: active ? theme.primaryText : theme.text },
                           ]}
                         >
-                          {sub.label}
+                          {muscleLabel(sub.id)}
                         </Text>
                       </TouchableOpacity>
                     );
@@ -465,7 +470,9 @@ export const ExerciseLibraryContent: React.FC<ExerciseLibraryContentProps> = ({
               </>
             )}
 
-            <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>SPRZĘT</Text>
+            <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>
+              {t('equipmentUpper')}
+            </Text>
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
@@ -492,7 +499,7 @@ export const ExerciseLibraryContent: React.FC<ExerciseLibraryContentProps> = ({
                         { color: active ? theme.primaryText : theme.text },
                       ]}
                     >
-                      {eq}
+                      {equipmentLabel(eq)}
                     </Text>
                   </TouchableOpacity>
                 );
@@ -501,7 +508,9 @@ export const ExerciseLibraryContent: React.FC<ExerciseLibraryContentProps> = ({
 
             <View style={styles.defaultsGrid}>
               <View style={styles.defaultCol}>
-                <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>SERIE</Text>
+                <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>
+                  {t('sets').toUpperCase()}
+                </Text>
                 <TextInput
                   style={[
                     styles.smallInput,
@@ -513,7 +522,9 @@ export const ExerciseLibraryContent: React.FC<ExerciseLibraryContentProps> = ({
                 />
               </View>
               <View style={styles.defaultCol}>
-                <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>POWTÓRZENIA</Text>
+                <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>
+                  {t('repsUpper')}
+                </Text>
                 <TextInput
                   style={[
                     styles.smallInput,
@@ -526,7 +537,9 @@ export const ExerciseLibraryContent: React.FC<ExerciseLibraryContentProps> = ({
                 />
               </View>
               <View style={styles.defaultCol}>
-                <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>PRZERWA (S)</Text>
+                <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>
+                  {t('restSecondsUpper')}
+                </Text>
                 <TextInput
                   style={[
                     styles.smallInput,
@@ -540,14 +553,14 @@ export const ExerciseLibraryContent: React.FC<ExerciseLibraryContentProps> = ({
             </View>
 
             <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>
-              OPIS TECHNIKI (OPCJONALNIE)
+              {t('technique').toUpperCase()}
             </Text>
             <TextInput
               style={[
                 styles.multiInput,
                 { backgroundColor: theme.card, borderColor: theme.border, color: theme.text },
               ]}
-              placeholder="Krótki opis ruchu lub ustawienia maszyny..."
+              placeholder={t('descPlaceholder')}
               placeholderTextColor={theme.textMuted}
               value={newDesc}
               onChangeText={setNewDesc}
@@ -555,14 +568,14 @@ export const ExerciseLibraryContent: React.FC<ExerciseLibraryContentProps> = ({
             />
 
             <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>
-              WSKAZÓWKA (OPCJONALNIE)
+              {t('tipOptionalUpper')}
             </Text>
             <TextInput
               style={[
                 styles.input,
                 { backgroundColor: theme.card, borderColor: theme.border, color: theme.text },
               ]}
-              placeholder="np. Pauza 1s na dole, tempo 3-1-1..."
+              placeholder={t('customTipPlaceholder')}
               placeholderTextColor={theme.textMuted}
               value={newNote}
               onChangeText={setNewNote}
@@ -576,8 +589,8 @@ export const ExerciseLibraryContent: React.FC<ExerciseLibraryContentProps> = ({
               <Ionicons name="checkmark" size={18} color={theme.primaryText} />
               <Text style={[styles.saveCustomBtnText, { color: theme.primaryText }]}>
                 {mode === 'pick' || mode === 'swap'
-                  ? 'Zapisz i dodaj do treningu'
-                  : 'Zapisz w bazie ćwiczeń'}
+                  ? t('saveAndAddWorkoutBtn')
+                  : t('saveToLibraryBtn')}
               </Text>
             </TouchableOpacity>
           </View>
@@ -585,10 +598,10 @@ export const ExerciseLibraryContent: React.FC<ExerciseLibraryContentProps> = ({
           <View style={styles.emptyBox}>
             <Ionicons name="barbell-outline" size={30} color={theme.textMuted} />
             <Text style={[styles.emptyTitle, { color: theme.text }]}>
-              Brak pasujących ćwiczeń
+              {t('noResults')}
             </Text>
             <Text style={[styles.emptyDesc, { color: theme.textMuted }]}>
-              Zmień wyszukiwanie lub dodaj własne ćwiczenie przyciskiem „+ Własne”.
+              {t('noMatchingExSub')}
             </Text>
           </View>
         ) : (
@@ -736,7 +749,9 @@ export const ExerciseLibraryContent: React.FC<ExerciseLibraryContentProps> = ({
                   </View>
 
                   {/* Title */}
-                  <Text style={[styles.exName, { color: theme.text }]}>{ex.name}</Text>
+                  <Text style={[styles.exName, { color: theme.text }]}>
+                    {exerciseName(ex.id, ex.name)}
+                  </Text>
 
                   {/* Secondary Muscles Worked Strip */}
                   {secondaryLabels.length > 0 && (
@@ -780,7 +795,7 @@ export const ExerciseLibraryContent: React.FC<ExerciseLibraryContentProps> = ({
                     ]}
                   >
                     <Text style={[styles.expandedLabel, { color: theme.textMuted }]}>
-                      TECHNIKA WYKONANIA
+                      {t('technique').toUpperCase()}
                     </Text>
                     <Text style={[styles.expandedDesc, { color: theme.textSecondary }]}>
                       {ex.description}
