@@ -246,6 +246,7 @@ export async function createProfile(
     gender?: 'male' | 'female';
     height?: number;
     weight?: number;
+    avatarUrl?: string | null;
     templateKey?: Exclude<PlanTemplateKey, 'clone_current'>;
     customDays?: DayPlan[];
     cloudUserId?: string;
@@ -279,6 +280,7 @@ export async function createProfile(
       showActivityToFriends: true,
       createdAt: createdIso,
       avatarColor: randomColor,
+      avatarUrl: options?.avatarUrl ?? null,
       gender: options?.gender || 'male',
       height: parsedHeight,
       weight: parsedWeight,
@@ -364,6 +366,7 @@ export async function updateProfile(
     nicknameUpdatedAt?: string;
     statusNote?: string;
     showActivityToFriends?: boolean;
+    avatarUrl?: string | null;
     gender?: 'male' | 'female';
     height?: number;
     weight?: number;
@@ -395,6 +398,9 @@ export async function updateProfile(
   }
   if (updates.showActivityToFriends !== undefined) {
     target.showActivityToFriends = updates.showActivityToFriends;
+  }
+  if (updates.avatarUrl !== undefined) {
+    target.avatarUrl = updates.avatarUrl || null;
   }
   if (updates.gender !== undefined) {
     target.gender = updates.gender;

@@ -59,6 +59,8 @@ PODS:
     - ExpoModulesCore
   - ExpoAsset (58.0.21):
     - ExpoModulesCore
+  - ExpoAudio (58.0.12):
+    - ExpoModulesCore
   - ExpoCalendar (58.0.7):
     - ExpoModulesCore
   - ExpoCrypto (58.0.8):
@@ -70,6 +72,8 @@ PODS:
   - ExpoFont (58.0.12):
     - ExpoModulesCore
   - ExpoHaptics (58.0.8):
+    - ExpoModulesCore
+  - ExpoImagePicker (58.0.10):
     - ExpoModulesCore
   - ExpoKeepAwake (58.0.4):
     - ExpoModulesCore
@@ -2058,13 +2062,15 @@ DEPENDENCIES:
   - EXConstants (from `../node_modules/expo-constants/ios`)
   - Expo (from `../node_modules/expo`)
   - ExpoApplication (from `../node_modules/expo-application/ios`)
-  - ExpoAsset (from `../node_modules/expo/node_modules/expo-asset/ios`)
+  - ExpoAsset (from `../node_modules/expo-asset/ios`)
+  - ExpoAudio (from `../node_modules/expo-audio/ios`)
   - ExpoCalendar (from `../node_modules/expo-calendar/ios`)
   - ExpoCrypto (from `../node_modules/expo-crypto/ios`)
   - "ExpoDomWebView (from `../node_modules/@expo/dom-webview/ios`)"
-  - ExpoFileSystem (from `../node_modules/expo/node_modules/expo-file-system/ios/ExpoFileSystem.podspec`)
+  - ExpoFileSystem (from `../node_modules/expo-file-system/ios/ExpoFileSystem.podspec`)
   - ExpoFont (from `../node_modules/expo-font/ios/ExpoFont.podspec`)
   - ExpoHaptics (from `../node_modules/expo-haptics/ios`)
+  - ExpoImagePicker (from `../node_modules/expo-image-picker/ios`)
   - ExpoKeepAwake (from `../node_modules/expo-keep-awake/ios`)
   - ExpoLinking (from `../node_modules/expo-linking/ios`)
   - ExpoLiveActivity (from `../node_modules/expo-live-activity/ios`)
@@ -2179,7 +2185,9 @@ EXTERNAL SOURCES:
   ExpoApplication:
     :path: "../node_modules/expo-application/ios"
   ExpoAsset:
-    :path: "../node_modules/expo/node_modules/expo-asset/ios"
+    :path: "../node_modules/expo-asset/ios"
+  ExpoAudio:
+    :path: "../node_modules/expo-audio/ios"
   ExpoCalendar:
     :path: "../node_modules/expo-calendar/ios"
   ExpoCrypto:
@@ -2187,11 +2195,13 @@ EXTERNAL SOURCES:
   ExpoDomWebView:
     :path: "../node_modules/@expo/dom-webview/ios"
   ExpoFileSystem:
-    :podspec: "../node_modules/expo/node_modules/expo-file-system/ios/ExpoFileSystem.podspec"
+    :podspec: "../node_modules/expo-file-system/ios/ExpoFileSystem.podspec"
   ExpoFont:
     :podspec: "../node_modules/expo-font/ios/ExpoFont.podspec"
   ExpoHaptics:
     :path: "../node_modules/expo-haptics/ios"
+  ExpoImagePicker:
+    :path: "../node_modules/expo-image-picker/ios"
   ExpoKeepAwake:
     :path: "../node_modules/expo-keep-awake/ios"
   ExpoLinking:
@@ -2398,12 +2408,14 @@ SPEC CHECKSUMS:
   Expo: c9c0816dfb08ecb3f0a23fc3ff548708e899ccdc
   ExpoApplication: c83355b2f69f996b5d26b64fef39228e7f1e1208
   ExpoAsset: eda9e4844b55b78d4e71a0e2de767a038f3a0806
+  ExpoAudio: 04b22b00783fe443c15121138f827b808fdf8c71
   ExpoCalendar: 60c61f468a227513d734f243e11565a5f7455727
   ExpoCrypto: f9eb48ae9cda6a90357a693b44cc0bda89f6af4a
   ExpoDomWebView: b2a6d681b9d34c23b1f584321386ca8da1d36afb
   ExpoFileSystem: b619d80b490c53117a9a9c976021a4ce5a9da440
   ExpoFont: daea737a2e3742f9a946f2884518e70dd37011f3
   ExpoHaptics: d3a61f836a88c0061644473761a6ca499a14b19a
+  ExpoImagePicker: a466134ec92fed0b38bbf9062c7eb5f3c8c49d94
   ExpoKeepAwake: 3dc7cce59bdc13796f772ac54d3af1ca6b6954cd
   ExpoLinking: 62836d27eef5815b20abaebfa7683b18a32bafd1
   ExpoLiveActivity: d0dd0e8e1460b6b26555b611c4826cdb1036eea2

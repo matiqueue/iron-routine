@@ -98,6 +98,8 @@ import { ExerciseLibraryModal } from '../components/ExerciseLibraryModal';
 import { BottomSheetScrollView, InteractiveBottomSheet } from '../components/InteractiveBottomSheet';
 import { SupplementConfigurator } from '../components/SupplementConfigurator';
 import { AnimatedIcon } from '../components/AnimatedIcon';
+import { UserAvatarBadge } from '../components/UserAvatarBadge';
+import { AvatarPickerSheet } from '../components/AvatarPickerSheet';
 
 interface SettingsScreenProps {
   activeProfile: UserProfile;
@@ -174,6 +176,9 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   const [showImportSheet, setShowImportSheet] = useState(false);
   const [importJsonText, setImportJsonText] = useState('');
   const [isBusyIO, setIsBusyIO] = useState(false);
+  const [showAvatarPicker, setShowAvatarPicker] = useState(false);
+  const [avatarPickerAllowSkip, setAvatarPickerAllowSkip] = useState(false);
+  const [pendingCloudAvatarUrl, setPendingCloudAvatarUrl] = useState<string | null>(null);
 
   const [settingsTab, setSettingsTab] = useState<SettingsSubTab>('profile');
   const settingsTabRef = useRef<SettingsSubTab>('profile');
@@ -400,13 +405,19 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
         if (updatedProfile) {
           onProfileUpdated(updatedProfile);
         }
-        Alert.alert(
-          t('accountConnectedTitle'),
-          t('accountConnectedBody', {
-            provider: session.provider === 'apple' ? 'iCloud' : 'Google',
-            email: session.email ? ` (${session.email})` : '',
-          })
-        );
+        if (!activeProfile.avatarUrl && session.avatarUrl) {
+          setPendingCloudAvatarUrl(session.avatarUrl);
+          setAvatarPickerAllowSkip(true);
+          setShowAvatarPicker(true);
+        } else {
+          Alert.alert(
+            t('accountConnectedTitle'),
+            t('accountConnectedBody', {
+              provider: session.provider === 'apple' ? 'iCloud' : 'Google',
+              email: session.email ? ` (${session.email})` : '',
+            })
+          );
+        }
       };
 
       if (!res.isNewAccount && session.backupSummary) {
@@ -830,6 +841,39 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                 {t('athleteProfileHeading')}
               </Text>
             </View>
+          </View>
+
+          <View style={[styles.avatarSettingsCard, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
+            <UserAvatarBadge
+              avatarUrl={activeProfile.avatarUrl}
+              displayName={nameInput.trim() || activeProfile.name}
+              avatarColor="#10B981"
+              size={54}
+              ringColor="#10B981"
+            />
+            <View style={styles.avatarSettingsInfo}>
+              <Text style={[styles.avatarSettingsTitle, { color: theme.textMuted }]}>
+                {t('avatarSectionTitle')}
+              </Text>
+              <Text style={[styles.avatarSettingsHint, { color: theme.textSecondary }]}>
+                {t('avatarSectionHint')}
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={[styles.avatarChangePill, { backgroundColor: `${theme.primary}18`, borderColor: `${theme.primary}45` }]}
+              onPress={() => {
+                triggerSelectionHaptic();
+                setAvatarPickerAllowSkip(false);
+                setPendingCloudAvatarUrl(null);
+                setShowAvatarPicker(true);
+              }}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="camera-outline" size={14} color={theme.primary} />
+              <Text style={[styles.avatarChangeText, { color: theme.primary }]}>
+                {t('avatarChangeBtn')}
+              </Text>
+            </TouchableOpacity>
           </View>
 
           <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>
@@ -2060,6 +2104,25 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           </TouchableOpacity>
         </BottomSheetScrollView>
       </InteractiveBottomSheet>
+
+      <AvatarPickerSheet
+        visible={showAvatarPicker}
+        displayName={nameInput.trim() || activeProfile.name}
+        currentAvatarUrl={activeProfile.avatarUrl ?? null}
+        cloudAvatarUrl={cloudSession?.avatarUrl || pendingCloudAvatarUrl || null}
+        allowSkip={avatarPickerAllowSkip}
+        onSelectAvatar={async (nextUrl) => {
+          const updated = await updateProfile(activeProfile.id, { avatarUrl: nextUrl });
+          onProfileUpdated(updated);
+          void buildAndPublishSocialProfile(updated.id);
+          setPendingCloudAvatarUrl(null);
+        }}
+        onClose={() => {
+          setShowAvatarPicker(false);
+          setAvatarPickerAllowSkip(false);
+          setPendingCloudAvatarUrl(null);
+        }}
+      />
     </View>
   );
 };
@@ -2459,5 +2522,42 @@ const styles = StyleSheet.create({
     minHeight: 220,
     fontSize: 12,
     fontFamily: 'Courier',
+  },
+  avatarSettingsCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 12,
+    marginBottom: 14,
+  },
+  avatarSettingsInfo: {
+    flex: 1,
+    minWidth: 0,
+    gap: 3,
+  },
+  avatarSettingsTitle: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.7,
+  },
+  avatarSettingsHint: {
+    fontSize: 11.5,
+    fontWeight: '500',
+    lineHeight: 16,
+  },
+  avatarChangePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  avatarChangeText: {
+    fontSize: 11.5,
+    fontWeight: '800',
   },
 });

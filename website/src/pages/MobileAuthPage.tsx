@@ -61,6 +61,7 @@ function MobileAuthContent() {
       clerkUserId?: string;
       email: string;
       displayName: string;
+      avatarUrl?: string | null;
       overrideProvider?: 'google' | 'apple';
     }) => {
       if (completedRef.current) return;
@@ -79,6 +80,7 @@ function MobileAuthContent() {
             clerkUserId: params.clerkUserId || '',
             email: params.email,
             displayName: params.displayName,
+            avatarUrl: params.avatarUrl || null,
           }),
         });
         const data = await res.json();
@@ -130,6 +132,7 @@ function MobileAuthContent() {
       clerkUserId: user.id,
       email,
       displayName,
+      avatarUrl: (user as any)?.hasImage ? user.imageUrl : user.imageUrl || null,
     });
   }, [userLoaded, isSignedIn, user, isCallback, provider, initialName, completeHandoff]);
 

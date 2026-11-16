@@ -11,6 +11,7 @@ export interface CloudUserRecord {
   displayName: string;
   nickname?: string;
   nicknameUpdatedAt?: string;
+  avatarUrl?: string | null;
   e2eePublicKey?: string;
   e2eeKeyUpdatedAt?: string;
   createdAt: string;
@@ -46,6 +47,7 @@ export interface OAuthAttemptRecord {
     displayName: string;
     nickname?: string | null;
     nicknameUpdatedAt?: string | null;
+    avatarUrl?: string | null;
     e2eePublicKey?: string | null;
     lastSyncedAt?: string | null;
     backupSummary?: CloudUserRecord['backupSummary'] | null;
@@ -171,6 +173,7 @@ function mapUserRow(row: any): CloudUserRecord | null {
     nicknameUpdatedAt: row.nickname_updated_at
       ? new Date(row.nickname_updated_at).toISOString()
       : undefined,
+    avatarUrl: row.avatar_url || null,
     e2eePublicKey: row.e2ee_public_key || undefined,
     e2eeKeyUpdatedAt: row.e2ee_key_updated_at
       ? new Date(row.e2ee_key_updated_at).toISOString()
@@ -205,6 +208,7 @@ export async function saveCloudUser(user: CloudUserRecord): Promise<void> {
       display_name,
       nickname,
       nickname_updated_at,
+      avatar_url,
       e2ee_public_key,
       e2ee_key_updated_at,
       backup_summary,
@@ -219,6 +223,7 @@ export async function saveCloudUser(user: CloudUserRecord): Promise<void> {
       ${user.displayName},
       ${user.nickname || null},
       ${user.nicknameUpdatedAt || null},
+      ${user.avatarUrl || null},
       ${user.e2eePublicKey || null},
       ${user.e2eeKeyUpdatedAt || null},
       ${user.backupSummary ? JSON.stringify(user.backupSummary) : null}::jsonb,
@@ -233,6 +238,7 @@ export async function saveCloudUser(user: CloudUserRecord): Promise<void> {
       display_name = EXCLUDED.display_name,
       nickname = COALESCE(EXCLUDED.nickname, users.nickname),
       nickname_updated_at = COALESCE(EXCLUDED.nickname_updated_at, users.nickname_updated_at),
+      avatar_url = COALESCE(EXCLUDED.avatar_url, users.avatar_url),
       e2ee_public_key = COALESCE(EXCLUDED.e2ee_public_key, users.e2ee_public_key),
       e2ee_key_updated_at = COALESCE(EXCLUDED.e2ee_key_updated_at, users.e2ee_key_updated_at),
       backup_summary = COALESCE(EXCLUDED.backup_summary, users.backup_summary),

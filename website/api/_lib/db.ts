@@ -33,6 +33,7 @@ export async function ensureSchema(): Promise<void> {
         display_name TEXT NOT NULL,
         nickname TEXT,
         nickname_updated_at TIMESTAMPTZ,
+        avatar_url TEXT,
         e2ee_public_key TEXT,
         e2ee_key_updated_at TIMESTAMPTZ,
         backup_summary JSONB,
@@ -73,6 +74,7 @@ export async function ensureSchema(): Promise<void> {
       CREATE TABLE IF NOT EXISTS athlete_profiles (
         user_id TEXT PRIMARY KEY REFERENCES users(user_id) ON DELETE CASCADE,
         avatar_color TEXT DEFAULT '#10B981',
+        avatar_url TEXT,
         gender TEXT NOT NULL DEFAULT 'male',
         overall_rank TEXT NOT NULL DEFAULT 'F',
         overall_progress_pct INTEGER NOT NULL DEFAULT 0,
@@ -160,6 +162,9 @@ export async function ensureSchema(): Promise<void> {
         PRIMARY KEY (user_id, friend_id)
       )
     `;
+
+    await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT`;
+    await sql`ALTER TABLE athlete_profiles ADD COLUMN IF NOT EXISTS avatar_url TEXT`;
   })().catch((err) => {
     schemaReadyPromise = null;
     throw err;

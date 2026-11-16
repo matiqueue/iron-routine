@@ -38,6 +38,7 @@ export interface CloudSession {
   displayName: string;
   nickname?: string | null;
   nicknameUpdatedAt?: string | null;
+  avatarUrl?: string | null;
   lastSyncedAt?: string | null;
   backupSummary?: CloudBackupSummary | null;
 }
@@ -168,6 +169,7 @@ export async function signInWithClerkCloud(
                 pollData.user.displayName ||
                 displayName?.trim() ||
                 (resolvedProvider === 'apple' ? 'Apple iCloud' : 'Google'),
+              avatarUrl: pollData.user.avatarUrl || null,
               lastSyncedAt: pollData.user.lastSyncedAt || null,
               backupSummary: pollData.user.backupSummary || null,
             };

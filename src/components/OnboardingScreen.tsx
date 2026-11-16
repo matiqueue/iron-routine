@@ -60,6 +60,7 @@ import {
   setCreatineReminderEnabled,
 } from '../services/notifications';
 import {
+  CloudSession,
   pullProfileFromCloud,
   pushProfileToCloud,
   signInWithAppleCloud,
@@ -79,6 +80,7 @@ import { triggerNotificationHaptic, triggerSelectionHaptic } from '../services/h
 import { AnimatedIcon } from './AnimatedIcon';
 import { SupplementConfigurator } from './SupplementConfigurator';
 import { LanguageSwitcher } from './LanguageSwitcher';
+import { AvatarPickerSheet } from './AvatarPickerSheet';
 
 interface OnboardingScreenProps {
   onCompleted: (profile: UserProfile) => Promise<void> | void;
@@ -210,6 +212,8 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
 
   // Cloud Sign-in state on Final Step (Step 6)
   const [busyProvider, setBusyProvider] = useState<'apple' | 'google' | null>(null);
+  const [pendingCloudAvatarSetup, setPendingCloudAvatarSetup] = useState<CloudSession | null>(null);
+  const onboardingAvatarHandledRef = useRef(false);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -642,12 +646,57 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
           ]
         );
       } else {
-        await createAndUploadProfile();
+        onboardingAvatarHandledRef.current = false;
+        setPendingCloudAvatarSetup(session);
       }
     } catch (e: any) {
       Alert.alert(t('cloudAuthTitle'), e?.message || t('cloudConnectNetworkError'));
     } finally {
       setBusyProvider(null);
+    }
+  };
+
+  const finalizeCloudProfileSetup = async (
+    session: CloudSession,
+    chosenAvatarUrl: string | null
+  ) => {
+    if (isSubmitting) return;
+    setIsSubmitting(true);
+    try {
+      await applyOnboardingSettings();
+      const finalName = name.trim() || session.displayName || t('athleteFallback');
+      const cleanNick = normalizeNickname(nickname);
+      let resolvedNick = isValidNickname(cleanNick)
+        ? cleanNick
+        : generateRandomNickname(finalName);
+
+      const claimRes = await claimNicknameInCloud({
+        nickname: resolvedNick,
+        displayName: finalName,
+      });
+      if (!claimRes.ok && claimRes.error === 'NICKNAME_TAKEN') {
+        resolvedNick = generateRandomNickname(finalName);
+      }
+
+      const profile = await createProfile(finalName, {
+        nickname: resolvedNick,
+        gender,
+        weight: parsedWeight,
+        height: parsedHeight,
+        avatarUrl: chosenAvatarUrl,
+        templateKey,
+        customDays,
+        cloudUserId: session.userId,
+        cloudProvider: session.provider,
+        cloudEmail: session.email,
+      });
+      await pushProfileToCloud(profile.id);
+      void buildAndPublishSocialProfile(profile.id);
+      await onCompleted(profile);
+    } catch (e: any) {
+      Alert.alert(t('errorTitle'), e?.message || t('setupFailedError'));
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -2324,6 +2373,33 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
           </ScrollView>
         </View>
       </Modal>
+
+      <AvatarPickerSheet
+        visible={pendingCloudAvatarSetup !== null}
+        displayName={
+          name.trim() ||
+          pendingCloudAvatarSetup?.displayName ||
+          t('athleteFallback')
+        }
+        currentAvatarUrl={pendingCloudAvatarSetup?.avatarUrl ?? null}
+        cloudAvatarUrl={pendingCloudAvatarSetup?.avatarUrl ?? null}
+        allowSkip
+        onSelectAvatar={async (chosenUrl) => {
+          const session = pendingCloudAvatarSetup;
+          if (!session || onboardingAvatarHandledRef.current) return;
+          onboardingAvatarHandledRef.current = true;
+          setPendingCloudAvatarSetup(null);
+          await finalizeCloudProfileSetup(session, chosenUrl);
+        }}
+        onClose={() => {
+          const session = pendingCloudAvatarSetup;
+          setPendingCloudAvatarSetup(null);
+          if (session && !onboardingAvatarHandledRef.current) {
+            onboardingAvatarHandledRef.current = true;
+            void finalizeCloudProfileSetup(session, null);
+          }
+        }}
+      />
     </KeyboardAvoidingView>
   );
 };
