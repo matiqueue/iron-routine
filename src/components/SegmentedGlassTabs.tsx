@@ -168,13 +168,13 @@ export function SegmentedGlassTabs<T extends string>({
       {/* Single Seamless Colored Gliding Pill */}
       {slotWidth > 0 && (
         <Animated.View
-          pointerEvents="none"
           style={[
             styles.activePill,
             {
               width: slotWidth,
               backgroundColor: activeAccent,
               shadowColor: activeAccent,
+              pointerEvents: 'none',
               transform: [{ translateX }, { scale: thumbScale }],
             },
           ]}

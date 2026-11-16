@@ -179,11 +179,11 @@ export const BottomTabBar: React.FC<BottomTabBarProps> = ({
 
   return (
     <View
-      pointerEvents="box-none"
       style={[
         styles.outerPositioner,
         {
           bottom: bottomOffset,
+          pointerEvents: 'box-none',
         },
       ]}
     >
@@ -209,13 +209,13 @@ export const BottomTabBar: React.FC<BottomTabBarProps> = ({
       >
         {/* Top Specular Glass Reflection Line */}
         <View
-          pointerEvents="none"
           style={[
             styles.specularTopLine,
             {
               backgroundColor: isDark
                 ? 'rgba(255, 255, 255, 0.18)'
                 : 'rgba(255, 255, 255, 0.95)',
+              pointerEvents: 'none',
             },
           ]}
         />
@@ -223,11 +223,11 @@ export const BottomTabBar: React.FC<BottomTabBarProps> = ({
         {/* Animated Liquid Glass Active Pill */}
         {slotWidth > 0 && (
           <Animated.View
-            pointerEvents="none"
             style={[
               styles.activeGlassPill,
               {
                 width: slotWidth,
+                pointerEvents: 'none',
                 backgroundColor: isDark
                   ? 'rgba(255, 255, 255, 0.11)'
                   : 'rgba(24, 24, 27, 0.08)',

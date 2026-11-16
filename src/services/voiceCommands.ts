@@ -5,6 +5,7 @@ export type VoiceCommandType =
   | 'open_plan'
   | 'open_progress'
   | 'open_friends'
+  | 'add_friend'
   | 'open_settings'
   | 'log_weight'
   | 'sync_calendar';
@@ -12,6 +13,7 @@ export type VoiceCommandType =
 export interface ParsedVoiceCommand {
   type: VoiceCommandType;
   dayId?: string;
+  nickname?: string;
   rawUrl: string;
 }
 
@@ -20,6 +22,7 @@ export const VOICE_DEEP_LINKS = {
   openPlan: 'ironroutine://open-plan',
   openProgress: 'ironroutine://open-progress',
   openFriends: 'ironroutine://open-friends',
+  addFriend: 'ironroutine://add-friend',
   logWeight: 'ironroutine://log-weight',
   syncCalendar: 'ironroutine://sync-calendar',
 } as const;
@@ -58,6 +61,29 @@ export function parseVoiceDeepLink(rawUrl: string | null | undefined): ParsedVoi
     }
     if (route === 'open-progress' || route === 'progress' || route === 'ranks') {
       return { type: 'open_progress', rawUrl };
+    }
+    if (
+      route === 'add-friend' ||
+      route === 'invite' ||
+      route === 'u' ||
+      cleanPath.startsWith('add-friend') ||
+      cleanPath.startsWith('invite')
+    ) {
+      const qNick =
+        typeof parsed.queryParams?.nick === 'string'
+          ? parsed.queryParams.nick
+          : typeof parsed.queryParams?.nickname === 'string'
+          ? parsed.queryParams.nickname
+          : '';
+      const pathParts = cleanPath.split('/').filter(Boolean);
+      const pathNick =
+        pathParts.length > 1 ? pathParts[pathParts.length - 1] : '';
+      const rawNick = (qNick || pathNick).trim().replace(/^@+/, '');
+      return {
+        type: 'add_friend',
+        nickname: rawNick,
+        rawUrl,
+      };
     }
     if (route === 'open-friends' || route === 'friends' || route === 'chat') {
       return { type: 'open_friends', rawUrl };

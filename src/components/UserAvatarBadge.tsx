@@ -29,6 +29,12 @@ export const UserAvatarBadge: React.FC<UserAvatarBadgeProps> = React.memo(
     showRankDot = false,
   }) => {
     const { isDark } = useAppTheme();
+    const [imgFailed, setImgFailed] = React.useState(false);
+
+    React.useEffect(() => {
+      setImgFailed(false);
+    }, [avatarUrl]);
+
     const initial = (displayName || 'A').trim().charAt(0).toUpperCase() || 'A';
     const rankColor = rank ? (RANK_TIER_MAP[rank] || RANK_TIER_MAP.F).color : '#10B981';
     const borderCol = ringColor || (rank ? `${rankColor}88` : `${avatarColor}66`);
@@ -46,7 +52,7 @@ export const UserAvatarBadge: React.FC<UserAvatarBadgeProps> = React.memo(
           },
         ]}
       >
-        {avatarUrl ? (
+        {avatarUrl && !imgFailed ? (
           <Image
             source={{ uri: avatarUrl }}
             style={{
@@ -55,6 +61,7 @@ export const UserAvatarBadge: React.FC<UserAvatarBadgeProps> = React.memo(
               borderRadius: (size - 4) / 2,
             }}
             resizeMode="cover"
+            onError={() => setImgFailed(true)}
           />
         ) : (
           <Text

@@ -525,8 +525,7 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = Rea
         <Svg
           width="100%"
           height="100%"
-          style={StyleSheet.absoluteFill}
-          pointerEvents="none"
+          style={[StyleSheet.absoluteFill, { pointerEvents: 'none' }]}
         >
           <Defs>
             <Pattern
@@ -568,35 +567,31 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = Rea
 
         {/* Minimalist Corner Calibration Ticks */}
         <View
-          pointerEvents="none"
           style={[
             styles.cornerTick,
             styles.cornerTL,
-            { borderColor: isDark ? 'rgba(255,255,255,0.16)' : 'rgba(24,24,27,0.14)' },
+            { borderColor: isDark ? 'rgba(255,255,255,0.16)' : 'rgba(24,24,27,0.14)', pointerEvents: 'none' },
           ]}
         />
         <View
-          pointerEvents="none"
           style={[
             styles.cornerTick,
             styles.cornerTR,
-            { borderColor: isDark ? 'rgba(255,255,255,0.16)' : 'rgba(24,24,27,0.14)' },
+            { borderColor: isDark ? 'rgba(255,255,255,0.16)' : 'rgba(24,24,27,0.14)', pointerEvents: 'none' },
           ]}
         />
         <View
-          pointerEvents="none"
           style={[
             styles.cornerTick,
             styles.cornerBL,
-            { borderColor: isDark ? 'rgba(255,255,255,0.16)' : 'rgba(24,24,27,0.14)' },
+            { borderColor: isDark ? 'rgba(255,255,255,0.16)' : 'rgba(24,24,27,0.14)', pointerEvents: 'none' },
           ]}
         />
         <View
-          pointerEvents="none"
           style={[
             styles.cornerTick,
             styles.cornerBR,
-            { borderColor: isDark ? 'rgba(255,255,255,0.16)' : 'rgba(24,24,27,0.14)' },
+            { borderColor: isDark ? 'rgba(255,255,255,0.16)' : 'rgba(24,24,27,0.14)', pointerEvents: 'none' },
           ]}
         />
 

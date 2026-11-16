@@ -4,6 +4,7 @@ import { AnalyticsPage } from './pages/AnalyticsPage';
 import { FeaturesPage } from './pages/FeaturesPage';
 import { HomePage } from './pages/HomePage';
 import { InstallPage } from './pages/InstallPage';
+import { InvitePage } from './pages/InvitePage';
 import { MobileAuthPage } from './pages/MobileAuthPage';
 import { RouterProvider, useRouter } from './utils/router';
 
@@ -15,6 +16,14 @@ function AppShell() {
     window.location.pathname.startsWith('/mobile-auth')
   ) {
     return <MobileAuthPage />;
+  }
+
+  if (
+    typeof window !== 'undefined' &&
+    (window.location.pathname.startsWith('/invite') ||
+      window.location.pathname.startsWith('/u/'))
+  ) {
+    return <InvitePage />;
   }
 
   return (

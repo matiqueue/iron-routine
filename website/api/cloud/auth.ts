@@ -217,7 +217,7 @@ export default {
               email: rawEmail || existing.email,
               displayName:
                 displayName || existing.displayName || rawEmail.split('@')[0] || 'Użytkownik',
-              avatarUrl: existing.avatarUrl !== undefined ? existing.avatarUrl : incomingAvatarUrl,
+              avatarUrl: existing.avatarUrl || incomingAvatarUrl || null,
               backupSummary: backupSummary || existing.backupSummary,
               updatedAt: nowIso,
             }

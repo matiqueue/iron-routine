@@ -114,7 +114,6 @@ Notifications.setNotificationHandler({
     const isRestAlarm = REST_TIMER_NOTIF_IDS.includes(notification.request.identifier);
     if (isRestAlarm && AppState.currentState === 'active') {
       return {
-        shouldShowAlert: false,
         shouldPlaySound: false,
         shouldSetBadge: false,
         shouldShowBanner: false,
@@ -122,7 +121,6 @@ Notifications.setNotificationHandler({
       };
     }
     return {
-      shouldShowAlert: true,
       shouldPlaySound: true,
       shouldSetBadge: false,
       shouldShowBanner: true,

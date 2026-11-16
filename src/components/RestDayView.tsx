@@ -51,7 +51,7 @@ export const RestDayView: React.FC<RestDayViewProps> = ({ dayPlan }) => {
   return (
     <View style={[styles.container, { backgroundColor: theme.bg }]}>
       <View style={[styles.heroCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
-        <View style={StyleSheet.absoluteFill} pointerEvents="none">
+        <View style={[StyleSheet.absoluteFill, { pointerEvents: 'none' }]}>
           <DayBannerArtwork tag={bannerTag} compact />
         </View>
         <View style={styles.hero}>

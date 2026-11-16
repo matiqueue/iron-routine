@@ -16,6 +16,7 @@ import {
   HealthDailySummary,
   NewPRHighlight,
   PRRecord,
+  PendingCheerBurst,
   SessionExerciseConfig,
   SetEntry,
   UserProfile,
@@ -63,6 +64,7 @@ import { PlanTab } from './src/components/PlanTab';
 import { ProgressTab } from './src/components/ProgressTab';
 import { FriendsTab } from './src/components/FriendsTab';
 import { SettingsScreen } from './src/screens/SettingsScreen';
+import { CheerStormOverlay } from './src/components/CheerStormOverlay';
 import { fetchSocialHub } from './src/services/social';
 import { WorkoutSummaryModal } from './src/components/WorkoutSummaryModal';
 import { ExerciseDetailModal } from './src/components/ExerciseDetailModal';
@@ -93,6 +95,11 @@ function MainApp() {
   const [showPlanManagerModal, setShowPlanManagerModal] = useState(false);
   const [progressRefreshKey, setProgressRefreshKey] = useState(0);
   const [unreadSocialCount, setUnreadSocialCount] = useState(0);
+  const [pendingCheerBursts, setPendingCheerBursts] = useState<PendingCheerBurst[]>([]);
+  const [pendingInviteNick, setPendingInviteNick] = useState<{
+    nick: string;
+    seq: number;
+  } | null>(null);
 
   // Active workout mode & Pre-workout Session Picker
   const [isActiveWorkout, setIsActiveWorkout] = useState(false);
@@ -185,6 +192,16 @@ function MainApp() {
         if (!isActiveWorkoutRef.current) {
           cancelRestFinishedNotification();
         }
+        fetchSocialHub()
+          .then((res) => {
+            if (res.ok && res.hub) {
+              setUnreadSocialCount(res.hub.totalUnread || 0);
+              if (res.hub.pendingCheerBursts && res.hub.pendingCheerBursts.length > 0) {
+                setPendingCheerBursts(res.hub.pendingCheerBursts);
+              }
+            }
+          })
+          .catch(() => {});
       } else if (nextState === 'background') {
         scheduleAutoCloudSync();
       }
@@ -226,6 +243,9 @@ function MainApp() {
           .then((res) => {
             if (res.ok && res.hub) {
               setUnreadSocialCount(res.hub.totalUnread || 0);
+              if (res.hub.pendingCheerBursts && res.hub.pendingCheerBursts.length > 0) {
+                setPendingCheerBursts(res.hub.pendingCheerBursts);
+              }
             }
           })
           .catch(() => {});
@@ -570,7 +590,7 @@ function MainApp() {
     p.days.flatMap((d) => d.exercises || [])
   );
 
-  const incomingUrl = Linking.useURL();
+  const incomingUrl = Linking.useLinkingURL();
   const lastHandledUrlRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -591,6 +611,10 @@ function MainApp() {
       handleSwitchTab('progress');
     } else if (cmd.type === 'open_friends') {
       setIsActiveWorkout(false);
+      handleSwitchTab('friends');
+    } else if (cmd.type === 'add_friend') {
+      setIsActiveWorkout(false);
+      setPendingInviteNick({ nick: cmd.nickname || '', seq: Date.now() });
       handleSwitchTab('friends');
     } else if (cmd.type === 'open_settings') {
       setIsActiveWorkout(false);
@@ -725,6 +749,10 @@ function MainApp() {
               }}
               onUnreadCountChanged={setUnreadSocialCount}
               onDataImported={handleFullDataRefresh}
+              pendingInviteNick={pendingInviteNick}
+              onCheerBursts={(bursts) => {
+                if (bursts.length > 0) setPendingCheerBursts(bursts);
+              }}
             />
           )}
 
@@ -814,6 +842,12 @@ function MainApp() {
           totalVolumeKg={summaryVolumeKg}
           newPRs={summaryNewPRs}
           onClose={() => setShowSummaryModal(false)}
+        />
+
+        <CheerStormOverlay
+          bursts={pendingCheerBursts}
+          onFinished={() => setPendingCheerBursts([])}
+          onPressBanner={() => handleSwitchTab('friends')}
         />
     </View>
   );

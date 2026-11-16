@@ -215,23 +215,36 @@ export default {
       if (action === 'send_cheer') {
         const targetUserId = String(body?.targetUserId || '').trim();
         const activityId = body?.activityId ? String(body.activityId) : null;
+        const count = Math.max(1, Math.min(200, Math.round(Number(body?.count || 1) || 1)));
         if (!targetUserId) {
           return jsonResponse({ ok: false, error: 'MISSING_TARGET' }, 400);
         }
 
         if (activityId) {
           const rows: any[] = await sql`
-            SELECT cheered_by FROM social_activities WHERE id = ${activityId} LIMIT 1
+            SELECT user_id, cheered_by, cheers_count FROM social_activities WHERE id = ${activityId} LIMIT 1
           `;
           if (rows[0]) {
             const set = new Set<string>(Array.isArray(rows[0].cheered_by) ? rows[0].cheered_by : []);
-            if (set.has(userId)) set.delete(userId);
-            else set.add(userId);
+            set.add(userId);
             const next = Array.from(set);
+            const nextCount =
+              Math.max(Number(rows[0].cheers_count || 0), set.size - 1) + count;
             await sql`
-              UPDATE social_activities SET cheered_by = ${JSON.stringify(next)}::jsonb WHERE id = ${activityId}
+              UPDATE social_activities
+              SET cheered_by = ${JSON.stringify(next)}::jsonb,
+                  cheers_count = ${nextCount}
+              WHERE id = ${activityId}
             `;
-            return jsonResponse({ ok: true, cheersCount: next.length });
+            const recipientId = String(rows[0].user_id || targetUserId);
+            if (recipientId && recipientId !== userId) {
+              const burstId = `cb_${crypto.randomBytes(8).toString('hex')}`;
+              await sql`
+                INSERT INTO cheer_bursts (id, from_user_id, to_user_id, activity_id, burst_count)
+                VALUES (${burstId}, ${userId}, ${recipientId}, ${activityId}, ${count})
+              `;
+            }
+            return jsonResponse({ ok: true, cheersCount: nextCount });
           }
         }
 
@@ -245,13 +258,20 @@ export default {
           Array.isArray(profRows[0].cheered_by) ? profRows[0].cheered_by : []
         );
         cheeredSet.add(userId);
-        const nextCheers = Number(profRows[0].cheers_count || 0) + 1;
+        const nextCheers = Number(profRows[0].cheers_count || 0) + count;
         await sql`
           UPDATE athlete_profiles
           SET cheered_by = ${JSON.stringify(Array.from(cheeredSet))}::jsonb,
               cheers_count = ${nextCheers}
           WHERE user_id = ${targetUserId}
         `;
+        if (targetUserId !== userId) {
+          const burstId = `cb_${crypto.randomBytes(8).toString('hex')}`;
+          await sql`
+            INSERT INTO cheer_bursts (id, from_user_id, to_user_id, activity_id, burst_count)
+            VALUES (${burstId}, ${userId}, ${targetUserId}, ${null}, ${count})
+          `;
+        }
         return jsonResponse({ ok: true, cheersCount: nextCheers });
       }
 
