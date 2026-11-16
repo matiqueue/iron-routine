@@ -333,6 +333,14 @@ export async function publishSocialProfile(params: {
     await registerUserE2eePublicKey(params.userId, String(snap.e2eePublicKey));
   }
 
+  if (snap.avatarUrl !== undefined) {
+    await sql`
+      UPDATE users
+      SET avatar_url = ${snap.avatarUrl || null}, updated_at = NOW()
+      WHERE user_id = ${params.userId}
+    `;
+  }
+
   if (displayName && displayName !== user.displayName) {
     await sql`UPDATE users SET display_name = ${displayName}, updated_at = NOW() WHERE user_id = ${params.userId}`;
   }
@@ -556,6 +564,7 @@ export async function getSocialHubForUser(userId: string) {
     .filter((row) => row.user_id === userId || row.show_activity !== false)
     .map((row) => {
       const cheeredBy: string[] = Array.isArray(row.cheered_by) ? row.cheered_by : [];
+      const numericCheers = Number(row.cheers_count || 0);
       return {
         id: String(row.id),
         userId: String(row.user_id),
@@ -568,7 +577,7 @@ export async function getSocialHubForUser(userId: string) {
         subtitle: row.subtitle || undefined,
         rankTier: row.rank_tier || undefined,
         createdAt: new Date(row.created_at).toISOString(),
-        cheersCount: cheeredBy.length,
+        cheersCount: Math.max(numericCheers, cheeredBy.length),
         cheeredByMe: cheeredBy.includes(userId),
       };
     });
@@ -598,12 +607,43 @@ export async function getSocialHubForUser(userId: string) {
     createdAt: new Date(r.created_at).toISOString(),
   }));
 
+  const burstRows: any[] = await sql`
+    SELECT
+      cb.from_user_id,
+      u.nickname AS from_nickname,
+      u.display_name AS from_display_name,
+      COALESCE(ap.avatar_url, u.avatar_url) AS from_avatar_url,
+      SUM(cb.burst_count)::int AS count
+    FROM cheer_bursts cb
+    JOIN users u ON u.user_id = cb.from_user_id
+    LEFT JOIN athlete_profiles ap ON ap.user_id = cb.from_user_id
+    WHERE cb.to_user_id = ${userId} AND cb.delivered = FALSE
+    GROUP BY cb.from_user_id, u.nickname, u.display_name, ap.avatar_url, u.avatar_url
+  `;
+
+  if (burstRows.length > 0) {
+    await sql`
+      UPDATE cheer_bursts
+      SET delivered = TRUE
+      WHERE to_user_id = ${userId} AND delivered = FALSE
+    `;
+  }
+
+  const pendingCheerBursts = (burstRows as any[]).map((b) => ({
+    fromUserId: String(b.from_user_id),
+    fromNickname: String(b.from_nickname || ''),
+    fromDisplayName: String(b.from_display_name || 'Athlete'),
+    fromAvatarUrl: b.from_avatar_url || null,
+    count: Number(b.count || 0),
+  }));
+
   return {
     myProfile,
     friends,
     incomingRequests,
     outgoingRequests,
     activities,
+    pendingCheerBursts,
     totalUnread: totalUnread + incomingRequests.length,
   };
 }

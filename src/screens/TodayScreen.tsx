@@ -133,8 +133,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
     <View style={{ flex: 1, backgroundColor: theme.bg }}>
       <MinimalistBackdrop
         variant="diagonal"
-        accentColor={isRestOrWalk ? '#38BDF8' : '#10B981'}
-        secondaryColor={isRestOrWalk ? '#818CF8' : '#0EA5E9'}
+        showCornerGlows={false}
       />
       <SmartScrollView
         style={[styles.tabScroll, { backgroundColor: 'transparent' }]}
@@ -318,7 +317,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
               { backgroundColor: theme.card, borderColor: theme.border },
             ]}
           >
-            <View style={StyleSheet.absoluteFill} pointerEvents="none">
+            <View style={[StyleSheet.absoluteFill, { pointerEvents: 'none' }]}>
               <DayBannerArtwork tag={bannerTag} />
             </View>
 

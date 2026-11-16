@@ -293,12 +293,21 @@ export interface FriendChatThreadSummary {
   unreadCount: number;
 }
 
+export interface PendingCheerBurst {
+  fromUserId: string;
+  fromNickname: string;
+  fromDisplayName: string;
+  fromAvatarUrl?: string | null;
+  count: number;
+}
+
 export interface SocialHubData {
   myProfile: FriendProfileSummary | null;
   friends: FriendChatThreadSummary[];
   incomingRequests: FriendRequestRecord[];
   outgoingRequests: FriendRequestRecord[];
   activities: SocialActivityItem[];
+  pendingCheerBursts?: PendingCheerBurst[];
   totalUnread: number;
 }
 

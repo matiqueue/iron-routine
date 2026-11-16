@@ -928,7 +928,6 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
             ]}
           >
             <Animated.View
-              pointerEvents="none"
               style={[
                 styles.navPillAnimatedThumb,
                 {
@@ -936,6 +935,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                   backgroundColor: isDark
                     ? 'rgba(255, 255, 255, 0.88)'
                     : 'rgba(15, 23, 42, 0.86)',
+                  pointerEvents: 'none',
                   transform: [
                     { translateX: thumbTranslateX },
                     { scale: navScaleAnim },
@@ -1355,11 +1355,11 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
 
                   <View style={[styles.sortPillsRow, { backgroundColor: theme.bgSecondary }]}>
                     <Animated.View
-                      pointerEvents="none"
                       style={[
                         styles.sortAnimatedThumb,
                         {
                           backgroundColor: theme.text,
+                          pointerEvents: 'none',
                           transform: [
                             {
                               translateX: sortThumbAnim.interpolate({

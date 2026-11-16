@@ -119,7 +119,7 @@ export const DayBannerArtwork: React.FC<DayBannerArtworkProps> = ({
   };
 
   return (
-    <View style={[styles.wrap, compact && styles.wrapCompact]} pointerEvents="none">
+    <View style={[styles.wrap, compact && styles.wrapCompact, { pointerEvents: 'none' }]}>
       <Svg width="100%" height="100%" viewBox="0 0 320 170" preserveAspectRatio="xMaxYMid slice">
         <Defs>
           <LinearGradient id="bannerFade" x1="0" y1="0" x2="1" y2="0">

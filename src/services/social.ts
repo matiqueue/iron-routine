@@ -441,7 +441,8 @@ export async function removeFriend(targetUserId: string): Promise<boolean> {
 
 export async function sendSocialCheer(
   targetUserId: string,
-  activityId?: string
+  activityId?: string,
+  count = 1
 ): Promise<{ ok: boolean; cheersCount?: number }> {
   const session = await getStoredCloudSession();
   if (!session?.token) return { ok: false };
@@ -456,6 +457,7 @@ export async function sendSocialCheer(
         action: 'send_cheer',
         targetUserId,
         activityId,
+        count: Math.max(1, Math.min(200, Math.round(count || 1))),
       }),
     });
     const data = await res.json().catch(() => null);

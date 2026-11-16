@@ -15,6 +15,7 @@ import { FriendProfileSummary, RankTier } from '../types/workout';
 import { RANK_TIER_MAP } from '../data/muscleMap';
 import { RankCrestIcon } from './RankCrestIcon';
 import { UserAvatarBadge } from './UserAvatarBadge';
+import { HighFiveSpamButton } from './HighFiveSpamButton';
 import { VsComparisonArc } from './CrewCustomComponents';
 import { InteractiveBottomSheet, BottomSheetScrollView } from './InteractiveBottomSheet';
 import { triggerNotificationHaptic, triggerSelectionHaptic } from '../services/haptics';
@@ -232,31 +233,12 @@ export const FriendProfileModal: React.FC<FriendProfileModalProps> = ({
               </Text>
             </TouchableOpacity>
 
-            <Animated.View style={{ transform: [{ scale: kudosBounce }] }}>
-              <TouchableOpacity
-                style={[
-                  styles.kudosBtn,
-                  {
-                    backgroundColor: friend.cheeredByMe
-                      ? 'rgba(16, 185, 129, 0.16)'
-                      : theme.bgSecondary,
-                    borderColor: friend.cheeredByMe ? '#10B981' : theme.border,
-                  },
-                ]}
-                onPress={handlePressKudos}
-                disabled={sendingKudos}
-                activeOpacity={0.8}
-              >
-                <Ionicons
-                  name="flame"
-                  size={16}
-                  color={friend.cheeredByMe ? '#10B981' : '#F59E0B'}
-                />
-                <Text style={[styles.kudosBtnText, { color: theme.text }]}>
-                  {t('friendsKudosBtn')} ({friend.cheersCount || 0})
-                </Text>
-              </TouchableOpacity>
-            </Animated.View>
+            <HighFiveSpamButton
+              targetUserId={friend.userId}
+              initialCount={friend.cheersCount || 0}
+              cheeredByMe={friend.cheeredByMe}
+              label={t('friendsKudosBtn')}
+            />
           </View>
         </View>
 

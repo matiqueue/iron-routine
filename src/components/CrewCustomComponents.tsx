@@ -129,10 +129,9 @@ export const CrewRadarOrb: React.FC<{
 
       {/* Orbiting Satellite Nodes */}
       <Animated.View
-        pointerEvents="none"
         style={[
           StyleSheet.absoluteFill,
-          { alignItems: 'center', justifyContent: 'center', transform: [{ rotate }] },
+          { alignItems: 'center', justifyContent: 'center', pointerEvents: 'none', transform: [{ rotate }] },
         ]}
       >
         <Svg width={size} height={size}>
@@ -179,6 +178,12 @@ export const SquadAvatarRing: React.FC<{
   const { theme, isDark } = useAppTheme();
   const uid = useId().replace(/:/g, '_');
   const rankMeta = RANK_TIER_MAP[friend.overallRank] || RANK_TIER_MAP.F;
+  const [imgFailed, setImgFailed] = React.useState(false);
+
+  React.useEffect(() => {
+    setImgFailed(false);
+  }, [friend.avatarUrl]);
+
   const initials = (friend.displayName || friend.nickname || 'A')
     .split(/\s+/)
     .slice(0, 2)
@@ -188,7 +193,7 @@ export const SquadAvatarRing: React.FC<{
   return (
     <TouchableOpacity style={styles.ringWrap} onPress={onPress} activeOpacity={0.8}>
       <View style={styles.ringCircleBox}>
-        <Svg width={64} height={64} style={StyleSheet.absoluteFill}>
+        <Svg width={64} height={64} style={[StyleSheet.absoluteFill, { pointerEvents: 'none' }]}>
           <Defs>
             <LinearGradient id={`ring_g_${uid}`} x1="0" y1="0" x2="1" y2="1">
               <Stop offset="0%" stopColor={rankMeta.color} />
@@ -211,15 +216,29 @@ export const SquadAvatarRing: React.FC<{
             fill={isDark ? '#18181D' : '#F4F4F7'}
           />
         </Svg>
-        {friend.avatarUrl ? (
-          <Image
-            source={{ uri: friend.avatarUrl }}
-            style={{ width: 47, height: 47, borderRadius: 23.5 }}
-            resizeMode="cover"
-          />
-        ) : (
-          <Text style={[styles.ringInitials, { color: theme.text }]}>{initials}</Text>
-        )}
+        <View
+          style={{
+            width: 48,
+            height: 48,
+            borderRadius: 24,
+            overflow: 'hidden',
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: isDark ? '#18181D' : '#F4F4F7',
+            zIndex: 2,
+          }}
+        >
+          {friend.avatarUrl && !imgFailed ? (
+            <Image
+              source={{ uri: friend.avatarUrl }}
+              style={{ width: 48, height: 48, borderRadius: 24 }}
+              resizeMode="cover"
+              onError={() => setImgFailed(true)}
+            />
+          ) : (
+            <Text style={[styles.ringInitials, { color: theme.text }]}>{initials}</Text>
+          )}
+        </View>
 
         {/* Bottom-right mini rank badge */}
         <View

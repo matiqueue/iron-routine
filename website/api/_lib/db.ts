@@ -122,9 +122,27 @@ export async function ensureSchema(): Promise<void> {
         title TEXT NOT NULL,
         subtitle TEXT,
         rank_tier TEXT,
+        cheers_count INTEGER NOT NULL DEFAULT 0,
         cheered_by JSONB NOT NULL DEFAULT '[]'::jsonb,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
+    `;
+
+    await sql`
+      CREATE TABLE IF NOT EXISTS cheer_bursts (
+        id TEXT PRIMARY KEY,
+        from_user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+        to_user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+        activity_id TEXT,
+        burst_count INTEGER NOT NULL DEFAULT 1,
+        delivered BOOLEAN NOT NULL DEFAULT FALSE,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `;
+
+    await sql`
+      CREATE INDEX IF NOT EXISTS cheer_bursts_recipient_idx
+      ON cheer_bursts (to_user_id, delivered, created_at ASC)
     `;
 
     await sql`
@@ -165,6 +183,7 @@ export async function ensureSchema(): Promise<void> {
 
     await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT`;
     await sql`ALTER TABLE athlete_profiles ADD COLUMN IF NOT EXISTS avatar_url TEXT`;
+    await sql`ALTER TABLE social_activities ADD COLUMN IF NOT EXISTS cheers_count INTEGER NOT NULL DEFAULT 0`;
   })().catch((err) => {
     schemaReadyPromise = null;
     throw err;

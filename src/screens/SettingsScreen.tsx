@@ -711,8 +711,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
     <View style={[styles.container, { backgroundColor: theme.bg }]}>
       <MinimalistBackdrop
         variant="diagonal"
-        accentColor={settingsBackdropColors.top}
-        secondaryColor={settingsBackdropColors.bottom}
+        showCornerGlows={false}
       />
       {/* Open Editorial Header + Tabbed Glass Switcher */}
       <View

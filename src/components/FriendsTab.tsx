@@ -21,6 +21,7 @@ import { useAppTheme } from '../context/ThemeContext';
 import { useLanguage } from '../context/LanguageContext';
 import {
   FriendProfileSummary,
+  PendingCheerBurst,
   RankTier,
   SocialHubData,
   UserProfile,
@@ -62,6 +63,7 @@ import { SmartScrollView } from './SmartScrollView';
 import { StatusPickerModal } from './StatusPickerModal';
 import { FriendProfileModal } from './FriendProfileModal';
 import { FriendChatModal } from './FriendChatModal';
+import { HighFiveSpamButton } from './HighFiveSpamButton';
 
 type FriendsSubTab = 'chats' | 'feed' | 'rank' | 'add';
 type LeaderboardMetric = 'rank' | 'streak' | 'workouts';
@@ -71,6 +73,8 @@ interface FriendsTabProps {
   onProfileUpdated: (updated: UserProfile) => void;
   onUnreadCountChanged?: (count: number) => void;
   onDataImported?: () => Promise<void> | void;
+  pendingInviteNick?: { nick: string; seq: number } | null;
+  onCheerBursts?: (bursts: PendingCheerBurst[]) => void;
 }
 
 const RANK_ORDER: RankTier[] = ['F', 'E', 'D', 'C', 'B', 'A', 'S', 'S+'];
@@ -97,6 +101,8 @@ export const FriendsTab: React.FC<FriendsTabProps> = ({
   onProfileUpdated,
   onUnreadCountChanged,
   onDataImported,
+  pendingInviteNick,
+  onCheerBursts,
 }) => {
   const { theme, isDark } = useAppTheme();
   const { t, localeCode } = useLanguage();
@@ -195,6 +201,8 @@ export const FriendsTab: React.FC<FriendsTabProps> = ({
   const hasLoadedHubRef = useRef(false);
   const onUnreadRef = useRef(onUnreadCountChanged);
   onUnreadRef.current = onUnreadCountChanged;
+  const onCheerBurstsRef = useRef(onCheerBursts);
+  onCheerBurstsRef.current = onCheerBursts;
 
   useEffect(() => {
     subTabRef.current = subTab;
@@ -226,6 +234,9 @@ export const FriendsTab: React.FC<FriendsTabProps> = ({
         hasLoadedHubRef.current = true;
         setHub(res.hub);
         onUnreadRef.current?.(res.hub.totalUnread || 0);
+        if (res.hub.pendingCheerBursts && res.hub.pendingCheerBursts.length > 0) {
+          onCheerBurstsRef.current?.(res.hub.pendingCheerBursts);
+        }
       }
     },
     [activeProfile.id]
@@ -420,8 +431,28 @@ export const FriendsTab: React.FC<FriendsTabProps> = ({
     const nick = hub.myProfile?.nickname || activeProfile.nickname;
     if (!nick) return;
     triggerSelectionHaptic();
-    Share.share({ message: `@${nick}` }).catch(() => {});
+    const inviteUrl = `https://iron-routine-app.vercel.app/invite?nick=${encodeURIComponent(nick)}`;
+    Share.share({
+      message: t('friendsInviteShareMsg', { nick, url: inviteUrl }),
+      url: inviteUrl,
+    }).catch(() => {});
   };
+
+  useEffect(() => {
+    if (!pendingInviteNick?.seq) return;
+    switchSubTab('add');
+    const clean = sanitizeNicknameInput(pendingInviteNick.nick || '');
+    if (!clean) return;
+    setSearchQuery(clean);
+    setIsSearching(true);
+    searchUsersByNickname(clean)
+      .then((res) => {
+        setSearchResults(res.results);
+      })
+      .finally(() => {
+        setIsSearching(false);
+      });
+  }, [pendingInviteNick?.seq, pendingInviteNick?.nick, switchSubTab]);
 
   const formatRelativeTime = (iso?: string | null) => {
     if (!iso) return '';
@@ -514,23 +545,26 @@ export const FriendsTab: React.FC<FriendsTabProps> = ({
               style={[
                 styles.nickPill,
                 {
-                  backgroundColor: isDark
-                    ? 'rgba(16, 185, 129, 0.14)'
-                    : 'rgba(16, 185, 129, 0.10)',
-                  borderColor: 'rgba(16, 185, 129, 0.35)',
+                  backgroundColor: `${friendsBackdropColors.top}1F`,
+                  borderColor: `${friendsBackdropColors.top}66`,
                 },
               ]}
             >
               <Animated.View
                 style={[
                   styles.liveGreenDot,
-                  { transform: [{ scale: liveScale }] },
+                  {
+                    backgroundColor: friendsBackdropColors.top,
+                    transform: [{ scale: liveScale }],
+                  },
                 ]}
               />
-              <Text style={styles.nickPillText} numberOfLines={1}>
+              <Text
+                style={[styles.nickPillText, { color: friendsBackdropColors.top }]}
+                numberOfLines={1}
+              >
                 @{myNick}
               </Text>
-              <Ionicons name="share-outline" size={13} color="#10B981" />
             </TouchableOpacity>
           </View>
         </View>
@@ -810,13 +844,10 @@ export const FriendsTab: React.FC<FriendsTabProps> = ({
                             }}
                             activeOpacity={0.75}
                           >
-                            <UserAvatarBadge
-                              avatarUrl={fr.avatarUrl}
-                              displayName={fr.displayName}
-                              avatarColor={fr.avatarColor}
-                              rank={fr.overallRank || 'F'}
+                            <RankCrestIcon
+                              tier={fr.overallRank || 'F'}
                               size={46}
-                              showRankDot
+                              isSelected
                             />
                           </TouchableOpacity>
 
@@ -941,32 +972,13 @@ export const FriendsTab: React.FC<FriendsTabProps> = ({
                           </Text>
                         ) : null}
                       </View>
-                      <TouchableOpacity
-                        style={[
-                          styles.feedCheerBtn,
-                          {
-                            backgroundColor: act.cheeredByMe
-                              ? 'rgba(16, 185, 129, 0.16)'
-                              : theme.bgSecondary,
-                            borderColor: act.cheeredByMe ? '#10B981' : theme.border,
-                          },
-                        ]}
-                        onPress={async () => {
-                          triggerNotificationHaptic('success');
-                          await sendSocialCheer(act.userId, act.id);
-                          await loadSocialState(false);
-                        }}
-                        activeOpacity={0.78}
-                      >
-                        <Ionicons
-                          name="flame"
-                          size={14}
-                          color={act.cheeredByMe ? '#10B981' : '#F59E0B'}
-                        />
-                        <Text style={[styles.feedCheerText, { color: theme.text }]}>
-                          {act.cheersCount || 0}
-                        </Text>
-                      </TouchableOpacity>
+                      <HighFiveSpamButton
+                        targetUserId={act.userId}
+                        activityId={act.id}
+                        initialCount={act.cheersCount || 0}
+                        cheeredByMe={act.cheeredByMe}
+                        compact
+                      />
                     </View>
                   ))
                 )}
