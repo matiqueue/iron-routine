@@ -243,6 +243,8 @@ export default {
           email: userRecord.email,
           provider: userRecord.provider,
           displayName: userRecord.displayName,
+          nickname: userRecord.nickname || null,
+          nicknameUpdatedAt: userRecord.nicknameUpdatedAt || null,
           lastSyncedAt: userRecord.lastSyncedAt || null,
           backupSummary: userRecord.backupSummary || null,
         };

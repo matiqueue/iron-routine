@@ -16,6 +16,7 @@ import Svg, {
   LinearGradient,
   Path,
   Pattern,
+  RadialGradient,
   Rect,
   Stop,
 } from 'react-native-svg';
@@ -182,8 +183,8 @@ function getMuscleFillStyle(
   let fillOpacity = isDark ? 0.48 : 0.54;
 
   if (stat.priorityStatus === 'neglected' || stat.priorityStatus === 'lagging') {
-    fill = '#F59E0B';
-    fillOpacity = isDark ? 0.5 : 0.56;
+    fill = '#FDE047';
+    fillOpacity = isDark ? 0.45 : 0.64;
   } else if (stat.priorityStatus === 'balanced') {
     fill = '#10B981';
     fillOpacity = isDark ? 0.46 : 0.52;
@@ -191,6 +192,13 @@ function getMuscleFillStyle(
     fill = '#38BDF8';
     fillOpacity = isDark ? 0.52 : 0.58;
   }
+
+  const strokeColor =
+    stat.priorityStatus === 'neglected' || stat.priorityStatus === 'lagging'
+      ? isDark
+        ? '#FEF08A'
+        : '#EAB308'
+      : fill;
 
   if (hasAnySelection) {
     if (isSelected) {
@@ -214,9 +222,9 @@ function getMuscleFillStyle(
   return {
     fill,
     fillOpacity,
-    stroke: fill,
+    stroke: strokeColor,
     strokeWidth: 1.15,
-    strokeOpacity: 0.65,
+    strokeOpacity: 0.68,
   };
 }
 
@@ -464,7 +472,7 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = Rea
   const activityLegend = useMemo(
     () => [
       { label: t('legendNoSets'), color: isDark ? '#3F3F46' : '#D4D4D8' },
-      { label: t('legendLowVol'), color: '#F59E0B' },
+      { label: t('legendLowVol'), color: isDark ? '#FDE047' : '#FACC15' },
       { label: t('legendBalanced'), color: '#10B981' },
       { label: t('legendDominant'), color: '#38BDF8' },
     ],
@@ -503,13 +511,14 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = Rea
         </TouchableOpacity>
       </View>
 
-      {/* Interactive Swipe-to-Rotate Silhouette Stage with Crisp Technical Grid ("Kratki") */}
+      {/* Interactive Swipe-to-Rotate Silhouette Stage with Minimalist Architectural Grid */}
       <View
         {...panResponder.panHandlers}
         style={[
           styles.swipeZone,
           {
-            borderColor: isDark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(24, 24, 27, 0.06)',
+            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.015)' : 'rgba(24, 24, 27, 0.014)',
+            borderColor: isDark ? 'rgba(255, 255, 255, 0.07)' : 'rgba(24, 24, 27, 0.06)',
           },
         ]}
       >
@@ -522,20 +531,74 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = Rea
           <Defs>
             <Pattern
               id="silhouetteGrid"
-              width={40}
-              height={46}
+              width={44}
+              height={44}
               patternUnits="userSpaceOnUse"
             >
               <Path
-                d="M 40 0 L 0 0 0 46"
+                d="M 44 0 L 0 0 0 44"
                 fill="none"
-                stroke={isDark ? 'rgba(255, 255, 255, 0.088)' : 'rgba(24, 24, 27, 0.082)'}
-                strokeWidth={1.1}
+                stroke={isDark ? 'rgba(255, 255, 255, 0.058)' : 'rgba(24, 24, 27, 0.052)'}
+                strokeWidth={0.9}
+              />
+              <Circle
+                cx={0}
+                cy={0}
+                r={1.15}
+                fill={isDark ? 'rgba(255, 255, 255, 0.14)' : 'rgba(24, 24, 27, 0.12)'}
               />
             </Pattern>
+            <RadialGradient id="silhouetteStageAura" cx="50%" cy="46%" r="54%">
+              <Stop
+                offset="0%"
+                stopColor={isDark ? '#38BDF8' : '#10B981'}
+                stopOpacity={isDark ? 0.08 : 0.045}
+              />
+              <Stop
+                offset="65%"
+                stopColor="#10B981"
+                stopOpacity={isDark ? 0.025 : 0.015}
+              />
+              <Stop offset="100%" stopColor="#000000" stopOpacity={0} />
+            </RadialGradient>
           </Defs>
           <Rect x={0} y={0} width="100%" height="100%" fill="url(#silhouetteGrid)" />
+          <Rect x={0} y={0} width="100%" height="100%" fill="url(#silhouetteStageAura)" />
         </Svg>
+
+        {/* Minimalist Corner Calibration Ticks */}
+        <View
+          pointerEvents="none"
+          style={[
+            styles.cornerTick,
+            styles.cornerTL,
+            { borderColor: isDark ? 'rgba(255,255,255,0.16)' : 'rgba(24,24,27,0.14)' },
+          ]}
+        />
+        <View
+          pointerEvents="none"
+          style={[
+            styles.cornerTick,
+            styles.cornerTR,
+            { borderColor: isDark ? 'rgba(255,255,255,0.16)' : 'rgba(24,24,27,0.14)' },
+          ]}
+        />
+        <View
+          pointerEvents="none"
+          style={[
+            styles.cornerTick,
+            styles.cornerBL,
+            { borderColor: isDark ? 'rgba(255,255,255,0.16)' : 'rgba(24,24,27,0.14)' },
+          ]}
+        />
+        <View
+          pointerEvents="none"
+          style={[
+            styles.cornerTick,
+            styles.cornerBR,
+            { borderColor: isDark ? 'rgba(255,255,255,0.16)' : 'rgba(24,24,27,0.14)' },
+          ]}
+        />
 
         <Animated.View
           style={[
@@ -701,7 +764,9 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = Rea
                   ? '#38BDF8'
                   : selectedStat.priorityStatus === 'balanced'
                   ? '#10B981'
-                  : '#F59E0B',
+                  : isDark
+                  ? '#FDE047'
+                  : '#FACC15',
               borderTopColor: theme.hairline,
               borderBottomColor: theme.hairline,
             },
@@ -845,9 +910,43 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 6,
-    borderRadius: 18,
+    borderRadius: 20,
     borderWidth: StyleSheet.hairlineWidth,
     overflow: 'hidden',
+  },
+  cornerTick: {
+    position: 'absolute',
+    width: 11,
+    height: 11,
+    zIndex: 3,
+  },
+  cornerTL: {
+    top: 8,
+    left: 8,
+    borderTopWidth: 1.5,
+    borderLeftWidth: 1.5,
+    borderTopLeftRadius: 3,
+  },
+  cornerTR: {
+    top: 8,
+    right: 8,
+    borderTopWidth: 1.5,
+    borderRightWidth: 1.5,
+    borderTopRightRadius: 3,
+  },
+  cornerBL: {
+    bottom: 8,
+    left: 8,
+    borderBottomWidth: 1.5,
+    borderLeftWidth: 1.5,
+    borderBottomLeftRadius: 3,
+  },
+  cornerBR: {
+    bottom: 8,
+    right: 8,
+    borderBottomWidth: 1.5,
+    borderRightWidth: 1.5,
+    borderBottomRightRadius: 3,
   },
   stageWrap: {
     alignItems: 'center',

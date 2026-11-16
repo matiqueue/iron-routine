@@ -29,6 +29,7 @@ import {
   WeightEntry,
   WorkoutHistoryEntry,
 } from '../types/workout';
+import { generateRandomNickname, isValidNickname, normalizeNickname } from '../utils/nickname';
 import { getStoredLanguageSync } from './languageStore';
 import { getTranslatedDay, PLAN_MODE_LOCALE, translateText } from '../i18n/translations';
 import { triggerNotificationHaptic, triggerSelectionHaptic } from './haptics';
@@ -241,6 +242,7 @@ export async function setActiveProfileId(profileId: string): Promise<void> {
 export async function createProfile(
   name: string,
   options?: {
+    nickname?: string;
     gender?: 'male' | 'female';
     height?: number;
     weight?: number;
@@ -262,10 +264,20 @@ export async function createProfile(
       options?.weight && options.weight > 0 ? Math.round(options.weight * 10) / 10 : undefined;
 
     const lang = getStoredLanguageSync();
+    const displayName = name.trim() || translateText(lang, 'defaultProfileName');
+    const normalizedNick = normalizeNickname(options?.nickname || '');
+    const finalNickname = isValidNickname(normalizedNick)
+      ? normalizedNick
+      : generateRandomNickname(displayName);
+    const createdIso = new Date().toISOString();
+
     const newProfile: UserProfile = {
       id: 'profile_' + Date.now(),
-      name: name.trim() || translateText(lang, 'defaultProfileName'),
-      createdAt: new Date().toISOString(),
+      name: displayName,
+      nickname: finalNickname,
+      nicknameUpdatedAt: createdIso,
+      showActivityToFriends: true,
+      createdAt: createdIso,
       avatarColor: randomColor,
       gender: options?.gender || 'male',
       height: parsedHeight,
@@ -348,6 +360,10 @@ export async function updateProfile(
   profileId: string,
   updates: {
     name?: string;
+    nickname?: string;
+    nicknameUpdatedAt?: string;
+    statusNote?: string;
+    showActivityToFriends?: boolean;
     gender?: 'male' | 'female';
     height?: number;
     weight?: number;
@@ -360,10 +376,25 @@ export async function updateProfile(
 ): Promise<UserProfile> {
   const profiles = await getProfiles();
   const target = profiles.find((p) => p.id === profileId);
-  if (!target) throw new Error('Nie znaleziono profilu');
+  if (!target) throw new Error(translateText(getStoredLanguageSync(), 'errProfileNotFound'));
 
   if (updates.name !== undefined && updates.name.trim()) {
     target.name = updates.name.trim();
+  }
+  if (updates.nickname !== undefined) {
+    const cleanNick = normalizeNickname(updates.nickname);
+    if (isValidNickname(cleanNick) && cleanNick !== target.nickname) {
+      target.nickname = cleanNick;
+      target.nicknameUpdatedAt = updates.nicknameUpdatedAt || new Date().toISOString();
+    }
+  } else if (updates.nicknameUpdatedAt !== undefined) {
+    target.nicknameUpdatedAt = updates.nicknameUpdatedAt;
+  }
+  if (updates.statusNote !== undefined) {
+    target.statusNote = updates.statusNote.trim() || undefined;
+  }
+  if (updates.showActivityToFriends !== undefined) {
+    target.showActivityToFriends = updates.showActivityToFriends;
   }
   if (updates.gender !== undefined) {
     target.gender = updates.gender;
