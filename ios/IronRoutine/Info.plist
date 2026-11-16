@@ -51,6 +51,28 @@
 	<string>Iron Routine odczytuje kroki, sen i aktywność z Apple Health, aby wspierać regenerację i plan treningowy.</string>
 	<key>NSHealthUpdateUsageDescription</key>
 	<string>Iron Routine może zapisywać dane o treningu w Apple Health.</string>
+	<key>NSCalendarsUsageDescription</key>
+	<string>Iron Routine zapisuje Twoje terminy treningowe w Apple Calendar.</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>Iron Routine synchronizuje zaplanowane treningi z Apple Calendar.</string>
+	<key>NSRemindersUsageDescription</key>
+	<string>Iron Routine dodaje przypomnienia o treningach w Apple Reminders.</string>
+	<key>NSRemindersFullAccessUsageDescription</key>
+	<string>Iron Routine tworzy i aktualizuje przypomnienia treningowe w aplikacji Przypomnienia.</string>
+	<key>NSUserActivityTypes</key>
+	<array>
+		<string>INStartWorkoutIntent</string>
+		<string>com.matique.ironroutine.startWorkout</string>
+		<string>com.matique.ironroutine.openPlan</string>
+		<string>com.matique.ironroutine.syncCalendar</string>
+	</array>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>shortcuts</string>
+		<string>calshow</string>
+		<string>x-apple-reminderkit</string>
+		<string>alexa</string>
+	</array>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
 	<key>NSSupportsLiveActivitiesFrequentUpdates</key>

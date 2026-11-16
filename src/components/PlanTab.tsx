@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
 import {
+  Alert,
   View,
   Text,
   StyleSheet,
@@ -8,6 +9,7 @@ import {
   Animated,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAppTheme } from '../context/ThemeContext';
 import { useLanguage } from '../context/LanguageContext';
 import { DAYS_OF_WEEK, WORKOUT_PLAN } from '../data/planData';
@@ -21,8 +23,10 @@ import { DayExercisePreviewList } from './DayExercisePreviewList';
 import { AnimatedIcon } from './AnimatedIcon';
 import { MinimalistBackdrop } from './MinimalistBackdrop';
 import { SmartScrollView } from './SmartScrollView';
+import { getAppSettings, updateAppSettings } from '../services/settings';
+import { syncWorkoutScheduleWithDevice } from '../services/calendarSync';
 import { updateDayInPlan } from '../services/storage';
-import { triggerSelectionHaptic } from '../services/haptics';
+import { triggerNotificationHaptic, triggerSelectionHaptic } from '../services/haptics';
 
 interface PlanTabProps {
   profileId?: string;
@@ -51,6 +55,7 @@ export const PlanTab: React.FC<PlanTabProps> = ({
 }) => {
   const { theme } = useAppTheme();
   const { t, dayLabel } = useLanguage();
+  const insets = useSafeAreaInsets();
   const [selectedDayId, setSelectedDayId] = useState<string>('mon');
   const [modalExercise, setModalExercise] = useState<Exercise | null>(null);
   const [editingDay, setEditingDay] = useState(false);
@@ -102,7 +107,7 @@ export const PlanTab: React.FC<PlanTabProps> = ({
     <View style={[styles.container, { backgroundColor: theme.bg }]}>
       <MinimalistBackdrop variant="grid" accentColor="#A855F7" />
       {/* Editorial Title + Plan Switcher */}
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: Math.max(insets.top + 8, 16) }]}>
         <View style={styles.headerTopRow}>
           <View style={{ flex: 1, minWidth: 0 }}>
             <Text style={[styles.title, { color: theme.text }]}>{t('planTitle')}</Text>
@@ -111,20 +116,55 @@ export const PlanTab: React.FC<PlanTabProps> = ({
             </Text>
           </View>
 
-          <TouchableOpacity
-            style={[
-              styles.libraryBtn,
-              { backgroundColor: theme.bgSecondary, borderColor: theme.border },
-            ]}
-            onPress={() => {
-              triggerSelectionHaptic();
-              setShowLibrary(true);
-            }}
-            activeOpacity={0.75}
-          >
-            <Ionicons name="barbell-outline" size={16} color={theme.text} />
-            <Text style={[styles.libraryBtnText, { color: theme.text }]}>{t('planLibraryBtn')}</Text>
-          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <TouchableOpacity
+              style={[
+                styles.libraryBtn,
+                { backgroundColor: theme.bgSecondary, borderColor: theme.border },
+              ]}
+              onPress={async () => {
+                if (!activePlan) return;
+                triggerSelectionHaptic();
+                const currentSettings = await getAppSettings();
+                const nextSettings = await updateAppSettings({
+                  calendarSyncEnabled: true,
+                  remindersSyncEnabled: true,
+                });
+                const res = await syncWorkoutScheduleWithDevice(activePlan, nextSettings || currentSettings);
+                if (res.ok) {
+                  triggerNotificationHaptic('success');
+                  Alert.alert(
+                    t('calendarSyncedSuccessTitle'),
+                    t('calendarSyncedSuccessBody', {
+                      events: res.eventsCreated,
+                      reminders: res.remindersCreated,
+                    })
+                  );
+                } else if (res.error) {
+                  Alert.alert(t('errorTitle'), res.error);
+                }
+              }}
+              activeOpacity={0.75}
+            >
+              <Ionicons name="calendar-outline" size={15} color="#A855F7" />
+              <Text style={[styles.libraryBtnText, { color: theme.text }]}>{t('calendarQuickSyncPill')}</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.libraryBtn,
+                { backgroundColor: theme.bgSecondary, borderColor: theme.border },
+              ]}
+              onPress={() => {
+                triggerSelectionHaptic();
+                setShowLibrary(true);
+              }}
+              activeOpacity={0.75}
+            >
+              <Ionicons name="barbell-outline" size={16} color={theme.text} />
+              <Text style={[styles.libraryBtnText, { color: theme.text }]}>{t('planLibraryBtn')}</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
 

@@ -21,11 +21,28 @@
         "NSSupportsLiveActivities": true,
         "NSSupportsLiveActivitiesFrequentUpdates": true,
         "NSHealthShareUsageDescription": "Iron Routine odczytuje kroki, sen i aktywność z Apple Health, aby wspierać regenerację i plan treningowy.",
-        "NSHealthUpdateUsageDescription": "Iron Routine może zapisywać dane o treningu w Apple Health."
+        "NSHealthUpdateUsageDescription": "Iron Routine może zapisywać dane o treningu w Apple Health.",
+        "NSCalendarsUsageDescription": "Iron Routine zapisuje Twoje terminy treningowe w Apple Calendar.",
+        "NSCalendarsFullAccessUsageDescription": "Iron Routine synchronizuje zaplanowane treningi z Apple Calendar.",
+        "NSRemindersUsageDescription": "Iron Routine dodaje przypomnienia o treningach w Apple Reminders.",
+        "NSRemindersFullAccessUsageDescription": "Iron Routine tworzy i aktualizuje przypomnienia treningowe w aplikacji Przypomnienia.",
+        "NSUserActivityTypes": [
+          "INStartWorkoutIntent",
+          "com.matique.ironroutine.startWorkout",
+          "com.matique.ironroutine.openPlan",
+          "com.matique.ironroutine.syncCalendar"
+        ]
       }
     },
     "plugins": [
       "expo-live-activity",
+      [
+        "expo-calendar",
+        {
+          "calendarPermission": "Iron Routine synchronizuje zaplanowane treningi z Twoim kalendarzem.",
+          "remindersPermission": "Iron Routine tworzy przypomnienia o treningach w aplikacji Przypomnienia."
+        }
+      ],
       [
         "expo-notifications",
         {
@@ -58,11 +75,14 @@
     "android": {
       "package": "com.matique.ironroutine",
       "versionCode": 4,
+      "edgeToEdgeEnabled": true,
       "permissions": [
         "android.permission.health.READ_STEPS",
         "android.permission.health.READ_SLEEP",
         "android.permission.health.READ_ACTIVE_CALORIES_BURNED",
-        "android.permission.health.READ_DISTANCE"
+        "android.permission.health.READ_DISTANCE",
+        "android.permission.READ_CALENDAR",
+        "android.permission.WRITE_CALENDAR"
       ],
       "adaptiveIcon": {
         "backgroundColor": "#050608",

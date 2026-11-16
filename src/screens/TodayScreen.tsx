@@ -8,6 +8,7 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SmartScrollView } from '../components/SmartScrollView';
 import { useAppTheme } from '../context/ThemeContext';
 import { useLanguage } from '../context/LanguageContext';
@@ -90,6 +91,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
 }) => {
   const { theme, isDark, toggleTheme } = useAppTheme();
   const { t, language, dayTagLabel, localeCode } = useLanguage();
+  const insets = useSafeAreaInsets();
   const dateLocale = localeCode;
 
   const bannerTag = resolveDayBannerTag(currentPlan);
@@ -129,10 +131,13 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.bg }}>
-      <MinimalistBackdrop variant="dots" accentColor={isRestOrWalk ? '#38BDF8' : '#10B981'} />
+      <MinimalistBackdrop variant="contours" accentColor={isRestOrWalk ? '#38BDF8' : '#10B981'} />
       <SmartScrollView
         style={[styles.tabScroll, { backgroundColor: 'transparent' }]}
-        contentContainerStyle={styles.tabContent}
+        contentContainerStyle={[
+          styles.tabContent,
+          { paddingTop: Math.max(insets.top + 8, 18) },
+        ]}
         showsVerticalScrollIndicator={false}
       >
       {/* Open Editorial Header with Glassmorphic Action Pills */}

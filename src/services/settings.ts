@@ -20,6 +20,14 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   defaultRestSeconds: 120,
   supplements: DEFAULT_SUPPLEMENTS.map((s) => ({ ...s })),
   healthSyncEnabled: false,
+  calendarSyncEnabled: false,
+  remindersSyncEnabled: false,
+  preferredWorkoutHour: 18,
+  preferredWorkoutMinute: 0,
+  workoutDurationMinutes: 60,
+  lastCalendarSyncAt: undefined,
+  calendarSyncedIds: [],
+  reminderSyncedIds: [],
 };
 
 let cachedSettings: AppSettings = {

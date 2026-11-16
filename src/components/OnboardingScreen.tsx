@@ -17,6 +17,8 @@ import {
 } from 'react-native';
 import Svg, { Circle, Defs, Path, Pattern, Rect } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { MinimalistBackdrop } from './MinimalistBackdrop';
 import { SmartScrollView } from './SmartScrollView';
 import { useKeyboardHeight } from '../hooks/useKeyboardHeight';
 import { useAppTheme } from '../context/ThemeContext';
@@ -166,6 +168,7 @@ const SWAP_CAT_COLORS: Record<string, string> = {
 export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted }) => {
   const { theme, isDark, toggleTheme } = useAppTheme();
   const { language, t, muscleLabel, equipmentLabel, dayLabel, exerciseName } = useLanguage();
+  const insets = useSafeAreaInsets();
 
   const [showWelcomeIntro, setShowWelcomeIntro] = useState(true);
   const [step, setStep] = useState(0);
@@ -781,27 +784,18 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
   if (showWelcomeIntro) {
     return (
       <View style={[styles.container, { backgroundColor: theme.bg }]}>
-        {/* Subtle technical grid backdrop */}
-        <Svg
-          width="100%"
-          height="100%"
-          style={StyleSheet.absoluteFill}
-          pointerEvents="none"
-        >
-          <Defs>
-            <Pattern id="welcomeGrid" width={42} height={48} patternUnits="userSpaceOnUse">
-              <Path
-                d="M 42 0 L 0 0 0 48"
-                fill="none"
-                stroke={isDark ? 'rgba(255, 255, 255, 0.055)' : 'rgba(24, 24, 27, 0.055)'}
-                strokeWidth={1}
-              />
-            </Pattern>
-          </Defs>
-          <Rect x={0} y={0} width="100%" height="100%" fill="url(#welcomeGrid)" />
-        </Svg>
+        <MinimalistBackdrop variant="grid" accentColor="#10B981" />
 
-        <Animated.View style={[styles.welcomeWrap, { opacity: welcomeBgOpacity }]}>
+        <Animated.View
+          style={[
+            styles.welcomeWrap,
+            {
+              opacity: welcomeBgOpacity,
+              paddingTop: Math.max(insets.top + 12, 22),
+              paddingBottom: Math.max(insets.bottom + 14, 28),
+            },
+          ]}
+        >
           <View style={styles.welcomeTopBar}>
             <View
               style={[
@@ -979,8 +973,17 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
       style={[styles.container, { backgroundColor: theme.bg }]}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
+      <MinimalistBackdrop variant="contours" accentColor={meta.accent} />
       {/* Open Editorial Header */}
-      <View style={[styles.headerShell, { borderBottomColor: theme.hairline }]}>
+      <View
+        style={[
+          styles.headerShell,
+          {
+            borderBottomColor: theme.hairline,
+            paddingTop: Math.max(insets.top + 8, 16),
+          },
+        ]}
+      >
         <View style={styles.topRow}>
           <View style={styles.brandRow}>
             <TouchableOpacity
@@ -2056,7 +2059,16 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
 
       {/* Open Minimalist Footer */}
       {step < TOTAL_STEPS - 1 && (
-        <View style={[styles.footer, { backgroundColor: theme.bg, borderTopColor: theme.hairline }]}>
+        <View
+          style={[
+            styles.footer,
+            {
+              backgroundColor: theme.bg,
+              borderTopColor: theme.hairline,
+              paddingBottom: Math.max(insets.bottom + 8, 16),
+            },
+          ]}
+        >
           <View style={styles.footerActions}>
             <TouchableOpacity
               style={[styles.primaryBtn, { backgroundColor: theme.primary }]}

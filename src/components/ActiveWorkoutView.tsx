@@ -13,6 +13,8 @@ import {
   AppState,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { MinimalistBackdrop } from './MinimalistBackdrop';
 import { useAppTheme } from '../context/ThemeContext';
 import { useLanguage } from '../context/LanguageContext';
 import { DayPlan, DayProgress, Exercise, SessionExerciseConfig, SetEntry } from '../types/workout';
@@ -102,6 +104,7 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
 }) => {
   const { theme, isDark } = useAppTheme();
   const { t, categoryLabel, exerciseName } = useLanguage();
+  const insets = useSafeAreaInsets();
   const [allSessionExercises, setAllSessionExercises] = useState<Exercise[]>(() =>
     resolveOrderedSessionExercises(dayPlan.exercises || [], dayProgress.sessionConfig)
   );
@@ -898,8 +901,17 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
 
   return (
     <View style={[styles.container, { backgroundColor: theme.bg }]}>
+      <MinimalistBackdrop variant="grid" accentColor="#10B981" />
       {/* Top Bar */}
-      <View style={[styles.topBar, { borderBottomColor: theme.hairline }]}>
+      <View
+        style={[
+          styles.topBar,
+          {
+            borderBottomColor: theme.hairline,
+            paddingTop: Math.max(insets.top + 8, 12),
+          },
+        ]}
+      >
         <TouchableOpacity onPress={handlePromptExit} style={styles.exitBtn} activeOpacity={0.7}>
           <Ionicons name="close" size={18} color={theme.text} />
           <Text style={[styles.exitBtnText, { color: theme.text }]}>{t('exitBtn')}</Text>

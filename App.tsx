@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Alert, Animated, AppState, Platform, StyleSheet, View } from 'react-native';
-import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
+import * as Linking from 'expo-linking';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import * as Notifications from 'expo-notifications';
 
@@ -35,6 +36,8 @@ import {
 import { scheduleAutoCloudSync } from './src/services/cloudSync';
 import { getAppSettings, updateAppSettings } from './src/services/settings';
 import { fetchTodayHealthSummary, requestHealthPermissions } from './src/services/health';
+import { syncWorkoutScheduleWithDevice } from './src/services/calendarSync';
+import { parseVoiceDeepLink } from './src/services/voiceCommands';
 import { triggerNotificationHaptic, triggerSelectionHaptic } from './src/services/haptics';
 import {
   cancelRestFinishedNotification,
@@ -294,6 +297,16 @@ function MainApp() {
     setProfilePlans(plans);
     setActivePlan(ap);
     setProgressRefreshKey((k) => k + 1);
+    if (ap) {
+      getAppSettings()
+        .then((s) => {
+          if (s.calendarSyncEnabled || s.remindersSyncEnabled) {
+            return syncWorkoutScheduleWithDevice(ap, s);
+          }
+          return null;
+        })
+        .catch(() => {});
+    }
   };
 
   const handleFullDataRefresh = async () => {
@@ -552,6 +565,56 @@ function MainApp() {
     p.days.flatMap((d) => d.exercises || [])
   );
 
+  const incomingUrl = Linking.useURL();
+  const lastHandledUrlRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!incomingUrl || showSplash || !activeProfile) return;
+    if (lastHandledUrlRef.current === incomingUrl) return;
+
+    const cmd = parseVoiceDeepLink(incomingUrl);
+    if (!cmd) return;
+    lastHandledUrlRef.current = incomingUrl;
+
+    if (cmd.type === 'start_workout') {
+      handleStartWorkout(cmd.dayId);
+    } else if (cmd.type === 'open_plan') {
+      setIsActiveWorkout(false);
+      handleSwitchTab('plan');
+    } else if (cmd.type === 'open_progress') {
+      setIsActiveWorkout(false);
+      handleSwitchTab('progress');
+    } else if (cmd.type === 'open_friends') {
+      setIsActiveWorkout(false);
+      handleSwitchTab('friends');
+    } else if (cmd.type === 'open_settings') {
+      setIsActiveWorkout(false);
+      handleSwitchTab('settings');
+    } else if (cmd.type === 'log_weight') {
+      setIsActiveWorkout(false);
+      setShowBodyStatsModal(true);
+    } else if (cmd.type === 'sync_calendar' && activePlan) {
+      getAppSettings()
+        .then(async (s) => {
+          const updated = await updateAppSettings({
+            calendarSyncEnabled: true,
+            remindersSyncEnabled: true,
+          });
+          const res = await syncWorkoutScheduleWithDevice(activePlan, updated || s);
+          if (res.ok) {
+            Alert.alert(
+              t('calendarSyncedSuccessTitle'),
+              t('calendarSyncedSuccessBody', {
+                events: res.eventsCreated,
+                reminders: res.remindersCreated,
+              })
+            );
+          }
+        })
+        .catch(() => {});
+    }
+  }, [incomingUrl, showSplash, activeProfile, activePlan, t]);
+
   if (showSplash) {
     return (
       <View style={{ flex: 1, backgroundColor: theme.bg }}>
@@ -563,49 +626,35 @@ function MainApp() {
 
   if (!activeProfile) {
     return (
-      <SafeAreaProvider>
-        <SafeAreaView
-          style={[styles.safeArea, { backgroundColor: theme.bg }]}
-          edges={['top', 'left', 'right', 'bottom']}
-        >
-          <StatusBar style={isDark ? 'light' : 'dark'} />
-          <OnboardingScreen onCompleted={handleOnboardingComplete} />
-        </SafeAreaView>
-      </SafeAreaProvider>
+      <View style={[styles.safeArea, { backgroundColor: theme.bg }]}>
+        <StatusBar style={isDark ? 'light' : 'dark'} />
+        <OnboardingScreen onCompleted={handleOnboardingComplete} />
+      </View>
     );
   }
 
   if (isActiveWorkout) {
     return (
-      <SafeAreaProvider>
-        <SafeAreaView
-          style={[styles.safeArea, { backgroundColor: theme.bg }]}
-          edges={['top', 'left', 'right']}
-        >
-          <StatusBar style={isDark ? 'light' : 'dark'} />
-          <ActiveWorkoutView
-            dayPlan={activeWorkoutPlan}
-            profileId={activeProfile.id}
-            extraLibraryExercises={extraLibraryExercises}
-            dayProgress={dayProgress}
-            autoOpenSessionPicker={autoOpenSessionPicker}
-            onUpdateSet={handleUpdateSet}
-            onSaveSessionConfig={handleSaveSessionConfig}
-            onFinishWorkout={handleFinishWorkout}
-            onExitWorkout={handleExitWorkout}
-          />
-        </SafeAreaView>
-      </SafeAreaProvider>
+      <View style={[styles.safeArea, { backgroundColor: theme.bg }]}>
+        <StatusBar style={isDark ? 'light' : 'dark'} />
+        <ActiveWorkoutView
+          dayPlan={activeWorkoutPlan}
+          profileId={activeProfile.id}
+          extraLibraryExercises={extraLibraryExercises}
+          dayProgress={dayProgress}
+          autoOpenSessionPicker={autoOpenSessionPicker}
+          onUpdateSet={handleUpdateSet}
+          onSaveSessionConfig={handleSaveSessionConfig}
+          onFinishWorkout={handleFinishWorkout}
+          onExitWorkout={handleExitWorkout}
+        />
+      </View>
     );
   }
 
   return (
-    <SafeAreaProvider>
-      <SafeAreaView
-        style={[styles.safeArea, { backgroundColor: theme.bg }]}
-        edges={['top', 'left', 'right']}
-      >
-        <StatusBar style={isDark ? 'light' : 'dark'} />
+    <View style={[styles.safeArea, { backgroundColor: theme.bg }]}>
+      <StatusBar style={isDark ? 'light' : 'dark'} />
 
         {/* Animated Tab View Container */}
         <Animated.View
@@ -761,18 +810,19 @@ function MainApp() {
           newPRs={summaryNewPRs}
           onClose={() => setShowSummaryModal(false)}
         />
-      </SafeAreaView>
-    </SafeAreaProvider>
+    </View>
   );
 }
 
 export default function App() {
   return (
-    <ThemeProvider>
-      <LanguageProvider>
-        <MainApp />
-      </LanguageProvider>
-    </ThemeProvider>
+    <SafeAreaProvider>
+      <ThemeProvider>
+        <LanguageProvider>
+          <MainApp />
+        </LanguageProvider>
+      </ThemeProvider>
+    </SafeAreaProvider>
   );
 }
 
