@@ -473,9 +473,22 @@ export const FriendsTab: React.FC<FriendsTabProps> = ({
         : 0,
   }));
 
+  const friendsBackdropColors =
+    subTab === 'chats'
+      ? { top: '#10B981', bottom: '#14B8A6' }
+      : subTab === 'feed'
+      ? { top: '#F59E0B', bottom: '#F97316' }
+      : subTab === 'rank'
+      ? { top: '#38BDF8', bottom: '#6366F1' }
+      : { top: '#A855F7', bottom: '#EC4899' };
+
   return (
     <View style={[styles.container, { backgroundColor: theme.bg }]}>
-      <MinimalistBackdrop variant="contours" accentColor="#38BDF8" />
+      <MinimalistBackdrop
+        variant="diagonal"
+        accentColor={friendsBackdropColors.top}
+        secondaryColor={friendsBackdropColors.bottom}
+      />
 
       {/* Open Editorial Header */}
       <View

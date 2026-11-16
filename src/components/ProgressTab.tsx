@@ -321,6 +321,8 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
     }
   }, [focusedExercise, openExerciseDetail, onClearFocusedExercise]);
 
+  const isDraggingNavRef = useRef(false);
+
   const handleSwitchSubView = useCallback(
     (next: SubViewTab, animateThumb = true) => {
       const targetIdx = SUB_TABS.findIndex((t) => t.id === next);
@@ -331,7 +333,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
           Animated.spring(navThumbAnim, {
             toValue: targetIdx,
             friction: 7,
-            tension: 110,
+            tension: 96,
             useNativeDriver: true,
           }),
           Animated.spring(navScaleAnim, {
@@ -346,13 +348,13 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
       if (next === subViewRef.current) return;
 
       try {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        Haptics.selectionAsync();
       } catch {}
 
       subViewRef.current = next;
       setSliderVisualIdx(targetIdx);
       scrollViewRef.current?.scrollTo({ y: 0, animated: false });
-      viewFadeAnim.setValue(0.25);
+      viewFadeAnim.setValue(0.84);
 
       React.startTransition(() => {
         setSubView(next);
@@ -360,7 +362,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
 
       Animated.timing(viewFadeAnim, {
         toValue: 1,
-        duration: 150,
+        duration: 135,
         easing: Easing.out(Easing.cubic),
         useNativeDriver: true,
       }).start();
@@ -368,44 +370,34 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
     [navScaleAnim, navThumbAnim, viewFadeAnim]
   );
 
+  const handleSwitchSubViewRef = useRef(handleSwitchSubView);
+  handleSwitchSubViewRef.current = handleSwitchSubView;
+
   const navPanResponder = useMemo(
     () =>
       PanResponder.create({
-        onStartShouldSetPanResponder: () => true,
-        onMoveShouldSetPanResponder: () => true,
-        onPanResponderTerminationRequest: () => false,
-        onPanResponderGrant: (evt) => {
-          const lx = Math.max(0, Math.min(SLIDER_WIDTH, evt.nativeEvent.locationX));
-          grantXRef.current = lx;
-          const curIdx = SUB_TABS.findIndex((t) => t.id === subViewRef.current);
-          const touchedIdx = Math.max(
+        onStartShouldSetPanResponder: () => false,
+        onMoveShouldSetPanResponder: (_, g) =>
+          Math.abs(g.dx) > 5 && Math.abs(g.dx) > Math.abs(g.dy) * 1.1,
+        onMoveShouldSetPanResponderCapture: (_, g) =>
+          Math.abs(g.dx) > 6 && Math.abs(g.dx) > Math.abs(g.dy) * 1.1,
+        onPanResponderGrant: () => {
+          isDraggingNavRef.current = true;
+          const curIdx = Math.max(
             0,
-            Math.min(SUB_TABS.length - 1, Math.floor((lx - SLIDER_PADDING) / SLIDER_SLOT_W))
+            SUB_TABS.findIndex((t) => t.id === subViewRef.current)
           );
-          dragStartIndexRef.current = touchedIdx === curIdx ? curIdx : touchedIdx;
-          hoverIdxRef.current = touchedIdx;
-          setSliderVisualIdx(touchedIdx);
-          try {
-            Haptics.selectionAsync();
-          } catch {}
-          Animated.parallel([
-            Animated.spring(navScaleAnim, {
-              toValue: 0.94,
-              friction: 8,
-              tension: 140,
-              useNativeDriver: true,
-            }),
-            Animated.spring(navThumbAnim, {
-              toValue: touchedIdx,
-              friction: 9,
-              tension: 160,
-              useNativeDriver: true,
-            }),
-          ]).start();
+          dragStartIndexRef.current = curIdx;
+          hoverIdxRef.current = curIdx;
+          Animated.spring(navScaleAnim, {
+            toValue: 0.95,
+            friction: 8,
+            tension: 140,
+            useNativeDriver: true,
+          }).start();
         },
         onPanResponderMove: (_, gestureState) => {
-          const currentX = grantXRef.current + gestureState.dx;
-          const rawIdx = (currentX - SLIDER_PADDING - SLIDER_SLOT_W / 2) / SLIDER_SLOT_W;
+          const rawIdx = dragStartIndexRef.current + gestureState.dx / SLIDER_SLOT_W;
           const clampedIdx = Math.max(0, Math.min(SUB_TABS.length - 1, rawIdx));
           navThumbAnim.setValue(clampedIdx);
 
@@ -413,41 +405,48 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
           if (nearestIdx !== hoverIdxRef.current) {
             hoverIdxRef.current = nearestIdx;
             setSliderVisualIdx(nearestIdx);
-            try {
-              Haptics.selectionAsync();
-            } catch {}
+            const targetTab = SUB_TABS[nearestIdx]?.id;
+            if (targetTab && targetTab !== subViewRef.current) {
+              try {
+                Haptics.selectionAsync();
+              } catch {}
+              handleSwitchSubViewRef.current(targetTab, false);
+            }
           }
         },
-        onPanResponderRelease: (_, gestureState) => {
-          const moved = Math.abs(gestureState.dx) > 4;
-          const currentX = grantXRef.current + gestureState.dx;
-          const targetIdx = moved
-            ? Math.max(
-                0,
-                Math.min(
-                  SUB_TABS.length - 1,
-                  Math.round((currentX - SLIDER_PADDING - SLIDER_SLOT_W / 2) / SLIDER_SLOT_W)
-                )
-              )
-            : Math.max(
-                0,
-                Math.min(
-                  SUB_TABS.length - 1,
-                  Math.floor((grantXRef.current - SLIDER_PADDING) / SLIDER_SLOT_W)
-                )
-              );
-
-          const targetTab = SUB_TABS[targetIdx]?.id || subViewRef.current;
-          handleSwitchSubView(targetTab, true);
-        },
-        onPanResponderTerminate: () => {
-          const curIdx = SUB_TABS.findIndex((t) => t.id === subViewRef.current);
-          setSliderVisualIdx(curIdx >= 0 ? curIdx : 0);
+        onPanResponderRelease: () => {
+          isDraggingNavRef.current = false;
+          const targetIdx = Math.max(
+            0,
+            SUB_TABS.findIndex((t) => t.id === subViewRef.current)
+          );
           Animated.parallel([
             Animated.spring(navThumbAnim, {
-              toValue: curIdx >= 0 ? curIdx : 0,
+              toValue: targetIdx,
               friction: 7,
-              tension: 110,
+              tension: 96,
+              useNativeDriver: true,
+            }),
+            Animated.spring(navScaleAnim, {
+              toValue: 1,
+              friction: 6,
+              tension: 120,
+              useNativeDriver: true,
+            }),
+          ]).start();
+        },
+        onPanResponderTerminate: () => {
+          isDraggingNavRef.current = false;
+          const curIdx = Math.max(
+            0,
+            SUB_TABS.findIndex((t) => t.id === subViewRef.current)
+          );
+          setSliderVisualIdx(curIdx);
+          Animated.parallel([
+            Animated.spring(navThumbAnim, {
+              toValue: curIdx,
+              friction: 7,
+              tension: 96,
               useNativeDriver: true,
             }),
             Animated.spring(navScaleAnim, {
@@ -459,7 +458,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
           ]).start();
         },
       }),
-    [handleSwitchSubView, navScaleAnim, navThumbAnim]
+    [navScaleAnim, navThumbAnim]
   );
 
   const handleSwitchSortMode = (mode: 'rank' | 'priority') => {
@@ -900,7 +899,11 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
 
   return (
     <View style={[styles.container, { backgroundColor: theme.bg }]}>
-      <MinimalistBackdrop variant="contours" accentColor="#F59E0B" />
+      <MinimalistBackdrop
+        variant="diagonal"
+        accentColor="#F59E0B"
+        secondaryColor="#F43F5E"
+      />
       {/* Open Editorial Header with Silky 120fps Icon-Only Glass Pill Slider */}
       <View
         style={[
@@ -921,11 +924,11 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
               {
                 width: SLIDER_WIDTH,
                 backgroundColor: isDark
-                  ? 'rgba(39, 39, 42, 0.72)'
-                  : 'rgba(244, 244, 245, 0.88)',
+                  ? 'rgba(24, 24, 30, 0.44)'
+                  : 'rgba(255, 255, 255, 0.46)',
                 borderColor: isDark
-                  ? 'rgba(255, 255, 255, 0.11)'
-                  : 'rgba(24, 24, 27, 0.08)',
+                  ? 'rgba(255, 255, 255, 0.16)'
+                  : 'rgba(15, 23, 42, 0.11)',
               },
             ]}
           >
@@ -935,7 +938,9 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                 styles.navPillAnimatedThumb,
                 {
                   width: SLIDER_SLOT_W,
-                  backgroundColor: theme.text,
+                  backgroundColor: isDark
+                    ? 'rgba(255, 255, 255, 0.88)'
+                    : 'rgba(15, 23, 42, 0.86)',
                   transform: [
                     { translateX: thumbTranslateX },
                     { scale: navScaleAnim },
@@ -946,9 +951,10 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
             {SUB_TABS.map((tab, idx) => {
               const active = sliderVisualIdx === idx;
               return (
-                <View
+                <TouchableOpacity
                   key={tab.id}
-                  pointerEvents="none"
+                  onPress={() => handleSwitchSubView(tab.id, true)}
+                  activeOpacity={0.78}
                   accessibilityLabel={t(tab.a11yKey)}
                   style={styles.navPillBtn}
                 >
@@ -957,7 +963,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                     size={17}
                     color={active ? theme.bg : theme.textMuted}
                   />
-                </View>
+                </TouchableOpacity>
               );
             })}
           </View>

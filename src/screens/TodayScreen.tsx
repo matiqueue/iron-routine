@@ -131,7 +131,11 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.bg }}>
-      <MinimalistBackdrop variant="contours" accentColor={isRestOrWalk ? '#38BDF8' : '#10B981'} />
+      <MinimalistBackdrop
+        variant="diagonal"
+        accentColor={isRestOrWalk ? '#38BDF8' : '#10B981'}
+        secondaryColor={isRestOrWalk ? '#818CF8' : '#0EA5E9'}
+      />
       <SmartScrollView
         style={[styles.tabScroll, { backgroundColor: 'transparent' }]}
         contentContainerStyle={[

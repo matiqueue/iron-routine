@@ -257,28 +257,33 @@ function MainApp() {
     initApp();
   }, [initApp]);
 
-  const handleSwitchTab = (targetTab: AppTabKey) => {
-    if (targetTab === activeTab) return;
-    triggerSelectionHaptic();
+  const handleSwitchTab = useCallback(
+    (targetTab: AppTabKey) => {
+      if (targetTab === activeTab) return;
+      triggerSelectionHaptic();
 
-    tabFadeAnim.setValue(0);
-    tabSlideAnim.setValue(10);
-    setActiveTab(targetTab);
+      tabFadeAnim.setValue(0.84);
+      tabSlideAnim.setValue(6);
+      React.startTransition(() => {
+        setActiveTab(targetTab);
+      });
 
-    Animated.parallel([
-      Animated.timing(tabFadeAnim, {
-        toValue: 1,
-        duration: 180,
-        useNativeDriver: true,
-      }),
-      Animated.spring(tabSlideAnim, {
-        toValue: 0,
-        friction: 8,
-        tension: 55,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  };
+      Animated.parallel([
+        Animated.timing(tabFadeAnim, {
+          toValue: 1,
+          duration: 140,
+          useNativeDriver: true,
+        }),
+        Animated.spring(tabSlideAnim, {
+          toValue: 0,
+          friction: 9,
+          tension: 95,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    },
+    [activeTab, tabFadeAnim, tabSlideAnim]
+  );
 
   const handleOnboardingComplete = async (profile: UserProfile) => {
     setActiveProfile(profile);

@@ -901,7 +901,7 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
 
   return (
     <View style={[styles.container, { backgroundColor: theme.bg }]}>
-      <MinimalistBackdrop variant="grid" accentColor="#10B981" />
+      <MinimalistBackdrop variant="grid" accentColor="#F97316" secondaryColor="#EF4444" />
       {/* Top Bar */}
       <View
         style={[
