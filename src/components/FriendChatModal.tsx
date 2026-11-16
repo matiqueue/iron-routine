@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Animated,
   Easing,
   FlatList,
@@ -135,6 +136,7 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
     try {
       const res = await sendChatMessage({
         friendId: friend.userId,
+        recipientPublicKey: friend.e2eePublicKey || '',
         type,
         text: cleanText,
         payload,
@@ -142,6 +144,9 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
       if (res.ok && res.message) {
         setMessages((prev) => prev.map((m) => (m.id === optimistic.id ? res.message! : m)));
         onMessagesChanged?.();
+      } else {
+        setMessages((prev) => prev.filter((m) => m.id !== optimistic.id));
+        if (res.error) Alert.alert(t('errorTitle'), res.error);
       }
     } finally {
       setIsSending(false);
@@ -418,6 +423,25 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
           >
             <Ionicons name="person-outline" size={17} color={theme.text} />
           </TouchableOpacity>
+        </View>
+
+        {/* E2EE Verification Strip */}
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 5,
+            paddingVertical: 6,
+            backgroundColor: isDark ? 'rgba(16, 185, 129, 0.08)' : 'rgba(16, 185, 129, 0.06)',
+            borderBottomWidth: StyleSheet.hairlineWidth,
+            borderBottomColor: 'rgba(16, 185, 129, 0.22)',
+          }}
+        >
+          <Ionicons name="lock-closed" size={11} color="#10B981" />
+          <Text style={{ fontSize: 10.5, fontWeight: '800', color: '#10B981' }}>
+            {t('e2eeBadgeLabel')} · Curve25519
+          </Text>
         </View>
 
         {/* Thread Body */}

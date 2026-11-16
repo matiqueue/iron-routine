@@ -14,6 +14,7 @@ import { useLanguage } from '../context/LanguageContext';
 import { FriendProfileSummary, RankTier } from '../types/workout';
 import { RANK_TIER_MAP } from '../data/muscleMap';
 import { RankCrestIcon } from './RankCrestIcon';
+import { VsComparisonArc } from './CrewCustomComponents';
 import { InteractiveBottomSheet, BottomSheetScrollView } from './InteractiveBottomSheet';
 import { triggerNotificationHaptic, triggerSelectionHaptic } from '../services/haptics';
 
@@ -302,6 +303,13 @@ export const FriendProfileModal: React.FC<FriendProfileModalProps> = ({
           <Text style={[styles.sectionEyebrow, { color: theme.textMuted }]}>
             {t('friendsCompareHeading')}
           </Text>
+          <VsComparisonArc
+            myLabel={`${t('friendsYouLabel')} (${myProfile?.overallRank || 'F'})`}
+            friendLabel={`@${friend.nickname} (${friend.overallRank})`}
+            myScore={Math.max(10, myScore)}
+            friendScore={Math.max(10, friendScore)}
+            friendColor={rankMeta.color}
+          />
           {compareMetrics.map((row) => {
             const maxVal = Math.max(1, row.myVal, row.friendVal);
             const myPct = Math.max(8, Math.round((row.myVal / maxVal) * 100));

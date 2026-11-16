@@ -848,6 +848,19 @@ const PL = {
   friendsYouSayPrefix: 'Ty: ',
   friendsSetsCountShort: 'serii',
   friendsDaysShort: 'dni',
+  settingsTabProfile: 'Profil',
+  settingsTabTraining: 'Trening',
+  settingsTabSystem: 'System',
+  settingsTabData: 'Dane',
+  e2eeBadgeLabel: 'Szyfrowanie E2EE',
+  e2eeFingerprintLabel: 'ODCISK KLUCZA E2EE (CURVE25519)',
+  e2eeSecurityHint: 'Twoje wiadomości na czacie są szyfrowane lokalnie na urządzeniu kluczem Curve25519 przed wysłaniem. Serwer widzi tylko zaszyfrowany szyfrogram.',
+  e2eeKeyChangedPlaceholder: '🔒 Wiadomość zaszyfrowana poprzednim kluczem urządzenia',
+  e2eeMissingRecipientKey: 'Ten znajomy nie aktywował jeszcze klucza E2EE na swoim urządzeniu.',
+  friendsCrewSpotlightTitle: 'EKIPA NA ŻYWO',
+  friendsPodiumTitle: 'PODIUM EKIPY',
+  friendsRadarSubtitle: 'Skaner sieci ekipy · Szyfrowanie E2EE aktywne',
+  friendsTapToChat: 'Kliknij kartę, aby otworzyć szyfrowany czat',
 } as const;
 
 export type TranslationKey = keyof typeof PL;
@@ -1651,6 +1664,19 @@ const EN: Record<TranslationKey, string> = {
   friendsYouSayPrefix: 'You: ',
   friendsSetsCountShort: 'sets',
   friendsDaysShort: 'd',
+  settingsTabProfile: 'Profile',
+  settingsTabTraining: 'Training',
+  settingsTabSystem: 'System',
+  settingsTabData: 'Data',
+  e2eeBadgeLabel: 'E2EE Encrypted',
+  e2eeFingerprintLabel: 'E2EE KEY FINGERPRINT (CURVE25519)',
+  e2eeSecurityHint: 'Chat messages are encrypted locally with Curve25519 before leaving your device. The PostgreSQL database only stores sealed ciphertext.',
+  e2eeKeyChangedPlaceholder: '🔒 Message encrypted with an older device key',
+  e2eeMissingRecipientKey: 'This friend has not published an E2EE key yet.',
+  friendsCrewSpotlightTitle: 'CREW SPOTLIGHT',
+  friendsPodiumTitle: 'CREW PODIUM',
+  friendsRadarSubtitle: 'Squad Radar · Curve25519 E2EE Active',
+  friendsTapToChat: 'Tap card to open encrypted chat',
 };
 
 const DE: Record<TranslationKey, string> = {
@@ -2452,6 +2478,19 @@ const DE: Record<TranslationKey, string> = {
   friendsYouSayPrefix: 'Du: ',
   friendsSetsCountShort: 'Sätze',
   friendsDaysShort: 'T',
+  settingsTabProfile: 'Profil',
+  settingsTabTraining: 'Training',
+  settingsTabSystem: 'System',
+  settingsTabData: 'Daten',
+  e2eeBadgeLabel: 'E2EE Verschlüsselt',
+  e2eeFingerprintLabel: 'E2EE-SCHLÜSSELFINGERABDRUCK (CURVE25519)',
+  e2eeSecurityHint: 'Chat-Nachrichten werden vor dem Senden lokal per Curve25519 verschlüsselt. Die Datenbank speichert nur Chiffretext.',
+  e2eeKeyChangedPlaceholder: '🔒 Mit älterem Geräteschlüssel verschlüsselt',
+  e2eeMissingRecipientKey: 'Dieser Freund hat noch keinen E2EE-Schlüssel aktiviert.',
+  friendsCrewSpotlightTitle: 'CREW LIVE',
+  friendsPodiumTitle: 'TEAM-PODIUM',
+  friendsRadarSubtitle: 'Crew-Radar · Curve25519 E2EE aktiv',
+  friendsTapToChat: 'Tippen für verschlüsselten Chat',
 };
 
 const FR: Record<TranslationKey, string> = {
@@ -3253,6 +3292,19 @@ const FR: Record<TranslationKey, string> = {
   friendsYouSayPrefix: 'Vous : ',
   friendsSetsCountShort: 'séries',
   friendsDaysShort: 'j',
+  settingsTabProfile: 'Profil',
+  settingsTabTraining: 'Séance',
+  settingsTabSystem: 'Système',
+  settingsTabData: 'Données',
+  e2eeBadgeLabel: 'Chiffré E2EE',
+  e2eeFingerprintLabel: 'EMPREINTE CLÉ E2EE (CURVE25519)',
+  e2eeSecurityHint: 'Vos messages sont chiffrés localement avec Curve25519 avant l’envoi. La base de données ne stocke que le texte chiffré.',
+  e2eeKeyChangedPlaceholder: '🔒 Message chiffré avec une ancienne clé',
+  e2eeMissingRecipientKey: 'Cet ami n’a pas encore publié de clé E2EE.',
+  friendsCrewSpotlightTitle: 'ÉQUIPE EN DIRECT',
+  friendsPodiumTitle: 'PODIUM ÉQUIPE',
+  friendsRadarSubtitle: 'Radar d’équipe · E2EE Curve25519 actif',
+  friendsTapToChat: 'Appuyer pour ouvrir le chat chiffré',
 };
 
 const ES: Record<TranslationKey, string> = {
@@ -4054,6 +4106,19 @@ const ES: Record<TranslationKey, string> = {
   friendsYouSayPrefix: 'Tú: ',
   friendsSetsCountShort: 'series',
   friendsDaysShort: 'd',
+  settingsTabProfile: 'Perfil',
+  settingsTabTraining: 'Entreno',
+  settingsTabSystem: 'Sistema',
+  settingsTabData: 'Datos',
+  e2eeBadgeLabel: 'Cifrado E2EE',
+  e2eeFingerprintLabel: 'HUELLA DE CLAVE E2EE (CURVE25519)',
+  e2eeSecurityHint: 'Tus mensajes se cifran localmente con Curve25519 antes de enviarse. La base de datos solo guarda texto cifrado.',
+  e2eeKeyChangedPlaceholder: '🔒 Mensaje cifrado con clave anterior',
+  e2eeMissingRecipientKey: 'Este amigo aún no ha activado su clave E2EE.',
+  friendsCrewSpotlightTitle: 'EQUIPO EN VIVO',
+  friendsPodiumTitle: 'PODIO DEL EQUIPO',
+  friendsRadarSubtitle: 'Radar del equipo · E2EE Curve25519 activo',
+  friendsTapToChat: 'Toca para abrir chat cifrado',
 };
 
 export const TRANSLATIONS: Record<AppLanguage, Record<TranslationKey, string>> = {

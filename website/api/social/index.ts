@@ -1,24 +1,19 @@
 import crypto from 'crypto';
 import { getCloudUser, jsonResponse, verifyCloudToken } from '../_lib/cloudStore.js';
+import { ensureSchema, getSql } from '../_lib/db.js';
 import {
-  appendUserActivity,
+  areUsersFriends,
   claimUserNickname,
-  ensureDefaultNicknameForUser,
-  getChatMessages,
-  getChatReadMeta,
-  getNicknameClaim,
-  getSocialProfile,
-  getUserActivities,
-  getUserRelations,
+  getEncryptedChatMessages,
+  getSocialHubForUser,
+  markChatRead,
   normalizeNickServer,
-  saveChatMessages,
-  saveSocialProfile,
-  saveUserRelations,
-  searchNicknames,
-  setChatReadForFriend,
-  SocialProfileRecord,
-  StoredChatMessage,
-  StoredFriendRequest,
+  orderedPair,
+  publishSocialProfile,
+  registerUserE2eePublicKey,
+  saveEncryptedChatMessage,
+  searchUsersByNickPg,
+  toggleChatMessageReaction,
 } from '../_lib/socialStore.js';
 
 function extractBearerToken(request: Request): string | null {
@@ -44,107 +39,22 @@ export default {
     const userId = verified.userId;
 
     try {
-      // =====================================================
-      // GET ENDPOINTS: hub, search, profile, messages
-      // =====================================================
+      await ensureSchema();
+      const sql = getSql();
+
       if (request.method === 'GET') {
         const url = new URL(request.url);
         const action = String(url.searchParams.get('action') || 'hub').trim();
 
         if (action === 'hub') {
-          const [myProfileRaw, rel, readMeta] = await Promise.all([
-            getSocialProfile(userId),
-            getUserRelations(userId),
-            getChatReadMeta(userId),
-          ]);
-
-          const friendIds = Array.from(new Set(rel.friends));
-          const [friendProfiles, chatThreads, friendActivityLists, myActivities] = await Promise.all([
-            Promise.all(friendIds.map((fid) => getSocialProfile(fid))),
-            Promise.all(friendIds.map((fid) => getChatMessages(userId, fid))),
-            Promise.all(friendIds.map((fid) => getUserActivities(fid))),
-            getUserActivities(userId),
-          ]);
-
-          let totalUnread = 0;
-          const friends = friendIds
-            .map((fid, idx) => {
-              const fp = friendProfiles[idx];
-              if (!fp) return null;
-              const msgs = chatThreads[idx] || [];
-              const lastReadAt = readMeta[fid] || '';
-              const unreadCount = msgs.filter(
-                (m) => m.senderId === fid && (!lastReadAt || m.createdAt > lastReadAt)
-              ).length;
-              totalUnread += unreadCount;
-              const lastMessage = msgs.length > 0 ? msgs[msgs.length - 1] : null;
-              return {
-                friend: {
-                  ...fp,
-                  cheeredByMe: Array.isArray(fp.cheeredBy) ? fp.cheeredBy.includes(userId) : false,
-                },
-                lastMessage,
-                unreadCount,
-              };
-            })
-            .filter(Boolean)
-            .sort((a: any, b: any) => {
-              const ta = a.lastMessage?.createdAt || a.friend?.lastActiveAt || '';
-              const tb = b.lastMessage?.createdAt || b.friend?.lastActiveAt || '';
-              return tb.localeCompare(ta);
-            });
-
-          const mergedActivities = [...myActivities, ...friendActivityLists.flat()]
-            .filter((item) => {
-              if (item.userId === userId) return true;
-              const fp = friendProfiles.find((p) => p?.userId === item.userId);
-              return fp?.showActivityToFriends !== false;
-            })
-            .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-            .slice(0, 40)
-            .map((item) => ({
-              id: item.id,
-              userId: item.userId,
-              nickname: item.nickname,
-              displayName: item.displayName,
-              avatarColor: item.avatarColor,
-              type: item.type,
-              title: item.title,
-              subtitle: item.subtitle,
-              rankTier: item.rankTier,
-              createdAt: item.createdAt,
-              cheersCount: item.cheeredBy?.length || 0,
-              cheeredByMe: Array.isArray(item.cheeredBy) ? item.cheeredBy.includes(userId) : false,
-            }));
-
-          return jsonResponse({
-            ok: true,
-            hub: {
-              myProfile: myProfileRaw
-                ? {
-                    ...myProfileRaw,
-                    cheeredByMe: false,
-                  }
-                : null,
-              friends,
-              incomingRequests: rel.incomingRequests,
-              outgoingRequests: rel.outgoingRequests,
-              activities: mergedActivities,
-              totalUnread: totalUnread + rel.incomingRequests.length,
-            },
-          });
+          const hub = await getSocialHubForUser(userId);
+          return jsonResponse({ ok: true, hub });
         }
 
         if (action === 'search') {
           const q = String(url.searchParams.get('q') || '').trim();
-          const results = await searchNicknames(q, userId);
-          return jsonResponse({
-            ok: true,
-            results: results.map((r) => ({
-              profile: r.profile,
-              relationStatus: r.relationStatus,
-            })),
-          });
+          const results = await searchUsersByNickPg(q, userId);
+          return jsonResponse({ ok: true, results });
         }
 
         if (action === 'messages') {
@@ -152,27 +62,32 @@ export default {
           if (!friendId) {
             return jsonResponse({ ok: false, error: 'MISSING_FRIEND_ID' }, 400);
           }
-          const rel = await getUserRelations(userId);
-          if (!rel.friends.includes(friendId)) {
+          const isFriend = await areUsersFriends(userId, friendId);
+          if (!isFriend) {
             return jsonResponse({ ok: false, error: 'NOT_FRIENDS' }, 403);
           }
-          const messages = await getChatMessages(userId, friendId);
-          await setChatReadForFriend(userId, friendId);
+          const messages = await getEncryptedChatMessages(userId, friendId);
+          await markChatRead(userId, friendId);
           return jsonResponse({ ok: true, messages });
         }
 
         return jsonResponse({ ok: false, error: 'UNKNOWN_SOCIAL_ACTION' }, 400);
       }
 
-      // =====================================================
-      // POST ENDPOINTS
-      // =====================================================
       if (request.method !== 'POST') {
         return jsonResponse({ ok: false, error: 'Method Not Allowed' }, 405);
       }
 
       const body: any = await request.json();
       const action = String(body?.action || '').trim();
+
+      if (action === 'register_e2ee_key') {
+        const ok = await registerUserE2eePublicKey(userId, String(body?.publicKey || ''));
+        if (!ok) {
+          return jsonResponse({ ok: false, error: 'INVALID_PUBLIC_KEY' }, 400);
+        }
+        return jsonResponse({ ok: true });
+      }
 
       if (action === 'claim_nickname') {
         const res = await claimUserNickname({
@@ -188,101 +103,11 @@ export default {
       }
 
       if (action === 'publish_profile') {
-        const snap = body?.profile || {};
-        const [existing, cloudUser] = await Promise.all([
-          getSocialProfile(userId),
-          getCloudUser(userId),
-        ]);
-        const displayName = String(
-          snap.displayName || existing?.displayName || cloudUser?.displayName || 'Athlete'
-        ).trim();
-
-        let nickname = existing?.nickname || cloudUser?.nickname || '';
-        const reqNick = normalizeNickServer(String(snap.nickname || ''));
-
-        if (reqNick && reqNick !== nickname) {
-          const claimRes = await claimUserNickname({
-            userId,
-            requestedNickname: reqNick,
-            displayName,
-            enforceCooldown: Boolean(nickname),
-          });
-          if (claimRes.ok && claimRes.nickname) {
-            nickname = claimRes.nickname;
-          }
-        }
-
-        if (!nickname) {
-          nickname = await ensureDefaultNicknameForUser(userId, displayName);
-        }
-
-        const nowIso = new Date().toISOString();
-        const prevWorkouts = existing?.totalWorkouts || 0;
-        const nextWorkouts = Number(snap.totalWorkouts ?? prevWorkouts) || 0;
-        const prevRank = existing?.overallRank || 'F';
-        const nextRank = String(snap.overallRank || prevRank);
-
-        const nextProfile: SocialProfileRecord = {
+        const profile = await publishSocialProfile({
           userId,
-          nickname,
-          displayName,
-          avatarColor: snap.avatarColor || existing?.avatarColor || '#10B981',
-          gender: snap.gender === 'female' ? 'female' : 'male',
-          overallRank: nextRank,
-          overallProgressPct: Number(snap.overallProgressPct ?? existing?.overallProgressPct ?? 0),
-          balanceScorePct: Number(snap.balanceScorePct ?? existing?.balanceScorePct ?? 100),
-          streak: Number(snap.streak ?? existing?.streak ?? 0),
-          totalWorkouts: nextWorkouts,
-          totalSets: Number(snap.totalSets ?? existing?.totalSets ?? 0),
-          weeklyWorkouts: Number(snap.weeklyWorkouts ?? existing?.weeklyWorkouts ?? 0),
-          topMuscles: Array.isArray(snap.topMuscles)
-            ? snap.topMuscles.slice(0, 3)
-            : existing?.topMuscles || [],
-          recentPrs: Array.isArray(snap.recentPrs)
-            ? snap.recentPrs.slice(0, 3)
-            : existing?.recentPrs || [],
-          lastWorkoutAt: snap.lastWorkoutAt ?? existing?.lastWorkoutAt ?? null,
-          lastActiveAt: nowIso,
-          statusNote:
-            snap.statusNote !== undefined ? String(snap.statusNote).slice(0, 48) : existing?.statusNote,
-          showActivityToFriends:
-            snap.showActivityToFriends !== undefined
-              ? Boolean(snap.showActivityToFriends)
-              : existing?.showActivityToFriends !== false,
-          cheersCount: existing?.cheersCount || 0,
-          cheeredBy: existing?.cheeredBy || [],
-          updatedAt: nowIso,
-        };
-
-        await saveSocialProfile(nextProfile);
-
-        // Emit automatic activity milestones when workouts or rank advance
-        if (existing && nextWorkouts > prevWorkouts && nextProfile.showActivityToFriends !== false) {
-          await appendUserActivity(userId, {
-            userId,
-            nickname,
-            displayName,
-            avatarColor: nextProfile.avatarColor,
-            type: 'workout',
-            title: String(snap.latestWorkoutTitle || 'Workout'),
-            subtitle: `${nextProfile.totalSets} sets · ${nextProfile.streak}d streak`,
-            rankTier: nextRank,
-          });
-        }
-        if (existing && nextRank !== prevRank && nextRank !== 'F' && nextProfile.showActivityToFriends !== false) {
-          await appendUserActivity(userId, {
-            userId,
-            nickname,
-            displayName,
-            avatarColor: nextProfile.avatarColor,
-            type: 'rank',
-            title: `Rank ${nextRank}`,
-            subtitle: `${nextProfile.overallProgressPct}%`,
-            rankTier: nextRank,
-          });
-        }
-
-        return jsonResponse({ ok: true, profile: nextProfile });
+          snap: body?.profile || {},
+        });
+        return jsonResponse({ ok: true, profile });
       }
 
       if (action === 'send_request') {
@@ -290,118 +115,90 @@ export default {
         let targetUserId = String(body?.targetUserId || '').trim();
 
         if (!targetUserId && targetNick) {
-          const claim = await getNicknameClaim(targetNick);
-          if (!claim) {
+          const rows: any[] = await sql`
+            SELECT user_id FROM users WHERE LOWER(nickname) = LOWER(${targetNick}) LIMIT 1
+          `;
+          if (!rows[0]) {
             return jsonResponse({ ok: false, error: 'USER_NOT_FOUND' }, 404);
           }
-          targetUserId = claim.userId;
+          targetUserId = String(rows[0].user_id);
         }
 
         if (!targetUserId || targetUserId === userId) {
           return jsonResponse({ ok: false, error: 'INVALID_TARGET' }, 400);
         }
 
-        const [myProfile, targetProfile, myRel, targetRel] = await Promise.all([
-          getSocialProfile(userId),
-          getSocialProfile(targetUserId),
-          getUserRelations(userId),
-          getUserRelations(targetUserId),
-        ]);
-
-        if (!targetProfile) {
+        const targetUser = await getCloudUser(targetUserId);
+        if (!targetUser) {
           return jsonResponse({ ok: false, error: 'USER_NOT_FOUND' }, 404);
         }
 
-        if (myRel.friends.includes(targetUserId)) {
+        if (await areUsersFriends(userId, targetUserId)) {
           return jsonResponse({ ok: false, error: 'ALREADY_FRIENDS' }, 409);
         }
 
-        // If target already requested us -> mutual match, become friends immediately!
-        const reverseIncoming = myRel.incomingRequests.find((r) => r.fromUserId === targetUserId);
-        if (reverseIncoming) {
-          myRel.incomingRequests = myRel.incomingRequests.filter((r) => r.fromUserId !== targetUserId);
-          targetRel.outgoingRequests = targetRel.outgoingRequests.filter((r) => r.toUserId !== userId);
-          if (!myRel.friends.includes(targetUserId)) myRel.friends.push(targetUserId);
-          if (!targetRel.friends.includes(userId)) targetRel.friends.push(userId);
-          await Promise.all([
-            saveUserRelations(userId, myRel),
-            saveUserRelations(targetUserId, targetRel),
-          ]);
+        // Check reverse request for instant mutual friendship
+        const reverseRows: any[] = await sql`
+          SELECT id FROM friend_requests
+          WHERE from_user_id = ${targetUserId} AND to_user_id = ${userId}
+          LIMIT 1
+        `;
+        if (reverseRows.length > 0) {
+          const [ua, ub] = orderedPair(userId, targetUserId);
+          await sql`
+            DELETE FROM friend_requests
+            WHERE (from_user_id = ${targetUserId} AND to_user_id = ${userId})
+               OR (from_user_id = ${userId} AND to_user_id = ${targetUserId})
+          `;
+          await sql`
+            INSERT INTO friendships (user_a, user_b) VALUES (${ua}, ${ub}) ON CONFLICT DO NOTHING
+          `;
           return jsonResponse({ ok: true, matched: true });
         }
 
-        if (myRel.outgoingRequests.some((r) => r.toUserId === targetUserId)) {
+        const existingReq: any[] = await sql`
+          SELECT id FROM friend_requests
+          WHERE from_user_id = ${userId} AND to_user_id = ${targetUserId}
+          LIMIT 1
+        `;
+        if (existingReq.length > 0) {
           return jsonResponse({ ok: false, error: 'ALREADY_REQUESTED' }, 409);
         }
 
-        const cloudMe = !myProfile ? await getCloudUser(userId) : null;
-        const myNick =
-          myProfile?.nickname ||
-          cloudMe?.nickname ||
-          (await ensureDefaultNicknameForUser(userId, cloudMe?.displayName || 'Athlete'));
-        const myDisplay = myProfile?.displayName || cloudMe?.displayName || myNick;
-
-        const reqRecord: StoredFriendRequest = {
-          id: `fr_${crypto.randomBytes(8).toString('hex')}`,
-          fromUserId: userId,
-          fromNickname: myNick,
-          fromDisplayName: myDisplay,
-          fromRank: myProfile?.overallRank || 'F',
-          fromAvatarColor: myProfile?.avatarColor || '#10B981',
-          toUserId: targetUserId,
-          toNickname: targetProfile.nickname,
-          toDisplayName: targetProfile.displayName,
-          createdAt: new Date().toISOString(),
-        };
-
-        myRel.outgoingRequests.unshift(reqRecord);
-        targetRel.incomingRequests.unshift(reqRecord);
-
-        await Promise.all([
-          saveUserRelations(userId, myRel),
-          saveUserRelations(targetUserId, targetRel),
-        ]);
-
-        return jsonResponse({ ok: true, request: reqRecord });
+        const reqId = `fr_${crypto.randomBytes(8).toString('hex')}`;
+        await sql`
+          INSERT INTO friend_requests (id, from_user_id, to_user_id, created_at)
+          VALUES (${reqId}, ${userId}, ${targetUserId}, NOW())
+        `;
+        return jsonResponse({ ok: true, requestId: reqId });
       }
 
       if (action === 'respond_request') {
         const targetUserId = String(body?.targetUserId || '').trim();
-        const decision = String(body?.decision || '').trim(); // 'accept' | 'decline' | 'cancel'
+        const decision = String(body?.decision || '').trim();
         if (!targetUserId) {
           return jsonResponse({ ok: false, error: 'MISSING_TARGET' }, 400);
         }
 
-        const [myRel, targetRel] = await Promise.all([
-          getUserRelations(userId),
-          getUserRelations(targetUserId),
-        ]);
-
         if (decision === 'cancel') {
-          myRel.outgoingRequests = myRel.outgoingRequests.filter((r) => r.toUserId !== targetUserId);
-          targetRel.incomingRequests = targetRel.incomingRequests.filter(
-            (r) => r.fromUserId !== userId
-          );
-          await Promise.all([
-            saveUserRelations(userId, myRel),
-            saveUserRelations(targetUserId, targetRel),
-          ]);
+          await sql`
+            DELETE FROM friend_requests
+            WHERE from_user_id = ${userId} AND to_user_id = ${targetUserId}
+          `;
           return jsonResponse({ ok: true });
         }
 
-        myRel.incomingRequests = myRel.incomingRequests.filter((r) => r.fromUserId !== targetUserId);
-        targetRel.outgoingRequests = targetRel.outgoingRequests.filter((r) => r.toUserId !== userId);
+        await sql`
+          DELETE FROM friend_requests
+          WHERE from_user_id = ${targetUserId} AND to_user_id = ${userId}
+        `;
 
         if (decision === 'accept') {
-          if (!myRel.friends.includes(targetUserId)) myRel.friends.push(targetUserId);
-          if (!targetRel.friends.includes(userId)) targetRel.friends.push(userId);
+          const [ua, ub] = orderedPair(userId, targetUserId);
+          await sql`
+            INSERT INTO friendships (user_a, user_b) VALUES (${ua}, ${ub}) ON CONFLICT DO NOTHING
+          `;
         }
-
-        await Promise.all([
-          saveUserRelations(userId, myRel),
-          saveUserRelations(targetUserId, targetRel),
-        ]);
-
         return jsonResponse({ ok: true, accepted: decision === 'accept' });
       }
 
@@ -410,16 +207,8 @@ export default {
         if (!targetUserId) {
           return jsonResponse({ ok: false, error: 'MISSING_TARGET' }, 400);
         }
-        const [myRel, targetRel] = await Promise.all([
-          getUserRelations(userId),
-          getUserRelations(targetUserId),
-        ]);
-        myRel.friends = myRel.friends.filter((id) => id !== targetUserId);
-        targetRel.friends = targetRel.friends.filter((id) => id !== userId);
-        await Promise.all([
-          saveUserRelations(userId, myRel),
-          saveUserRelations(targetUserId, targetRel),
-        ]);
+        const [ua, ub] = orderedPair(userId, targetUserId);
+        await sql`DELETE FROM friendships WHERE user_a = ${ua} AND user_b = ${ub}`;
         return jsonResponse({ ok: true });
       }
 
@@ -431,65 +220,66 @@ export default {
         }
 
         if (activityId) {
-          const acts = await getUserActivities(targetUserId);
-          const idx = acts.findIndex((a) => a.id === activityId);
-          if (idx >= 0) {
-            const set = new Set(acts[idx].cheeredBy || []);
+          const rows: any[] = await sql`
+            SELECT cheered_by FROM social_activities WHERE id = ${activityId} LIMIT 1
+          `;
+          if (rows[0]) {
+            const set = new Set<string>(Array.isArray(rows[0].cheered_by) ? rows[0].cheered_by : []);
             if (set.has(userId)) set.delete(userId);
             else set.add(userId);
-            acts[idx].cheeredBy = Array.from(set);
-            const { writePrivateDocument } = await import('../_lib/cloudStore.js');
-            await writePrivateDocument(`nosql/social/activities/${targetUserId}.json`, JSON.stringify(acts));
-            return jsonResponse({ ok: true, cheersCount: acts[idx].cheeredBy.length });
+            const next = Array.from(set);
+            await sql`
+              UPDATE social_activities SET cheered_by = ${JSON.stringify(next)}::jsonb WHERE id = ${activityId}
+            `;
+            return jsonResponse({ ok: true, cheersCount: next.length });
           }
         }
 
-        const targetProfile = await getSocialProfile(targetUserId);
-        if (!targetProfile) {
+        const profRows: any[] = await sql`
+          SELECT cheered_by, cheers_count FROM athlete_profiles WHERE user_id = ${targetUserId} LIMIT 1
+        `;
+        if (!profRows[0]) {
           return jsonResponse({ ok: false, error: 'USER_NOT_FOUND' }, 404);
         }
-        const cheeredSet = new Set(targetProfile.cheeredBy || []);
+        const cheeredSet = new Set<string>(
+          Array.isArray(profRows[0].cheered_by) ? profRows[0].cheered_by : []
+        );
         cheeredSet.add(userId);
-        targetProfile.cheeredBy = Array.from(cheeredSet);
-        targetProfile.cheersCount = (targetProfile.cheersCount || 0) + 1;
-        await saveSocialProfile(targetProfile);
-
-        return jsonResponse({ ok: true, cheersCount: targetProfile.cheersCount });
+        const nextCheers = Number(profRows[0].cheers_count || 0) + 1;
+        await sql`
+          UPDATE athlete_profiles
+          SET cheered_by = ${JSON.stringify(Array.from(cheeredSet))}::jsonb,
+              cheers_count = ${nextCheers}
+          WHERE user_id = ${targetUserId}
+        `;
+        return jsonResponse({ ok: true, cheersCount: nextCheers });
       }
 
       if (action === 'send_message') {
         const friendId = String(body?.friendId || '').trim();
-        const msgType = (['text', 'cheer', 'workout_share', 'rank_card'].includes(body?.type)
-          ? body.type
-          : 'text') as StoredChatMessage['type'];
-        const text = String(body?.text || '').trim().slice(0, 1200);
-        if (!friendId || (!text && msgType === 'text')) {
-          return jsonResponse({ ok: false, error: 'INVALID_MESSAGE' }, 400);
+        const ciphertext = String(body?.ciphertext || '').trim();
+        const nonce = String(body?.nonce || '').trim();
+        const senderPublicKey = String(body?.senderPublicKey || '').trim();
+        const recipientPublicKey = String(body?.recipientPublicKey || '').trim();
+        const alg = String(body?.alg || 'x25519-xsalsa20-poly1305').trim();
+
+        if (!friendId || !ciphertext || !nonce || !senderPublicKey || !recipientPublicKey) {
+          return jsonResponse({ ok: false, error: 'INVALID_ENCRYPTED_PAYLOAD' }, 400);
         }
 
-        const rel = await getUserRelations(userId);
-        if (!rel.friends.includes(friendId)) {
+        if (!(await areUsersFriends(userId, friendId))) {
           return jsonResponse({ ok: false, error: 'NOT_FRIENDS' }, 403);
         }
 
-        const existing = await getChatMessages(userId, friendId);
-        const nowIso = new Date().toISOString();
-        const message: StoredChatMessage = {
-          id: `msg_${crypto.randomBytes(8).toString('hex')}`,
+        const message = await saveEncryptedChatMessage({
           senderId: userId,
           recipientId: friendId,
-          type: msgType,
-          text,
-          payload: body?.payload && typeof body.payload === 'object' ? body.payload : undefined,
-          createdAt: nowIso,
-          reactions: {},
-        };
-
-        await Promise.all([
-          saveChatMessages(userId, friendId, [...existing, message]),
-          setChatReadForFriend(userId, friendId),
-        ]);
-
+          ciphertext,
+          nonce,
+          senderPublicKey,
+          recipientPublicKey,
+          alg,
+        });
         return jsonResponse({ ok: true, message });
       }
 
@@ -500,26 +290,17 @@ export default {
         if (!friendId || !messageId || !emoji) {
           return jsonResponse({ ok: false, error: 'INVALID_REACTION' }, 400);
         }
-        const msgs = await getChatMessages(userId, friendId);
-        const idx = msgs.findIndex((m) => m.id === messageId);
-        if (idx === -1) {
+        const message = await toggleChatMessageReaction(userId, friendId, messageId, emoji);
+        if (!message) {
           return jsonResponse({ ok: false, error: 'MESSAGE_NOT_FOUND' }, 404);
         }
-        const reactions = { ...(msgs[idx].reactions || {}) };
-        const users = new Set(reactions[emoji] || []);
-        if (users.has(userId)) users.delete(userId);
-        else users.add(userId);
-        if (users.size === 0) delete reactions[emoji];
-        else reactions[emoji] = Array.from(users);
-        msgs[idx] = { ...msgs[idx], reactions };
-        await saveChatMessages(userId, friendId, msgs);
-        return jsonResponse({ ok: true, message: msgs[idx] });
+        return jsonResponse({ ok: true, message });
       }
 
       if (action === 'mark_read') {
         const friendId = String(body?.friendId || '').trim();
         if (friendId) {
-          await setChatReadForFriend(userId, friendId);
+          await markChatRead(userId, friendId);
         }
         return jsonResponse({ ok: true });
       }
