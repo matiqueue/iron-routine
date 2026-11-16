@@ -66,7 +66,7 @@ function MobileAuthContent() {
       if (completedRef.current) return;
       completedRef.current = true;
       setErrorMsg(null);
-      setStatusText('Zapisywanie sesji Clerk i łączenie z bazą NoSQL...');
+      setStatusText('Zapisywanie sesji Clerk i łączenie z bazą PostgreSQL...');
 
       try {
         const res = await fetch('/api/cloud/auth', {

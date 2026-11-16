@@ -187,10 +187,10 @@ export function FeaturesPage() {
                   <Bell className="h-4 w-4 text-zinc-500" />
                 </div>
                 <h3 className="mt-4 font-display text-lg font-bold text-white">
-                  Chmura NoSQL tylko dla wygody przenoszenia konta
+                  Neon PostgreSQL (AES-256-GCM) i czat E2EE Curve25519
                 </h3>
                 <p className="mt-2 text-xs leading-relaxed text-zinc-400">
-                  Aplikacja synchronizuje zaszyfrowaną kopię JSON w bazie NoSQL na Vercel (logowanie Apple iCloud / Google) wyłącznie po to, abyś mógł wygodnie przenieść konto z telefonu na telefon. Twoje dane nigdy nie są nigdzie indziej wykorzystywane ani udostępniane.
+                  Kopie profilu i rekordów PR są szyfrowane i zapisywane w relacyjnej bazie Neon PostgreSQL (logowanie Clerk: Apple iCloud / Google). Wiadomości w zakładce Znajomi szyfrowane są lokalnie End-to-End (Curve25519 + XSalsa20-Poly1305) bez dostępu serwera do treści rozmów.
                 </p>
               </article>
             </div>

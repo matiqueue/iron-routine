@@ -4,7 +4,7 @@ export const BUY_ME_COFFEE_URL = 'https://matiqueue-portfolio.vercel.app';
 export const APK_DOWNLOAD_URL =
   'https://github.com/matiqueue/iron-routine/releases/latest/download/IronRoutine.apk';
 export const RELEASES_URL = 'https://github.com/matiqueue/iron-routine/releases';
-export const APP_VERSION = 'v2.0.0';
+export const APP_VERSION = 'v3.0.0';
 export const EXPO_VERSION_LABEL = 'Expo SDK 58';
 export const RN_VERSION_LABEL = 'React Native 0.88';
 
@@ -21,7 +21,7 @@ export interface NavItem {
 }
 
 export const NAV_ITEMS: readonly NavItem[] = [
-  { path: '/', label: 'Przegląd', pageTitle: 'Iron Routine v2.0.0 | Monochromatyczny Dziennik Treningowy' },
+  { path: '/', label: 'Przegląd', pageTitle: 'Iron Routine v3.0.0 | Monochromatyczny Dziennik Treningowy' },
   { path: '/funkcje', label: 'Funkcje i UI', pageTitle: 'Funkcje i Interfejs | Iron Routine' },
   { path: '/analityka', label: 'Analityka 1RM', pageTitle: 'Analityka 1RM i Zdrowie | Iron Routine' },
   { path: '/instalacja', label: 'Instalacja', pageTitle: 'Instalacja iOS i Android | Iron Routine' },
@@ -35,8 +35,8 @@ export interface SplinePointData {
 }
 
 export const HERO_METRICS = [
-  { value: 'NoSQL', label: 'Szyfrowana chmura kont (iCloud / Google)' },
-  { value: '125+', label: 'Unikalnych ćwiczeń i 19 partii F-S+' },
+  { value: 'E2EE', label: 'Czat Curve25519 i baza Neon PostgreSQL' },
+  { value: '136+', label: 'Ćwiczeń, 19 partii F-S+ i 5 języków' },
   { value: '1:N', label: 'Jeden profil, wiele planów PR' },
   { value: '0.1s', label: 'Pauza Dynamic Island i alarm' },
 ] as const;
@@ -220,7 +220,7 @@ export const ANDROID_STEPS = [
   {
     step: '03',
     title: 'Połącz Health Connect i odpal trening',
-    detail: 'Przejdź 4-krokowy animowany onboarding, skonfiguruj suplementy i zezwól na alarm końca przerwy na ekranie blokady.',
+    detail: 'Przejdź 6-krokowy konfigurator, wybierz język (PL/EN/DE/FR/ES), ustaw @nick i zaproś znajomych do ekipy.',
   },
 ] as const;
 

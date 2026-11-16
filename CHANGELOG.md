@@ -2,6 +2,19 @@
 
 Wszystkie istotne zmiany w aplikacji **Iron Routine**.
 
+## [v3.0.0] - 2026-11-16
+
+### Dodano
+- **Relacyjna baza danych Neon PostgreSQL**: pełna migracja z tymczasowych plików Blob na relacyjny schemat PostgreSQL (`users`, `oauth_attempts`, `cloud_backups`, `athlete_profiles`, `friendships`, `friend_requests`, `social_activities`, `chat_messages`, `chat_read_state`) oraz wycofanie `@vercel/blob`.
+- **Zakładka Znajomi + Szyfrowany Czat E2EE (Curve25519)**: wyszukiwanie po unikalnym `@nicku` (zmiana możliwa co 30 dni), zaproszenia dwukierunkowe, profile znajomych z porównaniem 1 na 1 (`VsComparisonArc`), tablica aktywności z kudosami, podium ekipy (`CrewPodiumStage`), karuzela awatarów (`SquadAvatarRing`), radar orbitalny (`CrewRadarOrb`) i komunikator z szyfrowaniem End-to-End `X25519 + XSalsa20-Poly1305` (`tweetnacl` + `expo-crypto`).
+- **Uporządkowane zakładki w Ustawieniach**: płynnie animowany przełącznik 4 zakładek (**Profil**, **Trening**, **System**, **Dane**) z podglądem odcisku klucza E2EE.
+- **Pełna lokalizacja na 5 języków**: tłumaczenie interfejsu, rang, partii mięśniowych, suplementów i 136 ćwiczeń na Polski (`pl`), Angielski (`en`), Niemiecki (`de`), Francuski (`fr`) i Hiszpański (`es`).
+- **6-krokowy konfigurator startowy + Wsparcie Expo Web**: osobne pola Imię i nazwisko + `@Nick` (z generatorem), tryby planów z wymianą ćwiczeń podobnych oraz tryb przeglądarkowy (`npm run web`) do testowania wielu kont.
+
+### Poprawiono
+- Wyraźniejsze, bardziej nasycone kolory partii mięśniowych na sylwetce (w tym wyrazisty jasny żółty) oraz minimalistyczne tła architektoniczne (`MinimalistBackdrop`) w głównych zakładkach.
+- Leniwe ładowanie modułów natywnych HealthKit / Health Connect i okno OAuth dla pełnej kompatybilności z Expo Web.
+
 ## [v2.0.0] - 2026-11-14
 
 ### Dodano
