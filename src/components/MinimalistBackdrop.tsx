@@ -13,31 +13,34 @@ import Svg, {
 import { useAppTheme } from '../context/ThemeContext';
 
 interface MinimalistBackdropProps {
-  variant?: 'dots' | 'grid' | 'contours';
+  variant?: 'dots' | 'grid' | 'contours' | 'diagonal';
   accentColor?: string;
+  secondaryColor?: string;
 }
 
 /**
- * Precision architectural & kinetic contour backdrop.
- * Zero dots: pairs crisp micro-crosshair instrumentation marks with subtle
- * concentric orbital arcs that extend smoothly behind the Dynamic Island.
+ * Precision 45-degree diagonal architectural backdrop with dynamic corner
+ * ambient glows, balanced for both Light and Dark modes and extending full-bleed
+ * behind the Dynamic Island.
  */
 export const MinimalistBackdrop: React.FC<MinimalistBackdropProps> = React.memo(
-  ({ variant = 'contours', accentColor }) => {
+  ({ variant = 'diagonal', accentColor, secondaryColor }) => {
     const { isDark } = useAppTheme();
     const uid = useId().replace(/:/g, '_');
     const primaryGlow = accentColor || (isDark ? '#38BDF8' : '#0EA5E9');
-    const secondaryGlow = '#10B981';
+    const bottomGlow = secondaryColor || '#EC4899';
 
-    const hairlineStroke = isDark
+    const diagPrimaryStroke = isDark
       ? 'rgba(255, 255, 255, 0.068)'
-      : 'rgba(15, 23, 42, 0.065)';
-    const crossStroke = isDark
-      ? 'rgba(255, 255, 255, 0.145)'
-      : 'rgba(15, 23, 42, 0.145)';
+      : 'rgba(15, 23, 42, 0.068)';
+    const diagFineStroke = isDark
+      ? 'rgba(255, 255, 255, 0.032)'
+      : 'rgba(15, 23, 42, 0.034)';
     const arcStroke = isDark
-      ? 'rgba(255, 255, 255, 0.075)'
-      : 'rgba(15, 23, 42, 0.075)';
+      ? 'rgba(255, 255, 255, 0.07)'
+      : 'rgba(15, 23, 42, 0.072)';
+
+    const patternSize = variant === 'grid' ? 40 : 32;
 
     return (
       <Svg
@@ -47,105 +50,88 @@ export const MinimalistBackdrop: React.FC<MinimalistBackdropProps> = React.memo(
         pointerEvents="none"
       >
         <Defs>
-          {variant === 'grid' ? (
-            <Pattern id={`bg_pat_${uid}`} width={52} height={52} patternUnits="userSpaceOnUse">
+          <Pattern
+            id={`bg_diag_${uid}`}
+            width={patternSize}
+            height={patternSize}
+            patternUnits="userSpaceOnUse"
+          >
+            {/* Seamless infinite 45-degree diagonal architectural lines */}
+            <Path
+              d={`M -${patternSize / 2} ${patternSize / 2} L ${patternSize / 2} -${patternSize / 2} M 0 ${patternSize} L ${patternSize} 0 M ${patternSize / 2} ${patternSize * 1.5} L ${patternSize * 1.5} ${patternSize / 2}`}
+              fill="none"
+              stroke={diagPrimaryStroke}
+              strokeWidth={0.95}
+            />
+            {variant === 'grid' && (
               <Path
-                d="M 52 0 L 0 0 0 52"
+                d={`M -${patternSize / 2} ${patternSize / 2} L ${patternSize / 2} ${patternSize * 1.5} M 0 0 L ${patternSize} ${patternSize} M ${patternSize / 2} -${patternSize / 2} L ${patternSize * 1.5} ${patternSize / 2}`}
                 fill="none"
-                stroke={hairlineStroke}
-                strokeWidth={0.85}
+                stroke={diagFineStroke}
+                strokeWidth={0.75}
               />
-              {/* Precision "+" crosshair mark at intersections (no dots) */}
-              <Path
-                d="M 0 5 L 0 -5 M -5 0 L 5 0"
-                fill="none"
-                stroke={crossStroke}
-                strokeWidth={1.1}
-              />
-            </Pattern>
-          ) : (
-            <Pattern id={`bg_pat_${uid}`} width={56} height={56} patternUnits="userSpaceOnUse">
-              {/* Subtle diagonal architectural micro-mesh + "+" ticks */}
-              <Line
-                x1={0}
-                y1={56}
-                x2={56}
-                y2={0}
-                stroke={isDark ? 'rgba(255,255,255,0.032)' : 'rgba(15,23,42,0.035)'}
-                strokeWidth={0.8}
-              />
-              <Path
-                d="M 28 24.5 L 28 31.5 M 24.5 28 L 31.5 28"
-                fill="none"
-                stroke={crossStroke}
-                strokeWidth={1}
-                strokeLinecap="round"
-              />
-            </Pattern>
-          )}
+            )}
+          </Pattern>
 
-          <RadialGradient id={`bg_glow_top_${uid}`} cx="82%" cy="5%" r="64%">
+          <RadialGradient id={`bg_glow_top_${uid}`} cx="84%" cy="5%" r="65%">
             <Stop
               offset="0%"
               stopColor={primaryGlow}
-              stopOpacity={isDark ? 0.19 : 0.14}
+              stopOpacity={isDark ? 0.21 : 0.16}
             />
             <Stop
-              offset="55%"
+              offset="52%"
               stopColor={primaryGlow}
-              stopOpacity={isDark ? 0.065 : 0.048}
+              stopOpacity={isDark ? 0.07 : 0.055}
             />
             <Stop offset="100%" stopColor={isDark ? '#000000' : '#FFFFFF'} stopOpacity={0} />
           </RadialGradient>
 
-          <RadialGradient id={`bg_glow_btm_${uid}`} cx="14%" cy="90%" r="58%">
+          <RadialGradient id={`bg_glow_btm_${uid}`} cx="14%" cy="92%" r="60%">
             <Stop
               offset="0%"
-              stopColor={secondaryGlow}
-              stopOpacity={isDark ? 0.12 : 0.095}
+              stopColor={bottomGlow}
+              stopOpacity={isDark ? 0.145 : 0.11}
+            />
+            <Stop
+              offset="54%"
+              stopColor={bottomGlow}
+              stopOpacity={isDark ? 0.045 : 0.035}
             />
             <Stop offset="100%" stopColor={isDark ? '#000000' : '#FFFFFF'} stopOpacity={0} />
           </RadialGradient>
         </Defs>
 
-        <Rect x={0} y={0} width="100%" height="100%" fill={`url(#bg_pat_${uid})`} />
+        <Rect x={0} y={0} width="100%" height="100%" fill={`url(#bg_diag_${uid})`} />
         <Rect x={0} y={0} width="100%" height="100%" fill={`url(#bg_glow_top_${uid})`} />
         <Rect x={0} y={0} width="100%" height="100%" fill={`url(#bg_glow_btm_${uid})`} />
 
-        {/* Concentric Telemetry Arcs sweeping behind Dynamic Island & lower corner */}
+        {/* Subtle Concentric Corner Arcs */}
         <Circle
           cx="86%"
           cy="6%"
-          r={130}
+          r={138}
           fill="none"
           stroke={arcStroke}
-          strokeWidth={1}
+          strokeWidth={0.9}
         />
         <Circle
-          cx="86%"
-          cy="6%"
-          r={225}
+          cx="12%"
+          cy="92%"
+          r={180}
           fill="none"
           stroke={arcStroke}
           strokeWidth={0.85}
           strokeDasharray="6 6"
         />
-        <Circle
-          cx="10%"
-          cy="92%"
-          r={175}
-          fill="none"
-          stroke={arcStroke}
-          strokeWidth={0.85}
-        />
 
-        {/* Vertical Editorial Guide Line */}
+        {/* Editorial Spine Rule */}
         <Line
           x1="7%"
           y1="0"
           x2="7%"
           y2="100%"
-          stroke={isDark ? 'rgba(255,255,255,0.042)' : 'rgba(15,23,42,0.05)'}
+          stroke={isDark ? 'rgba(255,255,255,0.04)' : 'rgba(15,23,42,0.048)'}
           strokeWidth={1}
         />
       </Svg>

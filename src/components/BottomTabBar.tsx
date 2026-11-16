@@ -50,6 +50,9 @@ export const BottomTabBar: React.FC<BottomTabBarProps> = ({
   const barWidthRef = useRef(0);
   const activeTabRef = useRef<AppTabKey>(activeTab);
   const dragStartIdxRef = useRef(0);
+  const isDraggingRef = useRef(false);
+  const onSelectTabRef = useRef(onSelectTab);
+  onSelectTabRef.current = onSelectTab;
 
   const activeIdx = Math.max(0, TABS.findIndex((t) => t.key === activeTab));
   const thumbAnim = useRef(new Animated.Value(activeIdx)).current;
@@ -57,18 +60,19 @@ export const BottomTabBar: React.FC<BottomTabBarProps> = ({
 
   useEffect(() => {
     activeTabRef.current = activeTab;
+    if (isDraggingRef.current) return;
     const idx = Math.max(0, TABS.findIndex((t) => t.key === activeTab));
     Animated.parallel([
       Animated.spring(thumbAnim, {
         toValue: idx,
         friction: 7,
-        tension: 88,
+        tension: 96,
         useNativeDriver: true,
       }),
       Animated.sequence([
         Animated.timing(thumbScale, {
-          toValue: 0.95,
-          duration: 75,
+          toValue: 0.96,
+          duration: 60,
           useNativeDriver: true,
         }),
         Animated.spring(thumbScale, {
@@ -86,12 +90,13 @@ export const BottomTabBar: React.FC<BottomTabBarProps> = ({
       PanResponder.create({
         onStartShouldSetPanResponder: () => false,
         onMoveShouldSetPanResponder: (_, gestureState) =>
-          Math.abs(gestureState.dx) > 5 &&
-          Math.abs(gestureState.dx) > Math.abs(gestureState.dy),
-        onMoveShouldSetPanResponderCapture: (_, gestureState) =>
           Math.abs(gestureState.dx) > 6 &&
-          Math.abs(gestureState.dx) > Math.abs(gestureState.dy),
+          Math.abs(gestureState.dx) > Math.abs(gestureState.dy) * 1.15,
+        onMoveShouldSetPanResponderCapture: (_, gestureState) =>
+          Math.abs(gestureState.dx) > 7 &&
+          Math.abs(gestureState.dx) > Math.abs(gestureState.dy) * 1.15,
         onPanResponderGrant: () => {
+          isDraggingRef.current = true;
           dragStartIdxRef.current = Math.max(
             0,
             TABS.findIndex((t) => t.key === activeTabRef.current)
@@ -105,7 +110,7 @@ export const BottomTabBar: React.FC<BottomTabBarProps> = ({
         },
         onPanResponderMove: (_, gestureState) => {
           const totalW = barWidthRef.current;
-          const slotW = totalW > 10 ? (totalW - 10) / TABS.length : 80;
+          const slotW = totalW > 10 ? (totalW - 10) / TABS.length : 72;
           const rawIdx = dragStartIdxRef.current + gestureState.dx / slotW;
           const clampedIdx = Math.max(0, Math.min(TABS.length - 1, rawIdx));
           thumbAnim.setValue(clampedIdx);
@@ -115,10 +120,13 @@ export const BottomTabBar: React.FC<BottomTabBarProps> = ({
           if (nextTab && nextTab !== activeTabRef.current) {
             activeTabRef.current = nextTab;
             triggerSelectionHaptic();
-            onSelectTab(nextTab);
+            React.startTransition(() => {
+              onSelectTabRef.current(nextTab);
+            });
           }
         },
         onPanResponderRelease: () => {
+          isDraggingRef.current = false;
           const finalIdx = Math.max(
             0,
             TABS.findIndex((t) => t.key === activeTabRef.current)
@@ -127,7 +135,7 @@ export const BottomTabBar: React.FC<BottomTabBarProps> = ({
             Animated.spring(thumbAnim, {
               toValue: finalIdx,
               friction: 7,
-              tension: 92,
+              tension: 96,
               useNativeDriver: true,
             }),
             Animated.spring(thumbScale, {
@@ -139,6 +147,7 @@ export const BottomTabBar: React.FC<BottomTabBarProps> = ({
           ]).start();
         },
         onPanResponderTerminate: () => {
+          isDraggingRef.current = false;
           const finalIdx = Math.max(
             0,
             TABS.findIndex((t) => t.key === activeTabRef.current)
@@ -147,7 +156,7 @@ export const BottomTabBar: React.FC<BottomTabBarProps> = ({
             Animated.spring(thumbAnim, {
               toValue: finalIdx,
               friction: 7,
-              tension: 92,
+              tension: 96,
               useNativeDriver: true,
             }),
             Animated.spring(thumbScale, {
@@ -159,7 +168,7 @@ export const BottomTabBar: React.FC<BottomTabBarProps> = ({
           ]).start();
         },
       }),
-    [onSelectTab, thumbAnim, thumbScale]
+    [thumbAnim, thumbScale]
   );
 
   const slotWidth = barWidth > 10 ? (barWidth - 10) / TABS.length : 0;
@@ -189,11 +198,11 @@ export const BottomTabBar: React.FC<BottomTabBarProps> = ({
           styles.glassDock,
           {
             backgroundColor: isDark
-              ? 'rgba(18, 18, 22, 0.84)'
-              : 'rgba(255, 255, 255, 0.86)',
+              ? 'rgba(16, 16, 20, 0.94)'
+              : 'rgba(252, 252, 254, 0.94)',
             borderColor: isDark
               ? 'rgba(255, 255, 255, 0.14)'
-              : 'rgba(24, 24, 27, 0.09)',
+              : 'rgba(15, 23, 42, 0.09)',
             shadowOpacity: isDark ? 0.52 : 0.14,
           },
         ]}

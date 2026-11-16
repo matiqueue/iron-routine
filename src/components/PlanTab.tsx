@@ -105,7 +105,7 @@ export const PlanTab: React.FC<PlanTabProps> = ({
 
   return (
     <View style={[styles.container, { backgroundColor: theme.bg }]}>
-      <MinimalistBackdrop variant="grid" accentColor="#A855F7" />
+      <MinimalistBackdrop variant="grid" accentColor="#A855F7" secondaryColor="#EC4899" />
       {/* Editorial Title + Plan Switcher */}
       <View style={[styles.header, { paddingTop: Math.max(insets.top + 8, 16) }]}>
         <View style={styles.headerTopRow}>

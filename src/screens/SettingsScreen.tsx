@@ -688,9 +688,22 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
     accent: tab.accent,
   }));
 
+  const settingsBackdropColors =
+    settingsTab === 'profile'
+      ? { top: '#10B981', bottom: '#0EA5E9' }
+      : settingsTab === 'training'
+      ? { top: '#38BDF8', bottom: '#10B981' }
+      : settingsTab === 'system'
+      ? { top: '#F59E0B', bottom: '#F43F5E' }
+      : { top: '#A855F7', bottom: '#6366F1' };
+
   return (
     <View style={[styles.container, { backgroundColor: theme.bg }]}>
-      <MinimalistBackdrop variant="contours" accentColor="#10B981" />
+      <MinimalistBackdrop
+        variant="diagonal"
+        accentColor={settingsBackdropColors.top}
+        secondaryColor={settingsBackdropColors.bottom}
+      />
       {/* Open Editorial Header + Tabbed Glass Switcher */}
       <View
         style={[
@@ -1970,16 +1983,23 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.coffeeBtn, { backgroundColor: '#F59E0B' }]}
+            style={[
+              styles.coffeeBtn,
+              {
+                backgroundColor: isDark ? '#2B1B14' : '#292524',
+                borderWidth: 1,
+                borderColor: 'rgba(251, 146, 60, 0.45)',
+              },
+            ]}
             onPress={() => {
               triggerImpactHaptic('medium');
               Linking.openURL('https://matiqueue-portfolio.vercel.app').catch(() => {});
             }}
             activeOpacity={0.85}
           >
-            <AnimatedIcon name="cafe-outline" preset="pulse" size={18} color="#09090B" active />
-            <Text style={styles.coffeeBtnText}>{t('coffeeNote')}</Text>
-            <Ionicons name="open-outline" size={15} color="#09090B" />
+            <AnimatedIcon name="cafe-outline" preset="pulse" size={18} color="#FDBA74" active />
+            <Text style={[styles.coffeeBtnText, { color: '#FFF7ED' }]}>{t('coffeeNote')}</Text>
+            <Ionicons name="open-outline" size={15} color="#FDBA74" />
           </TouchableOpacity>
 
           <TouchableOpacity

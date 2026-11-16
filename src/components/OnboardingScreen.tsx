@@ -784,7 +784,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
   if (showWelcomeIntro) {
     return (
       <View style={[styles.container, { backgroundColor: theme.bg }]}>
-        <MinimalistBackdrop variant="grid" accentColor="#10B981" />
+        <MinimalistBackdrop variant="diagonal" accentColor="#10B981" secondaryColor="#6366F1" />
 
         <Animated.View
           style={[
@@ -973,7 +973,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
       style={[styles.container, { backgroundColor: theme.bg }]}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      <MinimalistBackdrop variant="contours" accentColor={meta.accent} />
+      <MinimalistBackdrop variant="diagonal" accentColor={meta.accent} secondaryColor="#EC4899" />
       {/* Open Editorial Header */}
       <View
         style={[
