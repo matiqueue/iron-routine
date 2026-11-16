@@ -142,7 +142,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   );
   const [isSavingProfile, setIsSavingProfile] = useState(false);
 
-  // Cloud Sync state (Clerk + Vercel NoSQL)
+  // Cloud Sync state (Clerk + Neon PostgreSQL)
   const [cloudSession, setCloudSession] = useState<CloudSession | null>(null);
   const [busyCloudProvider, setBusyCloudProvider] = useState<'apple' | 'google' | null>(null);
 

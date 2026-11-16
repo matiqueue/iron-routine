@@ -277,7 +277,7 @@ export default {
     } catch (error) {
       console.error('Cloud auth error:', error);
       return jsonResponse(
-        { ok: false, error: 'Błąd połączenia z Clerk / bazą danych NoSQL na Vercel.' },
+        { ok: false, error: 'Błąd połączenia z Clerk / bazą PostgreSQL.' },
         500
       );
     }

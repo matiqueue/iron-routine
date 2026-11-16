@@ -1,4 +1,4 @@
-import { AppState, Linking } from 'react-native';
+import { AppState, Linking, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   exportProfileBackup,
@@ -82,7 +82,7 @@ async function getOrCreateAppleICloudIdentity(): Promise<string> {
 
 /**
  * Unified, normalized Clerk Core 3 authentication flow for both iCloud (Apple) and Gmail (Google).
- * Creates a Clerk handoff attempt on Vercel NoSQL, opens Clerk's `/mobile-auth` portal,
+ * Creates a Clerk handoff attempt in PostgreSQL, opens Clerk's `/mobile-auth` portal,
  * and resolves immediately via `ironroutine://auth` deep link / AppState / polling.
  */
 export async function signInWithClerkCloud(
@@ -123,7 +123,12 @@ export async function signInWithClerkCloud(
     }
 
     const { attemptId, authUrl } = startData;
-    await Linking.openURL(authUrl);
+    const win = (globalThis as any)?.window;
+    if (Platform.OS === 'web' && win?.open) {
+      win.open(authUrl, '_blank', 'noopener');
+    } else {
+      await Linking.openURL(authUrl);
+    }
 
     return await new Promise((resolve) => {
       let finished = false;
@@ -372,7 +377,7 @@ let autoSyncTimer: ReturnType<typeof setTimeout> | null = null;
 let autoSyncInFlight = false;
 
 /**
- * Automatically synchronizes the active profile to the Vercel NoSQL database
+ * Automatically synchronizes the active profile to the Neon PostgreSQL database
  * whenever local training data, plans, body weight, or profile settings change.
  */
 export function scheduleAutoCloudSync(explicitProfileId?: string): void {

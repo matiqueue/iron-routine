@@ -120,7 +120,7 @@ export function HomePage() {
                   IRON ROUTINE {APP_VERSION}
                 </span>
                 <span className="h-1 w-1 rounded-full bg-zinc-600" />
-                <span className="font-mono text-[11px] text-zinc-400">PURE AMOLED • CLOUD NOSQL SYNC</span>
+                <span className="font-mono text-[11px] text-zinc-400">NEON POSTGRESQL • E2EE CHAT • 5 JĘZYKÓW</span>
               </div>
 
               <h1 className="mt-7 font-display text-4xl font-extrabold leading-[1.04] tracking-tight text-white sm:text-6xl">
@@ -129,10 +129,9 @@ export function HomePage() {
               </h1>
 
               <p className="mt-6 max-w-xl text-base leading-relaxed text-zinc-400 sm:text-lg">
-                Monochromatyczny dziennik siłowy na iOS i Androida stworzony pod prawdziwe
-                serie na siłowni. Jeden profil (model męski i kobiecy), spektrum rang F–S+,
-                wspólna historia rekordów 1RM oraz szyfrowana synchronizacja konta w chmurze NoSQL
-                wyłącznie do wygodnego przenoszenia danych między telefonami.
+                Monochromatyczny dziennik siłowy na iOS, Androida i Web (PL/EN/DE/FR/ES).
+                Sylwetka 3D/SVG (męska i kobieca), rangi F–S+, wspólna historia 1RM, zakładka Znajomi
+                z szyfrowanym czatem E2EE Curve25519 oraz synchronizacja konta w Neon PostgreSQL.
               </p>
 
               <div className="mt-8 flex flex-wrap items-center gap-3">

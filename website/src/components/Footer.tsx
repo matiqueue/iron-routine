@@ -88,7 +88,7 @@ export function Footer() {
             ))}
           </div>
           <span className="font-mono text-[11px] text-zinc-500">
-            SZYFROWANA CHMURA NOSQL (TYLKO PRZECHOWYWANIE KONTA) • MONOCHROME EDITION
+            NEON POSTGRESQL (AES-256-GCM) • CZAT E2EE CURVE25519 • 5 JĘZYKÓW
           </span>
         </div>
       </div>

@@ -1950,7 +1950,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
             <View style={styles.openStepFlow}>
               <View style={[styles.openSection, { borderTopColor: theme.hairline }]}>
                 <Text style={[styles.sectionEyebrow, { color: '#10B981' }]}>
-                  CLERK · NOSQL
+                  CLERK · POSTGRESQL
                 </Text>
 
                 <Text style={[styles.cloudFinalLead, { color: theme.textSecondary }]}>

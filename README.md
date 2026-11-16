@@ -1,7 +1,7 @@
 <div align="center">
   <img src="./assets/banner-mono.svg" alt="Iron Routine Monochrome Banner" width="100%" />
   <br /><br />
-  <p><b>Minimalistyczny, monochromatyczny dziennik treningowy i tracker progresu siłowego (iOS & Android, pamięć lokalna + szyfrowana chmura NoSQL do przenoszenia konta)</b></p>
+  <p><b>Minimalistyczny, monochromatyczny dziennik treningowy, analityka mięśniowa F–S+ oraz szyfrowany E2EE komunikator ekipy (iOS, Android i Web · 5 języków · Neon PostgreSQL)</b></p>
 
   <p>
     <a href="https://iron-routine-app.vercel.app"><img src="https://img.shields.io/badge/Strona_WWW-Portal_Pobierania-FFFFFF?style=for-the-badge&labelColor=09090B" alt="Strona WWW" /></a>
@@ -16,64 +16,56 @@
 
 ---
 
-## Najważniejsze funkcje (v2.0.0)
+## Najważniejsze funkcje (v3.0.0)
 
-- **Monochrome AMOLED UI + Responsywność od 375 pt**: Czysta paleta czerni `#000000` i ciemnych kart `#121214` (plus tryb jasny) z dopracowanymi marginesami dla starszych i nowszych iPhone'ów (`iPhone X / XS` oraz `16 Pro`) i płynnym zamykaniem popupów gestem przesunięcia w dół (`InteractiveBottomSheet` + `BottomSheetScrollView`).
-- **4-krokowy animowany Onboarding & Wybór Płci**: Otwarty, bezkartonowy kreator dla nowego użytkownika: wybór modelu sylwetki (`Mężczyzna` / `Kobieta`), parametry ciała, lista suplementów (`Zalecane` / `Wg masy g/kg` / `Własna`), zgody Apple Health / Health Connect, wybór planu startowego oraz opcja szybkiego odtworzenia konta z chmury (`Apple iCloud` / `Google`).
-- **Szyfrowana Synchronizacja w Chmurze NoSQL (Vercel)**: Opcjonalne logowanie za pomocą **Apple iCloud** lub **Google** pozwala jednym kliknięciem zapisać lub pobrać kopię JSON profilu między telefonami. Dane użytkowników są zbierane i szyfrowane (`AES-256-GCM`) **wyłącznie w celu wygodnego przechowywania konta oraz migracji między urządzeniami** — nie są nigdzie indziej udostępniane, sprzedawane ani wykorzystywane marketingowo.
-- **Osiągi: Model Anatomiczny (Męski / Kobiecy) & Spektrum Rang F–S+**: Interaktywna sylwetka obracana gestem przesunięcia w bok (`Przesuń w bok, aby obrócić`), z szarym oznaczeniem partii nietrenowanych (`0 serii`), oddzielnym animowanym **Spektrum i Drabiną Rang (`F` → `S+`)** dla 19 grup mięśniowych oraz bazą **125 unikalnych ćwiczeń**.
-- **Jeden Profil, Wiele Planów i Wspólne Rekordy PR**: Przełączaj schematy treningowe (np. FBEOD, Upper/Lower, PPL) bez utraty historii serii, szacowanego 1RM ani wykresów postępu.
-- **Konfiguracja Sesji Przed Startem (Drag & Drop)**: Przed rozpoczęciem treningu odznaczaj pomijane ćwiczenia, zmieniaj ich kolejność przeciąganiem (`SessionExercisePickerModal`) lub dokładaj ćwiczenia ze znormalizowanej bazy + tworzonych własnych ćwiczeń.
-- **iOS Live Activities, Dynamic Island i Alarm Przerw w Tle**: Podgląd bieżącej serii i czasu odpoczynku na ekranie blokady. Wstrzymanie lub zmiana czasu (`-15s` / `+15s`) w `RestTimerBar` natychmiast zamraża Dynamic Island i anuluje lub przesuwa 3-falowy alarm `rest_alarm.wav` z potrójną wibracją poza aplikacją.
-- **Apple HealthKit & Google Health Connect**: Automatyczny odczyt kroków, snu, aktywnych kalorii i dystansu na ekranie **Dziś** wraz z kontekstowymi wskazówkami regeneracji.
-- **Analityka Siły i Objętości**: Szacowany 1RM (wzór Epleya), płynne wykresy SVG (`7d` / `30d` / `90d`), tygodniowa objętość serii per partia mięśniowa oraz dziennik wagi (`BodyStatsModal`).
-- **Banery SVG i Autorska Ikona**: Dopasowane grafiki wektorowe dni (`DayBannerArtwork`) dobierane po tagach planu oraz nowa minimalistyczna ikona aplikacji i animowane ikony interfejsu (`AnimatedIcon`).
-- **Ustawienia, Synchronizacja Chmurowa, Backup JSON & Prywatne Seedy**: Otwarta, bezkartonowa zakładka `Ustawienia` z synchronizacją NoSQL (`Apple iCloud` / `Google`), wyborem płci modelu, siłą haptyki, przypomnieniami, własnymi ćwiczeniami i eksportem/importem kopii JSON oraz lokalnym folderem `seeds/` wspieranym przez `scripts/use-seed.mjs`.
+- **Monochrome AMOLED UI & Minimalistyczne Tła**: Czysta paleta czerni `#000000` i ciemnych kart `#121214` (plus tryb jasny), subtelne tła architektoniczne (`MinimalistBackdrop`), płynny dock nawigacyjny liquid-glass oraz zamykanie okien gestem przesunięcia w dół (`InteractiveBottomSheet`).
+- **6-krokowy Animowany Konfigurator & Konta (`@nick`)**: Wybór języka z flagami (`PL`, `EN`, `DE`, `FR`, `ES`), płci modelu, imienia i nazwiska oraz unikalnego `@nicku` (z generatorem i blokadą zmiany co 30 dni), parametrów ciała, suplementacji (`Zalecane` / `g/kg` / `Własna`), trybu planu z wymianą ćwiczeń oraz logowania **Clerk (Apple iCloud / Google)** lub pracy 100% lokalnej.
+- **Neon PostgreSQL (`AES-256-GCM`) & Relacyjny Schemat Chmury**: Opcjonalne logowanie przez **Apple iCloud** lub **Google** bezpiecznie synchronizuje kopię profilu i rekordy w bazie **Neon PostgreSQL** do wygodnego przenoszenia konta między urządzeniami.
+- **Zakładka Znajomi & Szyfrowany Czat E2EE (`Curve25519`)**: Dodawanie znajomych po `@nicku`, radar ekipy (`CrewRadarOrb`), karuzela awatarów (`SquadAvatarRing`), profile 1 na 1 (`VsComparisonArc`), tablica aktywności z kudosami, ranking podium (`CrewPodiumStage`) oraz komunikator tekstowy szyfrowany End-to-End **X25519 + XSalsa20-Poly1305** (`tweetnacl` + `expo-crypto`), w którym serwer widzi wyłącznie zaszyfrowany szyfrogram.
+- **Osiągi: Model Anatomiczny (Męski / Kobiecy) & Spektrum Rang F–S+**: Interaktywna sylwetka obracana w osi pionowej, żywe kolory stymulacji partii, spektrum rang **F–S+** dla 19 grup mięśniowych oraz baza **136 ćwiczeń** (z ulubionymi i własnymi) w 5 językach.
+- **Jeden Profil, Wiele Planów i Wspólne Rekordy PR**: Przełączaj schematy treningowe (`FBW`, `Upper/Lower`, `PPL`, `Split 4D`) bez utraty historii serii, szacowanego 1RM ani wykresów postępu.
+- **Uporządkowane 4-zakładkowe Ustawienia**: Podział na **Profil**, **Trening**, **System** i **Dane** (z odciskiem klucza E2EE, kopiami JSON, bazą ćwiczeń i resetem).
+- **iOS Live Activities, Dynamic Island i Alarm Przerw w Tle**: Podgląd bieżącej serii i stopera na ekranie blokady wraz z 3-falowym alarmem `rest_alarm.wav`.
+- **Apple HealthKit & Google Health Connect**: Odczyt kroków, snu, aktywnych kalorii i dystansu na ekranie **Trening**.
 
 ---
 
 ## Stack technologiczny
 
-- **Aplikacja mobilna**: [Expo SDK 58](https://expo.dev) / [React Native 0.88](https://reactnative.dev) / TypeScript
-- **Pamięć i Synchronizacja**: `@react-native-async-storage/async-storage` (baza lokalna) + prywatna baza dokumentowa **NoSQL na Vercel (`iron-routine-cloud`)** z szyfrowaniem `AES-256-GCM` wyłącznie dla wygodnego przechowywania kont użytkowników i przenoszenia danych między telefonami.
+- **Aplikacja mobilna i Web**: [Expo SDK 58](https://expo.dev) / [React Native 0.88](https://reactnative.dev) / TypeScript / `react-native-web`
+- **Pamięć lokalna & Szyfrowanie E2EE**: `@react-native-async-storage/async-storage`, `expo-crypto`, `tweetnacl` (`Curve25519`)
+- **Backend & Chmura**: **Vercel Serverless Functions** + **Clerk** + **Neon PostgreSQL** (`@neondatabase/serverless`, szyfrowanie backupów `AES-256-GCM`)
 - **Moduły natywne**: `expo-live-activity`, `@kingstinct/react-native-healthkit`, `react-native-health-connect`, `expo-notifications`, `expo-haptics`, `expo-keep-awake`, `react-native-svg`
-- **Portal WWW (`website/`)**: React 19 + Vite + TypeScript + Tailwind CSS (wielostronicowy, monochromatyczny, hostowany na Vercel z deployem wyłącznie z gałęzi `main`)
+- **Portal WWW (`website/`)**: React 19 + Vite + TypeScript + Tailwind CSS (hostowany na Vercel z gałęzi `main`)
 
 ---
 
-## Instalacja na telefonie
+## Uruchomienie i instalacja
+
+### Testowanie wielu kont na Macu w przeglądarce (`Expo Web`)
+
+```bash
+git clone https://github.com/matiqueue/iron-routine.git
+cd iron-routine
+npm install
+npm run web   # Uruchamia aplikację mobilną lokalnie pod http://localhost:8081
+```
 
 ### iPhone (iOS) — wymagany Mac + Xcode + Tryb Dewelopera
 
-Ze względu na natywne **Live Activities (WidgetKit)** oraz **Apple HealthKit**, aplikacja wymaga kompilacji spod macOS i nie uruchomisz jej z czystego Windowsa ani Expo Go:
+Ze względu na natywne **Live Activities (WidgetKit)** oraz **Apple HealthKit**, build iOS wymaga macOS:
 
-1. Zainstaluj **Xcode** z Mac App Store na komputerze Mac.
-2. Na iPhonie przejdź do **Ustawienia > Prywatność i ochrona > Tryb dewelopera**, włącz go i zrestartuj telefon.
-3. Podepnij iPhone'a kablem USB do Maca i kliknij **Zaufaj temu komputerowi**.
-4. Zaloguj darmowe konto Apple ID w **Xcode > Settings > Accounts** (Personal Team — bez płatnej licencji Developer $99) i wybierz swój zespół podpisujący dla targetów `IronRoutine` oraz `LiveActivity`.
-5. Sklonuj repozytorium i wgraj kompilację Release bezpośrednio na telefon:
+1. Zainstaluj **Xcode** i włącz **Tryb dewelopera** na iPhonie (**Ustawienia > Prywatność i ochrona**).
+2. Zaloguj Apple ID w **Xcode > Settings > Accounts** (darmowy Personal Team).
+3. Zbuduj i zainstaluj Release na telefon:
    ```bash
-   git clone https://github.com/matiqueue/iron-routine.git
-   cd iron-routine
-   npm install
-   open ios/IronRoutine.xcworkspace   # jednorazowo ustaw Signing Team w Xcode
-   npm run deploy                     # kompiluje Release, podpisuje rozszerzenie i wgrywa na iPhone
+   cd ios && pod install && cd ..
+   npm run deploy
    ```
-6. Po pierwszym uruchomieniu zaufaj certyfikatowi na telefonie: **Ustawienia > Ogólne > VPN i zarządzanie urządzeniami**.
 
 ### Android (.APK)
 
 Pobierz gotową paczkę instalacyjną `.apk` bezpośrednio ze strony **[iron-routine-app.vercel.app/instalacja](https://iron-routine-app.vercel.app/instalacja)** lub z zakładki **[GitHub Releases](https://github.com/matiqueue/iron-routine/releases/latest)**.
-
-### Prywatne plany seedowe (`seeds/`)
-
-Folder `seeds/` jest ignorowany przez Git (nie trafia na GitHub). Możesz trzymać w nim prywatne plany w JSON dla siebie lub znajomych i aktywować wybrany plik przed buildem:
-
-```bash
-node scripts/use-seed.mjs --list               # lista plików w seeds/
-node scripts/use-seed.mjs nazwa-seeda.json     # generuje lokalny src/data/localSeed.ts
-node scripts/use-seed.mjs --clear              # resetuje lokalny seed pod czysty onboarding
-```
 
 ---
 
@@ -87,51 +79,18 @@ iron-routine/
 │   ├── deploy.sh                    # Build Release + podpis + instalacja na fizyczny iPhone
 │   └── use-seed.mjs                 # Generator i czyszczenie prywatnych seedów z seeds/
 ├── src/
-│   ├── components/
-│   │   ├── ActiveWorkoutView.tsx    # Aktywna sesja, set inputs, sync pauzy Live Activity
-│   │   ├── AnimatedIcon.tsx         # Animowane ikony UI (streak, alarm, trofeum, tętno)
-│   │   ├── BodyStatsModal.tsx       # Dziennik wagi i pomiarów ciała
-│   │   ├── BottomTabBar.tsx         # Dolna nawigacja aplikacji
-│   │   ├── DayBannerArtwork.tsx     # Monochromatyczne banery SVG per tag dnia
-│   │   ├── DayExercisePreviewList.tsx # Widok ćwiczeń w bloku dnia i zakładce Plan
-│   │   ├── ExerciseDetailModal.tsx  # Szczegóły ćwiczenia, technika i rekordy
-│   │   ├── ExerciseLibraryModal.tsx # Baza ćwiczeń (kanoniczna + własne ćwiczenia)
-│   │   ├── HoldToStartButton.tsx    # Przycisk przytrzymania Hold-to-Start
-│   │   ├── InteractiveBottomSheet.tsx # Popupy z gestem przesunięcia w dół (ScrollView sync)
-│   │   ├── ModernSplineChart.tsx    # Wykresy trendów SVG 7d / 30d / 90d
-│   │   ├── OnboardingScreen.tsx     # 4-krokowy animowany kreator startowy
-│   │   ├── PlanDayEditorModal.tsx   # Edytor dnia, tagów i ćwiczeń planu
-│   │   ├── PlanManagerModal.tsx     # Przełącznik i zarządzanie wieloma planami
-│   │   ├── PlanTab.tsx              # Harmonogram aktywnego planu treningowego
-│   │   ├── ProgressTab.tsx          # 1RM Epley, objętość tygodniowa i historia treningów
-│   │   ├── RestDayView.tsx          # Ekran dnia regeneracji
-│   │   ├── RestTimerBar.tsx         # Pływający stoper przerwy z pauzą i swipe-down
-│   │   ├── SessionExercisePickerModal.tsx # Wybór i kolejność ćwiczeń drag & drop
-│   │   ├── SplashScreen.tsx         # Ekran startowy
-│   │   ├── SupplementConfigurator.tsx # Konfigurator suplementacji i przelicznika g/kg
-│   │   └── WorkoutSummaryModal.tsx  # Podsumowanie sesji
-│   ├── data/
-│   │   ├── dayTags.ts               # Tagi dni treningowych mapowane na grafiki banerów
-│   │   ├── exerciseLibrary.ts       # Kanoniczna baza ćwiczeń, aliasy ID i szablony
-│   │   ├── myPlan.template.ts       # Publiczny szablon startowy planu
-│   │   ├── localSeed.template.ts    # Szablon seeda urządzenia
-│   │   ├── planData.ts              # Resolver i normalizacja planów
-│   │   └── supplements.ts           # Domyślne suplementy i kalkulator dawek
-│   ├── screens/
-│   │   ├── TodayScreen.tsx          # Ekran Dziś (streak, HealthKit, sesja, suplementy)
-│   │   └── SettingsScreen.tsx       # Ustawienia (profil, haptyka, alerty, backup JSON, autor)
-│   ├── services/
-│   │   ├── haptics.ts               # Zarządzanie wibracjami i progami intensywności
-│   │   ├── health.ts                # Integracja Apple HealthKit & Health Connect
-│   │   ├── liveActivity.ts          # Obsługa iOS Live Activities & Dynamic Island
-│   │   ├── notifications.ts         # Powiadomienia, alarm rest_alarm.wav i przypomnienia
-│   │   ├── settings.ts              # Zapis ustawień aplikacji
-│   │   └── storage.ts               # Offline zapis profilu, wielu planów i wspólnych PR
+│   ├── components/                  # Ekran Planu, Osiągów, Znajomych (E2EE, Podium, Radar), Modale i BottomSheet
+│   ├── context/                     # ThemeContext & LanguageContext
+│   ├── data/                        # Kanoniczna baza 136 ćwiczeń, mapa 19 partii, suplementy i szablony
+│   ├── i18n/                        # Tłumaczenia UI, ćwiczeń, rang i szablonów (pl/en/de/fr/es)
+│   ├── screens/                     # TodayScreen i 4-zakładkowy SettingsScreen
+│   ├── services/                    # Storage, CloudSync (PostgreSQL), Social (E2EE), Health, LiveActivity, Notifications
 │   ├── types/workout.ts             # Definicje typów TypeScript
-│   └── utils/sessionExercises.ts    # Rozwiązywanie kolejności i pominiętych ćwiczeń sesji
-├── website/                         # Wielostronicowy portal WWW (Vite + React + Tailwind)
-│   ├── src/pages/                   # Podstrony: Home, Funkcje, Analityka 1RM, Instalacja
-│   └── vercel.json                  # Deploy Vercel ograniczony wyłącznie do gałęzi main
+│   └── utils/                       # E2EE (Curve25519), Nicknames (cooldown 30 dni), SessionExercises
+├── website/
+│   ├── api/                         # Funkcje Vercel API (cloud/auth, cloud/sync, social/index) + Neon PostgreSQL
+│   ├── src/pages/                   # Portal WWW: Home, Funkcje, Analityka 1RM, Instalacja, MobileAuth
+│   └── vercel.json                  # Deploy Vercel ograniczony do gałęzi main
 └── App.tsx
 ```
 
@@ -139,9 +98,9 @@ iron-routine/
 
 ## Automatyczne CI/CD i Publikacja
 
-- **CI (`ci.yml`)**: Weryfikuje typowanie TypeScript (`npx tsc --noEmit`), konfigurację Expo (`npx expo config --type public`) oraz build produkcyjny strony (`website/`).
-- **Android Release (`android-release.yml`)**: Na pushu do `main` lub wypchnięciu taga `v*` automatycznie buduje `IronRoutine.apk` i publikuje GitHub Release.
-- **Vercel (`website/vercel.json`)**: Konfiguracja `git.deploymentEnabled` ogranicza automatyczne wdrożenia wyłącznie do gałęzi produkcyjnej `main` (brak zbędnych Preview na `dev` i gałęziach roboczych).
+- **CI (`ci.yml`)**: Weryfikuje TypeScript (`npx tsc --noEmit`), konfigurację Expo (`npx expo config --type public`) oraz build produkcyjny portalu (`website/`).
+- **Android Release (`android-release.yml`)**: Na pushu do `main` lub wypchnięciu taga `v*` automatycznie kompiluje `IronRoutine.apk` i publikuje GitHub Release.
+- **Vercel (`website/vercel.json`)**: Automatyczne wdrożenia wyłącznie z gałęzi produkcyjnej `main`.
 
 ---
 
