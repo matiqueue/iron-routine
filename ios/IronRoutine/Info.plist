@@ -59,6 +59,10 @@
 	<string>Iron Routine dodaje przypomnienia o treningach w Apple Reminders.</string>
 	<key>NSRemindersFullAccessUsageDescription</key>
 	<string>Iron Routine tworzy i aktualizuje przypomnienia treningowe w aplikacji Przypomnienia.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Iron Routine nagrywa zaszyfrowane wiadomości głosowe dla znajomych.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Iron Routine pozwala wybrać zdjęcie profilowe widoczne wyłącznie dla Twoich znajomych.</string>
 	<key>NSUserActivityTypes</key>
 	<array>
 		<string>INStartWorkoutIntent</string>

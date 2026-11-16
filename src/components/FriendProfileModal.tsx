@@ -14,6 +14,7 @@ import { useLanguage } from '../context/LanguageContext';
 import { FriendProfileSummary, RankTier } from '../types/workout';
 import { RANK_TIER_MAP } from '../data/muscleMap';
 import { RankCrestIcon } from './RankCrestIcon';
+import { UserAvatarBadge } from './UserAvatarBadge';
 import { VsComparisonArc } from './CrewCustomComponents';
 import { InteractiveBottomSheet, BottomSheetScrollView } from './InteractiveBottomSheet';
 import { triggerNotificationHaptic, triggerSelectionHaptic } from '../services/haptics';
@@ -175,11 +176,14 @@ export const FriendProfileModal: React.FC<FriendProfileModalProps> = ({
                 },
               ]}
             />
-            <RankCrestIcon
-              tier={friend.overallRank || 'F'}
+            <UserAvatarBadge
+              avatarUrl={friend.avatarUrl}
+              displayName={friend.displayName}
+              avatarColor={friend.avatarColor}
+              rank={friend.overallRank || 'F'}
               size={78}
-              progressPct={friend.overallProgressPct}
-              isSelected
+              ringColor={rankMeta.color}
+              showRankDot
             />
           </View>
 

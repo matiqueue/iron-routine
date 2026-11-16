@@ -26,6 +26,8 @@
         "NSCalendarsFullAccessUsageDescription": "Iron Routine synchronizuje zaplanowane treningi z Apple Calendar.",
         "NSRemindersUsageDescription": "Iron Routine dodaje przypomnienia o treningach w Apple Reminders.",
         "NSRemindersFullAccessUsageDescription": "Iron Routine tworzy i aktualizuje przypomnienia treningowe w aplikacji Przypomnienia.",
+        "NSMicrophoneUsageDescription": "Iron Routine nagrywa zaszyfrowane wiadomości głosowe dla znajomych.",
+        "NSPhotoLibraryUsageDescription": "Iron Routine pozwala wybrać zdjęcie profilowe widoczne wyłącznie dla Twoich znajomych.",
         "NSUserActivityTypes": [
           "INStartWorkoutIntent",
           "com.matique.ironroutine.startWorkout",
@@ -36,6 +38,20 @@
     },
     "plugins": [
       "expo-live-activity",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Iron Routine nagrywa zaszyfrowane wiadomości głosowe dla znajomych.",
+          "recordAudioAndroid": true
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Iron Routine pozwala wybrać zdjęcie profilowe widoczne dla Twoich znajomych.",
+          "cameraPermission": false
+        }
+      ],
       [
         "expo-calendar",
         {
@@ -70,7 +86,8 @@
             "minSdkVersion": 26
           }
         }
-      ]
+      ],
+      "expo-audio"
     ],
     "android": {
       "package": "com.matique.ironroutine",
@@ -82,7 +99,8 @@
         "android.permission.health.READ_ACTIVE_CALORIES_BURNED",
         "android.permission.health.READ_DISTANCE",
         "android.permission.READ_CALENDAR",
-        "android.permission.WRITE_CALENDAR"
+        "android.permission.WRITE_CALENDAR",
+        "android.permission.RECORD_AUDIO"
       ],
       "adaptiveIcon": {
         "backgroundColor": "#050608",

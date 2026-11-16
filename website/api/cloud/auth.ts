@@ -154,6 +154,10 @@ export default {
         const clerkUserId = String(body?.clerkUserId || '').trim();
         let rawEmail = String(body?.email || '').trim().toLowerCase();
         let displayName = String(body?.displayName || '').trim();
+        const incomingAvatarUrl =
+          typeof body?.avatarUrl === 'string' && body.avatarUrl.trim()
+            ? body.avatarUrl.trim()
+            : null;
 
         if (!clerkUserId && !rawEmail) {
           return jsonResponse(
@@ -213,6 +217,7 @@ export default {
               email: rawEmail || existing.email,
               displayName:
                 displayName || existing.displayName || rawEmail.split('@')[0] || 'Użytkownik',
+              avatarUrl: existing.avatarUrl !== undefined ? existing.avatarUrl : incomingAvatarUrl,
               backupSummary: backupSummary || existing.backupSummary,
               updatedAt: nowIso,
             }
@@ -222,6 +227,7 @@ export default {
               email: rawEmail || `${userId}@clerk.ironroutine.app`,
               provider,
               displayName: displayName || rawEmail.split('@')[0] || 'Użytkownik',
+              avatarUrl: incomingAvatarUrl,
               backupSummary,
               createdAt: nowIso,
               updatedAt: nowIso,
@@ -245,6 +251,7 @@ export default {
           displayName: userRecord.displayName,
           nickname: userRecord.nickname || null,
           nicknameUpdatedAt: userRecord.nicknameUpdatedAt || null,
+          avatarUrl: userRecord.avatarUrl || incomingAvatarUrl || null,
           e2eePublicKey: userRecord.e2eePublicKey || null,
           lastSyncedAt: userRecord.lastSyncedAt || null,
           backupSummary: userRecord.backupSummary || null,

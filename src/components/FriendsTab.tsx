@@ -51,6 +51,7 @@ import { triggerNotificationHaptic, triggerSelectionHaptic } from '../services/h
 import { sanitizeNicknameInput } from '../utils/nickname';
 import { MinimalistBackdrop } from './MinimalistBackdrop';
 import { RankCrestIcon } from './RankCrestIcon';
+import { UserAvatarBadge } from './UserAvatarBadge';
 import {
   CrewPodiumStage,
   CrewRadarOrb,
@@ -778,7 +779,9 @@ export const FriendsTab: React.FC<FriendsTabProps> = ({
                       const last = item.lastMessage;
                       const rankColor = (RANK_TIER_MAP[fr.overallRank] || RANK_TIER_MAP.F).color;
                       const previewLine = last
-                        ? `${last.senderId === myUserId ? t('friendsYouSayPrefix') : ''}${last.text}`
+                        ? `${last.senderId === myUserId ? t('friendsYouSayPrefix') : ''}${
+                            last.type === 'voice' ? t('voiceMsgLabel') : last.text
+                          }`
                         : fr.statusNote ||
                           `${fr.overallRank} · ${fr.streak} ${t('friendsDaysShort')}`;
 
@@ -807,7 +810,14 @@ export const FriendsTab: React.FC<FriendsTabProps> = ({
                             }}
                             activeOpacity={0.75}
                           >
-                            <RankCrestIcon tier={fr.overallRank || 'F'} size={44} isSelected />
+                            <UserAvatarBadge
+                              avatarUrl={fr.avatarUrl}
+                              displayName={fr.displayName}
+                              avatarColor={fr.avatarColor}
+                              rank={fr.overallRank || 'F'}
+                              size={46}
+                              showRankDot
+                            />
                           </TouchableOpacity>
 
                           <View style={styles.friendMidCol}>
@@ -900,7 +910,18 @@ export const FriendsTab: React.FC<FriendsTabProps> = ({
                         },
                       ]}
                     >
-                      <RankCrestIcon tier={act.rankTier || 'F'} size={36} isSelected />
+                      {act.userId === myUserId ? (
+  <RankCrestIcon tier={act.rankTier || 'F'} size={36} isSelected />
+) : (
+  <UserAvatarBadge
+    avatarUrl={act.avatarUrl}
+    displayName={act.displayName}
+    avatarColor={act.avatarColor}
+    rank={act.rankTier || 'F'}
+    size={38}
+    showRankDot
+  />
+)}
                       <View style={{ flex: 1, minWidth: 0 }}>
                         <View style={styles.feedTopRow}>
                           <Text style={[styles.feedAuthor, { color: theme.text }]} numberOfLines={1}>
@@ -1064,7 +1085,18 @@ export const FriendsTab: React.FC<FriendsTabProps> = ({
                       activeOpacity={0.82}
                     >
                       <Text style={[styles.leaderPos, { color: medalColor }]}>#{idx + 1}</Text>
-                      <RankCrestIcon tier={p.overallRank || 'F'} size={36} isSelected={idx < 3} />
+                      {entry.isMe ? (
+  <RankCrestIcon tier={p.overallRank || 'F'} size={36} isSelected={idx < 3} />
+) : (
+  <UserAvatarBadge
+    avatarUrl={p.avatarUrl}
+    displayName={p.displayName}
+    avatarColor={p.avatarColor}
+    rank={p.overallRank || 'F'}
+    size={38}
+    showRankDot
+  />
+)}
                       <View style={{ flex: 1, minWidth: 0 }}>
                         <Text style={[styles.friendName, { color: theme.text }]} numberOfLines={1}>
                           {p.displayName} {entry.isMe ? `(${t('friendsYouLabel')})` : ''}
@@ -1137,7 +1169,14 @@ export const FriendsTab: React.FC<FriendsTabProps> = ({
                             { backgroundColor: theme.bgSecondary, borderColor: theme.border },
                           ]}
                         >
-                          <RankCrestIcon tier={res.profile.overallRank || 'F'} size={36} />
+                          <UserAvatarBadge
+  avatarUrl={res.profile.avatarUrl}
+  displayName={res.profile.displayName}
+  avatarColor={res.profile.avatarColor}
+  rank={res.profile.overallRank || 'F'}
+  size={38}
+  showRankDot
+/>
                           <View style={{ flex: 1, minWidth: 0 }}>
                             <Text style={[styles.friendName, { color: theme.text }]} numberOfLines={1}>
                               {res.profile.displayName}
@@ -1196,7 +1235,14 @@ export const FriendsTab: React.FC<FriendsTabProps> = ({
                           { backgroundColor: theme.bgSecondary, borderColor: theme.border },
                         ]}
                       >
-                        <RankCrestIcon tier={req.fromRank || 'F'} size={36} />
+                        <UserAvatarBadge
+  avatarUrl={req.fromAvatarUrl}
+  displayName={req.fromDisplayName}
+  avatarColor={req.fromAvatarColor}
+  rank={req.fromRank || 'F'}
+  size={38}
+  showRankDot
+/>
                         <View style={{ flex: 1, minWidth: 0 }}>
                           <Text style={[styles.friendName, { color: theme.text }]} numberOfLines={1}>
                             {req.fromDisplayName}

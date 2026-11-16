@@ -253,6 +253,7 @@ export async function buildAndPublishSocialProfile(
           nickname: active.nickname,
           e2eePublicKey: keyPair.publicKey,
           avatarColor: active.avatarColor || '#10B981',
+          avatarUrl: active.avatarUrl !== undefined ? active.avatarUrl : undefined,
           gender: active.gender || 'male',
           overallRank: physique.overallRank,
           overallProgressPct: physique.overallProgressPct,

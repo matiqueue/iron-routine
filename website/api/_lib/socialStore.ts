@@ -10,6 +10,7 @@ export interface SocialProfileRecord {
   displayName: string;
   e2eePublicKey?: string | null;
   avatarColor?: string;
+  avatarUrl?: string | null;
   gender?: 'male' | 'female';
   overallRank: string;
   overallProgressPct: number;
@@ -42,6 +43,7 @@ export interface StoredFriendRequest {
   fromDisplayName: string;
   fromRank?: string;
   fromAvatarColor?: string;
+  fromAvatarUrl?: string | null;
   toUserId: string;
   toNickname: string;
   toDisplayName?: string;
@@ -92,6 +94,7 @@ function mapSocialProfileRow(row: any, viewerUserId?: string): SocialProfileReco
     displayName: String(row.display_name || 'Athlete'),
     e2eePublicKey: row.e2ee_public_key || null,
     avatarColor: row.avatar_color || '#10B981',
+    avatarUrl: row.avatar_url !== undefined ? row.avatar_url : row.user_avatar_url || null,
     gender: row.gender === 'female' ? 'female' : 'male',
     overallRank: String(row.overall_rank || 'F'),
     overallProgressPct: Number(row.overall_progress_pct || 0),
@@ -143,6 +146,7 @@ export async function getSocialProfile(
       u.nickname,
       u.display_name,
       u.e2ee_public_key,
+      COALESCE(ap.avatar_url, u.avatar_url) AS avatar_url,
       ap.avatar_color,
       ap.gender,
       ap.overall_rank,
@@ -347,12 +351,13 @@ export async function publishSocialProfile(params: {
 
   await sql`
     INSERT INTO athlete_profiles (
-      user_id, avatar_color, gender, overall_rank, overall_progress_pct, balance_score_pct,
+      user_id, avatar_color, avatar_url, gender, overall_rank, overall_progress_pct, balance_score_pct,
       streak, total_workouts, total_sets, weekly_workouts, top_muscles, recent_prs,
       last_workout_at, last_active_at, status_note, show_activity, updated_at
     ) VALUES (
       ${params.userId},
       ${String(snap.avatarColor || '#10B981')},
+      ${snap.avatarUrl !== undefined ? snap.avatarUrl : user.avatarUrl || null},
       ${snap.gender === 'female' ? 'female' : 'male'},
       ${nextRank},
       ${nextPct},
@@ -371,6 +376,10 @@ export async function publishSocialProfile(params: {
     )
     ON CONFLICT (user_id) DO UPDATE SET
       avatar_color = EXCLUDED.avatar_color,
+      avatar_url = CASE
+        WHEN ${snap.avatarUrl !== undefined} THEN EXCLUDED.avatar_url
+        ELSE COALESCE(athlete_profiles.avatar_url, EXCLUDED.avatar_url)
+      END,
       gender = EXCLUDED.gender,
       overall_rank = EXCLUDED.overall_rank,
       overall_progress_pct = EXCLUDED.overall_progress_pct,
@@ -445,6 +454,7 @@ export async function getSocialHubForUser(userId: string) {
     sql`
       SELECT
         u.user_id, u.nickname, u.display_name, u.e2ee_public_key,
+        COALESCE(ap.avatar_url, u.avatar_url) AS avatar_url,
         ap.avatar_color, ap.gender, ap.overall_rank, ap.overall_progress_pct,
         ap.balance_score_pct, ap.streak, ap.total_workouts, ap.total_sets,
         ap.weekly_workouts, ap.top_muscles, ap.recent_prs, ap.last_workout_at,
@@ -459,6 +469,7 @@ export async function getSocialHubForUser(userId: string) {
       SELECT
         fr.id, fr.from_user_id, fr.to_user_id, fr.created_at,
         uf.nickname AS from_nickname, uf.display_name AS from_display_name,
+        COALESCE(apf.avatar_url, uf.avatar_url) AS from_avatar_url,
         apf.overall_rank AS from_rank, apf.avatar_color AS from_avatar_color,
         ut.nickname AS to_nickname, ut.display_name AS to_display_name
       FROM friend_requests fr
@@ -531,6 +542,7 @@ export async function getSocialHubForUser(userId: string) {
     SELECT
       sa.*,
       u.nickname, u.display_name,
+      COALESCE(ap.avatar_url, u.avatar_url) AS avatar_url,
       ap.avatar_color, ap.show_activity
     FROM social_activities sa
     JOIN users u ON u.user_id = sa.user_id
@@ -550,6 +562,7 @@ export async function getSocialHubForUser(userId: string) {
         nickname: String(row.nickname || ''),
         displayName: String(row.display_name || 'Athlete'),
         avatarColor: row.avatar_color || '#10B981',
+        avatarUrl: row.avatar_url || null,
         type: row.type,
         title: String(row.title),
         subtitle: row.subtitle || undefined,
@@ -567,6 +580,7 @@ export async function getSocialHubForUser(userId: string) {
     fromDisplayName: String(r.from_display_name || 'Athlete'),
     fromRank: r.from_rank || 'F',
     fromAvatarColor: r.from_avatar_color || '#10B981',
+    fromAvatarUrl: r.from_avatar_url || null,
     toUserId: String(r.to_user_id),
     toNickname: String(r.to_nickname || ''),
     toDisplayName: String(r.to_display_name || ''),
@@ -604,6 +618,7 @@ export async function searchUsersByNickPg(query: string, viewerUserId: string) {
     sql`
       SELECT
         u.user_id, u.nickname, u.display_name, u.e2ee_public_key,
+        COALESCE(ap.avatar_url, u.avatar_url) AS avatar_url,
         ap.avatar_color, ap.gender, ap.overall_rank, ap.overall_progress_pct,
         ap.balance_score_pct, ap.streak, ap.total_workouts, ap.total_sets,
         ap.weekly_workouts, ap.top_muscles, ap.recent_prs, ap.last_workout_at,

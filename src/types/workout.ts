@@ -172,6 +172,7 @@ export interface UserProfile {
   isOwner?: boolean;
   createdAt: string;
   avatarColor?: string;
+  avatarUrl?: string | null;
   gender?: UserGender;
   height?: number; // in cm (e.g. 180)
   weight?: number; // in kg (e.g. 60.1)
@@ -201,6 +202,7 @@ export interface FriendProfileSummary {
   displayName: string;
   e2eePublicKey?: string | null;
   avatarColor?: string;
+  avatarUrl?: string | null;
   gender?: UserGender;
   overallRank: RankTier;
   overallProgressPct: number;
@@ -226,6 +228,7 @@ export interface FriendRequestRecord {
   fromDisplayName: string;
   fromRank?: RankTier;
   fromAvatarColor?: string;
+  fromAvatarUrl?: string | null;
   toUserId: string;
   toNickname: string;
   toDisplayName?: string;
@@ -240,6 +243,7 @@ export interface SocialActivityItem {
   nickname: string;
   displayName: string;
   avatarColor?: string;
+  avatarUrl?: string | null;
   type: SocialActivityType;
   title: string;
   subtitle?: string;
@@ -249,7 +253,7 @@ export interface SocialActivityItem {
   cheeredByMe?: boolean;
 }
 
-export type ChatMessageType = 'text' | 'cheer' | 'workout_share' | 'rank_card';
+export type ChatMessageType = 'text' | 'cheer' | 'workout_share' | 'rank_card' | 'voice';
 
 export interface ChatMessagePayload {
   title?: string;
@@ -259,6 +263,10 @@ export interface ChatMessagePayload {
   sets?: number;
   volumeKg?: number;
   emoji?: string;
+  audioBase64?: string;
+  audioMime?: string;
+  durationSec?: number;
+  waveform?: number[];
 }
 
 export interface ChatMessage {

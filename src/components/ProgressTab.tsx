@@ -899,11 +899,6 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
 
   return (
     <View style={[styles.container, { backgroundColor: theme.bg }]}>
-      <MinimalistBackdrop
-        variant="diagonal"
-        accentColor="#F59E0B"
-        secondaryColor="#F43F5E"
-      />
       {/* Open Editorial Header with Silky 120fps Icon-Only Glass Pill Slider */}
       <View
         style={[

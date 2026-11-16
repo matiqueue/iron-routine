@@ -1,5 +1,5 @@
 import React, { useEffect, useId, useRef } from 'react';
-import { Animated, Easing, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Animated, Easing, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Svg, {
   Circle,
   Defs,
@@ -15,6 +15,7 @@ import { useAppTheme } from '../context/ThemeContext';
 import { FriendProfileSummary, RankTier } from '../types/workout';
 import { RANK_TIER_MAP } from '../data/muscleMap';
 import { RankCrestIcon } from './RankCrestIcon';
+import { UserAvatarBadge } from './UserAvatarBadge';
 
 /**
  * 1. Bespoke Rotating Orbital Radar Stage for Crew Discovery & Hero Banner
@@ -210,7 +211,15 @@ export const SquadAvatarRing: React.FC<{
             fill={isDark ? '#18181D' : '#F4F4F7'}
           />
         </Svg>
-        <Text style={[styles.ringInitials, { color: theme.text }]}>{initials}</Text>
+        {friend.avatarUrl ? (
+          <Image
+            source={{ uri: friend.avatarUrl }}
+            style={{ width: 47, height: 47, borderRadius: 23.5 }}
+            resizeMode="cover"
+          />
+        ) : (
+          <Text style={[styles.ringInitials, { color: theme.text }]}>{initials}</Text>
+        )}
 
         {/* Bottom-right mini rank badge */}
         <View
@@ -347,7 +356,18 @@ export const CrewPodiumStage: React.FC<{
             <Ionicons name="trophy" size={14} color="#FACC15" />
           </View>
         )}
-        <RankCrestIcon tier={entry.profile.overallRank || 'F'} size={rankPos === 1 ? 50 : 40} isSelected />
+        {entry.isMe ? (
+          <RankCrestIcon tier={entry.profile.overallRank || 'F'} size={rankPos === 1 ? 50 : 40} isSelected />
+        ) : (
+          <UserAvatarBadge
+            avatarUrl={entry.profile.avatarUrl}
+            displayName={entry.profile.displayName}
+            avatarColor={entry.profile.avatarColor}
+            rank={entry.profile.overallRank || 'F'}
+            size={rankPos === 1 ? 52 : 42}
+            showRankDot
+          />
+        )}
         <Text style={[styles.podiumName, { color: theme.text }]} numberOfLines={1}>
           {entry.profile.displayName.split(' ')[0]}
         </Text>
