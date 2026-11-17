@@ -340,9 +340,11 @@ const AnimatedMessageRow: React.FC<AnimatedMessageRowProps> = ({
   children,
 }) => {
   const anim = useRef(new Animated.Value(animateOnMount ? 0 : 1)).current;
+  const startedRef = useRef(false);
 
   useEffect(() => {
-    if (!animateOnMount) return;
+    if (!animateOnMount || startedRef.current) return;
+    startedRef.current = true;
     Animated.spring(anim, {
       toValue: 1,
       friction: 7.2,
@@ -350,10 +352,6 @@ const AnimatedMessageRow: React.FC<AnimatedMessageRowProps> = ({
       useNativeDriver: true,
     }).start();
   }, [anim, animateOnMount]);
-
-  if (!animateOnMount) {
-    return <>{children}</>;
-  }
 
   return (
     <Animated.View
@@ -674,6 +672,9 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
   const animatedIdsRef = useRef<Set<string>>(new Set());
   const lastSignatureRef = useRef<string>('');
   const clientMsgSeqRef = useRef<number>(0);
+  const mutationEpochRef = useRef<number>(0);
+  const isSendingRef = useRef<boolean>(false);
+  const prevMsgCountRef = useRef<number>(0);
 
   // Silently check microphone permission on chat open so hold-to-record starts instantly
   useEffect(() => {
@@ -688,12 +689,22 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
   const loadMessages = useCallback(
     async (silent = false) => {
       if (!friend) return;
-      const isInitialForFriend = hasLoadedFriendRef.current !== friend.userId;
+      const targetFriendId = friend.userId;
+      const isInitialForFriend = hasLoadedFriendRef.current !== targetFriendId;
+      if (!isInitialForFriend && isSendingRef.current) {
+        return;
+      }
+      const startEpoch = mutationEpochRef.current;
+
       if (!silent && isInitialForFriend) {
         setIsLoading(true);
       }
-      const res = await fetchChatMessages(friend.userId);
+      const res = await fetchChatMessages(targetFriendId);
       if (res.ok) {
+        // Discard stale background poll if a local send/edit/react/delete happened while GET was in flight
+        if (!isInitialForFriend && (startEpoch !== mutationEpochRef.current || isSendingRef.current)) {
+          return;
+        }
         if (res.theme) {
           const remoteAppearance: ChatAppearance = {
             themeId: (res.theme.themeId as ChatThemeId) || 'monochrome',
@@ -710,7 +721,7 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
             }
             lastAnnouncedAppearanceRef.current = `${remoteAppearance.themeId}|${remoteAppearance.wallpaperId}|${remoteAppearance.customUri ? '1' : '0'}`;
             AsyncStorage.setItem(
-              `${CHAT_APPEARANCE_KEY_PREFIX}${friend.userId}`,
+              `${CHAT_APPEARANCE_KEY_PREFIX}${targetFriendId}`,
               JSON.stringify(remoteAppearance)
             ).catch(() => {});
             return remoteAppearance;
@@ -721,9 +732,13 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
         if (isInitialForFriend) {
           knownMessageIdsRef.current = new Set(nextList.map((m) => m.id));
           animatedIdsRef.current.clear();
-          hasLoadedFriendRef.current = friend.userId;
+          hasLoadedFriendRef.current = targetFriendId;
+          prevMsgCountRef.current = nextList.length;
           lastSignatureRef.current = sig;
           setMessages(nextList);
+          setTimeout(() => {
+            listRef.current?.scrollToEnd({ animated: false });
+          }, 40);
         } else if (sig !== lastSignatureRef.current) {
           nextList.forEach((m) => {
             if (!knownMessageIdsRef.current.has(m.id)) {
@@ -746,9 +761,18 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
   );
 
   useEffect(() => {
+    if (messages.length > prevMsgCountRef.current) {
+      scrollToLatest();
+    }
+    prevMsgCountRef.current = messages.length;
+  }, [messages.length]);
+
+  useEffect(() => {
     if (!visible || !friend) {
       hasLoadedFriendRef.current = null;
       lastSignatureRef.current = '';
+      prevMsgCountRef.current = 0;
+      isSendingRef.current = false;
       knownMessageIdsRef.current.clear();
       animatedIdsRef.current.clear();
       stableKeyByIdRef.current.clear();
@@ -936,6 +960,8 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
       });
       scrollToLatest();
 
+      mutationEpochRef.current += 1;
+      isSendingRef.current = true;
       setIsSending(true);
       try {
         const res = await sendChatMessage({
@@ -946,8 +972,12 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
           payload,
           silent: customType === 'system',
         });
+        mutationEpochRef.current += 1;
         if (res.ok && res.message) {
           knownMessageIdsRef.current.add(res.message.id);
+          if (animatedIdsRef.current.has(tempId)) {
+            animatedIdsRef.current.add(res.message.id);
+          }
           // Preserve the optimistic key so React keeps the mounted animated row without a flicker
           stableKeyByIdRef.current.set(res.message.id, tempId);
           setMessages((prev) => {
@@ -970,6 +1000,7 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
           }
         }
       } finally {
+        isSendingRef.current = false;
         setIsSending(false);
       }
     },
@@ -1027,6 +1058,8 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
       return next;
     });
 
+    mutationEpochRef.current += 1;
+    isSendingRef.current = true;
     setIsSending(true);
     try {
       const res = await editChatMessage({
@@ -1035,6 +1068,7 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
         recipientPublicKey: friend.e2eePublicKey,
         text: nextText,
       });
+      mutationEpochRef.current += 1;
       if (res.ok && res.message) {
         setMessages((prev) => {
           const next = prev.map((m) => (m.id === target.id ? res.message! : m));
@@ -1051,6 +1085,7 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
         Alert.alert(t('errorTitle'), res.error || t('socialRequestFailedError'));
       }
     } finally {
+      isSendingRef.current = false;
       setIsSending(false);
     }
   }, [editingMsg, friend, inputText, isSending, onMessagesChanged, t, triggerSendButtonPulse]);
@@ -1264,6 +1299,7 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
   const handleReact = useCallback(
     async (messageId: string, emoji: string) => {
       if (!friend || messageId.startsWith('local_')) return;
+      mutationEpochRef.current += 1;
       triggerSelectionHaptic();
       setReactionTarget(null);
 
@@ -1287,6 +1323,7 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
       });
 
       const updated = await reactToChatMessage(friend.userId, messageId, emoji);
+      mutationEpochRef.current += 1;
       if (updated) {
         setMessages((prev) => {
           const next = prev.map((m) => (m.id === messageId ? updated : m));
@@ -1451,6 +1488,7 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
 
   const handleDeleteMessage = async (msg: ChatMessage) => {
     if (!friend || msg.id.startsWith('local_') || msg.senderId !== myUserId) return;
+    mutationEpochRef.current += 1;
     triggerNotificationHaptic('warning');
     setReactionTarget(null);
     if (editingMsg?.id === msg.id) {
@@ -1666,6 +1704,9 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
       );
     }
 
+    const isImageBubble =
+      item.type === 'image' && Boolean(item.payload?.imageBase64) && !item.decryptFailed;
+
     return (
       <AnimatedMessageRow animateOnMount={shouldAnimateEntry} isMine={isMine}>
         {showTimeGapHeader && (
@@ -1730,12 +1771,21 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
                 style={[
                   styles.bubble,
                   bubbleRadii,
-                  {
-                    backgroundColor: bubbleBg,
-                    borderColor: bubbleBorderColor,
-                    opacity: isPendingLocal ? 0.88 : 1,
-                  },
-                  !isMine && styles.incomingShadow,
+                  isImageBubble
+                    ? {
+                        backgroundColor: 'transparent',
+                        borderColor: 'transparent',
+                        borderWidth: 0,
+                        paddingHorizontal: 0,
+                        paddingVertical: 0,
+                        opacity: isPendingLocal ? 0.88 : 1,
+                      }
+                    : {
+                        backgroundColor: bubbleBg,
+                        borderColor: bubbleBorderColor,
+                        opacity: isPendingLocal ? 0.88 : 1,
+                      },
+                  !isMine && !isImageBubble && styles.incomingShadow,
                 ]}
               >
                 {item.decryptFailed ? (
@@ -1760,17 +1810,19 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
                       source={{
                         uri: `data:${item.payload.imageMime || 'image/jpeg'};base64,${item.payload.imageBase64}`,
                       }}
-                      style={{
-                        width: 210,
-                        height:
-                          item.payload.imageWidth && item.payload.imageHeight
-                            ? Math.max(
-                                120,
-                                Math.min(280, Math.round(210 * (item.payload.imageHeight / item.payload.imageWidth)))
-                              )
-                            : 210,
-                        borderRadius: 15,
-                      }}
+                      style={[
+                        {
+                          width: 224,
+                          height:
+                            item.payload.imageWidth && item.payload.imageHeight
+                              ? Math.max(
+                                  128,
+                                  Math.min(300, Math.round(224 * (item.payload.imageHeight / item.payload.imageWidth)))
+                                )
+                              : 224,
+                        },
+                        bubbleRadii,
+                      ]}
                       resizeMode="cover"
                     />
                   </TouchableOpacity>
@@ -2053,9 +2105,6 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
               keyExtractor={(item) => stableKeyByIdRef.current.get(item.id) || item.id}
               renderItem={renderMessage}
               contentContainerStyle={styles.listContent}
-              onContentSizeChange={() => {
-                listRef.current?.scrollToEnd({ animated: false });
-              }}
               showsVerticalScrollIndicator={false}
               keyboardDismissMode="interactive"
               keyboardShouldPersistTaps="handled"
@@ -2522,10 +2571,19 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
                         left: rect.x,
                         width: rect.width,
                         borderRadius: 21,
-                        backgroundColor: focusBg,
-                        borderColor: theme.isDark
-                          ? 'rgba(255,255,255,0.22)'
-                          : 'rgba(15,23,42,0.14)',
+                        backgroundColor:
+                          msg.type === 'image' && msg.payload?.imageBase64
+                            ? 'transparent'
+                            : focusBg,
+                        borderColor:
+                          msg.type === 'image' && msg.payload?.imageBase64
+                            ? 'transparent'
+                            : theme.isDark
+                            ? 'rgba(255,255,255,0.22)'
+                            : 'rgba(15,23,42,0.14)',
+                        borderWidth: msg.type === 'image' && msg.payload?.imageBase64 ? 0 : 1,
+                        paddingHorizontal: msg.type === 'image' && msg.payload?.imageBase64 ? 0 : 14,
+                        paddingVertical: msg.type === 'image' && msg.payload?.imageBase64 ? 0 : 10,
                         shadowColor: '#000',
                         shadowOffset: { width: 0, height: 10 },
                         shadowOpacity: 0.28,
@@ -2548,18 +2606,18 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
                           uri: `data:${msg.payload.imageMime || 'image/jpeg'};base64,${msg.payload.imageBase64}`,
                         }}
                         style={{
-                          width: 210,
+                          width: 224,
                           height:
                             msg.payload.imageWidth && msg.payload.imageHeight
                               ? Math.max(
-                                  120,
+                                  128,
                                   Math.min(
-                                    280,
-                                    Math.round(210 * (msg.payload.imageHeight / msg.payload.imageWidth))
+                                    300,
+                                    Math.round(224 * (msg.payload.imageHeight / msg.payload.imageWidth))
                                   )
                                 )
-                              : 210,
-                          borderRadius: 15,
+                              : 224,
+                          borderRadius: 21,
                         }}
                         resizeMode="cover"
                       />

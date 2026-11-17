@@ -80,6 +80,7 @@ export interface ProgressTabProps {
   profileId?: string;
   extraExercises?: Exercise[];
   refreshKey?: number;
+  isTabActive?: boolean;
   focusedExercise?: Exercise | null;
   onClearFocusedExercise?: () => void;
 }
@@ -164,6 +165,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
   profileId,
   extraExercises = [],
   refreshKey = 0,
+  isTabActive = true,
   focusedExercise,
   onClearFocusedExercise,
 }) => {
@@ -183,6 +185,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
   const heroCrestPulse = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
+    if (!isTabActive) return;
     const loop = Animated.loop(
       Animated.sequence([
         Animated.timing(heroCrestPulse, {
@@ -201,7 +204,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
     );
     loop.start();
     return () => loop.stop();
-  }, [heroCrestPulse]);
+  }, [heroCrestPulse, isTabActive]);
 
   const scrollViewRef = useRef<any>(null);
 
@@ -1054,6 +1057,8 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                   selectedMuscleExercises={
                     selectedMuscle ? exercisesByMuscle[selectedMuscle] || [] : []
                   }
+                  exercisesByMuscle={exercisesByMuscle}
+                  isTabActive={isTabActive}
                   onPressExercise={openExerciseDetail}
                 />
               )}

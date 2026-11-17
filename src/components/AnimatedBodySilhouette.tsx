@@ -2,10 +2,14 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Animated,
   Easing,
+  Modal,
   PanResponder,
+  Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import Svg, {
@@ -13,14 +17,12 @@ import Svg, {
   Defs,
   G,
   Line,
-  LinearGradient,
   Path,
   Pattern,
-  RadialGradient,
   Rect,
-  Stop,
 } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { useAppTheme } from '../context/ThemeContext';
 import { useLanguage } from '../context/LanguageContext';
@@ -52,8 +54,36 @@ interface AnimatedBodySilhouetteProps {
   selectedMuscle: MuscleSubGroupId | null;
   onSelectMuscle: (muscle: MuscleSubGroupId | null) => void;
   selectedMuscleExercises?: EnrichedExerciseRankStat[];
+  exercisesByMuscle?: Record<string, EnrichedExerciseRankStat[]>;
+  isTabActive?: boolean;
   onPressExercise?: (exercise: Exercise) => void;
 }
+
+/**
+ * Normalized focal anchors (dx, dy in -0.5..0.5 of SVG box) for each anatomical
+ * muscle group so Fullscreen Zoom glides directly onto the tapped muscle.
+ */
+const MUSCLE_FOCUS_ANCHORS: Record<MuscleSubGroupId, { fx: number; fy: number }> = {
+  traps: { fx: -0.05, fy: -0.29 },
+  upper_chest: { fx: -0.06, fy: -0.24 },
+  mid_lower_chest: { fx: -0.06, fy: -0.2 },
+  front_delts: { fx: -0.17, fy: -0.22 },
+  side_delts: { fx: -0.2, fy: -0.21 },
+  rear_delts: { fx: -0.18, fy: -0.22 },
+  biceps: { fx: -0.22, fy: -0.14 },
+  triceps: { fx: -0.21, fy: -0.14 },
+  forearms: { fx: -0.27, fy: -0.02 },
+  abs: { fx: 0, fy: -0.09 },
+  obliques: { fx: -0.11, fy: -0.08 },
+  lats: { fx: -0.12, fy: -0.16 },
+  mid_back: { fx: -0.04, fy: -0.18 },
+  lower_back: { fx: 0, fy: -0.04 },
+  glutes: { fx: -0.08, fy: 0.04 },
+  quads: { fx: -0.09, fy: 0.16 },
+  hamstrings: { fx: -0.09, fy: 0.16 },
+  adductors: { fx: -0.04, fy: 0.14 },
+  calves: { fx: -0.09, fy: 0.34 },
+};
 
 const INERT_SLUGS = new Set([
   'head',
@@ -234,13 +264,18 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = Rea
   selectedMuscle,
   onSelectMuscle,
   selectedMuscleExercises = [],
+  exercisesByMuscle,
+  isTabActive = true,
   onPressExercise,
 }) => {
   const { theme, isDark } = useAppTheme();
-  const { t, muscleLabel, exerciseName } = useLanguage();
+  const { t, muscleLabel, exerciseName, rankTitle } = useLanguage();
+  const insets = useSafeAreaInsets();
+  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const [viewSide, setViewSide] = useState<SilhouetteViewSide>('front');
   const viewSideRef = useRef<SilhouetteViewSide>('front');
   const isAnimatingRef = useRef(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   // Stationary in-place axis rotation animations (ZERO horizontal translation!)
   const flipScaleX = useRef(new Animated.Value(1)).current;
@@ -248,11 +283,18 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = Rea
   const flipOpacity = useRef(new Animated.Value(1)).current;
   const floatAnim = useRef(new Animated.Value(0)).current;
 
+  // Fullscreen zoom-to-muscle & card slide animations
+  const fsZoomScale = useRef(new Animated.Value(1)).current;
+  const fsZoomX = useRef(new Animated.Value(0)).current;
+  const fsZoomY = useRef(new Animated.Value(0)).current;
+  const fsCardAnim = useRef(new Animated.Value(0)).current;
+
   useEffect(() => {
     viewSideRef.current = viewSide;
   }, [viewSide]);
 
   useEffect(() => {
+    if (!isTabActive && !isFullscreen) return;
     const floatLoop = Animated.loop(
       Animated.sequence([
         Animated.timing(floatAnim, {
@@ -273,7 +315,7 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = Rea
     return () => {
       floatLoop.stop();
     };
-  }, [floatAnim]);
+  }, [floatAnim, isFullscreen, isTabActive]);
 
   const selectedStat = selectedMuscle ? muscleStatsMap[selectedMuscle] : null;
 
@@ -479,9 +521,223 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = Rea
     [isDark, t]
   );
 
+  const fsTopBarH = Math.max(insets.top + 56, 88);
+  const fsBottomPad = Math.max(insets.bottom + 14, 24);
+  const fsStageH = Math.max(380, screenHeight - fsTopBarH - fsBottomPad);
+  const fsSvgW = Math.min(screenWidth - 36, 300);
+  const fsSvgH = Math.min(fsStageH - 24, Math.round(fsSvgW * (415 / 240)));
+
+  useEffect(() => {
+    if (!isFullscreen) {
+      fsZoomScale.setValue(1);
+      fsZoomX.setValue(0);
+      fsZoomY.setValue(0);
+      fsCardAnim.setValue(0);
+      return;
+    }
+
+    if (selectedMuscle) {
+      const anchor = MUSCLE_FOCUS_ANCHORS[selectedMuscle] || { fx: 0, fy: -0.1 };
+      const z = 1.92;
+      const dx = anchor.fx * fsSvgW;
+      const dy = anchor.fy * fsSvgH;
+      const targetPanX = -screenWidth * 0.24 - dx * z;
+      const targetPanY = -fsStageH * 0.04 - dy * z;
+
+      fsCardAnim.setValue(0);
+      Animated.parallel([
+        Animated.spring(fsZoomScale, {
+          toValue: z,
+          friction: 8,
+          tension: 76,
+          useNativeDriver: true,
+        }),
+        Animated.spring(fsZoomX, {
+          toValue: targetPanX,
+          friction: 8,
+          tension: 76,
+          useNativeDriver: true,
+        }),
+        Animated.spring(fsZoomY, {
+          toValue: targetPanY,
+          friction: 8,
+          tension: 76,
+          useNativeDriver: true,
+        }),
+        Animated.spring(fsCardAnim, {
+          toValue: 1,
+          friction: 7.5,
+          tension: 92,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    } else {
+      Animated.parallel([
+        Animated.spring(fsZoomScale, {
+          toValue: 1,
+          friction: 8,
+          tension: 82,
+          useNativeDriver: true,
+        }),
+        Animated.spring(fsZoomX, {
+          toValue: 0,
+          friction: 8,
+          tension: 82,
+          useNativeDriver: true,
+        }),
+        Animated.spring(fsZoomY, {
+          toValue: 0,
+          friction: 8,
+          tension: 82,
+          useNativeDriver: true,
+        }),
+        Animated.timing(fsCardAnim, {
+          toValue: 0,
+          duration: 150,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    }
+  }, [
+    fsCardAnim,
+    fsStageH,
+    fsSvgH,
+    fsSvgW,
+    fsZoomScale,
+    fsZoomX,
+    fsZoomY,
+    isFullscreen,
+    screenWidth,
+    selectedMuscle,
+  ]);
+
+  const fullscreenExercises = useMemo(() => {
+    if (selectedMuscle && exercisesByMuscle?.[selectedMuscle]) {
+      return exercisesByMuscle[selectedMuscle];
+    }
+    return selectedMuscleExercises;
+  }, [exercisesByMuscle, selectedMuscle, selectedMuscleExercises]);
+
+  const renderBodySvg = (svgW: number, svgH: number) => (
+    <Svg width={svgW} height={svgH} viewBox={viewBox}>
+      {/* Subtle Central Axis Reference Line (no green circle glow behind silhouette) */}
+      <Line
+        x1={centerX}
+        y1={120}
+        x2={centerX}
+        y2={1380}
+        stroke={isDark ? '#27272A' : '#E4E4E7'}
+        strokeWidth={1.5}
+        strokeDasharray="6 10"
+        strokeOpacity={0.45}
+      />
+
+      {parts.map((part) => {
+        const isInert = INERT_SLUGS.has(part.slug);
+        const allSides: Array<{ key: string; list: string[] }> = [
+          { key: 'common', list: part.path.common || [] },
+          { key: 'left', list: part.path.left || [] },
+          { key: 'right', list: part.path.right || [] },
+        ];
+
+        return (
+          <G key={`${viewSide}-${part.slug}`}>
+            {allSides.map(({ key, list }) =>
+              list.map((d, idx) => {
+                if (isInert) {
+                  return (
+                    <Path
+                      key={`${viewSide}-${part.slug}-${key}-${idx}`}
+                      d={d}
+                      fill={inertFill}
+                      fillOpacity={isDark ? 0.38 : 0.52}
+                    />
+                  );
+                }
+
+                const muscleId = resolveMuscleIdForPath(
+                  viewSide,
+                  part.slug,
+                  idx,
+                  muscleStatsMap
+                );
+
+                const isSelected = Boolean(
+                  selectedMuscle &&
+                    (selectedMuscle === muscleId ||
+                      (part.slug === 'chest' &&
+                        (selectedMuscle === 'upper_chest' ||
+                          selectedMuscle === 'mid_lower_chest')) ||
+                      (viewSide === 'front' &&
+                        part.slug === 'deltoids' &&
+                        (selectedMuscle === 'front_delts' ||
+                          selectedMuscle === 'side_delts')))
+                );
+
+                const stat =
+                  selectedMuscle && isSelected
+                    ? muscleStatsMap[selectedMuscle]
+                    : muscleId
+                    ? muscleStatsMap[muscleId]
+                    : undefined;
+
+                const style = getMuscleFillStyle(
+                  stat,
+                  isSelected,
+                  Boolean(selectedMuscle),
+                  isDark
+                );
+
+                return (
+                  <Path
+                    key={`${viewSide}-${part.slug}-${key}-${idx}`}
+                    d={d}
+                    fill={style.fill}
+                    fillOpacity={style.fillOpacity}
+                    stroke={style.stroke}
+                    strokeWidth={style.strokeWidth}
+                    strokeOpacity={style.strokeOpacity}
+                    onPress={() => handleMusclePress(muscleId)}
+                  />
+                );
+              })
+            )}
+          </G>
+        );
+      })}
+
+      {outlinePath ? (
+        <Path
+          d={outlinePath}
+          fill="none"
+          stroke={outlineStroke}
+          strokeWidth={2.1}
+          strokeOpacity={isDark ? 0.72 : 0.85}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          pointerEvents="none"
+        />
+      ) : null}
+    </Svg>
+  );
+
+  const selectedStatusAccent = !selectedStat
+    ? theme.textMuted
+    : selectedStat.effectiveSetsTotal === 0
+    ? isDark
+      ? '#71717A'
+      : '#A1A1AA'
+    : selectedStat.priorityStatus === 'dominant'
+    ? '#38BDF8'
+    : selectedStat.priorityStatus === 'balanced'
+    ? '#10B981'
+    : isDark
+    ? '#FDE047'
+    : '#FACC15';
+
   return (
     <View style={styles.container}>
-      {/* Minimalist Side Status Header (no gender label!) */}
+      {/* Minimalist Side Status Header with Flip & Fullscreen Buttons */}
       <View style={styles.sideHeaderRow}>
         <View style={styles.sideTagWrap}>
           <View style={[styles.liveDot, { backgroundColor: '#10B981' }]} />
@@ -489,26 +745,52 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = Rea
             {viewSide === 'front' ? t('frontSilhouetteCaps') : t('backSilhouetteCaps')}
           </Text>
         </View>
-        <TouchableOpacity
-          style={[
-            styles.quickFlipChip,
-            {
-              backgroundColor: isDark
-                ? 'rgba(39, 39, 42, 0.55)'
-                : 'rgba(244, 244, 245, 0.78)',
-              borderColor: isDark
-                ? 'rgba(255, 255, 255, 0.1)'
-                : 'rgba(24, 24, 27, 0.08)',
-            },
-          ]}
-          onPress={() => rotateToSide()}
-          activeOpacity={0.75}
-        >
-          <Ionicons name="sync-outline" size={12} color={theme.textSecondary} />
-          <Text style={[styles.sideCounterText, { color: theme.textSecondary }]}>
-            {viewSide === 'front' ? t('viewCounterFront') : t('viewCounterBack')}
-          </Text>
-        </TouchableOpacity>
+        <View style={styles.headerActionsRow}>
+          <TouchableOpacity
+            style={[
+              styles.quickFlipChip,
+              {
+                backgroundColor: isDark
+                  ? 'rgba(39, 39, 42, 0.55)'
+                  : 'rgba(244, 244, 245, 0.78)',
+                borderColor: isDark
+                  ? 'rgba(255, 255, 255, 0.1)'
+                  : 'rgba(24, 24, 27, 0.08)',
+              },
+            ]}
+            onPress={() => rotateToSide()}
+            activeOpacity={0.75}
+          >
+            <Ionicons name="sync-outline" size={12} color={theme.textSecondary} />
+            <Text style={[styles.sideCounterText, { color: theme.textSecondary }]}>
+              {viewSide === 'front' ? t('viewCounterFront') : t('viewCounterBack')}
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.fullscreenBtnChip,
+              {
+                backgroundColor: isDark
+                  ? 'rgba(39, 39, 42, 0.65)'
+                  : 'rgba(244, 244, 245, 0.88)',
+                borderColor: isDark
+                  ? 'rgba(255, 255, 255, 0.14)'
+                  : 'rgba(24, 24, 27, 0.1)',
+              },
+            ]}
+            onPress={() => {
+              try {
+                Haptics.selectionAsync();
+              } catch {}
+              setIsFullscreen(true);
+            }}
+            activeOpacity={0.75}
+            accessibilityLabel={t('anatomyFullscreenTitle')}
+          >
+            <Ionicons name="expand-outline" size={14} color={theme.text} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Interactive Swipe-to-Rotate Silhouette Stage with Minimalist Architectural Grid */}
@@ -594,122 +876,7 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = Rea
             },
           ]}
         >
-          <Svg width={240} height={415} viewBox={viewBox}>
-            <Defs>
-              <LinearGradient id={`glow-${viewSide}`} x1="0" y1="0" x2="0" y2="1">
-                <Stop
-                  offset="0%"
-                  stopColor="#10B981"
-                  stopOpacity={isDark ? 0.11 : 0.06}
-                />
-                <Stop
-                  offset="100%"
-                  stopColor="#38BDF8"
-                  stopOpacity={0.0}
-                />
-              </LinearGradient>
-            </Defs>
-
-            {/* Subtle Central Axis Reference Line & Ambient Aura */}
-            <Line
-              x1={centerX}
-              y1={120}
-              x2={centerX}
-              y2={1380}
-              stroke={isDark ? '#27272A' : '#E4E4E7'}
-              strokeWidth={1.5}
-              strokeDasharray="6 10"
-              strokeOpacity={0.45}
-            />
-            <Circle cx={centerX} cy={560} r={275} fill={`url(#glow-${viewSide})`} />
-
-            {parts.map((part) => {
-              const isInert = INERT_SLUGS.has(part.slug);
-              const allSides: Array<{ key: string; list: string[] }> = [
-                { key: 'common', list: part.path.common || [] },
-                { key: 'left', list: part.path.left || [] },
-                { key: 'right', list: part.path.right || [] },
-              ];
-
-              return (
-                <G key={`${viewSide}-${part.slug}`}>
-                  {allSides.map(({ key, list }) =>
-                    list.map((d, idx) => {
-                      if (isInert) {
-                        return (
-                          <Path
-                            key={`${viewSide}-${part.slug}-${key}-${idx}`}
-                            d={d}
-                            fill={inertFill}
-                            fillOpacity={isDark ? 0.38 : 0.52}
-                          />
-                        );
-                      }
-
-                      const muscleId = resolveMuscleIdForPath(
-                        viewSide,
-                        part.slug,
-                        idx,
-                        muscleStatsMap
-                      );
-
-                      const isSelected = Boolean(
-                        selectedMuscle &&
-                          (selectedMuscle === muscleId ||
-                            (part.slug === 'chest' &&
-                              (selectedMuscle === 'upper_chest' ||
-                                selectedMuscle === 'mid_lower_chest')) ||
-                            (viewSide === 'front' &&
-                              part.slug === 'deltoids' &&
-                              (selectedMuscle === 'front_delts' ||
-                                selectedMuscle === 'side_delts')))
-                      );
-
-                      const stat =
-                        selectedMuscle && isSelected
-                          ? muscleStatsMap[selectedMuscle]
-                          : muscleId
-                          ? muscleStatsMap[muscleId]
-                          : undefined;
-
-                      const style = getMuscleFillStyle(
-                        stat,
-                        isSelected,
-                        Boolean(selectedMuscle),
-                        isDark
-                      );
-
-                      return (
-                        <Path
-                          key={`${viewSide}-${part.slug}-${key}-${idx}`}
-                          d={d}
-                          fill={style.fill}
-                          fillOpacity={style.fillOpacity}
-                          stroke={style.stroke}
-                          strokeWidth={style.strokeWidth}
-                          strokeOpacity={style.strokeOpacity}
-                          onPress={() => handleMusclePress(muscleId)}
-                        />
-                      );
-                    })
-                  )}
-                </G>
-              );
-            })}
-
-            {outlinePath ? (
-              <Path
-                d={outlinePath}
-                fill="none"
-                stroke={outlineStroke}
-                strokeWidth={2.1}
-                strokeOpacity={isDark ? 0.72 : 0.85}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                pointerEvents="none"
-              />
-            ) : null}
-          </Svg>
+          {renderBodySvg(240, 415)}
         </Animated.View>
       </View>
 
@@ -843,6 +1010,344 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = Rea
           {t('tapMuscleHint')}
         </Text>
       )}
+
+      {/* Fullscreen Interactive Anatomical Zoom Explorer + Side Detail Card */}
+      <Modal
+        visible={isFullscreen}
+        animationType="fade"
+        presentationStyle="fullScreen"
+        onRequestClose={() => setIsFullscreen(false)}
+      >
+        <View style={[styles.fsRoot, { backgroundColor: theme.bg }]}>
+          {/* Subtle architectural blueprint grid background (zero green glow) */}
+          <Svg
+            width="100%"
+            height="100%"
+            style={[StyleSheet.absoluteFill, { pointerEvents: 'none' }]}
+          >
+            <Defs>
+              <Pattern
+                id="fsSilhouetteGrid"
+                width={44}
+                height={44}
+                patternUnits="userSpaceOnUse"
+              >
+                <Path
+                  d="M 44 0 L 0 0 0 44"
+                  fill="none"
+                  stroke={isDark ? 'rgba(255, 255, 255, 0.055)' : 'rgba(24, 24, 27, 0.048)'}
+                  strokeWidth={0.9}
+                />
+                <Circle
+                  cx={0}
+                  cy={0}
+                  r={1.15}
+                  fill={isDark ? 'rgba(255, 255, 255, 0.14)' : 'rgba(24, 24, 27, 0.12)'}
+                />
+              </Pattern>
+            </Defs>
+            <Rect x={0} y={0} width="100%" height="100%" fill="url(#fsSilhouetteGrid)" />
+          </Svg>
+
+          {/* Top Floating Controls Bar */}
+          <View
+            style={[
+              styles.fsTopBar,
+              {
+                paddingTop: Math.max(insets.top + 8, 18),
+                borderBottomColor: theme.hairline,
+                backgroundColor: isDark ? 'rgba(9, 9, 12, 0.72)' : 'rgba(255, 255, 255, 0.82)',
+              },
+            ]}
+          >
+            <View style={styles.fsTitleGroup}>
+              <Text style={[styles.fsTitle, { color: theme.text }]}>
+                {t('anatomyFullscreenTitle')}
+              </Text>
+              <Text style={[styles.fsSubTitle, { color: theme.textMuted }]}>
+                {viewSide === 'front' ? t('frontSilhouetteCaps') : t('backSilhouetteCaps')}
+              </Text>
+            </View>
+
+            <View style={styles.fsControlsRight}>
+              {selectedMuscle && (
+                <TouchableOpacity
+                  onPress={() => {
+                    try {
+                      Haptics.selectionAsync();
+                    } catch {}
+                    onSelectMuscle(null);
+                  }}
+                  style={[
+                    styles.fsPillBtn,
+                    {
+                      backgroundColor: isDark
+                        ? 'rgba(255,255,255,0.1)'
+                        : 'rgba(15,23,42,0.07)',
+                      borderColor: theme.border,
+                    },
+                  ]}
+                  activeOpacity={0.78}
+                >
+                  <Ionicons name="contract-outline" size={14} color={theme.text} />
+                  <Text style={[styles.fsPillBtnText, { color: theme.text }]}>
+                    {t('resetZoomBtn')}
+                  </Text>
+                </TouchableOpacity>
+              )}
+
+              <TouchableOpacity
+                onPress={() => rotateToSide()}
+                style={[
+                  styles.fsPillBtn,
+                  {
+                    backgroundColor: isDark
+                      ? 'rgba(255,255,255,0.1)'
+                      : 'rgba(15,23,42,0.07)',
+                    borderColor: theme.border,
+                  },
+                ]}
+                activeOpacity={0.78}
+              >
+                <Ionicons name="sync-outline" size={14} color={theme.text} />
+                <Text style={[styles.fsPillBtnText, { color: theme.text }]}>
+                  {viewSide === 'front' ? t('viewCounterFront') : t('viewCounterBack')}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={() => setIsFullscreen(false)}
+                style={[
+                  styles.fsCloseCircle,
+                  {
+                    backgroundColor: isDark
+                      ? 'rgba(255,255,255,0.12)'
+                      : 'rgba(15,23,42,0.08)',
+                  },
+                ]}
+                activeOpacity={0.78}
+              >
+                <Ionicons name="close" size={20} color={theme.text} />
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* Main Interactive Zoom Stage */}
+          <View {...panResponder.panHandlers} style={styles.fsStageArea}>
+            {selectedMuscle && (
+              <Pressable
+                style={StyleSheet.absoluteFill}
+                onPress={() => onSelectMuscle(null)}
+              />
+            )}
+
+            <Animated.View
+              style={{
+                opacity: flipOpacity,
+                transform: [
+                  { translateX: fsZoomX },
+                  { translateY: fsZoomY },
+                  { scale: fsZoomScale },
+                  { scaleX: flipScaleX },
+                  { scaleY: flipScaleY },
+                ],
+              }}
+            >
+              {renderBodySvg(fsSvgW, fsSvgH)}
+            </Animated.View>
+
+            {/* Sleek Floating Muscle Detail Card beside the zoomed anatomy */}
+            {selectedStat && (
+              <Animated.View
+                style={[
+                  styles.fsDetailCard,
+                  {
+                    width: Math.min(220, Math.round(screenWidth * 0.56)),
+                    maxHeight: Math.round(fsStageH * 0.74),
+                    top: Math.max(16, Math.round(fsStageH * 0.14)),
+                    backgroundColor: isDark
+                      ? 'rgba(17, 17, 22, 0.92)'
+                      : 'rgba(255, 255, 255, 0.94)',
+                    borderColor: selectedStatusAccent,
+                    opacity: fsCardAnim,
+                    transform: [
+                      {
+                        translateX: fsCardAnim.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [34, 0],
+                        }),
+                      },
+                      {
+                        scale: fsCardAnim.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [0.94, 1],
+                        }),
+                      },
+                    ],
+                  },
+                ]}
+              >
+                <View
+                  style={[styles.fsCardAccentBar, { backgroundColor: selectedStatusAccent }]}
+                />
+
+                <ScrollView
+                  showsVerticalScrollIndicator={false}
+                  contentContainerStyle={styles.fsCardScrollContent}
+                >
+                  <View style={styles.fsCardHeaderRow}>
+                    <RankCrestIcon
+                      tier={selectedStat.rank}
+                      size={44}
+                      progressPct={selectedStat.progressPct}
+                      animated
+                    />
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={[styles.fsCardMuscleName, { color: theme.text }]} numberOfLines={2}>
+                        {muscleLabel(selectedStat.meta.id)}
+                      </Text>
+                      <Text style={[styles.fsCardRankTitle, { color: selectedStatusAccent }]}>
+                        {rankTitle(selectedStat.rank)}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View
+                    style={[
+                      styles.fsStatusPill,
+                      {
+                        backgroundColor: `${selectedStatusAccent}1F`,
+                        borderColor: `${selectedStatusAccent}55`,
+                      },
+                    ]}
+                  >
+                    <View style={[styles.fsStatusDot, { backgroundColor: selectedStatusAccent }]} />
+                    <Text
+                      style={[styles.fsStatusPillText, { color: selectedStatusAccent }]}
+                      numberOfLines={1}
+                    >
+                      {selectedStat.statusLabel}
+                    </Text>
+                  </View>
+
+                  {/* Rank Progress */}
+                  <View style={styles.fsProgressBlock}>
+                    <View style={styles.fsProgressHeader}>
+                      <Text style={[styles.fsProgressLabel, { color: theme.textMuted }]}>
+                        {t('rankProgressLabel')}
+                      </Text>
+                      <Text style={[styles.fsProgressPct, { color: theme.text }]}>
+                        {selectedStat.progressPct}%
+                      </Text>
+                    </View>
+                    <View style={[styles.fsProgressTrack, { backgroundColor: theme.bgSecondary }]}>
+                      <View
+                        style={[
+                          styles.fsProgressFill,
+                          {
+                            backgroundColor: selectedStatusAccent,
+                            width: `${Math.max(4, Math.min(100, selectedStat.progressPct))}%`,
+                          },
+                        ]}
+                      />
+                    </View>
+                  </View>
+
+                  {/* Telemetry Metrics Grid */}
+                  <View style={styles.fsMetricsGrid}>
+                    <View style={[styles.fsMetricBox, { backgroundColor: theme.bgSecondary }]}>
+                      <Text style={[styles.fsMetricVal, { color: theme.text }]}>
+                        {Math.round(selectedStat.effectiveSetsTotal)}
+                      </Text>
+                      <Text style={[styles.fsMetricLbl, { color: theme.textMuted }]} numberOfLines={1}>
+                        {t('seriesMetricLabel')}
+                      </Text>
+                    </View>
+                    <View style={[styles.fsMetricBox, { backgroundColor: theme.bgSecondary }]}>
+                      <Text style={[styles.fsMetricVal, { color: theme.text }]}>
+                        {Math.round(selectedStat.effectiveSets30d)}
+                      </Text>
+                      <Text style={[styles.fsMetricLbl, { color: theme.textMuted }]} numberOfLines={1}>
+                        30d
+                      </Text>
+                    </View>
+                    <View style={[styles.fsMetricBox, { backgroundColor: theme.bgSecondary }]}>
+                      <Text style={[styles.fsMetricVal, { color: theme.text }]}>
+                        {Math.round(selectedStat.relativeDevelopmentRatio * 100)}%
+                      </Text>
+                      <Text style={[styles.fsMetricLbl, { color: theme.textMuted }]} numberOfLines={1}>
+                        {t('balanceMetricLabel')}
+                      </Text>
+                    </View>
+                  </View>
+
+                  {/* Exercises for this muscle */}
+                  {fullscreenExercises.length > 0 && (
+                    <View style={styles.fsExercisesList}>
+                      {fullscreenExercises.slice(0, 4).map((exStat) => (
+                        <TouchableOpacity
+                          key={exStat.exerciseId}
+                          style={[
+                            styles.fsExerciseRow,
+                            {
+                              backgroundColor: isDark
+                                ? 'rgba(255,255,255,0.06)'
+                                : 'rgba(15,23,42,0.05)',
+                            },
+                          ]}
+                          onPress={() => {
+                            setIsFullscreen(false);
+                            onPressExercise?.(exStat.exercise);
+                          }}
+                          activeOpacity={0.75}
+                        >
+                          <RankCrestIcon tier={exStat.rank} size={20} />
+                          <View style={{ flex: 1, minWidth: 0 }}>
+                            <Text style={[styles.fsExerciseName, { color: theme.text }]} numberOfLines={1}>
+                              {exerciseName(exStat.exercise.id, exStat.exercise.name)}
+                            </Text>
+                            <Text style={[styles.fsExerciseSets, { color: theme.textMuted }]}>
+                              {exStat.totalSets} {t('setsWord')}
+                            </Text>
+                          </View>
+                          <Ionicons name="chevron-forward" size={13} color={theme.textMuted} />
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  )}
+                </ScrollView>
+              </Animated.View>
+            )}
+
+            {/* Bottom hint / Legend inside Fullscreen */}
+            {!selectedMuscle && (
+              <View
+                style={[
+                  styles.fsBottomHintWrap,
+                  { bottom: Math.max(insets.bottom + 14, 24), pointerEvents: 'none' },
+                ]}
+              >
+                <View
+                  style={[
+                    styles.fsBottomHintPill,
+                    {
+                      backgroundColor: isDark
+                        ? 'rgba(24,24,28,0.88)'
+                        : 'rgba(255,255,255,0.9)',
+                      borderColor: theme.border,
+                    },
+                  ]}
+                >
+                  <Ionicons name="search" size={13} color={theme.textSecondary} />
+                  <Text style={[styles.fsBottomHintText, { color: theme.textSecondary }]}>
+                    {t('tapMuscleToZoomHint')}
+                  </Text>
+                </View>
+              </View>
+            )}
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 });
@@ -873,6 +1378,11 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: 1.1,
   },
+  headerActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   quickFlipChip: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -881,6 +1391,14 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 999,
     borderWidth: 1,
+  },
+  fullscreenBtnChip: {
+    width: 30,
+    height: 28,
+    borderRadius: 999,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   sideCounterText: {
     fontSize: 11,
@@ -1037,5 +1555,204 @@ const styles = StyleSheet.create({
   focusExSets: {
     fontSize: 11,
     fontWeight: '600',
+  },
+  fsRoot: {
+    flex: 1,
+  },
+  fsTopBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    zIndex: 20,
+  },
+  fsTitleGroup: {
+    gap: 2,
+  },
+  fsTitle: {
+    fontSize: 16,
+    fontWeight: '900',
+    letterSpacing: -0.3,
+  },
+  fsSubTitle: {
+    fontSize: 10.5,
+    fontWeight: '800',
+    letterSpacing: 1.1,
+  },
+  fsControlsRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  fsPillBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 11,
+    paddingVertical: 7,
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  fsPillBtnText: {
+    fontSize: 11.5,
+    fontWeight: '700',
+  },
+  fsCloseCircle: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  fsStageArea: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  fsDetailCard: {
+    position: 'absolute',
+    right: 12,
+    borderRadius: 22,
+    borderWidth: 1.2,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.3,
+    shadowRadius: 24,
+    elevation: 14,
+  },
+  fsCardAccentBar: {
+    height: 3.5,
+    width: '100%',
+  },
+  fsCardScrollContent: {
+    padding: 13,
+    gap: 10,
+  },
+  fsCardHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  fsCardMuscleName: {
+    fontSize: 14.5,
+    fontWeight: '900',
+    letterSpacing: -0.3,
+    lineHeight: 18,
+  },
+  fsCardRankTitle: {
+    fontSize: 11,
+    fontWeight: '800',
+    marginTop: 2,
+  },
+  fsStatusPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 6,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  fsStatusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  fsStatusPillText: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  fsProgressBlock: {
+    gap: 5,
+  },
+  fsProgressHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  fsProgressLabel: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  fsProgressPct: {
+    fontSize: 12,
+    fontWeight: '900',
+    fontVariant: ['tabular-nums'],
+  },
+  fsProgressTrack: {
+    height: 6,
+    borderRadius: 3,
+    overflow: 'hidden',
+  },
+  fsProgressFill: {
+    height: 6,
+    borderRadius: 3,
+  },
+  fsMetricsGrid: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  fsMetricBox: {
+    flex: 1,
+    borderRadius: 12,
+    paddingVertical: 7,
+    paddingHorizontal: 6,
+    alignItems: 'center',
+    gap: 2,
+  },
+  fsMetricVal: {
+    fontSize: 13.5,
+    fontWeight: '900',
+    fontVariant: ['tabular-nums'],
+  },
+  fsMetricLbl: {
+    fontSize: 9.5,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+  },
+  fsExercisesList: {
+    gap: 6,
+  },
+  fsExerciseRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 9,
+    paddingVertical: 7,
+    borderRadius: 12,
+  },
+  fsExerciseName: {
+    fontSize: 11.5,
+    fontWeight: '700',
+  },
+  fsExerciseSets: {
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  fsBottomHintWrap: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    alignItems: 'center',
+  },
+  fsBottomHintPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  fsBottomHintText: {
+    fontSize: 12,
+    fontWeight: '700',
   },
 });

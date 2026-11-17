@@ -1,14 +1,6 @@
 import React, { useId } from 'react';
 import { StyleSheet, View } from 'react-native';
-import Svg, {
-  Defs,
-  LinearGradient,
-  Path,
-  Pattern,
-  RadialGradient,
-  Rect,
-  Stop,
-} from 'react-native-svg';
+import Svg, { Path, RadialGradient, Rect, Stop, Defs } from 'react-native-svg';
 import { useAppTheme } from '../context/ThemeContext';
 
 interface MinimalistBackdropProps {
@@ -19,8 +11,9 @@ interface MinimalistBackdropProps {
 }
 
 /**
- * Topographic elevation contour backdrop with visible dark-mode depth relief
- * and optional corner ambient glows.
+ * Single-pass lightweight topographic elevation backdrop.
+ * Uses direct vector paths on a fixed viewBox (no expensive <Pattern> tiling)
+ * so switching tabs stays instantaneous on iOS CoreGraphics.
  */
 export const MinimalistBackdrop: React.FC<MinimalistBackdropProps> = React.memo(
   ({ accentColor, secondaryColor, showCornerGlows = true }) => {
@@ -29,122 +22,104 @@ export const MinimalistBackdrop: React.FC<MinimalistBackdropProps> = React.memo(
     const primaryGlow = accentColor || (isDark ? '#38BDF8' : '#0EA5E9');
     const bottomGlow = secondaryColor || '#EC4899';
 
-    // Tuned so contours are clearly perceptible on OLED black AND crisp on light mode
-    const ridgeMain = isDark ? 'rgba(255, 255, 255, 0.13)' : 'rgba(15, 23, 42, 0.11)';
-    const ridgeMid = isDark ? 'rgba(255, 255, 255, 0.085)' : 'rgba(15, 23, 42, 0.075)';
-    const ridgeFine = isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(15, 23, 42, 0.045)';
+    const ridgeMain = isDark ? 'rgba(255, 255, 255, 0.095)' : 'rgba(15, 23, 42, 0.085)';
+    const ridgeMid = isDark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(15, 23, 42, 0.055)';
+    const ridgeFine = isDark ? 'rgba(255, 255, 255, 0.04)' : 'rgba(15, 23, 42, 0.035)';
 
     return (
-      <View style={[StyleSheet.absoluteFill, { pointerEvents: 'none' }]}>
-        <Svg width="100%" height="100%" style={StyleSheet.absoluteFill}>
-          <Defs>
-            <Pattern
-              id={`bg_topo_relief_${uid}`}
-              width={240}
-              height={240}
-              patternUnits="userSpaceOnUse"
-            >
-              {/* Smooth continuous organic elevation contour lines */}
-              <Path
-                d="M -20 42 C 40 12, 95 72, 160 40 C 200 20, 228 28, 260 42"
-                fill="none"
-                stroke={ridgeMain}
-                strokeWidth={1.3}
-              />
-              <Path
-                d="M -20 76 C 35 46, 102 104, 165 72 C 205 52, 230 62, 260 76"
-                fill="none"
-                stroke={ridgeMid}
-                strokeWidth={1.05}
-              />
-              <Path
-                d="M -20 118 C 48 88, 108 144, 174 114 C 212 96, 234 106, 260 118"
-                fill="none"
-                stroke={ridgeFine}
-                strokeWidth={0.9}
-              />
-              <Path
-                d="M -20 162 C 36 190, 96 136, 162 164 C 202 182, 230 174, 260 162"
-                fill="none"
-                stroke={ridgeMain}
-                strokeWidth={1.25}
-              />
-              <Path
-                d="M -20 202 C 46 226, 106 178, 172 204 C 210 220, 234 212, 260 202"
-                fill="none"
-                stroke={ridgeMid}
-                strokeWidth={1}
-              />
-              {/* Isolated peak contour rings */}
-              <Path
-                d="M 52 106 C 68 86, 106 88, 114 110 C 122 132, 88 148, 66 138 C 48 130, 40 120, 52 106 Z"
-                fill="none"
-                stroke={ridgeMid}
-                strokeWidth={1}
-              />
-              <Path
-                d="M 168 186 C 182 170, 214 172, 220 190 C 226 208, 198 220, 178 212 C 164 206, 158 198, 168 186 Z"
-                fill="none"
-                stroke={ridgeFine}
-                strokeWidth={0.95}
-              />
-            </Pattern>
+      <View
+        renderToHardwareTextureAndroid
+        style={[StyleSheet.absoluteFill, { pointerEvents: 'none' }]}
+      >
+        <Svg
+          width="100%"
+          height="100%"
+          viewBox="0 0 400 860"
+          preserveAspectRatio="xMidYMid slice"
+          style={StyleSheet.absoluteFill}
+        >
+          {showCornerGlows && (
+            <Defs>
+              <RadialGradient id={`bg_glow_top_${uid}`} cx="86%" cy="5%" r="58%">
+                <Stop
+                  offset="0%"
+                  stopColor={primaryGlow}
+                  stopOpacity={isDark ? 0.2 : 0.16}
+                />
+                <Stop
+                  offset="54%"
+                  stopColor={primaryGlow}
+                  stopOpacity={isDark ? 0.055 : 0.04}
+                />
+                <Stop offset="100%" stopColor={primaryGlow} stopOpacity={0} />
+              </RadialGradient>
 
-            <LinearGradient id={`bg_vignette_${uid}`} x1="0" y1="0" x2="0" y2="1">
-              <Stop
-                offset="0%"
-                stopColor={isDark ? '#18181F' : '#E2E8F0'}
-                stopOpacity={isDark ? 0.24 : 0.18}
-              />
-              <Stop offset="48%" stopColor="#000000" stopOpacity={0} />
-              <Stop
-                offset="100%"
-                stopColor={isDark ? '#09090D' : '#CBD5E1'}
-                stopOpacity={isDark ? 0.22 : 0.14}
-              />
-            </LinearGradient>
+              <RadialGradient id={`bg_glow_btm_${uid}`} cx="12%" cy="94%" r="54%">
+                <Stop
+                  offset="0%"
+                  stopColor={bottomGlow}
+                  stopOpacity={isDark ? 0.14 : 0.1}
+                />
+                <Stop
+                  offset="55%"
+                  stopColor={bottomGlow}
+                  stopOpacity={isDark ? 0.04 : 0.03}
+                />
+                <Stop offset="100%" stopColor={bottomGlow} stopOpacity={0} />
+              </RadialGradient>
+            </Defs>
+          )}
 
-            {showCornerGlows && (
-              <>
-                <RadialGradient id={`bg_glow_top_${uid}`} cx="86%" cy="5%" r="64%">
-                  <Stop
-                    offset="0%"
-                    stopColor={primaryGlow}
-                    stopOpacity={isDark ? 0.22 : 0.18}
-                  />
-                  <Stop
-                    offset="54%"
-                    stopColor={primaryGlow}
-                    stopOpacity={isDark ? 0.065 : 0.05}
-                  />
-                  <Stop offset="100%" stopColor={isDark ? '#000000' : '#FFFFFF'} stopOpacity={0} />
-                </RadialGradient>
-
-                <RadialGradient id={`bg_glow_btm_${uid}`} cx="12%" cy="94%" r="60%">
-                  <Stop
-                    offset="0%"
-                    stopColor={bottomGlow}
-                    stopOpacity={isDark ? 0.16 : 0.12}
-                  />
-                  <Stop
-                    offset="55%"
-                    stopColor={bottomGlow}
-                    stopOpacity={isDark ? 0.05 : 0.035}
-                  />
-                  <Stop offset="100%" stopColor={isDark ? '#000000' : '#FFFFFF'} stopOpacity={0} />
-                </RadialGradient>
-              </>
-            )}
-          </Defs>
-
-          <Rect x={0} y={0} width="100%" height="100%" fill={`url(#bg_vignette_${uid})`} />
-          <Rect x={0} y={0} width="100%" height="100%" fill={`url(#bg_topo_relief_${uid})`} />
           {showCornerGlows && (
             <>
-              <Rect x={0} y={0} width="100%" height="100%" fill={`url(#bg_glow_top_${uid})`} />
-              <Rect x={0} y={0} width="100%" height="100%" fill={`url(#bg_glow_btm_${uid})`} />
+              <Rect x={0} y={0} width={400} height={860} fill={`url(#bg_glow_top_${uid})`} />
+              <Rect x={0} y={0} width={400} height={860} fill={`url(#bg_glow_btm_${uid})`} />
             </>
           )}
+
+          {/* Crisp non-tiled elevation curves */}
+          <Path
+            d="M -40 120 C 80 55, 195 175, 315 110 C 370 80, 415 95, 445 120"
+            fill="none"
+            stroke={ridgeMain}
+            strokeWidth={1.2}
+          />
+          <Path
+            d="M -40 168 C 72 104, 204 218, 322 156 C 376 128, 416 142, 445 168"
+            fill="none"
+            stroke={ridgeMid}
+            strokeWidth={1}
+          />
+          <Path
+            d="M -40 330 C 90 270, 210 380, 335 320 C 385 296, 420 308, 445 330"
+            fill="none"
+            stroke={ridgeFine}
+            strokeWidth={0.9}
+          />
+          <Path
+            d="M -40 495 C 78 545, 190 440, 320 498 C 378 524, 418 510, 445 495"
+            fill="none"
+            stroke={ridgeMain}
+            strokeWidth={1.15}
+          />
+          <Path
+            d="M -40 655 C 94 705, 206 608, 332 660 C 382 680, 418 672, 445 655"
+            fill="none"
+            stroke={ridgeMid}
+            strokeWidth={1}
+          />
+          <Path
+            d="M 55 245 C 88 205, 165 210, 180 255 C 195 300, 128 332, 84 312 C 48 296, 32 274, 55 245 Z"
+            fill="none"
+            stroke={ridgeMid}
+            strokeWidth={1}
+          />
+          <Path
+            d="M 248 560 C 276 528, 342 532, 354 570 C 366 608, 310 634, 272 616 C 242 602, 230 584, 248 560 Z"
+            fill="none"
+            stroke={ridgeFine}
+            strokeWidth={0.95}
+          />
         </Svg>
       </View>
     );
