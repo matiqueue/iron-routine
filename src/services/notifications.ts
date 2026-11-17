@@ -700,6 +700,11 @@ export async function notifyIncomingChatMessages(
         continue;
       }
 
+      if (msg.type === 'system') {
+        newlyNotified.push(msg.id);
+        continue;
+      }
+
       let bodyPreview = translateText(lang, 'notifChatNewMessage');
       if (msg.type === 'voice') {
         bodyPreview = translateText(lang, 'notifChatVoiceMessage');

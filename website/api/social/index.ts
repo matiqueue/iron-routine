@@ -5,6 +5,7 @@ import {
   areUsersFriends,
   claimUserNickname,
   deleteEncryptedChatMessage,
+  editEncryptedChatMessage,
   getChatPairTheme,
   getEncryptedChatMessages,
   getSocialHubForUser,
@@ -319,19 +320,54 @@ export default {
           alg,
         });
 
-        const sender = await getCloudUser(userId).catch(() => null);
-        const senderTitle = sender?.displayName || (sender?.nickname ? `@${sender.nickname}` : 'Iron Routine');
-        await sendPushNotificationToUser({
-          recipientUserId: friendId,
-          title: senderTitle,
-          body: sender?.nickname ? `@${sender.nickname} · nowa wiadomość` : 'Nowa wiadomość',
-          data: {
-            type: 'chat_message',
-            friendId: userId,
-            messageId: message.id,
-          },
-        });
+        const silent = Boolean(body?.silent);
+        if (!silent) {
+          const sender = await getCloudUser(userId).catch(() => null);
+          const senderTitle =
+            sender?.displayName || (sender?.nickname ? `@${sender.nickname}` : 'Iron Routine');
+          await sendPushNotificationToUser({
+            recipientUserId: friendId,
+            title: senderTitle,
+            body: sender?.nickname ? `@${sender.nickname} · nowa wiadomość` : 'Nowa wiadomość',
+            data: {
+              type: 'chat_message',
+              friendId: userId,
+              messageId: message.id,
+            },
+          });
+        }
 
+        return jsonResponse({ ok: true, message });
+      }
+
+      if (action === 'edit_message') {
+        const friendId = String(body?.friendId || '').trim();
+        const messageId = String(body?.messageId || '').trim();
+        const ciphertext = String(body?.ciphertext || '').trim();
+        const nonce = String(body?.nonce || '').trim();
+        const senderPublicKey = String(body?.senderPublicKey || '').trim();
+        const recipientPublicKey = String(body?.recipientPublicKey || '').trim();
+        const alg = String(body?.alg || 'x25519-xsalsa20-poly1305').trim();
+
+        if (!friendId || !messageId || !ciphertext || !nonce || !senderPublicKey || !recipientPublicKey) {
+          return jsonResponse({ ok: false, error: 'INVALID_EDIT_PAYLOAD' }, 400);
+        }
+        if (!(await areUsersFriends(userId, friendId))) {
+          return jsonResponse({ ok: false, error: 'NOT_FRIENDS' }, 403);
+        }
+        const message = await editEncryptedChatMessage({
+          userId,
+          friendId,
+          messageId,
+          ciphertext,
+          nonce,
+          senderPublicKey,
+          recipientPublicKey,
+          alg,
+        });
+        if (!message) {
+          return jsonResponse({ ok: false, error: 'MESSAGE_NOT_FOUND_OR_FORBIDDEN' }, 403);
+        }
         return jsonResponse({ ok: true, message });
       }
 

@@ -14,6 +14,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -44,6 +45,7 @@ import {
 } from '../types/workout';
 import {
   deleteChatMessage,
+  editChatMessage,
   fetchChatMessages,
   reactToChatMessage,
   saveSharedChatTheme,
@@ -321,7 +323,7 @@ function buildMessagesSignature(list: ChatMessage[]): string {
   return list
     .map((m) => {
       const rx = m.reactions ? JSON.stringify(m.reactions) : '';
-      return `${m.id}:${m.text.length}:${m.payload?.durationSec ?? 0}:${rx}`;
+      return `${m.id}:${m.text}:${m.editedAt ?? ''}:${m.payload?.durationSec ?? 0}:${rx}`;
     })
     .join('|');
 }
@@ -343,8 +345,8 @@ const AnimatedMessageRow: React.FC<AnimatedMessageRowProps> = ({
     if (!animateOnMount) return;
     Animated.spring(anim, {
       toValue: 1,
-      friction: 7.5,
-      tension: 115,
+      friction: 7.2,
+      tension: 135,
       useNativeDriver: true,
     }).start();
   }, [anim, animateOnMount]);
@@ -357,26 +359,26 @@ const AnimatedMessageRow: React.FC<AnimatedMessageRowProps> = ({
     <Animated.View
       style={{
         opacity: anim.interpolate({
-          inputRange: [0, 0.35, 1],
-          outputRange: [0, 0.85, 1],
+          inputRange: [0, 0.25, 1],
+          outputRange: [0, 0.9, 1],
         }),
         transform: [
           {
             translateY: anim.interpolate({
               inputRange: [0, 1],
-              outputRange: [22, 0],
+              outputRange: [34, 0],
             }),
           },
           {
             translateX: anim.interpolate({
               inputRange: [0, 1],
-              outputRange: [isMine ? 16 : -16, 0],
+              outputRange: [isMine ? 22 : -22, 0],
             }),
           },
           {
             scale: anim.interpolate({
-              inputRange: [0, 1],
-              outputRange: [0.88, 1],
+              inputRange: [0, 0.8, 1],
+              outputRange: [0.76, 1.02, 1],
             }),
           },
         ],
@@ -615,11 +617,13 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
   const { t, localeCode } = useLanguage();
   const insets = useSafeAreaInsets();
   const keyboardHeight = useKeyboardHeight();
+  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [inputText, setInputText] = useState('');
+  const [editingMsg, setEditingMsg] = useState<ChatMessage | null>(null);
   const [showAttachMenu, setShowAttachMenu] = useState(false);
   const [showInChatProfile, setShowInChatProfile] = useState(false);
   const [showThemeSheet, setShowThemeSheet] = useState(false);
@@ -629,11 +633,21 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
     wallpaperId: 'none',
     customUri: null,
   });
-  const [reactionTargetMsg, setReactionTargetMsg] = useState<ChatMessage | null>(null);
+  const [reactionTarget, setReactionTarget] = useState<{
+    message: ChatMessage;
+    rect: { x: number; y: number; width: number; height: number };
+  } | null>(null);
   const [holdHintVisible, setHoldHintVisible] = useState(false);
 
   const attachAnim = useRef(new Animated.Value(0)).current;
   const reactionDockAnim = useRef(new Animated.Value(0)).current;
+  const sendLaunchAnim = useRef(new Animated.Value(1)).current;
+  const inputRef = useRef<React.ComponentRef<typeof TextInput>>(null);
+  const bubbleViewRefs = useRef<Record<string, React.ComponentRef<typeof View> | null>>({});
+  const stableKeyByIdRef = useRef<Map<string, string>>(new Map());
+  const themeNotifyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastAnnouncedAppearanceRef = useRef<string>('');
+  const pendingThemeAnnounceRef = useRef<ChatAppearance | null>(null);
 
   // Voice recording + real-time metering state
   const recorder = useAudioRecorder(VOICE_RECORDING_OPTIONS);
@@ -694,6 +708,7 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
             ) {
               return prev;
             }
+            lastAnnouncedAppearanceRef.current = `${remoteAppearance.themeId}|${remoteAppearance.wallpaperId}|${remoteAppearance.customUri ? '1' : '0'}`;
             AsyncStorage.setItem(
               `${CHAT_APPEARANCE_KEY_PREFIX}${friend.userId}`,
               JSON.stringify(remoteAppearance)
@@ -736,8 +751,16 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
       lastSignatureRef.current = '';
       knownMessageIdsRef.current.clear();
       animatedIdsRef.current.clear();
+      stableKeyByIdRef.current.clear();
+      if (themeNotifyTimerRef.current) {
+        clearTimeout(themeNotifyTimerRef.current);
+        themeNotifyTimerRef.current = null;
+      }
+      pendingThemeAnnounceRef.current = null;
+      lastAnnouncedAppearanceRef.current = '';
       setMessages([]);
-      setReactionTargetMsg(null);
+      setReactionTarget(null);
+      setEditingMsg(null);
       setShowAttachMenu(false);
       setShowInChatProfile(false);
       setShowThemeSheet(false);
@@ -752,15 +775,18 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
       .then((raw) => {
         if (!raw) {
           setAppearance({ themeId: 'monochrome', wallpaperId: 'none', customUri: null });
+          lastAnnouncedAppearanceRef.current = 'monochrome|none';
           return;
         }
         try {
           const parsed = JSON.parse(raw);
-          setAppearance({
+          const loaded = {
             themeId: parsed.themeId || 'monochrome',
             wallpaperId: parsed.wallpaperId || 'none',
             customUri: parsed.customUri || null,
-          });
+          };
+          setAppearance(loaded);
+          lastAnnouncedAppearanceRef.current = `${loaded.themeId}|${loaded.wallpaperId}|${loaded.customUri ? '1' : '0'}`;
         } catch {}
       })
       .catch(() => {});
@@ -781,17 +807,17 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
   }, [showAttachMenu, attachAnim]);
 
   useEffect(() => {
-    if (!reactionTargetMsg) {
+    if (!reactionTarget) {
       reactionDockAnim.setValue(0);
       return;
     }
     Animated.spring(reactionDockAnim, {
       toValue: 1,
-      friction: 7,
-      tension: 130,
+      friction: 7.2,
+      tension: 150,
       useNativeDriver: true,
     }).start();
-  }, [reactionTargetMsg, reactionDockAnim]);
+  }, [reactionTarget, reactionDockAnim]);
 
   // Continuous live recorder metering poll (80ms) while holding mic -> flows left-to-right
   useEffect(() => {
@@ -851,6 +877,16 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
     }, 60);
   }, []);
 
+  const triggerSendButtonPulse = useCallback(() => {
+    sendLaunchAnim.setValue(0.8);
+    Animated.spring(sendLaunchAnim, {
+      toValue: 1,
+      friction: 5.5,
+      tension: 180,
+      useNativeDriver: true,
+    }).start();
+  }, [sendLaunchAnim]);
+
   const handleSend = useCallback(
     async (
       customType: ChatMessageType = 'text',
@@ -862,11 +898,16 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
       if (!text && customType === 'text') return;
 
       if (!friend.e2eePublicKey) {
-        Alert.alert(t('e2eeBadgeLabel'), t('e2eeMissingRecipientKey'));
+        if (customType !== 'system') {
+          Alert.alert(t('e2eeBadgeLabel'), t('e2eeMissingRecipientKey'));
+        }
         return;
       }
 
-      triggerSelectionHaptic();
+      if (customType !== 'system') {
+        triggerSelectionHaptic();
+        triggerSendButtonPulse();
+      }
       setShowAttachMenu(false);
       if (customType === 'text') {
         setInputText('');
@@ -903,9 +944,12 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
           type: customType,
           text: text || t('voiceMsgLabel'),
           payload,
+          silent: customType === 'system',
         });
         if (res.ok && res.message) {
           knownMessageIdsRef.current.add(res.message.id);
+          // Preserve the optimistic key so React keeps the mounted animated row without a flicker
+          stableKeyByIdRef.current.set(res.message.id, tempId);
           setMessages((prev) => {
             const next = prev.map((m) => (m.id === tempId ? res.message! : m));
             lastSignatureRef.current = buildMessagesSignature(next);
@@ -921,14 +965,95 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
           if (customType === 'text' && !customText) {
             setInputText(text);
           }
-          Alert.alert(t('errorTitle'), res.error || t('socialRequestFailedError'));
+          if (customType !== 'system') {
+            Alert.alert(t('errorTitle'), res.error || t('socialRequestFailedError'));
+          }
         }
       } finally {
         setIsSending(false);
       }
     },
-    [friend, inputText, isSending, myUserId, onMessagesChanged, scrollToLatest, t]
+    [friend, inputText, isSending, myUserId, onMessagesChanged, scrollToLatest, t, triggerSendButtonPulse]
   );
+
+  const handleStartEdit = useCallback(
+    (msg: ChatMessage) => {
+      if (msg.senderId !== myUserId || msg.type !== 'text' || msg.decryptFailed || msg.id.startsWith('local_')) {
+        return;
+      }
+      triggerSelectionHaptic();
+      setReactionTarget(null);
+      setShowAttachMenu(false);
+      setEditingMsg(msg);
+      setInputText(msg.text);
+      setTimeout(() => {
+        inputRef.current?.focus();
+      }, 90);
+    },
+    [myUserId]
+  );
+
+  const handleCancelEdit = useCallback(() => {
+    setEditingMsg(null);
+    setInputText('');
+  }, []);
+
+  const handleSaveEdit = useCallback(async () => {
+    if (!friend || !editingMsg || isSending) return;
+    const nextText = inputText.trim();
+    if (!nextText) return;
+    if (nextText === editingMsg.text.trim()) {
+      setEditingMsg(null);
+      setInputText('');
+      return;
+    }
+    if (!friend.e2eePublicKey) {
+      Alert.alert(t('e2eeBadgeLabel'), t('e2eeMissingRecipientKey'));
+      return;
+    }
+
+    const target = editingMsg;
+    const optimisticEditedAt = new Date().toISOString();
+    triggerSelectionHaptic();
+    triggerSendButtonPulse();
+    setEditingMsg(null);
+    setInputText('');
+
+    setMessages((prev) => {
+      const next = prev.map((m) =>
+        m.id === target.id ? { ...m, text: nextText, editedAt: optimisticEditedAt } : m
+      );
+      lastSignatureRef.current = buildMessagesSignature(next);
+      return next;
+    });
+
+    setIsSending(true);
+    try {
+      const res = await editChatMessage({
+        friendId: friend.userId,
+        messageId: target.id,
+        recipientPublicKey: friend.e2eePublicKey,
+        text: nextText,
+      });
+      if (res.ok && res.message) {
+        setMessages((prev) => {
+          const next = prev.map((m) => (m.id === target.id ? res.message! : m));
+          lastSignatureRef.current = buildMessagesSignature(next);
+          return next;
+        });
+        onMessagesChanged?.();
+      } else {
+        setMessages((prev) => {
+          const next = prev.map((m) => (m.id === target.id ? target : m));
+          lastSignatureRef.current = buildMessagesSignature(next);
+          return next;
+        });
+        Alert.alert(t('errorTitle'), res.error || t('socialRequestFailedError'));
+      }
+    } finally {
+      setIsSending(false);
+    }
+  }, [editingMsg, friend, inputText, isSending, onMessagesChanged, t, triggerSendButtonPulse]);
 
   const showQuickHoldHint = useCallback(() => {
     setHoldHintVisible(true);
@@ -1140,7 +1265,7 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
     async (messageId: string, emoji: string) => {
       if (!friend || messageId.startsWith('local_')) return;
       triggerSelectionHaptic();
-      setReactionTargetMsg(null);
+      setReactionTarget(null);
 
       setMessages((prev) => {
         const next = prev.map((m) => {
@@ -1178,6 +1303,52 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
     [appearance.themeId]
   );
 
+  const describeAppearanceStyle = useCallback(
+    (app: ChatAppearance): string => {
+      const themeObj = CHAT_THEMES.find((ct) => ct.id === app.themeId);
+      const wpObj = CHAT_WALLPAPERS.find((w) => w.id === app.wallpaperId);
+      const parts: string[] = [];
+      if (themeObj) parts.push(themeObj.label);
+      if (app.wallpaperId === 'custom') {
+        parts.push(t('chatCustomWallpaperName'));
+      } else if (wpObj && wpObj.id !== 'none') {
+        parts.push(wpObj.label);
+      }
+      return parts.join(' · ') || 'Mono';
+    },
+    [t]
+  );
+
+  const flushThemeAnnouncement = useCallback(() => {
+    if (themeNotifyTimerRef.current) {
+      clearTimeout(themeNotifyTimerRef.current);
+      themeNotifyTimerRef.current = null;
+    }
+    const next = pendingThemeAnnounceRef.current;
+    pendingThemeAnnounceRef.current = null;
+    if (!next || !friend?.userId) return;
+
+    const sig = `${next.themeId}|${next.wallpaperId}|${next.customUri ? '1' : '0'}`;
+    if (sig === lastAnnouncedAppearanceRef.current) return;
+    lastAnnouncedAppearanceRef.current = sig;
+
+    const actorName =
+      myProfile?.displayName ||
+      (myProfile?.nickname ? `@${myProfile.nickname}` : 'Athlete');
+    const styleName = describeAppearanceStyle(next);
+    const systemText = t('chatThemeChangedSystem', {
+      name: actorName,
+      style: styleName,
+    });
+
+    void handleSend('system', systemText, {
+      systemAction: 'theme_change',
+      actorName,
+      themeId: next.themeId,
+      wallpaperId: next.wallpaperId,
+    });
+  }, [describeAppearanceStyle, friend?.userId, handleSend, myProfile, t]);
+
   const persistAppearance = useCallback(
     (next: ChatAppearance) => {
       setAppearance(next);
@@ -1186,9 +1357,16 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
           () => {}
         );
         void saveSharedChatTheme(friend.userId, next);
+        pendingThemeAnnounceRef.current = next;
+        if (themeNotifyTimerRef.current) {
+          clearTimeout(themeNotifyTimerRef.current);
+        }
+        themeNotifyTimerRef.current = setTimeout(() => {
+          flushThemeAnnouncement();
+        }, 950);
       }
     },
-    [friend?.userId]
+    [flushThemeAnnouncement, friend?.userId]
   );
 
   const handlePickCustomWallpaper = async () => {
@@ -1272,9 +1450,13 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
   };
 
   const handleDeleteMessage = async (msg: ChatMessage) => {
-    if (!friend || msg.id.startsWith('local_')) return;
+    if (!friend || msg.id.startsWith('local_') || msg.senderId !== myUserId) return;
     triggerNotificationHaptic('warning');
-    setReactionTargetMsg(null);
+    setReactionTarget(null);
+    if (editingMsg?.id === msg.id) {
+      setEditingMsg(null);
+      setInputText('');
+    }
     setMessages((prev) => {
       const next = prev.filter((m) => m.id !== msg.id);
       lastSignatureRef.current = buildMessagesSignature(next);
@@ -1288,9 +1470,46 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
     }
   };
 
+  const openReactionMenu = useCallback(
+    (item: ChatMessage) => {
+      if (item.id.startsWith('local_') || item.type === 'system') return;
+      triggerNotificationHaptic('success');
+      const node = bubbleViewRefs.current[item.id];
+      const isMineMsg = item.senderId === myUserId;
+      if (node && typeof node.measureInWindow === 'function') {
+        node.measureInWindow((x: number, y: number, width: number, height: number) => {
+          if (width > 0 && height > 0) {
+            setReactionTarget({ message: item, rect: { x, y, width, height } });
+          } else {
+            setReactionTarget({
+              message: item,
+              rect: {
+                x: isMineMsg ? Math.max(40, screenWidth - 220) : 44,
+                y: Math.round(screenHeight * 0.42),
+                width: 170,
+                height: 46,
+              },
+            });
+          }
+        });
+      } else {
+        setReactionTarget({
+          message: item,
+          rect: {
+            x: isMineMsg ? Math.max(40, screenWidth - 220) : 44,
+            y: Math.round(screenHeight * 0.42),
+            width: 170,
+            height: 46,
+          },
+        });
+      }
+    },
+    [myUserId, screenHeight, screenWidth]
+  );
+
   const handleBubblePress = (item: ChatMessage) => {
     if (showAttachMenu) setShowAttachMenu(false);
-    if (item.id.startsWith('local_')) return;
+    if (item.id.startsWith('local_') || item.type === 'system') return;
     const now = Date.now();
     if (
       lastBubbleTapRef.current &&
@@ -1306,7 +1525,7 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
 
   const lastOutgoingIdx = useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].senderId === myUserId) return i;
+      if (messages[i].senderId === myUserId && messages[i].type !== 'system') return i;
     }
     return -1;
   }, [messages, myUserId]);
@@ -1385,6 +1604,68 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
         : 'rgba(255,255,255,0.78)'
       : theme.textSecondary;
 
+    if (item.type === 'system') {
+      const styleLabel =
+        item.payload?.themeId || item.payload?.wallpaperId
+          ? describeAppearanceStyle({
+              themeId: (item.payload.themeId as ChatThemeId) || 'monochrome',
+              wallpaperId: (item.payload.wallpaperId as ChatWallpaperId) || 'none',
+            })
+          : null;
+      const localizedSystemText =
+        item.payload?.systemAction === 'theme_change' && item.payload?.actorName && styleLabel
+          ? t('chatThemeChangedSystem', {
+              name: item.payload.actorName,
+              style: styleLabel,
+            })
+          : item.text;
+
+      return (
+        <AnimatedMessageRow animateOnMount={shouldAnimateEntry} isMine={false}>
+          {showTimeGapHeader && (
+            <View style={styles.timeSeparatorWrap}>
+              <View
+                style={[
+                  styles.timeSeparatorPill,
+                  {
+                    backgroundColor: theme.isDark
+                      ? 'rgba(255,255,255,0.07)'
+                      : 'rgba(15,23,42,0.05)',
+                  },
+                ]}
+              >
+                <Text style={[styles.timeSeparatorText, { color: theme.textMuted }]}>
+                  {formatTimeSeparator(item.createdAt, localeCode)}
+                </Text>
+              </View>
+            </View>
+          )}
+          <View style={styles.systemEventWrap}>
+            <View
+              style={[
+                styles.systemEventPill,
+                {
+                  backgroundColor: theme.isDark
+                    ? 'rgba(24,24,30,0.78)'
+                    : 'rgba(255,255,255,0.82)',
+                  borderColor: theme.hairline,
+                },
+              ]}
+            >
+              <Ionicons
+                name="color-palette-outline"
+                size={12.5}
+                color={activeChatTheme.accent}
+              />
+              <Text style={[styles.systemEventText, { color: theme.textSecondary }]}>
+                {localizedSystemText}
+              </Text>
+            </View>
+          </View>
+        </AnimatedMessageRow>
+      );
+    }
+
     return (
       <AnimatedMessageRow animateOnMount={shouldAnimateEntry} isMine={isMine}>
         {showTimeGapHeader && (
@@ -1435,148 +1716,163 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
               isMine ? styles.msgColMine : styles.msgColTheirs,
             ]}
           >
-            <TouchableOpacity
-              activeOpacity={0.86}
-              delayLongPress={250}
-              onLongPress={() => {
-                if (isPendingLocal) return;
-                triggerNotificationHaptic('success');
-                setReactionTargetMsg(item);
+            <View
+              ref={(node) => {
+                bubbleViewRefs.current[item.id] = node;
               }}
-              onPress={() => handleBubblePress(item)}
-              style={[
-                styles.bubble,
-                bubbleRadii,
-                {
-                  backgroundColor: bubbleBg,
-                  borderColor: bubbleBorderColor,
-                  opacity: isPendingLocal ? 0.88 : 1,
-                },
-                !isMine && styles.incomingShadow,
-              ]}
+              collapsable={false}
             >
-              {item.decryptFailed ? (
-                <View style={styles.decryptedErrorRow}>
-                  <Ionicons name="lock-closed-outline" size={14} color="#F59E0B" />
-                  <Text style={[styles.msgText, { color: bubbleTextColor, fontStyle: 'italic' }]}>
-                    {t('e2eeKeyChangedPlaceholder')}
-                  </Text>
-                </View>
-              ) : item.type === 'image' && item.payload?.imageBase64 ? (
-                <TouchableOpacity
-                  activeOpacity={0.9}
-                  onPress={() =>
-                    setPreviewPhotoUri(
-                      `data:${item.payload?.imageMime || 'image/jpeg'};base64,${item.payload?.imageBase64}`
-                    )
-                  }
-                  onLongPress={() => {
-                    if (isPendingLocal) return;
-                    triggerNotificationHaptic('success');
-                    setReactionTargetMsg(item);
-                  }}
-                >
-                  <Image
-                    source={{
-                      uri: `data:${item.payload.imageMime || 'image/jpeg'};base64,${item.payload.imageBase64}`,
-                    }}
-                    style={{
-                      width: 210,
-                      height:
-                        item.payload.imageWidth && item.payload.imageHeight
-                          ? Math.max(
-                              120,
-                              Math.min(280, Math.round(210 * (item.payload.imageHeight / item.payload.imageWidth)))
-                            )
-                          : 210,
-                      borderRadius: 15,
-                    }}
-                    resizeMode="cover"
-                  />
-                </TouchableOpacity>
-              ) : item.type === 'voice' ? (
-                <VoiceNoteBubble
-                  messageId={item.id}
-                  audioBase64={item.payload?.audioBase64}
-                  audioMime={item.payload?.audioMime}
-                  durationSec={item.payload?.durationSec}
-                  waveform={item.payload?.waveform}
-                  isMine={isMine}
-                />
-              ) : item.type === 'workout_share' || item.type === 'rank_card' ? (
-                <View style={styles.richCard}>
-                  <View style={styles.richHeader}>
-                    <View
-                      style={[
-                        styles.richBadgeIcon,
-                        {
-                          backgroundColor: isMine
-                            ? theme.isDark
-                              ? 'rgba(0,0,0,0.1)'
-                              : 'rgba(255,255,255,0.16)'
-                            : theme.bgSecondary,
-                        },
-                      ]}
-                    >
-                      <Ionicons
-                        name={item.type === 'workout_share' ? 'barbell' : 'ribbon'}
-                        size={15}
-                        color={bubbleTextColor}
-                      />
-                    </View>
-                    <Text style={[styles.richTitle, { color: bubbleTextColor }]}>
-                      {item.payload?.title || item.text}
+              <TouchableOpacity
+                activeOpacity={0.86}
+                delayLongPress={230}
+                onLongPress={() => openReactionMenu(item)}
+                onPress={() => handleBubblePress(item)}
+                style={[
+                  styles.bubble,
+                  bubbleRadii,
+                  {
+                    backgroundColor: bubbleBg,
+                    borderColor: bubbleBorderColor,
+                    opacity: isPendingLocal ? 0.88 : 1,
+                  },
+                  !isMine && styles.incomingShadow,
+                ]}
+              >
+                {item.decryptFailed ? (
+                  <View style={styles.decryptedErrorRow}>
+                    <Ionicons name="lock-closed-outline" size={14} color="#F59E0B" />
+                    <Text style={[styles.msgText, { color: bubbleTextColor, fontStyle: 'italic' }]}>
+                      {t('e2eeKeyChangedPlaceholder')}
                     </Text>
                   </View>
-                  {item.payload?.subtitle ? (
-                    <Text style={[styles.richSub, { color: subTextColor }]}>
-                      {item.payload.subtitle}
-                    </Text>
-                  ) : null}
-                  {item.text && item.payload?.title !== item.text ? (
-                    <Text style={[styles.richBody, { color: bubbleTextColor }]}>
+                ) : item.type === 'image' && item.payload?.imageBase64 ? (
+                  <TouchableOpacity
+                    activeOpacity={0.9}
+                    delayLongPress={230}
+                    onPress={() =>
+                      setPreviewPhotoUri(
+                        `data:${item.payload?.imageMime || 'image/jpeg'};base64,${item.payload?.imageBase64}`
+                      )
+                    }
+                    onLongPress={() => openReactionMenu(item)}
+                  >
+                    <Image
+                      source={{
+                        uri: `data:${item.payload.imageMime || 'image/jpeg'};base64,${item.payload.imageBase64}`,
+                      }}
+                      style={{
+                        width: 210,
+                        height:
+                          item.payload.imageWidth && item.payload.imageHeight
+                            ? Math.max(
+                                120,
+                                Math.min(280, Math.round(210 * (item.payload.imageHeight / item.payload.imageWidth)))
+                              )
+                            : 210,
+                        borderRadius: 15,
+                      }}
+                      resizeMode="cover"
+                    />
+                  </TouchableOpacity>
+                ) : item.type === 'voice' ? (
+                  <VoiceNoteBubble
+                    messageId={item.id}
+                    audioBase64={item.payload?.audioBase64}
+                    audioMime={item.payload?.audioMime}
+                    durationSec={item.payload?.durationSec}
+                    waveform={item.payload?.waveform}
+                    isMine={isMine}
+                  />
+                ) : item.type === 'workout_share' || item.type === 'rank_card' ? (
+                  <View style={styles.richCard}>
+                    <View style={styles.richHeader}>
+                      <View
+                        style={[
+                          styles.richBadgeIcon,
+                          {
+                            backgroundColor: isMine
+                              ? theme.isDark
+                                ? 'rgba(0,0,0,0.1)'
+                                : 'rgba(255,255,255,0.16)'
+                              : theme.bgSecondary,
+                          },
+                        ]}
+                      >
+                        <Ionicons
+                          name={item.type === 'workout_share' ? 'barbell' : 'ribbon'}
+                          size={15}
+                          color={bubbleTextColor}
+                        />
+                      </View>
+                      <Text style={[styles.richTitle, { color: bubbleTextColor }]}>
+                        {item.payload?.title || item.text}
+                      </Text>
+                    </View>
+                    {item.payload?.subtitle ? (
+                      <Text style={[styles.richSub, { color: subTextColor }]}>
+                        {item.payload.subtitle}
+                      </Text>
+                    ) : null}
+                    {item.text && item.payload?.title !== item.text ? (
+                      <Text style={[styles.richBody, { color: bubbleTextColor }]}>
+                        {item.text}
+                      </Text>
+                    ) : null}
+                  </View>
+                ) : item.type === 'cheer' ? (
+                  <View style={styles.cheerBubbleRow}>
+                    <Text style={styles.cheerEmoji}>{item.payload?.emoji || '🔥'}</Text>
+                    <Text style={[styles.msgText, { color: bubbleTextColor, fontWeight: '700' }]}>
                       {item.text}
                     </Text>
-                  ) : null}
-                </View>
-              ) : item.type === 'cheer' ? (
-                <View style={styles.cheerBubbleRow}>
-                  <Text style={styles.cheerEmoji}>{item.payload?.emoji || '🔥'}</Text>
-                  <Text style={[styles.msgText, { color: bubbleTextColor, fontWeight: '700' }]}>
-                    {item.text}
-                  </Text>
-                </View>
-              ) : (
-                <Text style={[styles.msgText, { color: bubbleTextColor }]}>{item.text}</Text>
-              )}
-
-              {reactionsList.length > 0 && (
-                <View
-                  style={[
-                    styles.floatingReactionBadge,
-                    isMine ? styles.floatingBadgeRight : styles.floatingBadgeLeft,
-                    {
-                      backgroundColor: theme.isDark ? '#202026' : '#FFFFFF',
-                      borderColor: theme.border,
-                    },
-                  ]}
-                >
-                  {reactionsList.map(([em, users]) => (
-                    <TouchableOpacity
-                      key={em}
-                      onPress={() => handleReact(item.id, em)}
-                      style={styles.reactionPill}
-                      activeOpacity={0.75}
-                    >
-                      <Text style={styles.reactionPillText}>
-                        {em}
-                        {users.length > 1 ? ` ${users.length}` : ''}
+                  </View>
+                ) : (
+                  <View>
+                    <Text style={[styles.msgText, { color: bubbleTextColor }]}>{item.text}</Text>
+                    {Boolean(item.editedAt) && (
+                      <Text
+                        style={[
+                          styles.editedBadgeText,
+                          {
+                            color: subTextColor,
+                            alignSelf: isMine ? 'flex-end' : 'flex-start',
+                          },
+                        ]}
+                      >
+                        {t('chatEditedBadge')}
                       </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              )}
-            </TouchableOpacity>
+                    )}
+                  </View>
+                )}
+
+                {reactionsList.length > 0 && (
+                  <View
+                    style={[
+                      styles.floatingReactionBadge,
+                      isMine ? styles.floatingBadgeRight : styles.floatingBadgeLeft,
+                      {
+                        backgroundColor: theme.isDark ? '#202026' : '#FFFFFF',
+                        borderColor: theme.border,
+                      },
+                    ]}
+                  >
+                    {reactionsList.map(([em, users]) => (
+                      <TouchableOpacity
+                        key={em}
+                        onPress={() => handleReact(item.id, em)}
+                        style={styles.reactionPill}
+                        activeOpacity={0.75}
+                      >
+                        <Text style={styles.reactionPillText}>
+                          {em}
+                          {users.length > 1 ? ` ${users.length}` : ''}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+              </TouchableOpacity>
+            </View>
 
             {isLatestOutgoing && (
               <View style={styles.deliveryStatusRow}>
@@ -1592,6 +1888,7 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
                     <Ionicons name="checkmark-done" size={12} color={theme.textSecondary} />
                     <Text style={[styles.timeText, { color: theme.textMuted }]}>
                       {t('voiceSentBadge')} · {formatClockTime(item.createdAt)}
+                      {item.editedAt ? ` · ${t('chatEditedBadge')}` : ''}
                     </Text>
                   </>
                 )}
@@ -1753,7 +2050,7 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
             <FlatList
               ref={listRef}
               data={messages}
-              keyExtractor={(item) => item.id}
+              keyExtractor={(item) => stableKeyByIdRef.current.get(item.id) || item.id}
               renderItem={renderMessage}
               contentContainerStyle={styles.listContent}
               onContentSizeChange={() => {
@@ -1780,6 +2077,64 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
             },
           ]}
         >
+          {/* Active Editing Banner */}
+          {editingMsg && !isRecordingMode && (
+            <View
+              style={[
+                styles.editingBanner,
+                {
+                  backgroundColor: theme.isDark ? '#1A1A20' : '#F4F4F5',
+                  borderColor: theme.border,
+                },
+              ]}
+            >
+              <View
+                style={[
+                  styles.editingAccentBar,
+                  {
+                    backgroundColor:
+                      appearance.themeId === 'monochrome' ? theme.primary : activeChatTheme.accent,
+                  },
+                ]}
+              />
+              <Ionicons
+                name="pencil"
+                size={14}
+                color={appearance.themeId === 'monochrome' ? theme.text : activeChatTheme.accent}
+              />
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text
+                  style={[
+                    styles.editingBannerTitle,
+                    {
+                      color:
+                        appearance.themeId === 'monochrome' ? theme.text : activeChatTheme.accent,
+                    },
+                  ]}
+                >
+                  {t('chatEditingBanner')}
+                </Text>
+                <Text style={[styles.editingBannerPreview, { color: theme.textSecondary }]} numberOfLines={1}>
+                  {editingMsg.text}
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={handleCancelEdit}
+                style={[
+                  styles.editingCancelBtn,
+                  {
+                    backgroundColor: theme.isDark
+                      ? 'rgba(255,255,255,0.1)'
+                      : 'rgba(0,0,0,0.07)',
+                  },
+                ]}
+                activeOpacity={0.75}
+              >
+                <Ionicons name="close" size={14} color={theme.text} />
+              </TouchableOpacity>
+            </View>
+          )}
+
           {/* Hold hint banner */}
           {holdHintVisible && !isRecordingMode && (
             <View
@@ -1956,6 +2311,7 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
                 </TouchableOpacity>
 
                 <TextInput
+                  ref={inputRef}
                   style={[styles.input, { color: theme.text }]}
                   placeholder={t('friendsChatPlaceholder')}
                   placeholderTextColor={theme.textMuted}
@@ -1976,18 +2332,33 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
 
             {/* Right Action Button: NEVER unmounts when switching into hold-to-record */}
             {canTypeSend && !isRecordingMode ? (
-              <TouchableOpacity
-                style={[styles.sendBtn, { backgroundColor: theme.primary }]}
-                onPress={() => handleSend('text')}
-                disabled={isSending}
-                activeOpacity={0.82}
-              >
-                {isSending ? (
-                  <ActivityIndicator size="small" color={theme.primaryText} />
-                ) : (
-                  <Ionicons name="arrow-up" size={19} color={theme.primaryText} />
-                )}
-              </TouchableOpacity>
+              <Animated.View style={{ transform: [{ scale: sendLaunchAnim }] }}>
+                <TouchableOpacity
+                  style={[
+                    styles.sendBtn,
+                    {
+                      backgroundColor: editingMsg
+                        ? appearance.themeId === 'monochrome'
+                          ? theme.primary
+                          : activeChatTheme.accent
+                        : theme.primary,
+                    },
+                  ]}
+                  onPress={() => (editingMsg ? handleSaveEdit() : handleSend('text'))}
+                  disabled={isSending}
+                  activeOpacity={0.82}
+                >
+                  {isSending ? (
+                    <ActivityIndicator size="small" color={theme.primaryText} />
+                  ) : (
+                    <Ionicons
+                      name={editingMsg ? 'checkmark' : 'arrow-up'}
+                      size={19}
+                      color={theme.primaryText}
+                    />
+                  )}
+                </TouchableOpacity>
+              </Animated.View>
             ) : (
               <Pressable
                 onPressIn={handleMicPressIn}
@@ -2023,111 +2394,282 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
           </View>
         </View>
 
-        {/* Dedicated Animated Messenger Reaction Overlay */}
+        {/* Messenger-style Anchored Reaction Bar + Contextual Actions Overlay */}
         <Modal
-          visible={reactionTargetMsg !== null}
+          visible={reactionTarget !== null}
           transparent
           animationType="fade"
-          onRequestClose={() => setReactionTargetMsg(null)}
+          onRequestClose={() => setReactionTarget(null)}
         >
           <Pressable
             style={styles.reactionBackdrop}
-            onPress={() => setReactionTargetMsg(null)}
+            onPress={() => setReactionTarget(null)}
           >
-            {reactionTargetMsg && (
-              <Animated.View
-                style={[
-                  styles.reactionOverlayCard,
-                  {
-                    opacity: reactionDockAnim,
-                    transform: [
-                      {
-                        scale: reactionDockAnim.interpolate({
-                          inputRange: [0, 1],
-                          outputRange: [0.84, 1],
-                        }),
-                      },
-                    ],
-                  },
-                ]}
-              >
-                <View
-                  style={[
-                    styles.reactionDock,
-                    {
-                      backgroundColor: theme.isDark ? '#18181D' : '#FFFFFF',
-                      borderColor: theme.border,
-                    },
-                  ]}
-                >
-                  {MESSENGER_REACTIONS.map((em) => {
-                    const alreadyReacted = Boolean(
-                      reactionTargetMsg.reactions?.[em]?.includes(myUserId)
-                    );
-                    return (
-                      <TouchableOpacity
-                        key={em}
-                        onPress={() => handleReact(reactionTargetMsg.id, em)}
-                        style={[
-                          styles.reactionDockBtn,
-                          alreadyReacted && {
-                            backgroundColor: theme.isDark
-                              ? 'rgba(255,255,255,0.16)'
-                              : 'rgba(0,0,0,0.09)',
-                          },
-                        ]}
-                        activeOpacity={0.72}
-                      >
-                        <Text style={styles.reactionDockEmoji}>{em}</Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
+            {reactionTarget && (() => {
+              const msg = reactionTarget.message;
+              const rect = reactionTarget.rect;
+              const isMineMsg = msg.senderId === myUserId;
+              const canEditMsg =
+                isMineMsg && msg.type === 'text' && !msg.decryptFailed && !msg.id.startsWith('local_');
+              const canDeleteMsg = isMineMsg && !msg.id.startsWith('local_');
+              const hasActions = canEditMsg || canDeleteMsg;
 
-                <View
-                  style={[
-                    styles.reactionPreviewBubble,
-                    {
-                      backgroundColor:
-                        reactionTargetMsg.senderId === myUserId
-                          ? theme.isDark
-                            ? '#F4F4F5'
-                            : '#18181B'
-                          : theme.isDark
-                          ? '#141418'
-                          : '#FFFFFF',
-                      borderColor: theme.border,
-                    },
-                  ]}
-                >
-                  <Text
+              const dockWidth = Math.min(296, screenWidth - 28);
+              const dockHeight = 52;
+              const actionCardHeight = !hasActions ? 0 : canEditMsg && canDeleteMsg ? 98 : 50;
+
+              const bubbleTop = Math.max(
+                insets.top + dockHeight + 18,
+                Math.min(rect.y, screenHeight - insets.bottom - rect.height - actionCardHeight - 26)
+              );
+              const dockTop = bubbleTop - dockHeight - 10;
+              const dockLeft = Math.max(
+                14,
+                Math.min(
+                  screenWidth - dockWidth - 14,
+                  isMineMsg ? rect.x + rect.width - dockWidth : rect.x
+                )
+              );
+              const actionsTop = bubbleTop + rect.height + 10;
+              const menuWidth = 204;
+              const menuLeft = Math.max(
+                14,
+                Math.min(
+                  screenWidth - menuWidth - 14,
+                  isMineMsg ? rect.x + rect.width - menuWidth : rect.x
+                )
+              );
+
+              const focusBg = isMineMsg
+                ? theme.isDark
+                  ? activeChatTheme.outgoingDark
+                  : activeChatTheme.outgoingLight
+                : theme.isDark
+                ? '#141418'
+                : '#FFFFFF';
+              const focusTextColor = isMineMsg
+                ? theme.isDark
+                  ? activeChatTheme.outgoingTextDark
+                  : activeChatTheme.outgoingTextLight
+                : theme.text;
+              const focusSubColor = isMineMsg
+                ? focusTextColor === '#09090B'
+                  ? 'rgba(9,9,11,0.7)'
+                  : 'rgba(255,255,255,0.78)'
+                : theme.textSecondary;
+
+              return (
+                <>
+                  {/* Floating Emoji Bar anchored directly ABOVE the message */}
+                  <Animated.View
                     style={[
-                      styles.reactionPreviewText,
+                      styles.reactionDock,
                       {
-                        color:
-                          reactionTargetMsg.senderId === myUserId
-                            ? theme.isDark
-                              ? '#09090B'
-                              : '#FFFFFF'
-                            : theme.text,
+                        position: 'absolute',
+                        top: dockTop,
+                        left: dockLeft,
+                        width: dockWidth,
+                        backgroundColor: theme.isDark ? '#18181D' : '#FFFFFF',
+                        borderColor: theme.border,
+                        opacity: reactionDockAnim,
+                        transform: [
+                          {
+                            scale: reactionDockAnim.interpolate({
+                              inputRange: [0, 1],
+                              outputRange: [0.82, 1],
+                            }),
+                          },
+                          {
+                            translateY: reactionDockAnim.interpolate({
+                              inputRange: [0, 1],
+                              outputRange: [8, 0],
+                            }),
+                          },
+                        ],
                       },
                     ]}
-                    numberOfLines={3}
                   >
-                    {reactionTargetMsg.text}
-                  </Text>
-                </View>
+                    {MESSENGER_REACTIONS.map((em) => {
+                      const alreadyReacted = Boolean(msg.reactions?.[em]?.includes(myUserId));
+                      return (
+                        <TouchableOpacity
+                          key={em}
+                          onPress={() => handleReact(msg.id, em)}
+                          style={[
+                            styles.reactionDockBtn,
+                            alreadyReacted && {
+                              backgroundColor: theme.isDark
+                                ? 'rgba(255,255,255,0.16)'
+                                : 'rgba(0,0,0,0.09)',
+                            },
+                          ]}
+                          activeOpacity={0.72}
+                        >
+                          <Text style={styles.reactionDockEmoji}>{em}</Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </Animated.View>
 
-                <TouchableOpacity
-                  style={styles.deleteMsgBtn}
-                  onPress={() => handleDeleteMessage(reactionTargetMsg)}
-                  activeOpacity={0.82}
-                >
-                  <Ionicons name="trash-outline" size={16} color="#FCA5A5" />
-                  <Text style={styles.deleteMsgBtnText}>{t('chatDeleteMsgBtn')}</Text>
-                </TouchableOpacity>
-              </Animated.View>
-            )}
+                  {/* Highlighted Message Clone anchored in place */}
+                  <Animated.View
+                    pointerEvents="none"
+                    style={[
+                      styles.bubble,
+                      {
+                        position: 'absolute',
+                        top: bubbleTop,
+                        left: rect.x,
+                        width: rect.width,
+                        borderRadius: 21,
+                        backgroundColor: focusBg,
+                        borderColor: theme.isDark
+                          ? 'rgba(255,255,255,0.22)'
+                          : 'rgba(15,23,42,0.14)',
+                        shadowColor: '#000',
+                        shadowOffset: { width: 0, height: 10 },
+                        shadowOpacity: 0.28,
+                        shadowRadius: 20,
+                        elevation: 12,
+                        transform: [
+                          {
+                            scale: reactionDockAnim.interpolate({
+                              inputRange: [0, 1],
+                              outputRange: [0.98, 1.025],
+                            }),
+                          },
+                        ],
+                      },
+                    ]}
+                  >
+                    {msg.type === 'image' && msg.payload?.imageBase64 ? (
+                      <Image
+                        source={{
+                          uri: `data:${msg.payload.imageMime || 'image/jpeg'};base64,${msg.payload.imageBase64}`,
+                        }}
+                        style={{
+                          width: 210,
+                          height:
+                            msg.payload.imageWidth && msg.payload.imageHeight
+                              ? Math.max(
+                                  120,
+                                  Math.min(
+                                    280,
+                                    Math.round(210 * (msg.payload.imageHeight / msg.payload.imageWidth))
+                                  )
+                                )
+                              : 210,
+                          borderRadius: 15,
+                        }}
+                        resizeMode="cover"
+                      />
+                    ) : msg.type === 'voice' ? (
+                      <View style={styles.cheerBubbleRow}>
+                        <Ionicons name="mic" size={16} color={focusTextColor} />
+                        <Text style={[styles.msgText, { color: focusTextColor, fontWeight: '700' }]}>
+                          {formatDurationSec(msg.payload?.durationSec || 0)}
+                        </Text>
+                      </View>
+                    ) : msg.type === 'workout_share' || msg.type === 'rank_card' ? (
+                      <View style={styles.richCard}>
+                        <Text style={[styles.richTitle, { color: focusTextColor }]}>
+                          {msg.payload?.title || msg.text}
+                        </Text>
+                        {msg.payload?.subtitle ? (
+                          <Text style={[styles.richSub, { color: focusSubColor }]}>
+                            {msg.payload.subtitle}
+                          </Text>
+                        ) : null}
+                      </View>
+                    ) : (
+                      <View>
+                        <Text style={[styles.msgText, { color: focusTextColor }]} numberOfLines={6}>
+                          {msg.text}
+                        </Text>
+                        {Boolean(msg.editedAt) && (
+                          <Text
+                            style={[
+                              styles.editedBadgeText,
+                              {
+                                color: focusSubColor,
+                                alignSelf: isMineMsg ? 'flex-end' : 'flex-start',
+                              },
+                            ]}
+                          >
+                            {t('chatEditedBadge')}
+                          </Text>
+                        )}
+                      </View>
+                    )}
+                  </Animated.View>
+
+                  {/* Contextual Actions Menu anchored directly BELOW own message */}
+                  {hasActions && (
+                    <Animated.View
+                      style={[
+                        styles.contextActionsCard,
+                        {
+                          position: 'absolute',
+                          top: actionsTop,
+                          left: menuLeft,
+                          width: menuWidth,
+                          backgroundColor: theme.isDark ? '#18181D' : '#FFFFFF',
+                          borderColor: theme.border,
+                          opacity: reactionDockAnim,
+                          transform: [
+                            {
+                              translateY: reactionDockAnim.interpolate({
+                                inputRange: [0, 1],
+                                outputRange: [-6, 0],
+                              }),
+                            },
+                            {
+                              scale: reactionDockAnim.interpolate({
+                                inputRange: [0, 1],
+                                outputRange: [0.92, 1],
+                              }),
+                            },
+                          ],
+                        },
+                      ]}
+                    >
+                      {canEditMsg && (
+                        <TouchableOpacity
+                          style={styles.contextActionRow}
+                          onPress={() => handleStartEdit(msg)}
+                          activeOpacity={0.76}
+                        >
+                          <Text style={[styles.contextActionText, { color: theme.text }]}>
+                            {t('chatEditMsgBtn')}
+                          </Text>
+                          <Ionicons name="pencil-outline" size={16} color={theme.text} />
+                        </TouchableOpacity>
+                      )}
+                      {canEditMsg && canDeleteMsg && (
+                        <View
+                          style={[
+                            styles.contextActionDivider,
+                            { backgroundColor: theme.hairline },
+                          ]}
+                        />
+                      )}
+                      {canDeleteMsg && (
+                        <TouchableOpacity
+                          style={styles.contextActionRow}
+                          onPress={() => handleDeleteMessage(msg)}
+                          activeOpacity={0.76}
+                        >
+                          <Text style={[styles.contextActionText, { color: '#EF4444' }]}>
+                            {t('chatDeleteMsgBtn')}
+                          </Text>
+                          <Ionicons name="trash-outline" size={16} color="#EF4444" />
+                        </TouchableOpacity>
+                      )}
+                    </Animated.View>
+                  )}
+                </>
+              );
+            })()}
           </Pressable>
         </Modal>
 
@@ -2165,7 +2707,10 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
           <View style={styles.themeOverlayRoot}>
             <Pressable
               style={styles.themeOverlayBackdrop}
-              onPress={() => setShowThemeSheet(false)}
+              onPress={() => {
+                setShowThemeSheet(false);
+                flushThemeAnnouncement();
+              }}
             />
             <View
               style={[
@@ -2187,7 +2732,10 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
                   </Text>
                 </View>
                 <TouchableOpacity
-                  onPress={() => setShowThemeSheet(false)}
+                  onPress={() => {
+                    setShowThemeSheet(false);
+                    flushThemeAnnouncement();
+                  }}
                   style={[styles.headerCircleBtn, { backgroundColor: theme.bgSecondary }]}
                   activeOpacity={0.75}
                 >
@@ -2752,15 +3300,86 @@ const styles = StyleSheet.create({
   },
   reactionBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.52)',
+    backgroundColor: 'rgba(0,0,0,0.48)',
+  },
+  systemEventWrap: {
+    alignItems: 'center',
+    marginVertical: 8,
+    paddingHorizontal: 18,
+  },
+  systemEventPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  systemEventText: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  editedBadgeText: {
+    fontSize: 10,
+    fontWeight: '600',
+    marginTop: 3,
+    opacity: 0.72,
+  },
+  editingBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderRadius: 14,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    marginBottom: 8,
+  },
+  editingAccentBar: {
+    width: 3,
+    height: 26,
+    borderRadius: 2,
+  },
+  editingBannerTitle: {
+    fontSize: 11.5,
+    fontWeight: '800',
+  },
+  editingBannerPreview: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  editingCancelBtn: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 24,
   },
-  reactionOverlayCard: {
+  contextActionsCard: {
+    borderRadius: 16,
+    borderWidth: 1,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.25,
+    shadowRadius: 18,
+    elevation: 11,
+  },
+  contextActionRow: {
+    flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    maxWidth: 330,
+    justifyContent: 'space-between',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  contextActionText: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  contextActionDivider: {
+    height: StyleSheet.hairlineWidth,
     width: '100%',
   },
   reactionDock: {
@@ -2769,7 +3388,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 4,
     paddingHorizontal: 10,
-    paddingVertical: 8,
+    paddingVertical: 6,
     borderRadius: 999,
     borderWidth: 1,
     shadowColor: '#000',
@@ -2779,26 +3398,14 @@ const styles = StyleSheet.create({
     elevation: 10,
   },
   reactionDockBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
   },
   reactionDockEmoji: {
-    fontSize: 24,
-  },
-  reactionPreviewBubble: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 18,
-    borderWidth: 1,
-    maxWidth: '90%',
-  },
-  reactionPreviewText: {
-    fontSize: 14.5,
-    fontWeight: '600',
-    textAlign: 'center',
+    fontSize: 23,
   },
   themeOverlayRoot: {
     position: 'absolute',

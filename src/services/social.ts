@@ -79,6 +79,7 @@ function decryptWireChatMessage(
       senderPublicKey: raw.senderPublicKey,
       recipientPublicKey: raw.recipientPublicKey,
       alg: raw.alg,
+      editedAt: raw.editedAt || null,
       createdAt: String(raw.createdAt),
       reactions: raw.reactions || {},
     };
@@ -91,6 +92,7 @@ function decryptWireChatMessage(
     text: translateText(getCurrentAppLanguage(), 'e2eeKeyChangedPlaceholder'),
     isEncrypted: true,
     decryptFailed: true,
+    editedAt: raw.editedAt || null,
     createdAt: String(raw.createdAt),
     reactions: raw.reactions || {},
   };
@@ -590,6 +592,7 @@ export async function sendChatMessage(params: {
   type?: ChatMessageType;
   text: string;
   payload?: ChatMessagePayload;
+  silent?: boolean;
 }): Promise<{ ok: boolean; message?: ChatMessage; error?: string }> {
   const session = await getStoredCloudSession();
   if (!session?.token) {
@@ -623,6 +626,61 @@ export async function sendChatMessage(params: {
       body: JSON.stringify({
         action: 'send_message',
         friendId: params.friendId,
+        silent: params.silent,
+        ...wire,
+      }),
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok || !data?.ok || !data?.message) {
+      return { ok: false, error: getFriendlySocialError(data?.error) };
+    }
+    return {
+      ok: true,
+      message: decryptWireChatMessage(data.message, session.userId, myKeyPair),
+    };
+  } catch {
+    return { ok: false, error: translateText(getCurrentAppLanguage(), 'socialNetworkError') };
+  }
+}
+
+export async function editChatMessage(params: {
+  friendId: string;
+  messageId: string;
+  recipientPublicKey: string;
+  text: string;
+}): Promise<{ ok: boolean; message?: ChatMessage; error?: string }> {
+  const session = await getStoredCloudSession();
+  if (!session?.token) {
+    return { ok: false, error: getFriendlySocialError('UNAUTHORIZED') };
+  }
+  if (!params.recipientPublicKey || !params.messageId) {
+    return {
+      ok: false,
+      error: translateText(getCurrentAppLanguage(), 'socialRequestFailedError'),
+    };
+  }
+
+  try {
+    const myKeyPair = await getOrCreateE2eeKeyPair(session.userId);
+    const wire = encryptChatEnvelope(
+      {
+        type: 'text',
+        text: params.text,
+      },
+      params.recipientPublicKey,
+      myKeyPair
+    );
+
+    const res = await fetch(SOCIAL_API_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${session.token}`,
+      },
+      body: JSON.stringify({
+        action: 'edit_message',
+        friendId: params.friendId,
+        messageId: params.messageId,
         ...wire,
       }),
     });

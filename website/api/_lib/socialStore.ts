@@ -61,6 +61,7 @@ export interface EncryptedChatMessageRecord {
   recipientPublicKey: string;
   alg: string;
   reactions: Record<string, string[]>;
+  editedAt?: string | null;
   createdAt: string;
 }
 
@@ -130,6 +131,7 @@ function mapChatMessageRow(row: any): EncryptedChatMessageRecord {
       string,
       string[]
     >,
+    editedAt: row.edited_at ? new Date(row.edited_at).toISOString() : null,
     createdAt: row.created_at ? new Date(row.created_at).toISOString() : new Date().toISOString(),
   };
 }
@@ -807,6 +809,36 @@ export async function toggleChatMessageReaction(
   return mapChatMessageRow(updatedRows[0]);
 }
 
+export async function editEncryptedChatMessage(params: {
+  userId: string;
+  friendId: string;
+  messageId: string;
+  ciphertext: string;
+  nonce: string;
+  senderPublicKey: string;
+  recipientPublicKey: string;
+  alg?: string;
+}): Promise<EncryptedChatMessageRecord | null> {
+  await ensureSchema();
+  const sql = getSql();
+  const pk = pairKeyFor(params.userId, params.friendId);
+  const rows: any[] = await sql`
+    UPDATE chat_messages
+    SET
+      ciphertext = ${params.ciphertext},
+      nonce = ${params.nonce},
+      sender_public_key = ${params.senderPublicKey},
+      recipient_public_key = ${params.recipientPublicKey},
+      alg = ${params.alg || 'x25519-xsalsa20-poly1305'},
+      edited_at = NOW()
+    WHERE id = ${params.messageId}
+      AND pair_key = ${pk}
+      AND sender_id = ${params.userId}
+    RETURNING *
+  `;
+  return rows[0] ? mapChatMessageRow(rows[0]) : null;
+}
+
 export async function deleteEncryptedChatMessage(
   userId: string,
   friendId: string,
@@ -819,7 +851,7 @@ export async function deleteEncryptedChatMessage(
     DELETE FROM chat_messages
     WHERE id = ${messageId}
       AND pair_key = ${pk}
-      AND (sender_id = ${userId} OR recipient_id = ${userId})
+      AND sender_id = ${userId}
     RETURNING id
   `;
   return rows.length > 0;

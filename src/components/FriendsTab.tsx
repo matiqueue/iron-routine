@@ -870,9 +870,11 @@ export const FriendsTab: React.FC<FriendsTabProps> = ({
                       const last = item.lastMessage;
                       const rankColor = (RANK_TIER_MAP[fr.overallRank] || RANK_TIER_MAP.F).color;
                       const previewLine = last
-                        ? `${last.senderId === myUserId ? t('friendsYouSayPrefix') : ''}${
-                            last.type === 'voice' ? t('voiceMsgLabel') : last.text
-                          }`
+                        ? last.type === 'system'
+                          ? last.text
+                          : `${last.senderId === myUserId ? t('friendsYouSayPrefix') : ''}${
+                              last.type === 'voice' ? t('voiceMsgLabel') : last.text
+                            }`
                         : fr.statusNote ||
                           `${fr.overallRank} · ${fr.streak} ${t('friendsDaysShort')}`;
 
