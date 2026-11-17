@@ -377,12 +377,89 @@ export async function pullProfileFromCloud(): Promise<{
 
 let autoSyncTimer: ReturnType<typeof setTimeout> | null = null;
 let autoSyncInFlight = false;
+let autoPullInFlight = false;
+
+/**
+ * Checks whether the Neon cloud backup is strictly newer than the device's lastCloudSyncAt
+ * and pulls it automatically if updated remotely (e.g. from another device or server edit).
+ */
+export async function pullIfCloudNewer(): Promise<{
+  updated: boolean;
+  profile?: UserProfile;
+}> {
+  if (autoPullInFlight || autoSyncInFlight) {
+    return { updated: false };
+  }
+  const session = await getStoredCloudSession();
+  if (!session?.token || !session?.userId) {
+    return { updated: false };
+  }
+
+  autoPullInFlight = true;
+  try {
+    const [active, res] = await Promise.all([
+      getActiveProfile(),
+      fetch(`${CLOUD_API_BASE}/sync`, {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${session.token}`,
+        },
+      }),
+    ]);
+
+    const data = await res.json().catch(() => null);
+    if (!res.ok || !data?.ok || !data?.backup || !data?.syncedAt) {
+      return { updated: false };
+    }
+
+    const remoteMs = new Date(data.syncedAt).getTime();
+    const localRef = active?.lastCloudSyncAt || session.lastSyncedAt || '';
+    const localMs = localRef ? new Date(localRef).getTime() : 0;
+    if (isNaN(remoteMs) || (!isNaN(localMs) && localMs > 0 && remoteMs <= localMs + 2000)) {
+      return { updated: false };
+    }
+
+    if (autoSyncTimer) {
+      clearTimeout(autoSyncTimer);
+      autoSyncTimer = null;
+    }
+
+    const importedResult = await importProfileBackup(JSON.stringify(data.backup));
+    const syncedAt = String(data.syncedAt);
+    const updatedProfile =
+      (await updateProfile(
+        importedResult.profile.id,
+        {
+          cloudUserId: session.userId,
+          cloudProvider: session.provider,
+          cloudEmail: session.email,
+          lastCloudSyncAt: syncedAt,
+        },
+        { skipCloudSync: true }
+      )) || importedResult.profile;
+
+    await saveStoredCloudSession({
+      ...session,
+      lastSyncedAt: syncedAt,
+    });
+
+    return {
+      updated: true,
+      profile: updatedProfile,
+    };
+  } catch {
+    return { updated: false };
+  } finally {
+    autoPullInFlight = false;
+  }
+}
 
 /**
  * Automatically synchronizes the active profile to the Neon PostgreSQL database
  * whenever local training data, plans, body weight, or profile settings change.
  */
 export function scheduleAutoCloudSync(explicitProfileId?: string): void {
+  if (autoPullInFlight) return;
   if (autoSyncTimer) {
     clearTimeout(autoSyncTimer);
   }

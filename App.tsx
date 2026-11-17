@@ -35,7 +35,7 @@ import {
   saveSessionExerciseConfig,
   saveSetEntry,
 } from './src/services/storage';
-import { scheduleAutoCloudSync } from './src/services/cloudSync';
+import { pullIfCloudNewer, scheduleAutoCloudSync } from './src/services/cloudSync';
 import { getAppSettings, updateAppSettings } from './src/services/settings';
 import { fetchTodayHealthSummary, requestHealthPermissions } from './src/services/health';
 import { syncWorkoutScheduleWithDevice } from './src/services/calendarSync';
@@ -248,8 +248,18 @@ function MainApp() {
             }
           })
           .catch(() => {});
-      } else if (nextState === 'background') {
-        scheduleAutoCloudSync();
+        if (!isActiveWorkoutRef.current) {
+          pullIfCloudNewer()
+            .then(async (pullRes) => {
+              if (pullRes.updated) {
+                const refreshed = await getActiveProfile();
+                setActiveProfile(refreshed);
+                await loadUserWorkspace(refreshed);
+                setProgressRefreshKey((k) => k + 1);
+              }
+            })
+            .catch(() => {});
+        }
       }
     });
 
@@ -326,6 +336,18 @@ function MainApp() {
       syncRemindersWithSettings(settings);
       setActiveProfile(current);
       await loadUserWorkspace(current);
+      if (current?.cloudUserId) {
+        pullIfCloudNewer()
+          .then(async (pullRes) => {
+            if (pullRes.updated) {
+              const refreshed = await getActiveProfile();
+              setActiveProfile(refreshed);
+              await loadUserWorkspace(refreshed);
+              setProgressRefreshKey((k) => k + 1);
+            }
+          })
+          .catch(() => {});
+      }
       if (settings.healthSyncEnabled) {
         refreshHealthIfEnabled();
       }
