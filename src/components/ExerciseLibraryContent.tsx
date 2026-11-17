@@ -13,6 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useAppTheme } from '../context/ThemeContext';
 import { useLanguage } from '../context/LanguageContext';
+import { matchesExerciseSearch } from '../i18n/exerciseTranslations';
 import { EquipmentType, Exercise, MuscleCategory, MuscleSubGroupId } from '../types/workout';
 import {
   EQUIPMENT_OPTIONS,
@@ -129,18 +130,22 @@ export const ExerciseLibraryContent: React.FC<ExerciseLibraryContentProps> = ({
       const muscleText = [
         muscleLabel(anatomy.primary),
         ...anatomy.secondary.map((s) => muscleLabel(s.muscle)),
-      ]
-        .join(' ')
-        .toLowerCase();
-      return (
-        ex.name.toLowerCase().includes(q) ||
-        exerciseName(ex.id, ex.name).toLowerCase().includes(q) ||
-        ex.category.toLowerCase().includes(q) ||
-        categoryLabel(ex.category).toLowerCase().includes(q) ||
-        muscleText.includes(q) ||
-        (ex.equipment || '').toLowerCase().includes(q) ||
-        (ex.equipment ? equipmentLabel(ex.equipment).toLowerCase().includes(q) : false) ||
-        (ex.description || '').toLowerCase().includes(q)
+      ].join(' ');
+      const canonicalId = resolveCanonicalExerciseId(ex.id, ex.name);
+      return matchesExerciseSearch(
+        q,
+        ex.id,
+        ex.name,
+        [
+          exerciseName(ex.id, ex.name),
+          ex.category,
+          categoryLabel(ex.category),
+          muscleText,
+          ex.equipment || '',
+          ex.equipment ? equipmentLabel(ex.equipment) : '',
+          ex.description || '',
+        ],
+        canonicalId
       );
     });
 

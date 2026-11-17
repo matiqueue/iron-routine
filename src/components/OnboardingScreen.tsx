@@ -24,6 +24,7 @@ import { useKeyboardHeight } from '../hooks/useKeyboardHeight';
 import { useAppTheme } from '../context/ThemeContext';
 import { useLanguage } from '../context/LanguageContext';
 import { PLAN_MODE_LOCALE } from '../i18n/translations';
+import { matchesExerciseSearch } from '../i18n/exerciseTranslations';
 import {
   AppLanguage,
   DayPlan,
@@ -2235,11 +2236,16 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
                 .filter((cand) => {
                   if (!q) return true;
                   const anatomy = resolveExerciseMuscles(cand);
-                  return (
-                    exerciseName(cand.id, cand.name).toLowerCase().includes(q) ||
-                    cand.name.toLowerCase().includes(q) ||
-                    muscleLabel(anatomy.primary).toLowerCase().includes(q) ||
-                    (cand.equipment ? equipmentLabel(cand.equipment).toLowerCase().includes(q) : false)
+                  return matchesExerciseSearch(
+                    q,
+                    cand.id,
+                    cand.name,
+                    [
+                      exerciseName(cand.id, cand.name),
+                      muscleLabel(anatomy.primary),
+                      cand.equipment ? equipmentLabel(cand.equipment) : '',
+                    ],
+                    resolveCanonicalExerciseId(cand.id, cand.name)
                   );
                 })
                 .sort((a, b) => {
