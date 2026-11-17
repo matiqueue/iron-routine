@@ -897,9 +897,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               <Text style={[styles.avatarSettingsTitle, { color: theme.textMuted }]}>
                 {t('avatarSectionTitle')}
               </Text>
-              <Text style={[styles.avatarSettingsHint, { color: theme.textSecondary }]}>
-                {t('avatarSectionHint')}
-              </Text>
             </View>
             <TouchableOpacity
               style={[styles.avatarChangePill, { backgroundColor: `${theme.primary}18`, borderColor: `${theme.primary}45` }]}
@@ -1050,7 +1047,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           </View>
 
           <View style={styles.twoColRow}>
-            <View style={[styles.underlineField, { flex: 1, borderBottomColor: theme.hairline }]}>
+            <View style={[styles.underlineField, { flex: 1, borderBottomWidth: 0, marginBottom: 0, paddingBottom: 2 }]}>
               <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>{t('heightUpper')}</Text>
               <TextInput
                 style={[styles.underlineInput, { color: theme.text }]}
@@ -1061,7 +1058,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                 placeholderTextColor={theme.textMuted}
               />
             </View>
-            <View style={[styles.underlineField, { flex: 1, borderBottomColor: theme.hairline }]}>
+            <View style={[styles.underlineField, { flex: 1, borderBottomWidth: 0, marginBottom: 0, paddingBottom: 2 }]}>
               <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>{t('weightUpper')}</Text>
               <TextInput
                 style={[styles.underlineInput, { color: theme.text }]}

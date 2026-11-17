@@ -4,6 +4,7 @@ import {
   Animated,
   Dimensions,
   Easing,
+  Image,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -21,6 +22,7 @@ import Svg, {
   LinearGradient,
   Polygon,
   RadialGradient,
+  Rect,
   Stop,
   Text as SvgText,
 } from 'react-native-svg';
@@ -443,27 +445,57 @@ export const FriendProfileModal: React.FC<FriendProfileModalProps> = ({
 
   const profileBody = (
     <>
-      {/* Colorful Gradient Hero Card */}
+      {/* Full-bleed Ambient Color-Adaptive Hero Card */}
       <Animated.View
         style={[
           styles.heroCard,
           {
-            backgroundColor: isDark ? 'rgba(20, 22, 30, 0.85)' : 'rgba(248, 250, 252, 0.96)',
-            borderColor: `${rankMeta.color}55`,
+            backgroundColor: isDark ? '#12131A' : '#F8FAFC',
+            borderColor: `${rankMeta.color}66`,
             opacity: entranceAnim,
             transform: [{ translateY: heroTranslateY }],
           },
         ]}
       >
+        {/* Adaptive atmospheric color aura extracted directly from friend's profile picture when present */}
+        {friend.avatarUrl ? (
+          <>
+            <Image
+              source={{ uri: friend.avatarUrl }}
+              blurRadius={44}
+              style={[
+                StyleSheet.absoluteFill,
+                { opacity: isDark ? 0.5 : 0.34, transform: [{ scale: 1.25 }] },
+              ]}
+              resizeMode="cover"
+            />
+            <View
+              style={[
+                StyleSheet.absoluteFill,
+                {
+                  backgroundColor: isDark
+                    ? 'rgba(11, 13, 19, 0.56)'
+                    : 'rgba(255, 255, 255, 0.54)',
+                },
+              ]}
+            />
+          </>
+        ) : null}
+
         <Svg width="100%" height="100%" style={[StyleSheet.absoluteFill, { pointerEvents: 'none' }]}>
           <Defs>
-            <RadialGradient id={`hero_amb_${uid}`} cx="50%" cy="18%" r="72%">
-              <Stop offset="0%" stopColor={rankMeta.color} stopOpacity={isDark ? 0.34 : 0.24} />
-              <Stop offset="60%" stopColor="#38BDF8" stopOpacity={isDark ? 0.12 : 0.08} />
+            <LinearGradient id={`hero_grad_${uid}`} x1="0" y1="0" x2="1" y2="1">
+              <Stop offset="0%" stopColor={rankMeta.color} stopOpacity={isDark ? 0.24 : 0.18} />
+              <Stop offset="55%" stopColor={friend.avatarColor || '#38BDF8'} stopOpacity={isDark ? 0.14 : 0.12} />
+              <Stop offset="100%" stopColor={rankMeta.color} stopOpacity={isDark ? 0.08 : 0.06} />
+            </LinearGradient>
+            <RadialGradient id={`hero_amb_${uid}`} cx="50%" cy="28%" r="78%">
+              <Stop offset="0%" stopColor={rankMeta.color} stopOpacity={isDark ? 0.26 : 0.18} />
               <Stop offset="100%" stopColor={rankMeta.color} stopOpacity={0} />
             </RadialGradient>
           </Defs>
-          <Circle cx="50%" cy="22%" r="65%" fill={`url(#hero_amb_${uid})`} />
+          <Rect x="0" y="0" width="100%" height="100%" fill={`url(#hero_grad_${uid})`} />
+          <Rect x="0" y="0" width="100%" height="100%" fill={`url(#hero_amb_${uid})`} />
         </Svg>
 
         <View style={styles.emblemStage}>
@@ -494,14 +526,14 @@ export const FriendProfileModal: React.FC<FriendProfileModalProps> = ({
               styles.statusBadge,
               {
                 backgroundColor: isDark
-                  ? 'rgba(255,255,255,0.08)'
-                  : 'rgba(15,23,42,0.06)',
+                  ? 'rgba(255,255,255,0.1)'
+                  : 'rgba(15,23,42,0.07)',
                 borderColor: theme.border,
               },
             ]}
           >
             <View style={[styles.liveDot, { backgroundColor: '#10B981' }]} />
-            <Text style={[styles.statusBadgeText, { color: theme.textSecondary }]}>
+            <Text style={[styles.statusBadgeText, { color: theme.text }]}>
               {friend.statusNote}
             </Text>
           </View>
@@ -530,6 +562,7 @@ export const FriendProfileModal: React.FC<FriendProfileModalProps> = ({
             initialCount={friend.cheersCount || 0}
             cheeredByMe={friend.cheeredByMe}
             label={t('friendsKudosBtn')}
+            fullWidth
           />
         </View>
       </Animated.View>
@@ -938,11 +971,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 7,
-    height: 44,
+    height: 46,
     borderRadius: 14,
   },
   primaryBtnText: {
-    fontSize: 14,
+    fontSize: 13.5,
     fontWeight: '800',
   },
   telemetryStrip: {

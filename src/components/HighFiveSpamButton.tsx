@@ -19,6 +19,7 @@ interface HighFiveSpamButtonProps {
   cheeredByMe?: boolean;
   label?: string;
   compact?: boolean;
+  fullWidth?: boolean;
   onServerSynced?: (newCount: number) => void;
 }
 
@@ -40,6 +41,7 @@ export const HighFiveSpamButton: React.FC<HighFiveSpamButtonProps> = ({
   cheeredByMe = false,
   label,
   compact = false,
+  fullWidth = false,
   onServerSynced,
 }) => {
   const { theme } = useAppTheme();
@@ -192,7 +194,7 @@ export const HighFiveSpamButton: React.FC<HighFiveSpamButtonProps> = ({
   const active = cheeredByMe || localAdded > 0;
 
   return (
-    <View style={styles.rootWrap}>
+    <View style={[styles.rootWrap, fullWidth && styles.rootWrapFull]}>
       {/* Pooled zero-alloc native-driver particle layer */}
       <View style={[styles.particlesOverlay, { pointerEvents: 'none' }]}>
         {particlesRef.current.map((p, i) => (
@@ -245,10 +247,11 @@ export const HighFiveSpamButton: React.FC<HighFiveSpamButtonProps> = ({
         )}
       </View>
 
-      <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
+      <Animated.View style={[{ transform: [{ scale: scaleAnim }] }, fullWidth && styles.btnAnimFull]}>
         <TouchableOpacity
           style={[
             compact ? styles.btnCompact : styles.btnFull,
+            fullWidth && styles.btnMatchedFull,
             {
               backgroundColor: isHolding
                 ? 'rgba(245, 158, 11, 0.24)'
@@ -291,6 +294,18 @@ const styles = StyleSheet.create({
     position: 'relative',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  rootWrapFull: {
+    flex: 1,
+  },
+  btnAnimFull: {
+    width: '100%',
+  },
+  btnMatchedFull: {
+    width: '100%',
+    height: 46,
+    borderRadius: 14,
+    paddingVertical: 0,
   },
   particlesOverlay: {
     position: 'absolute',
