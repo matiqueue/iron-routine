@@ -253,7 +253,14 @@ export interface SocialActivityItem {
   cheeredByMe?: boolean;
 }
 
-export type ChatMessageType = 'text' | 'cheer' | 'workout_share' | 'rank_card' | 'voice' | 'image';
+export type ChatMessageType =
+  | 'text'
+  | 'cheer'
+  | 'workout_share'
+  | 'rank_card'
+  | 'voice'
+  | 'image'
+  | 'system';
 
 export interface ChatMessagePayload {
   title?: string;
@@ -271,6 +278,10 @@ export interface ChatMessagePayload {
   imageMime?: string;
   imageWidth?: number;
   imageHeight?: number;
+  systemAction?: 'theme_change';
+  actorName?: string;
+  themeId?: string;
+  wallpaperId?: string;
 }
 
 export interface SharedChatTheme {
@@ -294,6 +305,7 @@ export interface ChatMessage {
   senderPublicKey?: string;
   recipientPublicKey?: string;
   alg?: string;
+  editedAt?: string | null;
   createdAt: string;
   reactions?: Record<string, string[]>;
 }

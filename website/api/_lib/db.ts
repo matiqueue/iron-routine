@@ -163,9 +163,12 @@ export async function ensureSchema(): Promise<void> {
         recipient_public_key TEXT NOT NULL,
         alg TEXT NOT NULL DEFAULT 'x25519-xsalsa20-poly1305',
         reactions JSONB NOT NULL DEFAULT '{}'::jsonb,
+        edited_at TIMESTAMPTZ,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
     `;
+
+    await sql`ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS edited_at TIMESTAMPTZ`;
 
     await sql`
       CREATE INDEX IF NOT EXISTS chat_messages_pair_created_idx
