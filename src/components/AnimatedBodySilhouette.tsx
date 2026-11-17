@@ -547,22 +547,8 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = Rea
                 fill={isDark ? 'rgba(255, 255, 255, 0.14)' : 'rgba(24, 24, 27, 0.12)'}
               />
             </Pattern>
-            <RadialGradient id="silhouetteStageAura" cx="50%" cy="46%" r="54%">
-              <Stop
-                offset="0%"
-                stopColor={isDark ? '#38BDF8' : '#10B981'}
-                stopOpacity={isDark ? 0.08 : 0.045}
-              />
-              <Stop
-                offset="65%"
-                stopColor="#10B981"
-                stopOpacity={isDark ? 0.025 : 0.015}
-              />
-              <Stop offset="100%" stopColor="#000000" stopOpacity={0} />
-            </RadialGradient>
           </Defs>
           <Rect x={0} y={0} width="100%" height="100%" fill="url(#silhouetteGrid)" />
-          <Rect x={0} y={0} width="100%" height="100%" fill="url(#silhouetteStageAura)" />
         </Svg>
 
         {/* Minimalist Corner Calibration Ticks */}

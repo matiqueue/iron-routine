@@ -272,62 +272,125 @@ export const VsComparisonArc: React.FC<{
   const safeMy = Math.max(1, myScore);
   const safeFr = Math.max(1, friendScore);
   const total = safeMy + safeFr;
-  const myShare = Math.min(0.88, Math.max(0.12, safeMy / total));
+  const myPct = Math.min(88, Math.max(12, Math.round((safeMy / total) * 100)));
+  const frPct = 100 - myPct;
 
-  const w = 240;
-  const h = 112;
-  const cx = w / 2;
-  const cy = 96;
-  const r = 74;
+  const clashAnim = useRef(new Animated.Value(0)).current;
+  const sparkPulse = useRef(new Animated.Value(0)).current;
 
-  const angleForShare = Math.PI * (1 - myShare); // PI (left) -> 0 (right)
-  const splitX = cx + Math.cos(angleForShare) * r;
-  const splitY = cy - Math.sin(angleForShare) * r;
+  useEffect(() => {
+    clashAnim.setValue(0);
+    Animated.timing(clashAnim, {
+      toValue: 1,
+      duration: 680,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    }).start();
+
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(sparkPulse, {
+          toValue: 1,
+          duration: 1100,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+        Animated.timing(sparkPulse, {
+          toValue: 0,
+          duration: 1100,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [myScore, friendScore, clashAnim, sparkPulse]);
+
+  const leftBarWidth = clashAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0%', `${myPct}%`],
+  });
+  const rightBarWidth = clashAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0%', `${frPct}%`],
+  });
+  const clashScale = sparkPulse.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.9, 1.18],
+  });
 
   return (
-    <View style={styles.arcWrap}>
-      <Svg width={w} height={h}>
-        {/* Track */}
-        <Path
-          d={`M ${cx - r} ${cy} A ${r} ${r} 0 0 1 ${cx + r} ${cy}`}
-          fill="none"
-          stroke={isDark ? 'rgba(255,255,255,0.08)' : 'rgba(24,24,27,0.08)'}
-          strokeWidth={11}
-          strokeLinecap="round"
-        />
-        {/* Left Arc = You */}
-        <Path
-          d={`M ${cx - r} ${cy} A ${r} ${r} 0 0 1 ${splitX} ${splitY}`}
-          fill="none"
-          stroke="#38BDF8"
-          strokeWidth={11}
-          strokeLinecap="round"
-        />
-        {/* Right Arc = Friend */}
-        <Path
-          d={`M ${splitX} ${splitY} A ${r} ${r} 0 0 1 ${cx + r} ${cy}`}
-          fill="none"
-          stroke={friendColor}
-          strokeWidth={11}
-          strokeLinecap="round"
-        />
-        {/* Center Equilibrium Marker */}
-        <Circle cx={splitX} cy={splitY} r={6} fill={theme.bg} stroke={theme.text} strokeWidth={2.5} />
-      </Svg>
-
-      <View style={styles.arcLegendRow}>
-        <View style={styles.arcSide}>
-          <View style={[styles.arcDot, { backgroundColor: '#38BDF8' }]} />
-          <Text style={[styles.arcSideLabel, { color: theme.text }]} numberOfLines={1}>
+    <View style={styles.clashWrap}>
+      {/* Share Percentage Headline */}
+      <View style={styles.clashPctRow}>
+        <View style={styles.clashSideStat}>
+          <Text style={[styles.clashPctNum, { color: '#38BDF8' }]}>{myPct}%</Text>
+          <Text style={[styles.clashSideSub, { color: theme.textSecondary }]} numberOfLines={1}>
             {myLabel}
           </Text>
         </View>
-        <Text style={[styles.arcVsBadge, { color: theme.textMuted }]}>VS</Text>
-        <View style={[styles.arcSide, { justifyContent: 'flex-end' }]}>
-          <Text style={[styles.arcSideLabel, { color: friendColor }]} numberOfLines={1}>
+        <View style={styles.clashMidChip}>
+          <Ionicons name="flash" size={11} color="#F59E0B" />
+          <Text style={[styles.clashMidText, { color: theme.textMuted }]}>POWER SHARE</Text>
+        </View>
+        <View style={[styles.clashSideStat, { alignItems: 'flex-end' }]}>
+          <Text style={[styles.clashPctNum, { color: friendColor }]}>{frPct}%</Text>
+          <Text style={[styles.clashSideSub, { color: theme.textSecondary }]} numberOfLines={1}>
             {friendLabel}
           </Text>
-          <View style={[styles.arcDot, { backgroundColor: friendColor }]} />
+        </View>
+      </View>
+
+      {/* Dual Opposing Energy Clash Meter */}
+      <View
+        style={[
+          styles.clashTrackOuter,
+          {
+            backgroundColor: isDark ? 'rgba(255,255,255,0.07)' : 'rgba(15,23,42,0.07)',
+            borderColor: theme.border,
+          },
+        ]}
+      >
+        <Animated.View
+          style={[
+            styles.clashFillLeft,
+            {
+              width: leftBarWidth,
+              backgroundColor: '#38BDF8',
+            },
+          ]}
+        />
+        <Animated.View
+          style={[
+            styles.clashSparkOrb,
+            {
+              borderColor: theme.bg,
+              transform: [{ scale: clashScale }],
+            },
+          ]}
+        />
+        <Animated.View
+          style={[
+            styles.clashFillRight,
+            {
+              width: rightBarWidth,
+              backgroundColor: friendColor,
+            },
+          ]}
+        />
+
+        {/* Precision Telemetry Ticks */}
+        <View style={[styles.clashTicksRow, { pointerEvents: 'none' }]}>
+          {[0, 1, 2, 3, 4, 5, 6].map((tick) => (
+            <View
+              key={tick}
+              style={[
+                styles.clashTickMark,
+                { backgroundColor: isDark ? 'rgba(0,0,0,0.34)' : 'rgba(255,255,255,0.45)' },
+              ]}
+            />
+          ))}
         </View>
       </View>
     </View>
@@ -506,6 +569,93 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     letterSpacing: 1.4,
     paddingHorizontal: 8,
+  },
+  clashWrap: {
+    paddingTop: 4,
+    paddingBottom: 4,
+    gap: 10,
+  },
+  clashPctRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  clashSideStat: {
+    flex: 1,
+    gap: 1,
+  },
+  clashPctNum: {
+    fontSize: 20,
+    fontWeight: '900',
+    fontVariant: ['tabular-nums'],
+    letterSpacing: -0.5,
+  },
+  clashSideSub: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  clashMidChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: 'rgba(245, 158, 11, 0.12)',
+  },
+  clashMidText: {
+    fontSize: 9.5,
+    fontWeight: '900',
+    letterSpacing: 0.8,
+  },
+  clashTrackOuter: {
+    height: 16,
+    borderRadius: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  clashFillLeft: {
+    height: '100%',
+    borderTopLeftRadius: 8,
+    borderBottomLeftRadius: 8,
+  },
+  clashFillRight: {
+    height: '100%',
+    borderTopRightRadius: 8,
+    borderBottomRightRadius: 8,
+  },
+  clashSparkOrb: {
+    width: 12,
+    height: 22,
+    borderRadius: 6,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 2,
+    marginHorizontal: -4,
+    zIndex: 5,
+    shadowColor: '#F59E0B',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.9,
+    shadowRadius: 6,
+  },
+  clashTicksRow: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    flexDirection: 'row',
+    justifyContent: 'space-evenly',
+    alignItems: 'center',
+  },
+  clashTickMark: {
+    width: 1.5,
+    height: 8,
+    borderRadius: 1,
   },
   podiumStage: {
     flexDirection: 'row',
