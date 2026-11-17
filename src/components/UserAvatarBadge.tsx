@@ -3,6 +3,7 @@ import { Image, StyleSheet, Text, View } from 'react-native';
 import { RankTier } from '../types/workout';
 import { RANK_TIER_MAP } from '../data/muscleMap';
 import { useAppTheme } from '../context/ThemeContext';
+import { RankCrestIcon } from './RankCrestIcon';
 
 interface UserAvatarBadgeProps {
   avatarUrl?: string | null;
@@ -14,9 +15,19 @@ interface UserAvatarBadgeProps {
   showRankDot?: boolean;
 }
 
+export function getAvatarInitials(displayName?: string): string {
+  const parts = (displayName || 'A')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (parts.length === 0) return 'A';
+  if (parts.length === 1) return parts[0].charAt(0).toUpperCase() || 'A';
+  return `${parts[0].charAt(0)}${parts[1].charAt(0)}`.toUpperCase();
+}
+
 /**
- * Renders an athlete's profile photo when set, or a crisp monochrome/accent
- * initial monogram badge by default.
+ * Renders an athlete's profile photo when set, or a crisp consistent
+ * monogram badge (e.g. "TK" for "Test Konto") with optional rank crest badge.
  */
 export const UserAvatarBadge: React.FC<UserAvatarBadgeProps> = React.memo(
   ({
@@ -35,9 +46,10 @@ export const UserAvatarBadge: React.FC<UserAvatarBadgeProps> = React.memo(
       setImgFailed(false);
     }, [avatarUrl]);
 
-    const initial = (displayName || 'A').trim().charAt(0).toUpperCase() || 'A';
+    const initials = getAvatarInitials(displayName);
     const rankColor = rank ? (RANK_TIER_MAP[rank] || RANK_TIER_MAP.F).color : '#10B981';
     const borderCol = ringColor || (rank ? `${rankColor}88` : `${avatarColor}66`);
+    const badgeSize = Math.max(16, Math.round(size * 0.42));
 
     return (
       <View
@@ -48,46 +60,60 @@ export const UserAvatarBadge: React.FC<UserAvatarBadgeProps> = React.memo(
             height: size,
             borderRadius: size / 2,
             borderColor: borderCol,
-            backgroundColor: isDark ? `${avatarColor}22` : `${avatarColor}18`,
+            backgroundColor: isDark ? '#18181D' : '#F4F4F7',
           },
         ]}
       >
-        {avatarUrl && !imgFailed ? (
-          <Image
-            source={{ uri: avatarUrl }}
-            style={{
-              width: size - 4,
-              height: size - 4,
-              borderRadius: (size - 4) / 2,
-            }}
-            resizeMode="cover"
-            onError={() => setImgFailed(true)}
-          />
-        ) : (
-          <Text
-            style={[
-              styles.initialText,
-              {
-                fontSize: Math.round(size * 0.42),
-                color: isDark ? '#F8FAFC' : '#0F172A',
-              },
-            ]}
-          >
-            {initial}
-          </Text>
-        )}
+        <View
+          style={{
+            width: size - 4,
+            height: size - 4,
+            borderRadius: (size - 4) / 2,
+            overflow: 'hidden',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          {avatarUrl && !imgFailed ? (
+            <Image
+              source={{ uri: avatarUrl }}
+              style={{
+                width: size - 4,
+                height: size - 4,
+                borderRadius: (size - 4) / 2,
+              }}
+              resizeMode="cover"
+              onError={() => setImgFailed(true)}
+            />
+          ) : (
+            <Text
+              style={[
+                styles.initialText,
+                {
+                  fontSize: Math.round(size * (initials.length > 1 ? 0.36 : 0.42)),
+                  color: isDark ? '#F8FAFC' : '#0F172A',
+                },
+              ]}
+            >
+              {initials}
+            </Text>
+          )}
+        </View>
 
         {showRankDot && rank && (
           <View
             style={[
-              styles.rankPill,
+              styles.rankCrestPill,
               {
-                backgroundColor: rankColor,
-                borderColor: isDark ? '#0B0B0F' : '#FFFFFF',
+                width: badgeSize + 4,
+                height: badgeSize + 4,
+                borderRadius: (badgeSize + 4) / 2,
+                backgroundColor: isDark ? '#0B0B0F' : '#FFFFFF',
+                borderColor: rankColor,
               },
             ]}
           >
-            <Text style={styles.rankPillText}>{rank}</Text>
+            <RankCrestIcon tier={rank} size={badgeSize} isSelected />
           </View>
         )}
       </View>
@@ -104,23 +130,16 @@ const styles = StyleSheet.create({
   },
   initialText: {
     fontWeight: '900',
-    letterSpacing: -0.3,
+    letterSpacing: -0.4,
   },
-  rankPill: {
+  rankCrestPill: {
     position: 'absolute',
     bottom: -3,
-    right: -4,
-    minWidth: 18,
-    height: 16,
-    borderRadius: 8,
-    paddingHorizontal: 4,
-    borderWidth: 1.5,
+    right: -3,
+    borderWidth: 1.25,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  rankPillText: {
-    color: '#071014',
-    fontSize: 8.5,
-    fontWeight: '900',
+    zIndex: 25,
+    elevation: 6,
   },
 });

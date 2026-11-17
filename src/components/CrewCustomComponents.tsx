@@ -15,7 +15,7 @@ import { useAppTheme } from '../context/ThemeContext';
 import { FriendProfileSummary, RankTier } from '../types/workout';
 import { RANK_TIER_MAP } from '../data/muscleMap';
 import { RankCrestIcon } from './RankCrestIcon';
-import { UserAvatarBadge } from './UserAvatarBadge';
+import { getAvatarInitials } from './UserAvatarBadge';
 
 /**
  * 1. Bespoke Rotating Orbital Radar Stage for Crew Discovery & Hero Banner
@@ -184,16 +184,12 @@ export const SquadAvatarRing: React.FC<{
     setImgFailed(false);
   }, [friend.avatarUrl]);
 
-  const initials = (friend.displayName || friend.nickname || 'A')
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((p) => p[0]?.toUpperCase() || '')
-    .join('');
+  const initials = getAvatarInitials(friend.displayName || friend.nickname || 'A');
 
   return (
     <TouchableOpacity style={styles.ringWrap} onPress={onPress} activeOpacity={0.8}>
       <View style={styles.ringCircleBox}>
-        <Svg width={64} height={64} style={[StyleSheet.absoluteFill, { pointerEvents: 'none' }]}>
+        <Svg width={64} height={64} style={[StyleSheet.absoluteFill, { pointerEvents: 'none', zIndex: 1 }]}>
           <Defs>
             <LinearGradient id={`ring_g_${uid}`} x1="0" y1="0" x2="1" y2="1">
               <Stop offset="0%" stopColor={rankMeta.color} />
@@ -240,14 +236,17 @@ export const SquadAvatarRing: React.FC<{
           )}
         </View>
 
-        {/* Bottom-right mini rank badge */}
+        {/* Bottom-right mini rank crest icon floating ABOVE avatar */}
         <View
           style={[
             styles.ringRankPill,
-            { backgroundColor: rankMeta.color, borderColor: theme.bg },
+            {
+              backgroundColor: isDark ? '#0B0B0F' : '#FFFFFF',
+              borderColor: rankMeta.color,
+            },
           ]}
         >
-          <Text style={styles.ringRankText}>{friend.overallRank}</Text>
+          <RankCrestIcon tier={friend.overallRank || 'F'} size={15} isSelected />
         </View>
 
         {unreadCount > 0 && (
@@ -375,18 +374,7 @@ export const CrewPodiumStage: React.FC<{
             <Ionicons name="trophy" size={14} color="#FACC15" />
           </View>
         )}
-        {entry.isMe ? (
-          <RankCrestIcon tier={entry.profile.overallRank || 'F'} size={rankPos === 1 ? 50 : 40} isSelected />
-        ) : (
-          <UserAvatarBadge
-            avatarUrl={entry.profile.avatarUrl}
-            displayName={entry.profile.displayName}
-            avatarColor={entry.profile.avatarColor}
-            rank={entry.profile.overallRank || 'F'}
-            size={rankPos === 1 ? 52 : 42}
-            showRankDot
-          />
-        )}
+        <RankCrestIcon tier={entry.profile.overallRank || 'F'} size={rankPos === 1 ? 52 : 42} isSelected />
         <Text style={[styles.podiumName, { color: theme.text }]} numberOfLines={1}>
           {entry.profile.displayName.split(' ')[0]}
         </Text>
@@ -446,15 +434,16 @@ const styles = StyleSheet.create({
   },
   ringRankPill: {
     position: 'absolute',
-    bottom: 0,
-    right: 0,
-    minWidth: 21,
-    height: 21,
+    bottom: -1,
+    right: -1,
+    width: 22,
+    height: 22,
     borderRadius: 11,
-    borderWidth: 2,
+    borderWidth: 1.5,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 3,
+    zIndex: 30,
+    elevation: 8,
   },
   ringRankText: {
     color: '#09090B',
@@ -472,6 +461,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 4,
+    zIndex: 35,
+    elevation: 9,
   },
   ringUnreadText: {
     color: '#04120B',

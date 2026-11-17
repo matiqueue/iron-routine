@@ -1,19 +1,24 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   Animated,
   Easing,
   FlatList,
+  Image,
   Modal,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as ImagePicker from 'expo-image-picker';
+import Svg, { Defs, Path, Pattern, RadialGradient, Rect, Stop } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
 import {
   AudioModule,
@@ -45,6 +50,183 @@ import { triggerNotificationHaptic, triggerSelectionHaptic } from '../services/h
 import { base64ToBytes, bytesToBase64 } from '../utils/e2ee';
 import { UserAvatarBadge } from './UserAvatarBadge';
 import { MinimalistBackdrop } from './MinimalistBackdrop';
+import { FriendProfileModal } from './FriendProfileModal';
+
+type ChatThemeId = 'monochrome' | 'emerald' | 'royal' | 'ocean' | 'gold' | 'crimson';
+type ChatWallpaperId = 'none' | 'topography' | 'carbon_hex' | 'aurora' | 'custom';
+
+interface ChatAppearance {
+  themeId: ChatThemeId;
+  wallpaperId: ChatWallpaperId;
+  customUri?: string | null;
+}
+
+const CHAT_APPEARANCE_KEY_PREFIX = '@iron_routine:chat_appearance_v1_';
+
+const CHAT_THEMES: Array<{
+  id: ChatThemeId;
+  label: string;
+  accent: string;
+  outgoingDark: string;
+  outgoingLight: string;
+  outgoingTextDark: string;
+  outgoingTextLight: string;
+}> = [
+  {
+    id: 'monochrome',
+    label: 'Mono',
+    accent: '#94A3B8',
+    outgoingDark: '#F4F4F5',
+    outgoingLight: '#18181B',
+    outgoingTextDark: '#09090B',
+    outgoingTextLight: '#FFFFFF',
+  },
+  {
+    id: 'emerald',
+    label: 'Szmaragd',
+    accent: '#10B981',
+    outgoingDark: '#059669',
+    outgoingLight: '#059669',
+    outgoingTextDark: '#FFFFFF',
+    outgoingTextLight: '#FFFFFF',
+  },
+  {
+    id: 'royal',
+    label: 'Fiolet',
+    accent: '#A855F7',
+    outgoingDark: '#7C3AED',
+    outgoingLight: '#7C3AED',
+    outgoingTextDark: '#FFFFFF',
+    outgoingTextLight: '#FFFFFF',
+  },
+  {
+    id: 'ocean',
+    label: 'Błękit',
+    accent: '#38BDF8',
+    outgoingDark: '#0284C7',
+    outgoingLight: '#0284C7',
+    outgoingTextDark: '#FFFFFF',
+    outgoingTextLight: '#FFFFFF',
+  },
+  {
+    id: 'gold',
+    label: 'Złoto',
+    accent: '#F59E0B',
+    outgoingDark: '#F59E0B',
+    outgoingLight: '#D97706',
+    outgoingTextDark: '#09090B',
+    outgoingTextLight: '#FFFFFF',
+  },
+  {
+    id: 'crimson',
+    label: 'Ogień',
+    accent: '#EF4444',
+    outgoingDark: '#DC2626',
+    outgoingLight: '#DC2626',
+    outgoingTextDark: '#FFFFFF',
+    outgoingTextLight: '#FFFFFF',
+  },
+];
+
+const CHAT_WALLPAPERS: Array<{ id: ChatWallpaperId; label: string; icon: keyof typeof Ionicons.glyphMap }> = [
+  { id: 'none', label: 'Czyste', icon: 'layers-outline' },
+  { id: 'topography', label: 'Fale', icon: 'pulse-outline' },
+  { id: 'carbon_hex', label: 'Karbon', icon: 'grid-outline' },
+  { id: 'aurora', label: 'Poświata', icon: 'sparkles-outline' },
+];
+
+const ChatWallpaperLayer: React.FC<{
+  appearance: ChatAppearance;
+  accentColor: string;
+  isDark: boolean;
+}> = React.memo(({ appearance, accentColor, isDark }) => {
+  const uid = useId().replace(/:/g, '_');
+  const strokeCol = isDark ? 'rgba(255,255,255,0.075)' : 'rgba(15,23,42,0.07)';
+
+  if (appearance.wallpaperId === 'custom' && appearance.customUri) {
+    return (
+      <View style={[StyleSheet.absoluteFill, { pointerEvents: 'none' }]}>
+        <Image
+          source={{ uri: appearance.customUri }}
+          style={StyleSheet.absoluteFill}
+          resizeMode="cover"
+        />
+        <View
+          style={[
+            StyleSheet.absoluteFill,
+            { backgroundColor: isDark ? 'rgba(5,6,10,0.62)' : 'rgba(255,255,255,0.68)' },
+          ]}
+        />
+      </View>
+    );
+  }
+
+  if (appearance.wallpaperId === 'none') {
+    return (
+      <MinimalistBackdrop
+        variant="diagonal"
+        accentColor={accentColor}
+        secondaryColor={accentColor}
+        showCornerGlows={appearance.themeId !== 'monochrome'}
+      />
+    );
+  }
+
+  return (
+    <View style={[StyleSheet.absoluteFill, { pointerEvents: 'none' }]}>
+      <Svg width="100%" height="100%" style={StyleSheet.absoluteFill}>
+        <Defs>
+          <RadialGradient id={`wp_glow_a_${uid}`} cx="88%" cy="10%" r="64%">
+            <Stop offset="0%" stopColor={accentColor} stopOpacity={isDark ? 0.24 : 0.16} />
+            <Stop offset="100%" stopColor={accentColor} stopOpacity={0} />
+          </RadialGradient>
+          <RadialGradient id={`wp_glow_b_${uid}`} cx="14%" cy="90%" r="58%">
+            <Stop offset="0%" stopColor={accentColor} stopOpacity={isDark ? 0.16 : 0.1} />
+            <Stop offset="100%" stopColor={accentColor} stopOpacity={0} />
+          </RadialGradient>
+
+          {appearance.wallpaperId === 'topography' && (
+            <Pattern id={`wp_topo_${uid}`} width={140} height={140} patternUnits="userSpaceOnUse">
+              <Path
+                d="M 0 36 Q 35 12 70 36 T 140 36 M 0 88 Q 35 64 70 88 T 140 88"
+                fill="none"
+                stroke={strokeCol}
+                strokeWidth={1.15}
+              />
+              <Path
+                d="M 0 116 Q 35 138 70 116 T 140 116"
+                fill="none"
+                stroke={strokeCol}
+                strokeWidth={0.8}
+                strokeDasharray="4 6"
+              />
+            </Pattern>
+          )}
+
+          {appearance.wallpaperId === 'carbon_hex' && (
+            <Pattern id={`wp_hex_${uid}`} width={40} height={40} patternUnits="userSpaceOnUse">
+              <Path
+                d="M 20 2 L 38 11 L 38 29 L 20 38 L 2 29 L 2 11 Z"
+                fill="none"
+                stroke={strokeCol}
+                strokeWidth={0.9}
+              />
+            </Pattern>
+          )}
+        </Defs>
+
+        {appearance.wallpaperId === 'topography' && (
+          <Rect x={0} y={0} width="100%" height="100%" fill={`url(#wp_topo_${uid})`} />
+        )}
+        {appearance.wallpaperId === 'carbon_hex' && (
+          <Rect x={0} y={0} width="100%" height="100%" fill={`url(#wp_hex_${uid})`} />
+        )}
+        <Rect x={0} y={0} width="100%" height="100%" fill={`url(#wp_glow_a_${uid})`} />
+        <Rect x={0} y={0} width="100%" height="100%" fill={`url(#wp_glow_b_${uid})`} />
+      </Svg>
+    </View>
+  );
+});
 
 interface FriendChatModalProps {
   visible: boolean;
@@ -52,7 +234,9 @@ interface FriendChatModalProps {
   myProfile: FriendProfileSummary | null;
   myUserId: string;
   onClose: () => void;
-  onOpenProfile: (friend: FriendProfileSummary) => void;
+  onOpenProfile?: (friend: FriendProfileSummary) => void;
+  onSendKudos?: (friend: FriendProfileSummary) => Promise<void> | void;
+  onRemoveFriend?: (friend: FriendProfileSummary) => Promise<void> | void;
   onMessagesChanged?: () => void;
 }
 
@@ -416,6 +600,8 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
   myUserId,
   onClose,
   onOpenProfile,
+  onSendKudos,
+  onRemoveFriend,
   onMessagesChanged,
 }) => {
   const { theme } = useAppTheme();
@@ -428,6 +614,13 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
   const [isSending, setIsSending] = useState(false);
   const [inputText, setInputText] = useState('');
   const [showAttachMenu, setShowAttachMenu] = useState(false);
+  const [showInChatProfile, setShowInChatProfile] = useState(false);
+  const [showThemeSheet, setShowThemeSheet] = useState(false);
+  const [appearance, setAppearance] = useState<ChatAppearance>({
+    themeId: 'monochrome',
+    wallpaperId: 'none',
+    customUri: null,
+  });
   const [reactionTargetMsg, setReactionTargetMsg] = useState<ChatMessage | null>(null);
   const [holdHintVisible, setHoldHintVisible] = useState(false);
 
@@ -517,12 +710,30 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
       setMessages([]);
       setReactionTargetMsg(null);
       setShowAttachMenu(false);
+      setShowInChatProfile(false);
+      setShowThemeSheet(false);
       setInputText('');
       setIsRecordingMode(false);
       holdActiveRef.current = false;
       isRecordingActiveRef.current = false;
       return;
     }
+    AsyncStorage.getItem(`${CHAT_APPEARANCE_KEY_PREFIX}${friend.userId}`)
+      .then((raw) => {
+        if (!raw) {
+          setAppearance({ themeId: 'monochrome', wallpaperId: 'none', customUri: null });
+          return;
+        }
+        try {
+          const parsed = JSON.parse(raw);
+          setAppearance({
+            themeId: parsed.themeId || 'monochrome',
+            wallpaperId: parsed.wallpaperId || 'none',
+            customUri: parsed.customUri || null,
+          });
+        } catch {}
+      })
+      .catch(() => {});
     void loadMessages(false);
     const interval = setInterval(() => {
       void loadMessages(true);
@@ -932,6 +1143,43 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
     [friend, myUserId]
   );
 
+  const activeChatTheme = useMemo(
+    () => CHAT_THEMES.find((ct) => ct.id === appearance.themeId) || CHAT_THEMES[0],
+    [appearance.themeId]
+  );
+
+  const persistAppearance = useCallback(
+    (next: ChatAppearance) => {
+      setAppearance(next);
+      if (friend?.userId) {
+        AsyncStorage.setItem(`${CHAT_APPEARANCE_KEY_PREFIX}${friend.userId}`, JSON.stringify(next)).catch(
+          () => {}
+        );
+      }
+    },
+    [friend?.userId]
+  );
+
+  const handlePickCustomWallpaper = async () => {
+    try {
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) return;
+      const res = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: false,
+        quality: 0.72,
+      });
+      if (!res.canceled && res.assets && res.assets[0]?.uri) {
+        triggerSelectionHaptic();
+        persistAppearance({
+          ...appearance,
+          wallpaperId: 'custom',
+          customUri: res.assets[0].uri,
+        });
+      }
+    } catch {}
+  };
+
   const handleBubblePress = (item: ChatMessage) => {
     if (showAttachMenu) setShowAttachMenu(false);
     if (item.id.startsWith('local_')) return;
@@ -995,8 +1243,10 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
           borderBottomLeftRadius: sameNext ? 6 : 21,
         };
 
-    // Monochrome editorial bubbles aligned with app theme
-    const outgoingBg = theme.isDark ? '#F4F4F5' : '#18181B';
+    // Chat theme-aware editorial bubbles
+    const outgoingBg = theme.isDark
+      ? activeChatTheme.outgoingDark
+      : activeChatTheme.outgoingLight;
     const incomingBg = theme.isDark ? '#141418' : '#FFFFFF';
     const incomingBorder = theme.isDark ? 'rgba(255,255,255,0.11)' : 'rgba(15,23,42,0.09)';
 
@@ -1018,11 +1268,11 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
       ? theme.textMuted
       : isMine
       ? theme.isDark
-        ? '#09090B'
-        : '#FFFFFF'
+        ? activeChatTheme.outgoingTextDark
+        : activeChatTheme.outgoingTextLight
       : theme.text;
     const subTextColor = isMine
-      ? theme.isDark
+      ? bubbleTextColor === '#09090B'
         ? 'rgba(9,9,11,0.7)'
         : 'rgba(255,255,255,0.78)'
       : theme.textSecondary;
@@ -1225,7 +1475,11 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
       onRequestClose={onClose}
     >
       <View style={[styles.screen, { backgroundColor: theme.bg }]}>
-        <MinimalistBackdrop variant="diagonal" showCornerGlows={false} />
+        <ChatWallpaperLayer
+          appearance={appearance}
+          accentColor={activeChatTheme.accent}
+          isDark={theme.isDark}
+        />
 
         {/* Sleek Monochrome Header */}
         <View
@@ -1259,7 +1513,8 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
             style={styles.headerFriendBtn}
             onPress={() => {
               triggerSelectionHaptic();
-              onOpenProfile(friend);
+              setShowAttachMenu(false);
+              setShowInChatProfile(true);
             }}
             activeOpacity={0.75}
           >
@@ -1310,11 +1565,16 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
             ]}
             onPress={() => {
               triggerSelectionHaptic();
-              onOpenProfile(friend);
+              setShowAttachMenu(false);
+              setShowThemeSheet(true);
             }}
             activeOpacity={0.75}
           >
-            <Ionicons name="chevron-forward" size={18} color={theme.text} />
+            <Ionicons
+              name="color-palette-outline"
+              size={18}
+              color={appearance.themeId === 'monochrome' ? theme.text : activeChatTheme.accent}
+            />
           </TouchableOpacity>
         </View>
 
@@ -1696,6 +1956,177 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
             )}
           </Pressable>
         </Modal>
+
+        {/* Chat Theme & Wallpaper Overlay (stays cleanly inside chat) */}
+        {showThemeSheet && (
+          <View style={styles.themeOverlayRoot}>
+            <Pressable
+              style={styles.themeOverlayBackdrop}
+              onPress={() => setShowThemeSheet(false)}
+            />
+            <View
+              style={[
+                styles.themeOverlaySheet,
+                {
+                  backgroundColor: theme.bg,
+                  borderColor: theme.border,
+                  paddingBottom: Math.max(insets.bottom + 14, 24),
+                },
+              ]}
+            >
+              <View style={styles.themeOverlayHeader}>
+                <Text style={[styles.themeOverlayTitle, { color: theme.text }]}>
+                  {t('chatThemeTitle')}
+                </Text>
+                <TouchableOpacity
+                  onPress={() => setShowThemeSheet(false)}
+                  style={[styles.headerCircleBtn, { backgroundColor: theme.bgSecondary }]}
+                  activeOpacity={0.75}
+                >
+                  <Ionicons name="close" size={18} color={theme.text} />
+                </TouchableOpacity>
+              </View>
+
+              <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 8 }}>
+                <Text style={[styles.themeSectionLabel, { color: theme.textMuted }]}>
+                  {t('chatThemeColorSection')}
+                </Text>
+                <View style={styles.themeSwatchGrid}>
+                  {CHAT_THEMES.map((ct) => {
+                    const selected = appearance.themeId === ct.id;
+                    return (
+                      <TouchableOpacity
+                        key={ct.id}
+                        style={[
+                          styles.themeSwatchChip,
+                          {
+                            backgroundColor: theme.bgSecondary,
+                            borderColor: selected ? ct.accent : theme.border,
+                            borderWidth: selected ? 1.8 : StyleSheet.hairlineWidth,
+                          },
+                        ]}
+                        onPress={() => {
+                          triggerSelectionHaptic();
+                          persistAppearance({ ...appearance, themeId: ct.id });
+                        }}
+                        activeOpacity={0.8}
+                      >
+                        <View style={[styles.themeSwatchDot, { backgroundColor: ct.accent }]} />
+                        <Text style={[styles.themeSwatchText, { color: theme.text }]}>
+                          {ct.label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+
+                <Text style={[styles.themeSectionLabel, { color: theme.textMuted, marginTop: 18 }]}>
+                  {t('chatThemeWallpaperSection')}
+                </Text>
+                <View style={styles.themeSwatchGrid}>
+                  {CHAT_WALLPAPERS.map((wp) => {
+                    const selected = appearance.wallpaperId === wp.id;
+                    return (
+                      <TouchableOpacity
+                        key={wp.id}
+                        style={[
+                          styles.themeSwatchChip,
+                          {
+                            backgroundColor: theme.bgSecondary,
+                            borderColor: selected ? activeChatTheme.accent : theme.border,
+                            borderWidth: selected ? 1.8 : StyleSheet.hairlineWidth,
+                          },
+                        ]}
+                        onPress={() => {
+                          triggerSelectionHaptic();
+                          persistAppearance({ ...appearance, wallpaperId: wp.id });
+                        }}
+                        activeOpacity={0.8}
+                      >
+                        <Ionicons
+                          name={wp.icon}
+                          size={15}
+                          color={selected ? activeChatTheme.accent : theme.textSecondary}
+                        />
+                        <Text style={[styles.themeSwatchText, { color: theme.text }]}>
+                          {wp.label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+
+                  <TouchableOpacity
+                    style={[
+                      styles.themeSwatchChip,
+                      {
+                        backgroundColor: theme.bgSecondary,
+                        borderColor:
+                          appearance.wallpaperId === 'custom' && appearance.customUri
+                            ? activeChatTheme.accent
+                            : theme.border,
+                        borderWidth:
+                          appearance.wallpaperId === 'custom' && appearance.customUri
+                            ? 1.8
+                            : StyleSheet.hairlineWidth,
+                      },
+                    ]}
+                    onPress={handlePickCustomWallpaper}
+                    activeOpacity={0.8}
+                  >
+                    <Ionicons name="image-outline" size={15} color={activeChatTheme.accent} />
+                    <Text style={[styles.themeSwatchText, { color: theme.text }]}>
+                      {t('chatWallpaperPickBtn')}
+                    </Text>
+                  </TouchableOpacity>
+
+                  {appearance.customUri && (
+                    <TouchableOpacity
+                      style={[
+                        styles.themeSwatchChip,
+                        {
+                          backgroundColor: theme.bgSecondary,
+                          borderColor: theme.border,
+                        },
+                      ]}
+                      onPress={() => {
+                        triggerSelectionHaptic();
+                        persistAppearance({
+                          ...appearance,
+                          wallpaperId: 'none',
+                          customUri: null,
+                        });
+                      }}
+                      activeOpacity={0.8}
+                    >
+                      <Ionicons name="trash-outline" size={15} color={theme.danger} />
+                      <Text style={[styles.themeSwatchText, { color: theme.danger }]}>
+                        {t('chatWallpaperResetBtn')}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </ScrollView>
+            </View>
+          </View>
+        )}
+
+        {/* In-Chat Friend Profile Overlay (never exits chat back to Friends tab) */}
+        <FriendProfileModal
+          visible={showInChatProfile}
+          friend={friend}
+          myProfile={myProfile}
+          embeddedOverlay
+          onClose={() => setShowInChatProfile(false)}
+          onOpenChat={() => setShowInChatProfile(false)}
+          onSendKudos={async (f) => {
+            await onSendKudos?.(f);
+          }}
+          onRemoveFriend={async (f) => {
+            setShowInChatProfile(false);
+            await onRemoveFriend?.(f);
+            onClose();
+          }}
+        />
       </View>
     </Modal>
   );
@@ -2160,5 +2591,70 @@ const styles = StyleSheet.create({
     fontSize: 14.5,
     fontWeight: '600',
     textAlign: 'center',
+  },
+  themeOverlayRoot: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'flex-end',
+    zIndex: 70,
+    elevation: 20,
+  },
+  themeOverlayBackdrop: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.52)',
+  },
+  themeOverlaySheet: {
+    borderTopLeftRadius: 26,
+    borderTopRightRadius: 26,
+    borderTopWidth: 1,
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    maxHeight: '62%',
+  },
+  themeOverlayHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 14,
+  },
+  themeOverlayTitle: {
+    fontSize: 17,
+    fontWeight: '900',
+  },
+  themeSectionLabel: {
+    fontSize: 10.5,
+    fontWeight: '800',
+    letterSpacing: 1.1,
+    textTransform: 'uppercase',
+    marginBottom: 10,
+  },
+  themeSwatchGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  themeSwatchChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderRadius: 14,
+  },
+  themeSwatchDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+  },
+  themeSwatchText: {
+    fontSize: 13,
+    fontWeight: '700',
   },
 });

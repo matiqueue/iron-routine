@@ -43,6 +43,7 @@ interface ExerciseLibraryContentProps {
   mode?: 'pick' | 'manage' | 'swap';
   alreadyInDayIds?: string[];
   extraExercises?: Exercise[];
+  similarToExercise?: Exercise | null;
   onSelectExercise?: (exercise: Exercise) => void;
   onLibraryChanged?: () => void;
 }
@@ -51,6 +52,7 @@ export const ExerciseLibraryContent: React.FC<ExerciseLibraryContentProps> = ({
   mode = 'pick',
   alreadyInDayIds = [],
   extraExercises = [],
+  similarToExercise = null,
   onSelectExercise,
   onLibraryChanged,
 }) => {
@@ -60,8 +62,16 @@ export const ExerciseLibraryContent: React.FC<ExerciseLibraryContentProps> = ({
   const [customExercises, setCustomExercises] = useState<Exercise[]>([]);
   const [favoriteIds, setFavoriteIds] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<LibraryCategoryFilter>('wszystkie');
+  const [selectedCategory, setSelectedCategory] = useState<LibraryCategoryFilter>(
+    () => (similarToExercise?.category as LibraryCategoryFilter) || 'wszystkie'
+  );
   const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (similarToExercise?.category) {
+      setSelectedCategory(similarToExercise.category as LibraryCategoryFilter);
+    }
+  }, [similarToExercise?.id, similarToExercise?.category]);
 
   // Inline custom exercise creator
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -149,8 +159,42 @@ export const ExerciseLibraryContent: React.FC<ExerciseLibraryContentProps> = ({
       );
     });
 
-    // Always prioritize favorited exercises first, then primary category match when filtering by body part
-    return list.slice().sort((a, b) => {
+    // When swapping an exercise, rank exercises hitting the exact same primary/secondary muscles first
+    const targetAnatomy = similarToExercise ? resolveExerciseMuscles(similarToExercise) : null;
+    const targetCanonicalId = similarToExercise
+      ? resolveCanonicalExerciseId(similarToExercise.id, similarToExercise.name)
+      : null;
+
+    const getSimilarityScore = (ex: Exercise): number => {
+      if (!similarToExercise || !targetAnatomy) return 0;
+      const cid = resolveCanonicalExerciseId(ex.id, ex.name);
+      if (ex.id === similarToExercise.id || cid === targetCanonicalId) return -1000;
+      const anat = resolveExerciseMuscles(ex);
+      let score = 0;
+      if (anat.primary === targetAnatomy.primary) score += 120;
+      if (ex.category === similarToExercise.category) score += 50;
+      const targetSec = new Set(targetAnatomy.secondary.map((s) => s.muscle));
+      for (const s of anat.secondary) {
+        if (targetSec.has(s.muscle)) score += 18;
+        if (s.muscle === targetAnatomy.primary) score += 25;
+      }
+      if (ex.equipment && ex.equipment === similarToExercise.equipment) score += 12;
+      return score;
+    };
+
+    const finalPool =
+      similarToExercise && mode === 'swap'
+        ? list.filter((ex) => {
+            const cid = resolveCanonicalExerciseId(ex.id, ex.name);
+            return ex.id !== similarToExercise.id && cid !== targetCanonicalId;
+          })
+        : list;
+
+    return finalPool.slice().sort((a, b) => {
+      if (similarToExercise) {
+        const simDiff = getSimilarityScore(b) - getSimilarityScore(a);
+        if (simDiff !== 0) return simDiff;
+      }
       const aFav = isFavoriteEx(a) ? 1 : 0;
       const bFav = isFavoriteEx(b) ? 1 : 0;
       if (aFav !== bFav) return bFav - aFav;
@@ -166,7 +210,7 @@ export const ExerciseLibraryContent: React.FC<ExerciseLibraryContentProps> = ({
       }
       return 0;
     });
-  }, [allLibrary, selectedCategory, searchQuery, isFavoriteEx, muscleLabel, categoryLabel, equipmentLabel, exerciseName]);
+  }, [allLibrary, selectedCategory, searchQuery, isFavoriteEx, muscleLabel, categoryLabel, equipmentLabel, exerciseName, similarToExercise, mode]);
 
   const handleToggleCreateForm = () => {
     try {
@@ -318,6 +362,30 @@ export const ExerciseLibraryContent: React.FC<ExerciseLibraryContentProps> = ({
       </View>
 
       {/* Category Filter Pills */}
+      {!showCreateForm && similarToExercise && mode === 'swap' && (
+        <View
+          style={{
+            marginHorizontal: 16,
+            marginBottom: 8,
+            paddingHorizontal: 12,
+            paddingVertical: 8,
+            borderRadius: 12,
+            backgroundColor: theme.bgSecondary,
+            borderWidth: StyleSheet.hairlineWidth,
+            borderColor: theme.border,
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 8,
+          }}
+        >
+          <Ionicons name="swap-horizontal" size={15} color={theme.primary} />
+          <Text style={{ fontSize: 12.5, fontWeight: '700', color: theme.textSecondary, flex: 1 }} numberOfLines={1}>
+            {t('swapSimilarHint', {
+              name: exerciseName(similarToExercise.id, similarToExercise.name),
+            })}
+          </Text>
+        </View>
+      )}
       {!showCreateForm && (
         <View style={styles.filterWrap}>
           <ScrollView

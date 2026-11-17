@@ -848,8 +848,19 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
 
     if (swapExerciseIdx !== null) {
       const targetEx = exercises[swapExerciseIdx];
+      const replacement: Exercise = targetEx
+        ? {
+            ...fresh,
+            id:
+              allSessionExercises.some((e) => e.id === fresh.id && e.id !== targetEx.id)
+                ? `${fresh.id}_swap_${Date.now()}`
+                : fresh.id,
+            sets: targetEx.sets,
+            reps: targetEx.reps,
+          }
+        : fresh;
       nextAllList = allSessionExercises.map((item) =>
-        targetEx && item.id === targetEx.id ? fresh : item
+        targetEx && item.id === targetEx.id ? replacement : item
       );
       setAllSessionExercises(nextAllList);
       setCurrentExerciseIndex(swapExerciseIdx);
@@ -1085,7 +1096,7 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
             ))}
           </View>
 
-          {/* Dynamic Bonus Set Controls */}
+          {/* Dynamic Bonus Set Controls + Instant Swap Similar Exercise */}
           <View style={styles.bonusSetRow}>
             <TouchableOpacity
               style={[styles.bonusSetPill, { borderColor: theme.border, backgroundColor: theme.bgSecondary }]}
@@ -1094,6 +1105,20 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
             >
               <Ionicons name="add" size={13} color={theme.text} />
               <Text style={[styles.bonusSetText, { color: theme.text }]}>{t('addSetBtn')}</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.bonusSetPill, { borderColor: theme.border, backgroundColor: theme.bgSecondary }]}
+              onPress={() => {
+                triggerSelectionHaptic();
+                setSwapExerciseIdx(currentExerciseIndex);
+                setOverviewMode('library');
+                setShowOverviewSheet(true);
+              }}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="swap-horizontal-outline" size={13} color={theme.text} />
+              <Text style={[styles.bonusSetText, { color: theme.text }]}>{t('swapSimilarBtn')}</Text>
             </TouchableOpacity>
 
             {(extraSetsMap[currentExercise.id] || 0) > 0 && (
@@ -1539,6 +1564,9 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
             mode={swapExerciseIdx !== null ? 'swap' : 'pick'}
             alreadyInDayIds={exercises.map((e) => e.id)}
             extraExercises={extraLibraryExercises}
+            similarToExercise={
+              swapExerciseIdx !== null ? exercises[swapExerciseIdx] || currentExercise : null
+            }
             onSelectExercise={handlePickSessionExercise}
           />
         ) : (
