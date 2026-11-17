@@ -1434,10 +1434,11 @@ export const FriendsTab: React.FC<FriendsTabProps> = ({
           returnChatAfterProfileRef.current = null;
           setActiveChatFriend(null);
         }}
-        onOpenProfile={(f) => {
-          returnChatAfterProfileRef.current = f;
-          setActiveChatFriend(null);
-          setTimeout(() => setSelectedProfileFriend(f), 220);
+        onSendKudos={handleSendKudos}
+        onRemoveFriend={async (f) => {
+          returnChatAfterProfileRef.current = null;
+          await removeFriend(f.userId);
+          await loadSocialState(false);
         }}
         onMessagesChanged={handleChatMessagesChanged}
       />
