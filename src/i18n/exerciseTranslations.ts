@@ -1345,6 +1345,44 @@ export const SUPPLEMENT_LOCALE: Record<
   },
 };
 
+const SEARCH_CHAR_MAP: Record<string, string> = {
+  ł: 'l',
+  ø: 'o',
+  ß: 'ss',
+};
+
+/** Normalizes text across Latin accents and Polish characters for search matching. */
+export function normalizeSearchText(text: string): string {
+  return String(text || '')
+    .toLowerCase()
+    .replace(/[łøß]/g, (ch) => SEARCH_CHAR_MAP[ch] || ch)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/** Matches an exercise query against its Polish/base name, all translations (EN/DE/FR/ES), and extra fields. */
+export function matchesExerciseSearch(
+  query: string,
+  exerciseId: string | undefined,
+  fallbackName: string,
+  extraHaystack: string[] = [],
+  canonicalId?: string
+): boolean {
+  const normQ = normalizeSearchText(query);
+  if (!normQ) return true;
+  const haystacks: string[] = [fallbackName, ...extraHaystack];
+  const ids = [exerciseId, canonicalId].filter(Boolean) as string[];
+  for (const id of ids) {
+    const entry = EXERCISE_NAME_TRANSLATIONS[id];
+    if (entry) {
+      haystacks.push(entry.en, entry.de, entry.fr, entry.es);
+    }
+  }
+  return haystacks.some((item) => normalizeSearchText(item).includes(normQ));
+}
+
 export function getTranslatedExerciseName(
   exerciseId: string | undefined,
   fallbackPolishName: string,

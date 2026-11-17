@@ -20,6 +20,7 @@ import * as Haptics from 'expo-haptics';
 import { MinimalistBackdrop } from './MinimalistBackdrop';
 import { useAppTheme } from '../context/ThemeContext';
 import { useLanguage } from '../context/LanguageContext';
+import { matchesExerciseSearch } from '../i18n/exerciseTranslations';
 import { SmartScrollView } from './SmartScrollView';
 import {
   DayPlan,
@@ -628,10 +629,14 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
       return (
         m.label.toLowerCase().includes(q) ||
         muscleLabel(m.id).toLowerCase().includes(q) ||
-        list.some(
-          (ex) =>
-            ex.exercise.name.toLowerCase().includes(q) ||
-            exerciseName(ex.exercise.id, ex.exercise.name).toLowerCase().includes(q)
+        list.some((ex) =>
+          matchesExerciseSearch(
+            q,
+            ex.exercise.id,
+            ex.exercise.name,
+            [exerciseName(ex.exercise.id, ex.exercise.name)],
+            ex.exerciseId
+          )
         )
       );
     });
@@ -1639,10 +1644,15 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                 const exList = (exercisesByMuscle[mGroup.id] || []).filter(
                   (e) =>
                     !q ||
-                    e.exercise.name.toLowerCase().includes(q) ||
-                    exerciseName(e.exercise.id, e.exercise.name).toLowerCase().includes(q) ||
                     mGroup.label.toLowerCase().includes(q) ||
-                    translatedGroupLabel.includes(q)
+                    translatedGroupLabel.includes(q) ||
+                    matchesExerciseSearch(
+                      q,
+                      e.exercise.id,
+                      e.exercise.name,
+                      [exerciseName(e.exercise.id, e.exercise.name)],
+                      e.exerciseId
+                    )
                 );
 
                 if (exList.length === 0) return null;

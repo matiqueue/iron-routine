@@ -12,6 +12,8 @@ import {
   getTranslatedMuscleDesc,
   getTranslatedRankMeta,
   getTranslatedSupplement,
+  matchesExerciseSearch,
+  normalizeSearchText,
 } from './exerciseTranslations';
 
 export {
@@ -20,6 +22,8 @@ export {
   getTranslatedMuscleDesc,
   getTranslatedRankMeta,
   getTranslatedSupplement,
+  matchesExerciseSearch,
+  normalizeSearchText,
 };
 
 export interface LanguageOptionMeta {
