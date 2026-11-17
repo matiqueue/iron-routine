@@ -1,11 +1,12 @@
 import * as Notifications from 'expo-notifications';
 import { AppState, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { AppSettings } from '../types/workout';
+import { AppSettings, FriendChatThreadSummary } from '../types/workout';
 import { buildActiveSupplementsSummary, formatSupplementDose } from '../data/supplements';
 import { getAppSettings, getCurrentAppLanguage } from './settings';
 import { getActiveProfile } from './storage';
 import { getTranslatedSupplement, translateText } from '../i18n/translations';
+import { registerPushTokenInCloud } from './social';
 
 // Storage keys
 const WEIGHT_NOTIF_STORAGE_KEY = '@iron_routine_daily_weight_notif_enabled';
@@ -564,6 +565,193 @@ export async function scheduleRestFinishedNotification(
  * Schedules a 5-second background alarm test so the user can lock the screen or switch apps
  * and verify native OS lockscreen vibration + alarm delivery.
  */
+const CHAT_NOTIF_CHANNEL_ID = 'chat_messages_v1';
+const NOTIFIED_CHAT_IDS_KEY = '@iron_routine:notified_chat_msg_ids_v1';
+let notifiedChatIdsCache: Set<string> | null = null;
+let notifiedChatIdsOrder: string[] = [];
+
+async function getNotifiedChatIds(): Promise<Set<string>> {
+  if (notifiedChatIdsCache) return notifiedChatIdsCache;
+  try {
+    const raw = await AsyncStorage.getItem(NOTIFIED_CHAT_IDS_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    if (Array.isArray(parsed)) {
+      notifiedChatIdsOrder = parsed.map(String).slice(-80);
+      notifiedChatIdsCache = new Set(notifiedChatIdsOrder);
+      return notifiedChatIdsCache;
+    }
+  } catch {}
+  notifiedChatIdsOrder = [];
+  notifiedChatIdsCache = new Set();
+  return notifiedChatIdsCache;
+}
+
+async function markChatIdsNotified(ids: string[]): Promise<void> {
+  if (ids.length === 0) return;
+  const set = await getNotifiedChatIds();
+  let changed = false;
+  for (const id of ids) {
+    if (!set.has(id)) {
+      set.add(id);
+      notifiedChatIdsOrder.push(id);
+      changed = true;
+    }
+  }
+  if (!changed) return;
+  if (notifiedChatIdsOrder.length > 80) {
+    notifiedChatIdsOrder = notifiedChatIdsOrder.slice(-80);
+    notifiedChatIdsCache = new Set(notifiedChatIdsOrder);
+  }
+  try {
+    await AsyncStorage.setItem(NOTIFIED_CHAT_IDS_KEY, JSON.stringify(notifiedChatIdsOrder));
+  } catch {}
+}
+
+async function ensureChatMessagesChannel(): Promise<void> {
+  if (Platform.OS !== 'android') return;
+  try {
+    await Notifications.setNotificationChannelAsync(CHAT_NOTIF_CHANNEL_ID, {
+      name: translateText(getCurrentAppLanguage(), 'notifChatChannelName'),
+      importance: Notifications.AndroidImportance.HIGH,
+      enableVibrate: true,
+      sound: 'default',
+    });
+  } catch {}
+}
+
+export async function syncAppIconBadgeCount(unreadCount: number): Promise<void> {
+  try {
+    await Notifications.setBadgeCountAsync(Math.max(0, Math.round(unreadCount || 0)));
+  } catch {}
+}
+
+export async function registerExpoPushTokenIfSupported(): Promise<void> {
+  try {
+    const appCfg = require('../../app.json');
+    const projectId = appCfg?.expo?.extra?.eas?.projectId;
+    const remoteEnabled =
+      Platform.OS === 'android' ||
+      appCfg?.expo?.plugins?.some(
+        (p: any) => Array.isArray(p) && p[0] === 'expo-notifications' && p[1]?.enableRemoteNotifications === true
+      );
+    if (!projectId || !remoteEnabled) return;
+
+    const perm = await ensureNotificationPermissions(false);
+    if (!perm.granted) return;
+
+    await ensureChatMessagesChannel();
+    const tokenRes = await Notifications.getExpoPushTokenAsync({ projectId });
+    if (tokenRes?.data) {
+      await registerPushTokenInCloud(
+        tokenRes.data,
+        Platform.OS === 'android' ? 'android' : 'ios'
+      );
+    }
+  } catch {
+    // Expected on Personal Team iOS builds without aps-environment
+  }
+}
+
+export async function dismissChatNotificationsForFriend(friendId: string): Promise<void> {
+  if (!friendId) return;
+  try {
+    const presented = await Notifications.getPresentedNotificationsAsync();
+    await Promise.all(
+      presented
+        .filter((item) => item.request.content.data?.friendId === friendId)
+        .map((item) =>
+          Notifications.dismissNotificationAsync(item.request.identifier).catch(() => {})
+        )
+    );
+  } catch {}
+}
+
+export async function notifyIncomingChatMessages(
+  threads: FriendChatThreadSummary[],
+  myUserId: string,
+  openChatFriendId?: string | null
+): Promise<void> {
+  if (!threads || threads.length === 0 || !myUserId) return;
+  try {
+    const perm = await ensureNotificationPermissions(false);
+    if (!perm.granted) return;
+
+    const seenSet = await getNotifiedChatIds();
+    const lang = getCurrentAppLanguage();
+    const cutoffMs = Date.now() - 24 * 60 * 60 * 1000;
+    const newlyNotified: string[] = [];
+
+    await ensureChatMessagesChannel();
+
+    for (const thread of threads) {
+      const msg = thread.lastMessage;
+      if (!msg || !msg.id) continue;
+      if ((thread.unreadCount || 0) <= 0) continue;
+      if (msg.senderId === myUserId) continue;
+      if (openChatFriendId && thread.friend.userId === openChatFriendId) {
+        newlyNotified.push(msg.id);
+        continue;
+      }
+      if (seenSet.has(msg.id)) continue;
+
+      const createdMs = new Date(msg.createdAt).getTime();
+      if (!isNaN(createdMs) && createdMs < cutoffMs) {
+        newlyNotified.push(msg.id);
+        continue;
+      }
+
+      let bodyPreview = translateText(lang, 'notifChatNewMessage');
+      if (msg.type === 'voice') {
+        bodyPreview = translateText(lang, 'notifChatVoiceMessage');
+      } else if (msg.type === 'workout_share') {
+        bodyPreview = msg.payload?.title
+          ? `🏋️ ${msg.payload.title}`
+          : translateText(lang, 'notifChatWorkoutCard');
+      } else if (msg.type === 'rank_card') {
+        bodyPreview = translateText(lang, 'notifChatRankCard');
+      } else if (msg.type === 'cheer') {
+        bodyPreview = msg.payload?.emoji || '🙌';
+      } else if (!msg.decryptFailed && msg.text?.trim()) {
+        bodyPreview = msg.text.trim().slice(0, 140);
+      }
+
+      const senderTitle =
+        thread.friend.displayName ||
+        (thread.friend.nickname ? `@${thread.friend.nickname}` : 'Iron Routine');
+      const senderSubtitle =
+        thread.friend.nickname && thread.friend.displayName
+          ? `@${thread.friend.nickname}`
+          : undefined;
+
+      await Notifications.scheduleNotificationAsync({
+        identifier: `chat_msg_${msg.id}`,
+        content: {
+          title: senderTitle,
+          subtitle: senderSubtitle,
+          body: bodyPreview,
+          sound: 'default',
+          interruptionLevel: 'active',
+          data: {
+            type: 'chat_message',
+            friendId: thread.friend.userId,
+            messageId: msg.id,
+          },
+          ...(Platform.OS === 'android' ? { channelId: CHAT_NOTIF_CHANNEL_ID } : {}),
+        } as Notifications.NotificationContentInput,
+        trigger: null,
+      });
+
+      newlyNotified.push(msg.id);
+    }
+
+    if (newlyNotified.length > 0) {
+      await markChatIdsNotified(newlyNotified);
+    }
+  } catch (e) {
+    console.warn('Error delivering chat message notification:', e);
+  }
+}
+
 export async function scheduleTestRestNotification(): Promise<NotificationPermissionSummary & { scheduled: boolean }> {
   const perm = await ensureNotificationPermissions(true);
   if (!perm.granted) {

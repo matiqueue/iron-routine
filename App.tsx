@@ -19,6 +19,7 @@ import {
   PendingCheerBurst,
   SessionExerciseConfig,
   SetEntry,
+  SocialHubData,
   UserProfile,
   WorkoutPlan,
 } from './src/types/workout';
@@ -43,7 +44,10 @@ import { triggerNotificationHaptic, triggerSelectionHaptic } from './src/service
 import {
   cancelRestFinishedNotification,
   handleNotificationResponse,
+  notifyIncomingChatMessages,
+  registerExpoPushTokenIfSupported,
   setupCreatineNotificationCategories,
+  syncAppIconBadgeCount,
   syncRemindersWithSettings,
 } from './src/services/notifications';
 import {
@@ -100,6 +104,12 @@ function MainApp() {
     nick: string;
     seq: number;
   } | null>(null);
+  const [pendingChatFriend, setPendingChatFriend] = useState<{
+    friendId: string;
+    seq: number;
+  } | null>(null);
+  const activeChatFriendIdRef = useRef<string | null>(null);
+  const activeCloudUserIdRef = useRef<string | null>(null);
 
   // Active workout mode & Pre-workout Session Picker
   const [isActiveWorkout, setIsActiveWorkout] = useState(false);
@@ -177,14 +187,53 @@ function MainApp() {
     }
   }, [t]);
 
+  const applySocialHubUpdate = useCallback((hub: SocialHubData, explicitUserId?: string) => {
+    const unread = hub.totalUnread || 0;
+    setUnreadSocialCount(unread);
+    void syncAppIconBadgeCount(unread);
+    if (hub.pendingCheerBursts && hub.pendingCheerBursts.length > 0) {
+      setPendingCheerBursts(hub.pendingCheerBursts);
+    }
+    const uid = explicitUserId || activeCloudUserIdRef.current;
+    if (uid && Array.isArray(hub.friends)) {
+      void notifyIncomingChatMessages(hub.friends, uid, activeChatFriendIdRef.current);
+    }
+  }, []);
+
+  useEffect(() => {
+    activeCloudUserIdRef.current = activeProfile?.cloudUserId || null;
+  }, [activeProfile?.cloudUserId]);
+
+  useEffect(() => {
+    if (activeTab !== 'friends') {
+      activeChatFriendIdRef.current = null;
+    }
+  }, [activeTab]);
+
   useEffect(() => {
     registerCloudAutoSyncTrigger(scheduleAutoCloudSync);
     activateKeepAwakeAsync();
     setupCreatineNotificationCategories();
 
-    const responseSubscription = Notifications.addNotificationResponseReceivedListener((response) => {
+    const routeChatNotification = (response: Notifications.NotificationResponse | null) => {
+      if (!response) return;
       handleNotificationResponse(response);
+      const data: any = response.notification.request.content.data;
+      if (data?.type === 'chat_message' && data?.friendId) {
+        setIsActiveWorkout(false);
+        setActiveTab('friends');
+        setPendingChatFriend({ friendId: String(data.friendId), seq: Date.now() });
+      }
+    };
+
+    const responseSubscription = Notifications.addNotificationResponseReceivedListener((response) => {
+      routeChatNotification(response);
     });
+    Notifications.getLastNotificationResponseAsync()
+      .then((last) => {
+        if (last) routeChatNotification(last);
+      })
+      .catch(() => {});
 
     const appStateSub = AppState.addEventListener('change', (nextState) => {
       if (nextState === 'active') {
@@ -195,10 +244,7 @@ function MainApp() {
         fetchSocialHub()
           .then((res) => {
             if (res.ok && res.hub) {
-              setUnreadSocialCount(res.hub.totalUnread || 0);
-              if (res.hub.pendingCheerBursts && res.hub.pendingCheerBursts.length > 0) {
-                setPendingCheerBursts(res.hub.pendingCheerBursts);
-              }
+              applySocialHubUpdate(res.hub);
             }
           })
           .catch(() => {});
@@ -212,7 +258,23 @@ function MainApp() {
       responseSubscription.remove();
       appStateSub.remove();
     };
-  }, [refreshHealthIfEnabled]);
+  }, [refreshHealthIfEnabled, applySocialHubUpdate]);
+
+  useEffect(() => {
+    if (!activeProfile?.cloudUserId) return;
+    void registerExpoPushTokenIfSupported();
+    const timer = setInterval(() => {
+      if (AppState.currentState !== 'active') return;
+      fetchSocialHub()
+        .then((res) => {
+          if (res.ok && res.hub) {
+            applySocialHubUpdate(res.hub, activeProfile.cloudUserId || undefined);
+          }
+        })
+        .catch(() => {});
+    }, 5000);
+    return () => clearInterval(timer);
+  }, [activeProfile?.cloudUserId, applySocialHubUpdate]);
 
   const loadUserWorkspace = useCallback(
     async (profile: UserProfile | null) => {
@@ -238,19 +300,18 @@ function MainApp() {
       setDayProgress(prog);
       setBestPRs(prs);
 
+      activeCloudUserIdRef.current = profile.cloudUserId || null;
       if (profile.cloudUserId) {
         fetchSocialHub()
           .then((res) => {
             if (res.ok && res.hub) {
-              setUnreadSocialCount(res.hub.totalUnread || 0);
-              if (res.hub.pendingCheerBursts && res.hub.pendingCheerBursts.length > 0) {
-                setPendingCheerBursts(res.hub.pendingCheerBursts);
-              }
+              applySocialHubUpdate(res.hub, profile.cloudUserId || undefined);
             }
           })
           .catch(() => {});
       } else {
         setUnreadSocialCount(0);
+        void syncAppIconBadgeCount(0);
       }
     },
     [todayDayId]
@@ -747,9 +808,16 @@ function MainApp() {
                 setActiveProfile(updated);
                 setProgressRefreshKey((k) => k + 1);
               }}
-              onUnreadCountChanged={setUnreadSocialCount}
+              onUnreadCountChanged={(count) => {
+                setUnreadSocialCount(count);
+                void syncAppIconBadgeCount(count);
+              }}
               onDataImported={handleFullDataRefresh}
               pendingInviteNick={pendingInviteNick}
+              pendingChatFriend={pendingChatFriend}
+              onActiveChatFriendChanged={(friendId) => {
+                activeChatFriendIdRef.current = friendId;
+              }}
               onCheerBursts={(bursts) => {
                 if (bursts.length > 0) setPendingCheerBursts(bursts);
               }}

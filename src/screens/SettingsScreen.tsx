@@ -648,6 +648,49 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
     }
   };
 
+  const handleManualPullCloud = async () => {
+    setIsBusyIO(true);
+    try {
+      const pullRes = await pullProfileFromCloud();
+      if (pullRes.ok && pullRes.profile) {
+        await onDataImported();
+        await loadMeta();
+        triggerNotificationHaptic('success');
+        Alert.alert(
+          t('restoredTitle'),
+          t('restoredProfileBody', { name: pullRes.profile.name })
+        );
+      } else {
+        Alert.alert(t('cloudAuthTitle'), pullRes.error || t('cloudConnectNetworkError'));
+      }
+    } catch (e: any) {
+      Alert.alert(t('cloudAuthTitle'), e?.message || t('cloudConnectNetworkError'));
+    } finally {
+      setIsBusyIO(false);
+    }
+  };
+
+  const handleManualPushCloud = async () => {
+    setIsBusyIO(true);
+    try {
+      const pushRes = await pushProfileToCloud(activeProfile.id);
+      if (pushRes.ok) {
+        await loadMeta();
+        triggerNotificationHaptic('success');
+        Alert.alert(
+          t('cloudSyncManualTitle'),
+          t('cloudPushSuccessBody', { name: activeProfile.name })
+        );
+      } else {
+        Alert.alert(t('cloudAuthTitle'), pushRes.error || t('cloudConnectNetworkError'));
+      }
+    } catch (e: any) {
+      Alert.alert(t('cloudAuthTitle'), e?.message || t('cloudConnectNetworkError'));
+    } finally {
+      setIsBusyIO(false);
+    }
+  };
+
   const handleConfirmResetApp = () => {
     Alert.alert(
       t('resetAppTitle'),
@@ -1966,6 +2009,42 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               </Text>
             </TouchableOpacity>
           </View>
+
+          {isCloudLoggedIn && (
+            <View style={{ marginTop: 18 }}>
+              <Text style={[styles.fieldLabel, { color: theme.textMuted }]}>
+                {t('cloudSyncManualTitle')}
+              </Text>
+              <Text style={[styles.rowSub, { color: theme.textSecondary, marginBottom: 10 }]}>
+                {t('cloudSyncManualHint')}
+              </Text>
+              <View style={styles.ioButtonsRow}>
+                <TouchableOpacity
+                  style={[styles.cloudActionSecondary, { backgroundColor: theme.bgSecondary }]}
+                  onPress={handleManualPullCloud}
+                  disabled={isBusyIO}
+                  activeOpacity={0.75}
+                >
+                  <Ionicons name="cloud-download-outline" size={16} color="#38BDF8" />
+                  <Text style={[styles.cloudActionSecondaryText, { color: theme.text }]}>
+                    {t('restoreFromCloudBtn')}
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.cloudActionSecondary, { backgroundColor: theme.bgSecondary }]}
+                  onPress={handleManualPushCloud}
+                  disabled={isBusyIO}
+                  activeOpacity={0.75}
+                >
+                  <Ionicons name="cloud-upload-outline" size={16} color="#10B981" />
+                  <Text style={[styles.cloudActionSecondaryText, { color: theme.text }]}>
+                    {t('cloudPushNowBtn')}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
         </View>
 
         {/* =========================================================
