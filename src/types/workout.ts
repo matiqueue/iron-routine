@@ -400,5 +400,6 @@ export interface ProfileBackupPayload {
   prRecords: { [exerciseId: string]: PRRecord[] };
   history: WorkoutHistoryEntry[];
   weightHistory: WeightEntry[];
+  weekProgress?: Record<string, unknown>;
   settings?: AppSettings;
 }

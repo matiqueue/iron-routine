@@ -1589,22 +1589,32 @@ export async function exportProfileBackup(profileId?: string): Promise<ProfileBa
     ]);
 
   const prRecords: { [exerciseId: string]: PRRecord[] } = {};
+  const weekProgress: Record<string, unknown> = {};
   try {
     const allKeys = await AsyncStorage.getAllKeys();
-    const prefix = `${STORAGE_KEYS.PR_RECORDS_PREFIX}${target.id}_`;
-    const prKeys = allKeys.filter((k) => k.startsWith(prefix));
-    await Promise.all(
-      prKeys.map(async (k) => {
+    const prPrefix = `${STORAGE_KEYS.PR_RECORDS_PREFIX}${target.id}_`;
+    const weekPrefix = `${STORAGE_KEYS.WEEK_PREFIX}${target.id}_`;
+    const prKeys = allKeys.filter((k) => k.startsWith(prPrefix));
+    const weekKeys = allKeys.filter((k) => k.startsWith(weekPrefix));
+    await Promise.all([
+      ...prKeys.map(async (k) => {
         const raw = await AsyncStorage.getItem(k);
         if (raw) {
-          const exId = k.slice(prefix.length);
+          const exId = k.slice(prPrefix.length);
           const list = JSON.parse(raw);
           if (Array.isArray(list)) {
             prRecords[exId] = list;
           }
         }
-      })
-    );
+      }),
+      ...weekKeys.map(async (k) => {
+        const raw = await AsyncStorage.getItem(k);
+        if (raw) {
+          const suffix = k.slice(weekPrefix.length);
+          weekProgress[suffix] = JSON.parse(raw);
+        }
+      }),
+    ]);
   } catch {}
 
   return {
@@ -1619,6 +1629,7 @@ export async function exportProfileBackup(profileId?: string): Promise<ProfileBa
     prRecords,
     history,
     weightHistory,
+    weekProgress,
     settings: await getAppSettings(),
   };
 }
@@ -1705,14 +1716,40 @@ export async function importProfileBackup(
     await setFavoriteExerciseIds(payload.favoriteExerciseIds);
   }
 
+  // Always purge existing PRs & weekly progress keys for this profile before restoring backup
+  // so an empty/reset cloud backup cleanly wipes local PRs and completed sets on the device.
+  try {
+    const allKeys = await AsyncStorage.getAllKeys();
+    const prExact = `${STORAGE_KEYS.PR_RECORDS_PREFIX}${pid}`;
+    const prPrefix = `${STORAGE_KEYS.PR_RECORDS_PREFIX}${pid}_`;
+    const weekPrefix = `${STORAGE_KEYS.WEEK_PREFIX}${pid}_`;
+    const staleKeys = allKeys.filter(
+      (k) => k === prExact || k.startsWith(prPrefix) || k.startsWith(weekPrefix)
+    );
+    if (staleKeys.length > 0) {
+      await Promise.all(staleKeys.map((k) => AsyncStorage.removeItem(k)));
+    }
+  } catch {}
+
   if (payload.prRecords && typeof payload.prRecords === 'object') {
     await Promise.all(
       Object.entries(payload.prRecords).map(([exId, records]) => {
-        if (!Array.isArray(records)) return Promise.resolve();
+        if (!Array.isArray(records) || records.length === 0) return Promise.resolve();
         const cid = resolveCanonicalExerciseId(exId);
         return AsyncStorage.setItem(
           `${STORAGE_KEYS.PR_RECORDS_PREFIX}${pid}_${cid}`,
           JSON.stringify(records.map((r) => ({ ...r, exerciseId: cid })))
+        );
+      })
+    );
+  }
+  if (payload.weekProgress && typeof payload.weekProgress === 'object') {
+    await Promise.all(
+      Object.entries(payload.weekProgress).map(([suffix, val]) => {
+        if (!suffix || val == null) return Promise.resolve();
+        return AsyncStorage.setItem(
+          `${STORAGE_KEYS.WEEK_PREFIX}${pid}_${suffix}`,
+          JSON.stringify(val)
         );
       })
     );
