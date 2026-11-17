@@ -192,7 +192,9 @@ function MainApp() {
     setUnreadSocialCount(unread);
     void syncAppIconBadgeCount(unread);
     if (hub.pendingCheerBursts && hub.pendingCheerBursts.length > 0) {
-      setPendingCheerBursts(hub.pendingCheerBursts);
+      setPendingCheerBursts((prev) =>
+        prev.length > 0 ? [...prev, ...hub.pendingCheerBursts!] : hub.pendingCheerBursts!
+      );
     }
     const uid = explicitUserId || activeCloudUserIdRef.current;
     if (uid && Array.isArray(hub.friends)) {
@@ -282,7 +284,7 @@ function MainApp() {
           }
         })
         .catch(() => {});
-    }, 5000);
+    }, 2500);
     return () => clearInterval(timer);
   }, [activeProfile?.cloudUserId, applySocialHubUpdate]);
 
@@ -841,7 +843,9 @@ function MainApp() {
                 activeChatFriendIdRef.current = friendId;
               }}
               onCheerBursts={(bursts) => {
-                if (bursts.length > 0) setPendingCheerBursts(bursts);
+                if (bursts.length > 0) {
+                  setPendingCheerBursts((prev) => [...prev, ...bursts]);
+                }
               }}
             />
           )}

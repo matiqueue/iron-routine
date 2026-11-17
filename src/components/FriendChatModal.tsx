@@ -18,6 +18,7 @@ import {
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
+import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import Svg, { Defs, Path, Pattern, RadialGradient, Rect, Stop } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
 import {
@@ -42,8 +43,10 @@ import {
   FriendProfileSummary,
 } from '../types/workout';
 import {
+  deleteChatMessage,
   fetchChatMessages,
   reactToChatMessage,
+  saveSharedChatTheme,
   sendChatMessage,
 } from '../services/social';
 import { triggerNotificationHaptic, triggerSelectionHaptic } from '../services/haptics';
@@ -141,7 +144,8 @@ const ChatWallpaperLayer: React.FC<{
   isDark: boolean;
 }> = React.memo(({ appearance, accentColor, isDark }) => {
   const uid = useId().replace(/:/g, '_');
-  const strokeCol = isDark ? 'rgba(255,255,255,0.075)' : 'rgba(15,23,42,0.07)';
+  // Higher contrast strokes and radiant glows in light mode so wallpapers look crisp on white
+  const strokeCol = isDark ? 'rgba(255,255,255,0.11)' : 'rgba(15,23,42,0.17)';
 
   if (appearance.wallpaperId === 'custom' && appearance.customUri) {
     return (
@@ -154,7 +158,7 @@ const ChatWallpaperLayer: React.FC<{
         <View
           style={[
             StyleSheet.absoluteFill,
-            { backgroundColor: isDark ? 'rgba(5,6,10,0.62)' : 'rgba(255,255,255,0.68)' },
+            { backgroundColor: isDark ? 'rgba(5,6,10,0.48)' : 'rgba(255,255,255,0.18)' },
           ]}
         />
       </View>
@@ -176,12 +180,12 @@ const ChatWallpaperLayer: React.FC<{
     <View style={[StyleSheet.absoluteFill, { pointerEvents: 'none' }]}>
       <Svg width="100%" height="100%" style={StyleSheet.absoluteFill}>
         <Defs>
-          <RadialGradient id={`wp_glow_a_${uid}`} cx="88%" cy="10%" r="64%">
-            <Stop offset="0%" stopColor={accentColor} stopOpacity={isDark ? 0.24 : 0.16} />
+          <RadialGradient id={`wp_glow_a_${uid}`} cx="86%" cy="10%" r="68%">
+            <Stop offset="0%" stopColor={accentColor} stopOpacity={isDark ? 0.3 : 0.34} />
             <Stop offset="100%" stopColor={accentColor} stopOpacity={0} />
           </RadialGradient>
-          <RadialGradient id={`wp_glow_b_${uid}`} cx="14%" cy="90%" r="58%">
-            <Stop offset="0%" stopColor={accentColor} stopOpacity={isDark ? 0.16 : 0.1} />
+          <RadialGradient id={`wp_glow_b_${uid}`} cx="14%" cy="90%" r="64%">
+            <Stop offset="0%" stopColor={accentColor} stopOpacity={isDark ? 0.22 : 0.26} />
             <Stop offset="100%" stopColor={accentColor} stopOpacity={0} />
           </RadialGradient>
 
@@ -191,13 +195,13 @@ const ChatWallpaperLayer: React.FC<{
                 d="M 0 36 Q 35 12 70 36 T 140 36 M 0 88 Q 35 64 70 88 T 140 88"
                 fill="none"
                 stroke={strokeCol}
-                strokeWidth={1.15}
+                strokeWidth={1.35}
               />
               <Path
                 d="M 0 116 Q 35 138 70 116 T 140 116"
                 fill="none"
                 stroke={strokeCol}
-                strokeWidth={0.8}
+                strokeWidth={0.95}
                 strokeDasharray="4 6"
               />
             </Pattern>
@@ -209,12 +213,15 @@ const ChatWallpaperLayer: React.FC<{
                 d="M 20 2 L 38 11 L 38 29 L 20 38 L 2 29 L 2 11 Z"
                 fill="none"
                 stroke={strokeCol}
-                strokeWidth={0.9}
+                strokeWidth={1.15}
               />
             </Pattern>
           )}
         </Defs>
 
+        {!isDark && (
+          <Rect x={0} y={0} width="100%" height="100%" fill={accentColor} fillOpacity={0.075} />
+        )}
         {appearance.wallpaperId === 'topography' && (
           <Rect x={0} y={0} width="100%" height="100%" fill={`url(#wp_topo_${uid})`} />
         )}
@@ -616,6 +623,7 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
   const [showAttachMenu, setShowAttachMenu] = useState(false);
   const [showInChatProfile, setShowInChatProfile] = useState(false);
   const [showThemeSheet, setShowThemeSheet] = useState(false);
+  const [previewPhotoUri, setPreviewPhotoUri] = useState<string | null>(null);
   const [appearance, setAppearance] = useState<ChatAppearance>({
     themeId: 'monochrome',
     wallpaperId: 'none',
@@ -672,6 +680,27 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
       }
       const res = await fetchChatMessages(friend.userId);
       if (res.ok) {
+        if (res.theme) {
+          const remoteAppearance: ChatAppearance = {
+            themeId: (res.theme.themeId as ChatThemeId) || 'monochrome',
+            wallpaperId: (res.theme.wallpaperId as ChatWallpaperId) || 'none',
+            customUri: res.theme.customUri || null,
+          };
+          setAppearance((prev) => {
+            if (
+              prev.themeId === remoteAppearance.themeId &&
+              prev.wallpaperId === remoteAppearance.wallpaperId &&
+              (prev.customUri || null) === (remoteAppearance.customUri || null)
+            ) {
+              return prev;
+            }
+            AsyncStorage.setItem(
+              `${CHAT_APPEARANCE_KEY_PREFIX}${friend.userId}`,
+              JSON.stringify(remoteAppearance)
+            ).catch(() => {});
+            return remoteAppearance;
+          });
+        }
         const nextList = res.messages;
         const sig = buildMessagesSignature(nextList);
         if (isInitialForFriend) {
@@ -712,6 +741,7 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
       setShowAttachMenu(false);
       setShowInChatProfile(false);
       setShowThemeSheet(false);
+      setPreviewPhotoUri(null);
       setInputText('');
       setIsRecordingMode(false);
       holdActiveRef.current = false;
@@ -737,7 +767,7 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
     void loadMessages(false);
     const interval = setInterval(() => {
       void loadMessages(true);
-    }, 4500);
+    }, 2800);
     return () => clearInterval(interval);
   }, [visible, friend?.userId, loadMessages]);
 
@@ -1155,6 +1185,7 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
         AsyncStorage.setItem(`${CHAT_APPEARANCE_KEY_PREFIX}${friend.userId}`, JSON.stringify(next)).catch(
           () => {}
         );
+        void saveSharedChatTheme(friend.userId, next);
       }
     },
     [friend?.userId]
@@ -1167,17 +1198,94 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
       const res = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['images'],
         allowsEditing: false,
-        quality: 0.72,
+        quality: 0.9,
       });
       if (!res.canceled && res.assets && res.assets[0]?.uri) {
+        const asset = res.assets[0];
+        // Scale down any 4K wallpaper cleanly so both users can share it smoothly via DB
+        const ctx = ImageManipulator.manipulate(asset.uri);
+        if ((asset.width || 0) > 900) {
+          ctx.resize({ width: 900 });
+        }
+        const rendered = await ctx.renderAsync();
+        const saved = await rendered.saveAsync({
+          format: SaveFormat.JPEG,
+          compress: 0.56,
+          base64: true,
+        });
+        const dataUri = saved.base64
+          ? `data:image/jpeg;base64,${saved.base64}`
+          : saved.uri;
         triggerSelectionHaptic();
         persistAppearance({
           ...appearance,
           wallpaperId: 'custom',
-          customUri: res.assets[0].uri,
+          customUri: dataUri,
         });
       }
     } catch {}
+  };
+
+  const handleSendGalleryPhoto = async () => {
+    if (!friend || isSending) return;
+    if (!friend.e2eePublicKey) {
+      Alert.alert(t('e2eeBadgeLabel'), t('e2eeMissingRecipientKey'));
+      return;
+    }
+    setShowAttachMenu(false);
+    try {
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) return;
+      const res = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: false,
+        quality: 0.9,
+      });
+      if (res.canceled || !res.assets || !res.assets[0]?.uri) return;
+      const asset = res.assets[0];
+
+      // Always resize 4K / oversized photos down to max 1080px width & JPEG 0.62
+      const ctx = ImageManipulator.manipulate(asset.uri);
+      const maxDim = 1080;
+      if ((asset.width || 0) >= (asset.height || 0) && (asset.width || 0) > maxDim) {
+        ctx.resize({ width: maxDim });
+      } else if ((asset.height || 0) > maxDim) {
+        ctx.resize({ height: maxDim });
+      }
+      const rendered = await ctx.renderAsync();
+      const saved = await rendered.saveAsync({
+        format: SaveFormat.JPEG,
+        compress: 0.62,
+        base64: true,
+      });
+      if (!saved.base64) return;
+
+      await handleSend('image', t('chatPhotoLabel'), {
+        imageBase64: saved.base64,
+        imageMime: 'image/jpeg',
+        imageWidth: saved.width,
+        imageHeight: saved.height,
+      });
+    } catch (e: any) {
+      Alert.alert(t('errorTitle'), e?.message || t('socialRequestFailedError'));
+    }
+  };
+
+  const handleDeleteMessage = async (msg: ChatMessage) => {
+    if (!friend || msg.id.startsWith('local_')) return;
+    triggerNotificationHaptic('warning');
+    setReactionTargetMsg(null);
+    setMessages((prev) => {
+      const next = prev.filter((m) => m.id !== msg.id);
+      lastSignatureRef.current = buildMessagesSignature(next);
+      return next;
+    });
+    const ok = await deleteChatMessage(friend.userId, msg.id);
+    if (ok) {
+      onMessagesChanged?.();
+    } else {
+      void loadMessages(true);
+    }
   };
 
   const handleBubblePress = (item: ChatMessage) => {
@@ -1354,6 +1462,38 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
                     {t('e2eeKeyChangedPlaceholder')}
                   </Text>
                 </View>
+              ) : item.type === 'image' && item.payload?.imageBase64 ? (
+                <TouchableOpacity
+                  activeOpacity={0.9}
+                  onPress={() =>
+                    setPreviewPhotoUri(
+                      `data:${item.payload?.imageMime || 'image/jpeg'};base64,${item.payload?.imageBase64}`
+                    )
+                  }
+                  onLongPress={() => {
+                    if (isPendingLocal) return;
+                    triggerNotificationHaptic('success');
+                    setReactionTargetMsg(item);
+                  }}
+                >
+                  <Image
+                    source={{
+                      uri: `data:${item.payload.imageMime || 'image/jpeg'};base64,${item.payload.imageBase64}`,
+                    }}
+                    style={{
+                      width: 210,
+                      height:
+                        item.payload.imageWidth && item.payload.imageHeight
+                          ? Math.max(
+                              120,
+                              Math.min(280, Math.round(210 * (item.payload.imageHeight / item.payload.imageWidth)))
+                            )
+                          : 210,
+                      borderRadius: 15,
+                    }}
+                    resizeMode="cover"
+                  />
+                </TouchableOpacity>
               ) : item.type === 'voice' ? (
                 <VoiceNoteBubble
                   messageId={item.id}
@@ -1472,7 +1612,7 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
   const chromeOverlayBg = hasWallpaperSurface
     ? theme.isDark
       ? 'rgba(8, 10, 14, 0.34)'
-      : 'rgba(255, 255, 255, 0.44)'
+      : 'rgba(255, 255, 255, 0.34)'
     : theme.isDark
     ? 'rgba(10, 10, 12, 0.72)'
     : 'rgba(255, 255, 255, 0.78)';
@@ -1673,6 +1813,25 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
                 },
               ]}
             >
+              <TouchableOpacity
+                style={[
+                  styles.attachChip,
+                  {
+                    backgroundColor: theme.isDark ? '#1C1C21' : '#F4F4F5',
+                    borderColor: theme.border,
+                  },
+                ]}
+                onPress={handleSendGalleryPhoto}
+                activeOpacity={0.82}
+              >
+                <View style={[styles.attachIconCircle, { backgroundColor: theme.primary }]}>
+                  <Ionicons name="image-outline" size={14} color={theme.primaryText} />
+                </View>
+                <Text style={[styles.attachChipText, { color: theme.text }]}>
+                  {t('chatSharePhoto')}
+                </Text>
+              </TouchableOpacity>
+
               <TouchableOpacity
                 style={[
                   styles.attachChip,
@@ -1958,9 +2117,47 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
                     {reactionTargetMsg.text}
                   </Text>
                 </View>
+
+                <TouchableOpacity
+                  style={styles.deleteMsgBtn}
+                  onPress={() => handleDeleteMessage(reactionTargetMsg)}
+                  activeOpacity={0.82}
+                >
+                  <Ionicons name="trash-outline" size={16} color="#FCA5A5" />
+                  <Text style={styles.deleteMsgBtnText}>{t('chatDeleteMsgBtn')}</Text>
+                </TouchableOpacity>
               </Animated.View>
             )}
           </Pressable>
+        </Modal>
+
+        {/* Fullscreen Photo Preview Lightbox */}
+        <Modal
+          visible={previewPhotoUri !== null}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setPreviewPhotoUri(null)}
+        >
+          <View style={styles.photoLightboxRoot}>
+            <Pressable
+              style={StyleSheet.absoluteFill}
+              onPress={() => setPreviewPhotoUri(null)}
+            />
+            {previewPhotoUri && (
+              <Image
+                source={{ uri: previewPhotoUri }}
+                style={styles.photoLightboxImg}
+                resizeMode="contain"
+              />
+            )}
+            <TouchableOpacity
+              onPress={() => setPreviewPhotoUri(null)}
+              style={[styles.photoLightboxClose, { top: Math.max(insets.top + 12, 24) }]}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="close" size={22} color="#FFFFFF" />
+            </TouchableOpacity>
+          </View>
         </Modal>
 
         {/* Chat Theme & Wallpaper Overlay (stays cleanly inside chat) */}
@@ -1981,9 +2178,14 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
               ]}
             >
               <View style={styles.themeOverlayHeader}>
-                <Text style={[styles.themeOverlayTitle, { color: theme.text }]}>
-                  {t('chatThemeTitle')}
-                </Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.themeOverlayTitle, { color: theme.text }]}>
+                    {t('chatThemeTitle')}
+                  </Text>
+                  <Text style={{ fontSize: 11.5, fontWeight: '600', color: theme.textMuted, marginTop: 2 }}>
+                    {t('chatThemeSharedNote')}
+                  </Text>
+                </View>
                 <TouchableOpacity
                   onPress={() => setShowThemeSheet(false)}
                   style={[styles.headerCircleBtn, { backgroundColor: theme.bgSecondary }]}
@@ -2662,5 +2864,43 @@ const styles = StyleSheet.create({
   themeSwatchText: {
     fontSize: 13,
     fontWeight: '700',
+  },
+  deleteMsgBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingHorizontal: 18,
+    paddingVertical: 11,
+    borderRadius: 999,
+    backgroundColor: 'rgba(127, 29, 29, 0.92)',
+    borderWidth: 1,
+    borderColor: 'rgba(248, 113, 113, 0.5)',
+  },
+  deleteMsgBtnText: {
+    color: '#FEE2E2',
+    fontSize: 13.5,
+    fontWeight: '800',
+  },
+  photoLightboxRoot: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.94)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
+  },
+  photoLightboxImg: {
+    width: '100%',
+    height: '82%',
+  },
+  photoLightboxClose: {
+    position: 'absolute',
+    right: 18,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.16)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

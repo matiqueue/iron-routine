@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Animated,
@@ -13,6 +13,17 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Svg, {
+  Circle,
+  Defs,
+  G,
+  Line,
+  LinearGradient,
+  Polygon,
+  RadialGradient,
+  Stop,
+  Text as SvgText,
+} from 'react-native-svg';
 import { useAppTheme } from '../context/ThemeContext';
 import { useLanguage } from '../context/LanguageContext';
 import { FriendProfileSummary, RankTier } from '../types/workout';
@@ -43,6 +54,239 @@ function rankToScore(tier?: RankTier, pct = 0): number {
   return idx * 100 + Math.min(99, Math.max(0, pct));
 }
 
+/**
+ * Crisp 60fps SVG rotating multi-stop energy halo around profile avatar.
+ */
+const AvatarHaloRing: React.FC<{ color: string; size?: number }> = React.memo(
+  ({ color, size = 108 }) => {
+    const uid = useId().replace(/:/g, '_');
+    const rot = useRef(new Animated.Value(0)).current;
+
+    useEffect(() => {
+      rot.setValue(0);
+      const loop = Animated.loop(
+        Animated.timing(rot, {
+          toValue: 1,
+          duration: 4600,
+          easing: Easing.linear,
+          useNativeDriver: true,
+        })
+      );
+      loop.start();
+      return () => loop.stop();
+    }, [rot]);
+
+    const rotateDeg = rot.interpolate({
+      inputRange: [0, 1],
+      outputRange: ['0deg', '360deg'],
+    });
+
+    return (
+      <Animated.View
+        style={{
+          position: 'absolute',
+          width: size,
+          height: size,
+          pointerEvents: 'none',
+          transform: [{ rotate: rotateDeg }],
+        }}
+      >
+        <Svg width={size} height={size} viewBox="0 0 240 240">
+          <Defs>
+            <LinearGradient id={`halo_grad_${uid}`} x1="0" y1="0" x2="1" y2="1">
+              <Stop offset="0%" stopColor={color} stopOpacity={1} />
+              <Stop offset="45%" stopColor="#38BDF8" stopOpacity={0.95} />
+              <Stop offset="100%" stopColor="#10B981" stopOpacity={0.35} />
+            </LinearGradient>
+          </Defs>
+          <Circle
+            cx="120"
+            cy="120"
+            r="108"
+            fill="none"
+            stroke={`url(#halo_grad_${uid})`}
+            strokeWidth="5"
+            strokeDasharray="110 38 60 32"
+            strokeLinecap="round"
+          />
+          <Circle
+            cx="120"
+            cy="120"
+            r="96"
+            fill="none"
+            stroke={color}
+            strokeOpacity={0.28}
+            strokeWidth="2.5"
+          />
+          <Circle cx="120" cy="12" r="5.5" fill={color} />
+          <Circle cx="120" cy="228" r="4" fill="#38BDF8" />
+        </Svg>
+      </Animated.View>
+    );
+  }
+);
+
+interface RadarAxis {
+  label: string;
+  myVal: number;
+  friendVal: number;
+  max: number;
+}
+
+/**
+ * Animated 5-Axis Head-to-Head SVG Radar Chart (compares 5 metrics in one unified graphic).
+ */
+const AnimatedRadarComparison: React.FC<{
+  axes: RadarAxis[];
+  myLabel: string;
+  friendLabel: string;
+  friendColor: string;
+  triggerKey: string;
+}> = React.memo(({ axes, myLabel, friendLabel, friendColor, triggerKey }) => {
+  const { theme, isDark } = useAppTheme();
+  const [reveal, setReveal] = useState(0);
+
+  useEffect(() => {
+    let raf = 0;
+    const start = Date.now();
+    const duration = 640;
+    const tick = () => {
+      const elapsed = Date.now() - start;
+      const raw = Math.min(1, elapsed / duration);
+      // Cubic ease-out
+      const eased = 1 - Math.pow(1 - raw, 3);
+      setReveal(eased);
+      if (raw < 1) {
+        raf = requestAnimationFrame(tick);
+      }
+    };
+    setReveal(0.05);
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [triggerKey]);
+
+  const w = 290;
+  const h = 228;
+  const cx = w / 2;
+  const cy = 114;
+  const maxR = 72;
+
+  const getPoint = (idx: number, ratio: number) => {
+    const angle = -Math.PI / 2 + (idx / axes.length) * Math.PI * 2;
+    return {
+      x: cx + Math.cos(angle) * maxR * ratio,
+      y: cy + Math.sin(angle) * maxR * ratio,
+      lx: cx + Math.cos(angle) * (maxR + 22),
+      ly: cy + Math.sin(angle) * (maxR + 18),
+    };
+  };
+
+  const myPoints: Array<{ x: number; y: number }> = [];
+  const frPoints: Array<{ x: number; y: number }> = [];
+
+  axes.forEach((ax, i) => {
+    const denom = Math.max(1, ax.max);
+    const rMy = Math.max(0.16, Math.min(1, ax.myVal / denom)) * reveal;
+    const rFr = Math.max(0.16, Math.min(1, ax.friendVal / denom)) * reveal;
+    const pMy = getPoint(i, rMy);
+    const pFr = getPoint(i, rFr);
+    myPoints.push({ x: pMy.x, y: pMy.y });
+    frPoints.push({ x: pFr.x, y: pFr.y });
+  });
+
+  const toPolyStr = (pts: Array<{ x: number; y: number }>) =>
+    pts.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
+
+  const gridLineColor = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(15,23,42,0.1)';
+
+  return (
+    <View style={styles.radarWrap}>
+      <Svg width={w} height={h} viewBox={`0 0 ${w} ${h}`}>
+        {/* Web rings */}
+        {[0.34, 0.67, 1].map((scale) => {
+          const ringPts = axes.map((_, i) => getPoint(i, scale));
+          return (
+            <Polygon
+              key={scale}
+              points={toPolyStr(ringPts)}
+              fill="none"
+              stroke={gridLineColor}
+              strokeWidth={scale === 1 ? 1.4 : 1}
+              strokeDasharray={scale === 1 ? undefined : '4 4'}
+            />
+          );
+        })}
+
+        {/* Axis spokes & labels */}
+        {axes.map((ax, i) => {
+          const edge = getPoint(i, 1);
+          return (
+            <G key={ax.label}>
+              <Line
+                x1={cx}
+                y1={cy}
+                x2={edge.x}
+                y2={edge.y}
+                stroke={gridLineColor}
+                strokeWidth={1}
+              />
+              <SvgText
+                x={edge.lx}
+                y={edge.ly + 4}
+                textAnchor="middle"
+                fill={theme.textSecondary}
+                fontSize="10.5"
+                fontWeight="800"
+              >
+                {ax.label}
+              </SvgText>
+            </G>
+          );
+        })}
+
+        {/* Friend polygon */}
+        <Polygon
+          points={toPolyStr(frPoints)}
+          fill={friendColor}
+          fillOpacity={0.25}
+          stroke={friendColor}
+          strokeWidth={2.2}
+          strokeLinejoin="round"
+        />
+
+        {/* My polygon */}
+        <Polygon
+          points={toPolyStr(myPoints)}
+          fill="#38BDF8"
+          fillOpacity={0.24}
+          stroke="#38BDF8"
+          strokeWidth={2.2}
+          strokeLinejoin="round"
+        />
+
+        {/* Vertex dots */}
+        {frPoints.map((pt, i) => (
+          <Circle key={`f_${i}`} cx={pt.x} cy={pt.y} r="3.8" fill={friendColor} />
+        ))}
+        {myPoints.map((pt, i) => (
+          <Circle key={`m_${i}`} cx={pt.x} cy={pt.y} r="3.8" fill="#38BDF8" />
+        ))}
+      </Svg>
+
+      <View style={styles.radarLegendRow}>
+        <View style={styles.radarLegendPill}>
+          <View style={[styles.radarLegendDot, { backgroundColor: '#38BDF8' }]} />
+          <Text style={[styles.radarLegendText, { color: theme.text }]}>{myLabel}</Text>
+        </View>
+        <View style={styles.radarLegendPill}>
+          <View style={[styles.radarLegendDot, { backgroundColor: friendColor }]} />
+          <Text style={[styles.radarLegendText, { color: theme.text }]}>{friendLabel}</Text>
+        </View>
+      </View>
+    </View>
+  );
+});
+
 export const FriendProfileModal: React.FC<FriendProfileModalProps> = ({
   visible,
   friend,
@@ -50,78 +294,46 @@ export const FriendProfileModal: React.FC<FriendProfileModalProps> = ({
   embeddedOverlay = false,
   onClose,
   onOpenChat,
-  onSendKudos,
   onRemoveFriend,
 }) => {
   const { theme, isDark } = useAppTheme();
   const { t, muscleLabel, rankTitle } = useLanguage();
   const insets = useSafeAreaInsets();
-  const [sendingKudos, setSendingKudos] = useState(false);
+  const uid = useId().replace(/:/g, '_');
 
-  const auraPulse = useRef(new Animated.Value(0)).current;
   const vsPulse = useRef(new Animated.Value(0)).current;
   const overlaySlide = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
   const overlayFade = useRef(new Animated.Value(0)).current;
-  const barProgressAnims = useRef([
-    new Animated.Value(0),
-    new Animated.Value(0),
-    new Animated.Value(0),
-    new Animated.Value(0),
-    new Animated.Value(0),
-  ]).current;
+  const entranceAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     if (!visible) return;
 
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(auraPulse, {
-          toValue: 1,
-          duration: 1850,
-          easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-        }),
-        Animated.timing(auraPulse, {
-          toValue: 0,
-          duration: 1850,
-          easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-        }),
-      ])
-    );
     const vsLoop = Animated.loop(
       Animated.sequence([
         Animated.timing(vsPulse, {
           toValue: 1,
-          duration: 1200,
+          duration: 1150,
           easing: Easing.inOut(Easing.sin),
           useNativeDriver: true,
         }),
         Animated.timing(vsPulse, {
           toValue: 0,
-          duration: 1200,
+          duration: 1150,
           easing: Easing.inOut(Easing.sin),
           useNativeDriver: true,
         }),
       ])
     );
-
-    barProgressAnims.forEach((a) => a.setValue(0));
-    const barsAnim = Animated.stagger(
-      85,
-      barProgressAnims.map((a) =>
-        Animated.timing(a, {
-          toValue: 1,
-          duration: 540,
-          easing: Easing.out(Easing.cubic),
-          useNativeDriver: false,
-        })
-      )
-    );
-
-    loop.start();
     vsLoop.start();
-    barsAnim.start();
+
+    entranceAnim.setValue(0);
+    Animated.timing(entranceAnim, {
+      toValue: 1,
+      duration: 420,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
 
     if (embeddedOverlay) {
       overlaySlide.setValue(SCREEN_HEIGHT * 0.6);
@@ -142,18 +354,70 @@ export const FriendProfileModal: React.FC<FriendProfileModalProps> = ({
     }
 
     return () => {
-      loop.stop();
       vsLoop.stop();
-      barsAnim.stop();
     };
-  }, [visible, friend?.userId, embeddedOverlay, auraPulse, vsPulse, barProgressAnims, overlayFade, overlaySlide]);
+  }, [visible, friend?.userId, embeddedOverlay, vsPulse, entranceAnim, overlayFade, overlaySlide]);
+
+  const radarAxes = useMemo<RadarAxis[]>(() => {
+    if (!friend) return [];
+    const myRankScore = rankToScore(myProfile?.overallRank, myProfile?.overallProgressPct || 0);
+    const frRankScore = rankToScore(friend.overallRank, friend.overallProgressPct || 0);
+    return [
+      {
+        label: t('friendsRankByTier'),
+        myVal: myRankScore,
+        friendVal: frRankScore,
+        max: Math.max(200, myRankScore, frRankScore),
+      },
+      {
+        label: t('friendsStreakLabel'),
+        myVal: myProfile?.streak || 0,
+        friendVal: friend.streak || 0,
+        max: Math.max(7, myProfile?.streak || 0, friend.streak || 0),
+      },
+      {
+        label: t('compareTotalWorkouts'),
+        myVal: myProfile?.totalWorkouts || 0,
+        friendVal: friend.totalWorkouts || 0,
+        max: Math.max(10, myProfile?.totalWorkouts || 0, friend.totalWorkouts || 0),
+      },
+      {
+        label: t('friendsWorkoutsWeekLabel'),
+        myVal: myProfile?.weeklyWorkouts || 0,
+        friendVal: friend.weeklyWorkouts || 0,
+        max: Math.max(4, myProfile?.weeklyWorkouts || 0, friend.weeklyWorkouts || 0),
+      },
+      {
+        label: t('friendsBalanceLabel'),
+        myVal: myProfile?.balanceScorePct || 100,
+        friendVal: friend.balanceScorePct || 100,
+        max: 100,
+      },
+    ];
+  }, [friend, myProfile, t]);
 
   if (!friend || (embeddedOverlay && !visible)) return null;
 
   const rankMeta = RANK_TIER_MAP[friend.overallRank] || RANK_TIER_MAP.F;
-  const myRankMeta = RANK_TIER_MAP[myProfile?.overallRank || 'F'] || RANK_TIER_MAP.F;
   const myScore = rankToScore(myProfile?.overallRank, myProfile?.overallProgressPct || 0);
   const friendScore = rankToScore(friend.overallRank, friend.overallProgressPct || 0);
+
+  let myWins = 0;
+  let friendWins = 0;
+  for (const ax of radarAxes) {
+    if (ax.myVal > ax.friendVal) myWins++;
+    else if (ax.friendVal > ax.myVal) friendWins++;
+  }
+
+  const headToHeadHeadline =
+    myWins > friendWins
+      ? `${t('compareYouLead')} · ${myWins}:${friendWins}`
+      : friendWins > myWins
+      ? `${t('compareFriendLeads', { nick: friend.nickname })} · ${friendWins}:${myWins}`
+      : `${t('compareTie')} · ${myWins}:${friendWins}`;
+
+  const headlineColor =
+    myWins > friendWins ? '#38BDF8' : friendWins > myWins ? rankMeta.color : theme.textSecondary;
 
   const handleConfirmRemove = () => {
     triggerNotificationHaptic('warning');
@@ -174,86 +438,36 @@ export const FriendProfileModal: React.FC<FriendProfileModalProps> = ({
     );
   };
 
-  const auraScale = auraPulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.1] });
-  const auraOpacity = auraPulse.interpolate({ inputRange: [0, 1], outputRange: [0.3, 0.72] });
   const vsScale = vsPulse.interpolate({ inputRange: [0, 1], outputRange: [0.94, 1.09] });
-
-  const compareMetrics = [
-    {
-      label: t('friendsRankByTier'),
-      icon: 'ribbon-outline' as const,
-      myText: `${myProfile?.overallRank || 'F'} (${myProfile?.overallProgressPct || 0}%)`,
-      friendText: `${friend.overallRank} (${friend.overallProgressPct || 0}%)`,
-      myVal: Math.max(10, myScore),
-      friendVal: Math.max(10, friendScore),
-    },
-    {
-      label: t('friendsStreakLabel'),
-      icon: 'flame-outline' as const,
-      myText: `${myProfile?.streak || 0} ${t('friendsDaysShort')}`,
-      friendText: `${friend.streak || 0} ${t('friendsDaysShort')}`,
-      myVal: myProfile?.streak || 0,
-      friendVal: friend.streak || 0,
-    },
-    {
-      label: t('compareTotalWorkouts'),
-      icon: 'barbell-outline' as const,
-      myText: String(myProfile?.totalWorkouts || 0),
-      friendText: String(friend.totalWorkouts || 0),
-      myVal: myProfile?.totalWorkouts || 0,
-      friendVal: friend.totalWorkouts || 0,
-    },
-    {
-      label: t('friendsWorkoutsWeekLabel'),
-      icon: 'calendar-outline' as const,
-      myText: String(myProfile?.weeklyWorkouts || 0),
-      friendText: String(friend.weeklyWorkouts || 0),
-      myVal: myProfile?.weeklyWorkouts || 0,
-      friendVal: friend.weeklyWorkouts || 0,
-    },
-    {
-      label: t('friendsBalanceLabel'),
-      icon: 'pulse-outline' as const,
-      myText: `${myProfile?.balanceScorePct || 100}%`,
-      friendText: `${friend.balanceScorePct || 100}%`,
-      myVal: myProfile?.balanceScorePct || 0,
-      friendVal: friend.balanceScorePct || 0,
-    },
-  ];
-
-  let myWins = 0;
-  let friendWins = 0;
-  for (const row of compareMetrics) {
-    if (row.myVal > row.friendVal) myWins++;
-    else if (row.friendVal > row.myVal) friendWins++;
-  }
-
-  const headToHeadHeadline =
-    myWins > friendWins
-      ? `${t('compareYouLead')} · ${myWins} : ${friendWins}`
-      : friendWins > myWins
-      ? `${t('compareFriendLeads', { nick: friend.nickname })} · ${friendWins} : ${myWins}`
-      : `${t('compareTie')} · ${myWins} : ${friendWins}`;
-
-  const headlineColor =
-    myWins > friendWins ? '#38BDF8' : friendWins > myWins ? rankMeta.color : theme.textSecondary;
+  const heroTranslateY = entranceAnim.interpolate({ inputRange: [0, 1], outputRange: [14, 0] });
 
   const profileBody = (
     <>
-      {/* Hero Athlete Emblem + Ambient Rank Aura */}
-      <View style={styles.heroWrap}>
+      {/* Colorful Gradient Hero Card */}
+      <Animated.View
+        style={[
+          styles.heroCard,
+          {
+            backgroundColor: isDark ? 'rgba(20, 22, 30, 0.85)' : 'rgba(248, 250, 252, 0.96)',
+            borderColor: `${rankMeta.color}55`,
+            opacity: entranceAnim,
+            transform: [{ translateY: heroTranslateY }],
+          },
+        ]}
+      >
+        <Svg width="100%" height="100%" style={[StyleSheet.absoluteFill, { pointerEvents: 'none' }]}>
+          <Defs>
+            <RadialGradient id={`hero_amb_${uid}`} cx="50%" cy="18%" r="72%">
+              <Stop offset="0%" stopColor={rankMeta.color} stopOpacity={isDark ? 0.34 : 0.24} />
+              <Stop offset="60%" stopColor="#38BDF8" stopOpacity={isDark ? 0.12 : 0.08} />
+              <Stop offset="100%" stopColor={rankMeta.color} stopOpacity={0} />
+            </RadialGradient>
+          </Defs>
+          <Circle cx="50%" cy="22%" r="65%" fill={`url(#hero_amb_${uid})`} />
+        </Svg>
+
         <View style={styles.emblemStage}>
-          <Animated.View
-            style={[
-              styles.auraRing,
-              {
-                borderColor: rankMeta.color,
-                backgroundColor: `${rankMeta.color}16`,
-                opacity: auraOpacity,
-                transform: [{ scale: auraScale }],
-              },
-            ]}
-          />
+          <AvatarHaloRing color={rankMeta.color} size={108} />
           <UserAvatarBadge
             avatarUrl={friend.avatarUrl}
             displayName={friend.displayName}
@@ -280,8 +494,8 @@ export const FriendProfileModal: React.FC<FriendProfileModalProps> = ({
               styles.statusBadge,
               {
                 backgroundColor: isDark
-                  ? 'rgba(255,255,255,0.06)'
-                  : 'rgba(24,24,27,0.05)',
+                  ? 'rgba(255,255,255,0.08)'
+                  : 'rgba(15,23,42,0.06)',
                 borderColor: theme.border,
               },
             ]}
@@ -293,10 +507,9 @@ export const FriendProfileModal: React.FC<FriendProfileModalProps> = ({
           </View>
         ) : null}
 
-        {/* Primary Actions: Message + Kudos */}
         <View style={styles.actionRow}>
           <TouchableOpacity
-            style={[styles.primaryBtn, { backgroundColor: theme.primary }]}
+            style={[styles.primaryBtn, { backgroundColor: rankMeta.color }]}
             onPress={() => {
               triggerSelectionHaptic();
               onClose();
@@ -306,8 +519,8 @@ export const FriendProfileModal: React.FC<FriendProfileModalProps> = ({
             }}
             activeOpacity={0.86}
           >
-            <Ionicons name="chatbubble-ellipses" size={16} color={theme.primaryText} />
-            <Text style={[styles.primaryBtnText, { color: theme.primaryText }]}>
+            <Ionicons name="chatbubble-ellipses" size={16} color="#09090B" />
+            <Text style={[styles.primaryBtnText, { color: '#09090B' }]}>
               {t('friendsWriteMsgBtn')}
             </Text>
           </TouchableOpacity>
@@ -319,7 +532,7 @@ export const FriendProfileModal: React.FC<FriendProfileModalProps> = ({
             label={t('friendsKudosBtn')}
           />
         </View>
-      </View>
+      </Animated.View>
 
       {/* Telemetry Strip */}
       <View
@@ -329,14 +542,14 @@ export const FriendProfileModal: React.FC<FriendProfileModalProps> = ({
         ]}
       >
         <View style={styles.teleCell}>
-          <Text style={[styles.teleValue, { color: theme.text }]}>{friend.streak || 0}</Text>
+          <Text style={[styles.teleValue, { color: '#F59E0B' }]}>{friend.streak || 0}</Text>
           <Text style={[styles.teleLabel, { color: theme.textMuted }]}>
             {t('friendsStreakLabel')}
           </Text>
         </View>
         <View style={[styles.teleDiv, { backgroundColor: theme.hairline }]} />
         <View style={styles.teleCell}>
-          <Text style={[styles.teleValue, { color: theme.text }]}>
+          <Text style={[styles.teleValue, { color: '#38BDF8' }]}>
             {friend.weeklyWorkouts || 0}
           </Text>
           <Text style={[styles.teleLabel, { color: theme.textMuted }]}>
@@ -345,7 +558,7 @@ export const FriendProfileModal: React.FC<FriendProfileModalProps> = ({
         </View>
         <View style={[styles.teleDiv, { backgroundColor: theme.hairline }]} />
         <View style={styles.teleCell}>
-          <Text style={[styles.teleValue, { color: theme.text }]}>
+          <Text style={[styles.teleValue, { color: '#10B981' }]}>
             {friend.balanceScorePct || 100}%
           </Text>
           <Text style={[styles.teleLabel, { color: theme.textMuted }]}>
@@ -354,7 +567,7 @@ export const FriendProfileModal: React.FC<FriendProfileModalProps> = ({
         </View>
         <View style={[styles.teleDiv, { backgroundColor: theme.hairline }]} />
         <View style={styles.teleCell}>
-          <Text style={[styles.teleValue, { color: theme.text }]}>
+          <Text style={[styles.teleValue, { color: rankMeta.color }]}>
             {friend.totalWorkouts || 0}
           </Text>
           <Text style={[styles.teleLabel, { color: theme.textMuted }]}>
@@ -363,7 +576,7 @@ export const FriendProfileModal: React.FC<FriendProfileModalProps> = ({
         </View>
       </View>
 
-      {/* 1v1 Head-to-Head Animated Showcase */}
+      {/* Simplified 2-Graphic Animated Comparison Suite */}
       <View style={styles.sectionBlock}>
         <View style={styles.compareHeaderRow}>
           <Text style={[styles.sectionEyebrow, { color: theme.textMuted, marginBottom: 0 }]}>
@@ -373,8 +586,8 @@ export const FriendProfileModal: React.FC<FriendProfileModalProps> = ({
             style={[
               styles.tallyPill,
               {
-                backgroundColor: `${headlineColor}1A`,
-                borderColor: `${headlineColor}55`,
+                backgroundColor: `${headlineColor}1F`,
+                borderColor: `${headlineColor}66`,
               },
             ]}
           >
@@ -384,6 +597,7 @@ export const FriendProfileModal: React.FC<FriendProfileModalProps> = ({
           </View>
         </View>
 
+        {/* Graphic #1: Unified Duel Gauge + Animated Crests */}
         <View
           style={[
             styles.vsArenaCard,
@@ -392,7 +606,7 @@ export const FriendProfileModal: React.FC<FriendProfileModalProps> = ({
         >
           <View style={styles.vsCrestsRow}>
             <View style={styles.vsFighterCol}>
-              <RankCrestIcon tier={myProfile?.overallRank || 'F'} size={46} isSelected animated />
+              <RankCrestIcon tier={myProfile?.overallRank || 'F'} size={48} isSelected animated />
               <Text style={[styles.vsFighterName, { color: '#38BDF8' }]} numberOfLines={1}>
                 {t('friendsYouLabel')}
               </Text>
@@ -405,7 +619,7 @@ export const FriendProfileModal: React.FC<FriendProfileModalProps> = ({
               style={[
                 styles.vsCenterBadge,
                 {
-                  borderColor: theme.border,
+                  borderColor: `${rankMeta.color}66`,
                   backgroundColor: isDark ? '#18181F' : '#FFFFFF',
                   transform: [{ scale: vsScale }],
                 },
@@ -415,7 +629,7 @@ export const FriendProfileModal: React.FC<FriendProfileModalProps> = ({
             </Animated.View>
 
             <View style={styles.vsFighterCol}>
-              <RankCrestIcon tier={friend.overallRank || 'F'} size={46} isSelected animated />
+              <RankCrestIcon tier={friend.overallRank || 'F'} size={48} isSelected animated />
               <Text style={[styles.vsFighterName, { color: rankMeta.color }]} numberOfLines={1}>
                 @{friend.nickname}
               </Text>
@@ -434,83 +648,21 @@ export const FriendProfileModal: React.FC<FriendProfileModalProps> = ({
           />
         </View>
 
-        {compareMetrics.map((row, idx) => {
-          const maxVal = Math.max(1, row.myVal, row.friendVal);
-          const myPct = Math.max(8, Math.round((row.myVal / maxVal) * 100));
-          const frPct = Math.max(8, Math.round((row.friendVal / maxVal) * 100));
-          const friendLeads = row.friendVal > row.myVal;
-          const myLeads = row.myVal > row.friendVal;
-          const anim = barProgressAnims[idx] || barProgressAnims[0];
-
-          const myWidth = anim.interpolate({
-            inputRange: [0, 1],
-            outputRange: ['0%', `${myPct}%`],
-          });
-          const frWidth = anim.interpolate({
-            inputRange: [0, 1],
-            outputRange: ['0%', `${frPct}%`],
-          });
-
-          return (
-            <View
-              key={row.label}
-              style={[styles.compareCard, { borderBottomColor: theme.hairline }]}
-            >
-              <View style={styles.compareLabelRow}>
-                <View style={styles.compareSideWrap}>
-                  {myLeads && <View style={[styles.winDot, { backgroundColor: '#38BDF8' }]} />}
-                  <Text
-                    style={[
-                      styles.compareSideVal,
-                      { color: myLeads ? '#38BDF8' : theme.text },
-                    ]}
-                  >
-                    {row.myText}
-                  </Text>
-                </View>
-
-                <View style={styles.compareMetricMid}>
-                  <Ionicons name={row.icon} size={11.5} color={theme.textMuted} />
-                  <Text style={[styles.compareMetricName, { color: theme.textMuted }]}>
-                    {row.label}
-                  </Text>
-                </View>
-
-                <View style={[styles.compareSideWrap, { justifyContent: 'flex-end' }]}>
-                  <Text
-                    style={[
-                      styles.compareSideVal,
-                      { color: friendLeads ? rankMeta.color : theme.textSecondary },
-                    ]}
-                  >
-                    {row.friendText}
-                  </Text>
-                  {friendLeads && (
-                    <View style={[styles.winDot, { backgroundColor: rankMeta.color }]} />
-                  )}
-                </View>
-              </View>
-              <View style={styles.dualBarRow}>
-                <View style={[styles.dualTrackLeft, { backgroundColor: theme.bgSecondary }]}>
-                  <Animated.View
-                    style={[
-                      styles.dualFillLeft,
-                      { width: myWidth, backgroundColor: myRankMeta.color === '#38BDF8' ? '#38BDF8' : '#38BDF8' },
-                    ]}
-                  />
-                </View>
-                <View style={[styles.dualTrackRight, { backgroundColor: theme.bgSecondary }]}>
-                  <Animated.View
-                    style={[
-                      styles.dualFillRight,
-                      { width: frWidth, backgroundColor: rankMeta.color },
-                    ]}
-                  />
-                </View>
-              </View>
-            </View>
-          );
-        })}
+        {/* Graphic #2: Multi-Axis Animated Radar Spider Chart */}
+        <View
+          style={[
+            styles.vsArenaCard,
+            { backgroundColor: theme.bgSecondary, borderColor: theme.border, marginBottom: 0 },
+          ]}
+        >
+          <AnimatedRadarComparison
+            axes={radarAxes}
+            myLabel={t('friendsYouLabel')}
+            friendLabel={`@${friend.nickname}`}
+            friendColor={rankMeta.color}
+            triggerKey={`${friend.userId}_${visible}`}
+          />
+        </View>
       </View>
 
       {/* Top Muscle Groups */}
@@ -709,27 +861,26 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: 18,
+    paddingTop: 10,
     paddingBottom: 34,
   },
-  heroWrap: {
+  heroCard: {
     alignItems: 'center',
-    paddingTop: 8,
+    paddingTop: 18,
     paddingBottom: 18,
+    paddingHorizontal: 16,
+    borderRadius: 24,
+    borderWidth: 1,
+    overflow: 'hidden',
+    marginBottom: 14,
   },
   emblemStage: {
     position: 'relative',
     alignItems: 'center',
     justifyContent: 'center',
-    width: 102,
-    height: 102,
+    width: 112,
+    height: 112,
     marginBottom: 8,
-  },
-  auraRing: {
-    position: 'absolute',
-    width: 94,
-    height: 94,
-    borderRadius: 47,
-    borderWidth: 1.5,
   },
   displayName: {
     fontSize: 22,
@@ -808,7 +959,7 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   teleValue: {
-    fontSize: 17,
+    fontSize: 17.5,
     fontWeight: '900',
     fontVariant: ['tabular-nums'],
   },
@@ -880,75 +1031,35 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     letterSpacing: 1,
   },
+  radarWrap: {
+    alignItems: 'center',
+  },
+  radarLegendRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 18,
+    marginTop: 4,
+  },
+  radarLegendPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  radarLegendDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  radarLegendText: {
+    fontSize: 11.5,
+    fontWeight: '800',
+  },
   sectionEyebrow: {
     fontSize: 10,
     fontWeight: '800',
     letterSpacing: 1.2,
     marginBottom: 10,
-  },
-  compareCard: {
-    paddingVertical: 11,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  compareLabelRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 7,
-    gap: 6,
-  },
-  compareSideWrap: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-  },
-  winDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
-  compareSideVal: {
-    fontSize: 12,
-    fontWeight: '800',
-    fontVariant: ['tabular-nums'],
-  },
-  compareMetricMid: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  compareMetricName: {
-    fontSize: 10,
-    fontWeight: '800',
-    textTransform: 'uppercase',
-    letterSpacing: 0.4,
-  },
-  dualBarRow: {
-    flexDirection: 'row',
-    gap: 6,
-  },
-  dualTrackLeft: {
-    flex: 1,
-    height: 7,
-    borderRadius: 3.5,
-    overflow: 'hidden',
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-  },
-  dualFillLeft: {
-    height: '100%',
-    borderRadius: 3.5,
-  },
-  dualTrackRight: {
-    flex: 1,
-    height: 7,
-    borderRadius: 3.5,
-    overflow: 'hidden',
-  },
-  dualFillRight: {
-    height: '100%',
-    borderRadius: 3.5,
   },
   topMusclesGrid: {
     gap: 8,

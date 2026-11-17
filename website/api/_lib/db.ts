@@ -191,6 +191,17 @@ export async function ensureSchema(): Promise<void> {
       )
     `;
 
+    await sql`
+      CREATE TABLE IF NOT EXISTS chat_pair_themes (
+        pair_key TEXT PRIMARY KEY,
+        theme_id TEXT NOT NULL DEFAULT 'monochrome',
+        wallpaper_id TEXT NOT NULL DEFAULT 'none',
+        custom_uri TEXT,
+        updated_by TEXT,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `;
+
     await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT`;
     await sql`ALTER TABLE athlete_profiles ADD COLUMN IF NOT EXISTS avatar_url TEXT`;
     await sql`ALTER TABLE social_activities ADD COLUMN IF NOT EXISTS cheers_count INTEGER NOT NULL DEFAULT 0`;

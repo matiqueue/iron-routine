@@ -703,6 +703,8 @@ export async function notifyIncomingChatMessages(
       let bodyPreview = translateText(lang, 'notifChatNewMessage');
       if (msg.type === 'voice') {
         bodyPreview = translateText(lang, 'notifChatVoiceMessage');
+      } else if (msg.type === 'image') {
+        bodyPreview = translateText(lang, 'chatPhotoLabel');
       } else if (msg.type === 'workout_share') {
         bodyPreview = msg.payload?.title
           ? `🏋️ ${msg.payload.title}`

@@ -807,6 +807,90 @@ export async function toggleChatMessageReaction(
   return mapChatMessageRow(updatedRows[0]);
 }
 
+export async function deleteEncryptedChatMessage(
+  userId: string,
+  friendId: string,
+  messageId: string
+): Promise<boolean> {
+  await ensureSchema();
+  const sql = getSql();
+  const pk = pairKeyFor(userId, friendId);
+  const rows: any[] = await sql`
+    DELETE FROM chat_messages
+    WHERE id = ${messageId}
+      AND pair_key = ${pk}
+      AND (sender_id = ${userId} OR recipient_id = ${userId})
+    RETURNING id
+  `;
+  return rows.length > 0;
+}
+
+export interface SharedChatThemeRecord {
+  themeId: string;
+  wallpaperId: string;
+  customUri?: string | null;
+  updatedAt?: string;
+}
+
+export async function getChatPairTheme(
+  userId: string,
+  friendId: string
+): Promise<SharedChatThemeRecord> {
+  await ensureSchema();
+  const sql = getSql();
+  const pk = pairKeyFor(userId, friendId);
+  const rows: any[] = await sql`
+    SELECT theme_id, wallpaper_id, custom_uri, updated_at
+    FROM chat_pair_themes
+    WHERE pair_key = ${pk}
+    LIMIT 1
+  `;
+  if (!rows[0]) {
+    return { themeId: 'monochrome', wallpaperId: 'none', customUri: null };
+  }
+  return {
+    themeId: String(rows[0].theme_id || 'monochrome'),
+    wallpaperId: String(rows[0].wallpaper_id || 'none'),
+    customUri: rows[0].custom_uri ? String(rows[0].custom_uri) : null,
+    updatedAt: rows[0].updated_at ? new Date(rows[0].updated_at).toISOString() : undefined,
+  };
+}
+
+export async function saveChatPairTheme(
+  userId: string,
+  friendId: string,
+  params: { themeId: string; wallpaperId: string; customUri?: string | null }
+): Promise<SharedChatThemeRecord> {
+  await ensureSchema();
+  const sql = getSql();
+  const pk = pairKeyFor(userId, friendId);
+  const cleanTheme = String(params.themeId || 'monochrome').slice(0, 32);
+  const cleanWallpaper = String(params.wallpaperId || 'none').slice(0, 32);
+  const cleanCustom =
+    params.customUri && String(params.customUri).length <= 800_000
+      ? String(params.customUri)
+      : null;
+
+  const rows: any[] = await sql`
+    INSERT INTO chat_pair_themes (pair_key, theme_id, wallpaper_id, custom_uri, updated_by, updated_at)
+    VALUES (${pk}, ${cleanTheme}, ${cleanWallpaper}, ${cleanCustom}, ${userId}, NOW())
+    ON CONFLICT (pair_key) DO UPDATE SET
+      theme_id = EXCLUDED.theme_id,
+      wallpaper_id = EXCLUDED.wallpaper_id,
+      custom_uri = EXCLUDED.custom_uri,
+      updated_by = EXCLUDED.updated_by,
+      updated_at = NOW()
+    RETURNING theme_id, wallpaper_id, custom_uri, updated_at
+  `;
+  const r = rows[0];
+  return {
+    themeId: String(r.theme_id || 'monochrome'),
+    wallpaperId: String(r.wallpaper_id || 'none'),
+    customUri: r.custom_uri ? String(r.custom_uri) : null,
+    updatedAt: r.updated_at ? new Date(r.updated_at).toISOString() : undefined,
+  };
+}
+
 export async function saveUserPushToken(
   userId: string,
   token: string,
