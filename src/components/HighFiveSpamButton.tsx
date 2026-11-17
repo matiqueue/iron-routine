@@ -143,13 +143,13 @@ export const HighFiveSpamButton: React.FC<HighFiveSpamButtonProps> = ({
         p.anim.setValue(0);
       });
 
-      // Debounced batch flush every ~450ms (max 25 pending per instant flush)
-      if (pendingBatchRef.current >= 25) {
+      // Fast flush every ~260ms (or 10 buffered taps) so the recipient sees bursts almost live
+      if (pendingBatchRef.current >= 10) {
         void flushBatch();
       } else if (!flushTimerRef.current) {
         flushTimerRef.current = setTimeout(() => {
           void flushBatch();
-        }, 450);
+        }, 260);
       }
     },
     [flushBatch, scaleAnim]

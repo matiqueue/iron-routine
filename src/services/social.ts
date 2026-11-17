@@ -4,6 +4,7 @@ import {
   ChatMessagePayload,
   ChatMessageType,
   FriendProfileSummary,
+  SharedChatTheme,
   SocialHubData,
 } from '../types/workout';
 import { getStoredCloudSession, registerPostCloudPushHook } from './cloudSync';
@@ -493,6 +494,7 @@ export async function sendSocialCheer(
 export async function fetchChatMessages(friendId: string): Promise<{
   ok: boolean;
   messages: ChatMessage[];
+  theme?: SharedChatTheme;
   error?: string;
 }> {
   const session = await getStoredCloudSession();
@@ -514,13 +516,71 @@ export async function fetchChatMessages(friendId: string): Promise<{
     const decrypted = (data.messages || []).map((m: any) =>
       decryptWireChatMessage(m, session.userId, keyPair)
     );
-    return { ok: true, messages: decrypted };
+    return {
+      ok: true,
+      messages: decrypted,
+      theme: data.theme as SharedChatTheme | undefined,
+    };
   } catch {
     return {
       ok: false,
       messages: [],
       error: translateText(getCurrentAppLanguage(), 'socialNetworkError'),
     };
+  }
+}
+
+export async function deleteChatMessage(friendId: string, messageId: string): Promise<boolean> {
+  const session = await getStoredCloudSession();
+  if (!session?.token || !friendId || !messageId) return false;
+  try {
+    const res = await fetch(SOCIAL_API_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${session.token}`,
+      },
+      body: JSON.stringify({
+        action: 'delete_message',
+        friendId,
+        messageId,
+      }),
+    });
+    const data = await res.json().catch(() => null);
+    return Boolean(res.ok && data?.ok);
+  } catch {
+    return false;
+  }
+}
+
+export async function saveSharedChatTheme(
+  friendId: string,
+  theme: { themeId: string; wallpaperId: string; customUri?: string | null }
+): Promise<SharedChatTheme | null> {
+  const session = await getStoredCloudSession();
+  if (!session?.token || !friendId) return null;
+  try {
+    const res = await fetch(SOCIAL_API_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${session.token}`,
+      },
+      body: JSON.stringify({
+        action: 'set_chat_theme',
+        friendId,
+        themeId: theme.themeId,
+        wallpaperId: theme.wallpaperId,
+        customUri: theme.customUri || null,
+      }),
+    });
+    const data = await res.json().catch(() => null);
+    if (res.ok && data?.ok && data?.theme) {
+      return data.theme as SharedChatTheme;
+    }
+    return null;
+  } catch {
+    return null;
   }
 }
 

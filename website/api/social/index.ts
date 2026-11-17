@@ -4,6 +4,8 @@ import { ensureSchema, getSql } from '../_lib/db.js';
 import {
   areUsersFriends,
   claimUserNickname,
+  deleteEncryptedChatMessage,
+  getChatPairTheme,
   getEncryptedChatMessages,
   getSocialHubForUser,
   markChatRead,
@@ -11,6 +13,7 @@ import {
   orderedPair,
   publishSocialProfile,
   registerUserE2eePublicKey,
+  saveChatPairTheme,
   saveEncryptedChatMessage,
   saveUserPushToken,
   searchUsersByNickPg,
@@ -68,9 +71,12 @@ export default {
           if (!isFriend) {
             return jsonResponse({ ok: false, error: 'NOT_FRIENDS' }, 403);
           }
-          const messages = await getEncryptedChatMessages(userId, friendId);
+          const [messages, chatTheme] = await Promise.all([
+            getEncryptedChatMessages(userId, friendId),
+            getChatPairTheme(userId, friendId),
+          ]);
           await markChatRead(userId, friendId);
-          return jsonResponse({ ok: true, messages });
+          return jsonResponse({ ok: true, messages, theme: chatTheme });
         }
 
         return jsonResponse({ ok: false, error: 'UNKNOWN_SOCIAL_ACTION' }, 400);
@@ -341,6 +347,32 @@ export default {
           return jsonResponse({ ok: false, error: 'MESSAGE_NOT_FOUND' }, 404);
         }
         return jsonResponse({ ok: true, message });
+      }
+
+      if (action === 'delete_message') {
+        const friendId = String(body?.friendId || '').trim();
+        const messageId = String(body?.messageId || '').trim();
+        if (!friendId || !messageId) {
+          return jsonResponse({ ok: false, error: 'INVALID_DELETE_PARAMS' }, 400);
+        }
+        const deleted = await deleteEncryptedChatMessage(userId, friendId, messageId);
+        if (!deleted) {
+          return jsonResponse({ ok: false, error: 'MESSAGE_NOT_FOUND' }, 404);
+        }
+        return jsonResponse({ ok: true, messageId });
+      }
+
+      if (action === 'set_chat_theme') {
+        const friendId = String(body?.friendId || '').trim();
+        if (!friendId || !(await areUsersFriends(userId, friendId))) {
+          return jsonResponse({ ok: false, error: 'NOT_FRIENDS' }, 403);
+        }
+        const saved = await saveChatPairTheme(userId, friendId, {
+          themeId: String(body?.themeId || 'monochrome'),
+          wallpaperId: String(body?.wallpaperId || 'none'),
+          customUri: body?.customUri ? String(body.customUri) : null,
+        });
+        return jsonResponse({ ok: true, theme: saved });
       }
 
       if (action === 'mark_read') {
