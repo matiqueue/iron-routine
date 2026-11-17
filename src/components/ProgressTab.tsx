@@ -986,30 +986,12 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
               {/* Open Hero Rank Showcase & Telemetry Strip */}
               <View style={[styles.heroShowcaseWrap, { borderBottomColor: theme.hairline }]}>
                 <View style={styles.heroCrestBlock}>
-                  <Animated.View
-                    style={{
-                      transform: [
-                        {
-                          scale: heroCrestPulse.interpolate({
-                            inputRange: [0, 1],
-                            outputRange: [1, 1.06],
-                          }),
-                        },
-                        {
-                          translateY: heroCrestPulse.interpolate({
-                            inputRange: [0, 1],
-                            outputRange: [0, -1.5],
-                          }),
-                        },
-                      ],
-                    }}
-                  >
-                    <RankCrestIcon
-                      tier={physiqueReport?.overallRank || 'F'}
-                      size={58}
-                      progressPct={overallAverageProgress}
-                    />
-                  </Animated.View>
+                  <RankCrestIcon
+                    tier={physiqueReport?.overallRank || 'F'}
+                    size={62}
+                    progressPct={overallAverageProgress}
+                    animated
+                  />
                   <View style={styles.heroCrestTextCol}>
                     <Text style={[styles.heroCrestEyebrow, { color: theme.textMuted }]}>
                       {t('overallRankCaps')}

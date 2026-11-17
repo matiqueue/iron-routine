@@ -392,7 +392,7 @@ export const FriendProfileModal: React.FC<FriendProfileModalProps> = ({
         >
           <View style={styles.vsCrestsRow}>
             <View style={styles.vsFighterCol}>
-              <RankCrestIcon tier={myProfile?.overallRank || 'F'} size={44} isSelected />
+              <RankCrestIcon tier={myProfile?.overallRank || 'F'} size={46} isSelected animated />
               <Text style={[styles.vsFighterName, { color: '#38BDF8' }]} numberOfLines={1}>
                 {t('friendsYouLabel')}
               </Text>
@@ -415,7 +415,7 @@ export const FriendProfileModal: React.FC<FriendProfileModalProps> = ({
             </Animated.View>
 
             <View style={styles.vsFighterCol}>
-              <RankCrestIcon tier={friend.overallRank || 'F'} size={44} isSelected />
+              <RankCrestIcon tier={friend.overallRank || 'F'} size={46} isSelected animated />
               <Text style={[styles.vsFighterName, { color: rankMeta.color }]} numberOfLines={1}>
                 @{friend.nickname}
               </Text>
