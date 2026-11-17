@@ -49,6 +49,10 @@ import {
 } from '../services/cloudSync';
 import { updateProfile } from '../services/storage';
 import { triggerNotificationHaptic, triggerSelectionHaptic } from '../services/haptics';
+import {
+  dismissChatNotificationsForFriend,
+  ensureNotificationPermissions,
+} from '../services/notifications';
 import { sanitizeNicknameInput } from '../utils/nickname';
 import { MinimalistBackdrop } from './MinimalistBackdrop';
 import { RankCrestIcon } from './RankCrestIcon';
@@ -74,6 +78,8 @@ interface FriendsTabProps {
   onUnreadCountChanged?: (count: number) => void;
   onDataImported?: () => Promise<void> | void;
   pendingInviteNick?: { nick: string; seq: number } | null;
+  pendingChatFriend?: { friendId: string; seq: number } | null;
+  onActiveChatFriendChanged?: (friendId: string | null) => void;
   onCheerBursts?: (bursts: PendingCheerBurst[]) => void;
 }
 
@@ -102,6 +108,8 @@ export const FriendsTab: React.FC<FriendsTabProps> = ({
   onUnreadCountChanged,
   onDataImported,
   pendingInviteNick,
+  pendingChatFriend,
+  onActiveChatFriendChanged,
   onCheerBursts,
 }) => {
   const { theme, isDark } = useAppTheme();
@@ -136,6 +144,24 @@ export const FriendsTab: React.FC<FriendsTabProps> = ({
     useState<FriendProfileSummary | null>(null);
   const [activeChatFriend, setActiveChatFriend] = useState<FriendProfileSummary | null>(null);
   const returnChatAfterProfileRef = useRef<FriendProfileSummary | null>(null);
+  const pendingChatFriendIdRef = useRef<string | null>(null);
+
+  const onActiveChatFriendChangedRef = useRef(onActiveChatFriendChanged);
+  onActiveChatFriendChangedRef.current = onActiveChatFriendChanged;
+
+  useEffect(() => {
+    const activeId = activeChatFriend?.userId || null;
+    onActiveChatFriendChangedRef.current?.(activeId);
+    if (activeId) {
+      void dismissChatNotificationsForFriend(activeId);
+    }
+  }, [activeChatFriend?.userId]);
+
+  useEffect(() => {
+    return () => {
+      onActiveChatFriendChangedRef.current?.(null);
+    };
+  }, []);
 
   // Ambient & entrance animations
   const heroFloat = useRef(new Animated.Value(0)).current;
@@ -454,6 +480,36 @@ export const FriendsTab: React.FC<FriendsTabProps> = ({
         setIsSearching(false);
       });
   }, [pendingInviteNick?.seq, pendingInviteNick?.nick, switchSubTab]);
+
+  useEffect(() => {
+    if (!pendingChatFriend?.seq || !pendingChatFriend.friendId) return;
+    switchSubTab('chats');
+    const targetId = pendingChatFriend.friendId;
+    const match = hub.friends.find((f) => f.friend.userId === targetId);
+    if (match) {
+      pendingChatFriendIdRef.current = null;
+      setActiveChatFriend(match.friend);
+    } else {
+      pendingChatFriendIdRef.current = targetId;
+      void loadSocialState(false);
+    }
+  }, [pendingChatFriend?.seq, pendingChatFriend?.friendId, switchSubTab]);
+
+  useEffect(() => {
+    const targetId = pendingChatFriendIdRef.current;
+    if (!targetId || hub.friends.length === 0) return;
+    const match = hub.friends.find((f) => f.friend.userId === targetId);
+    if (match) {
+      pendingChatFriendIdRef.current = null;
+      setActiveChatFriend(match.friend);
+    }
+  }, [hub.friends]);
+
+  useEffect(() => {
+    if (cloudSession?.token) {
+      void ensureNotificationPermissions(true);
+    }
+  }, [cloudSession?.token]);
 
   const formatRelativeTime = (iso?: string | null) => {
     if (!iso) return '';

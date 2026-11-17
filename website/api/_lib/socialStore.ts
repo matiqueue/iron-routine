@@ -806,3 +806,75 @@ export async function toggleChatMessageReaction(
   `;
   return mapChatMessageRow(updatedRows[0]);
 }
+
+export async function saveUserPushToken(
+  userId: string,
+  token: string,
+  platform = 'ios'
+): Promise<void> {
+  const cleanToken = String(token || '').trim();
+  if (!cleanToken) return;
+  await ensureSchema();
+  const sql = getSql();
+  await sql`
+    INSERT INTO push_tokens (user_id, token, platform, updated_at)
+    VALUES (${userId}, ${cleanToken}, ${platform === 'android' ? 'android' : 'ios'}, NOW())
+    ON CONFLICT (user_id, token) DO UPDATE SET
+      platform = EXCLUDED.platform,
+      updated_at = NOW()
+  `;
+}
+
+export async function sendPushNotificationToUser(params: {
+  recipientUserId: string;
+  title: string;
+  body: string;
+  data?: Record<string, unknown>;
+}): Promise<void> {
+  try {
+    await ensureSchema();
+    const sql = getSql();
+    const rows: any[] = await sql`
+      SELECT token FROM push_tokens WHERE user_id = ${params.recipientUserId}
+    `;
+    if (rows.length === 0) return;
+
+    const tokens = rows.map((r) => String(r.token)).filter(Boolean);
+    if (tokens.length === 0) return;
+
+    const messages = tokens.map((token) => ({
+      to: token,
+      sound: 'default',
+      title: params.title,
+      body: params.body,
+      data: params.data || {},
+    }));
+
+    const res = await fetch('https://exp.host/--/api/v2/push/send', {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Accept-encoding': 'gzip, deflate',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(messages),
+    });
+
+    const json: any = await res.json().catch(() => null);
+    const tickets: any[] = Array.isArray(json?.data) ? json.data : [];
+    const staleTokens: string[] = [];
+    tickets.forEach((ticket, idx) => {
+      if (ticket?.status === 'error' && ticket?.details?.error === 'DeviceNotRegistered' && tokens[idx]) {
+        staleTokens.push(tokens[idx]);
+      }
+    });
+    if (staleTokens.length > 0) {
+      await sql`
+        DELETE FROM push_tokens
+        WHERE user_id = ${params.recipientUserId} AND token = ANY(${staleTokens}::text[])
+      `;
+    }
+  } catch {
+    // Non-fatal: remote push delivery never blocks messaging
+  }
+}

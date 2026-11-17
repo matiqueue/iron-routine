@@ -181,6 +181,16 @@ export async function ensureSchema(): Promise<void> {
       )
     `;
 
+    await sql`
+      CREATE TABLE IF NOT EXISTS push_tokens (
+        user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+        token TEXT NOT NULL,
+        platform TEXT NOT NULL DEFAULT 'ios',
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (user_id, token)
+      )
+    `;
+
     await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT`;
     await sql`ALTER TABLE athlete_profiles ADD COLUMN IF NOT EXISTS avatar_url TEXT`;
     await sql`ALTER TABLE social_activities ADD COLUMN IF NOT EXISTS cheers_count INTEGER NOT NULL DEFAULT 0`;

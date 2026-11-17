@@ -12,7 +12,9 @@ import {
   publishSocialProfile,
   registerUserE2eePublicKey,
   saveEncryptedChatMessage,
+  saveUserPushToken,
   searchUsersByNickPg,
+  sendPushNotificationToUser,
   toggleChatMessageReaction,
 } from '../_lib/socialStore.js';
 
@@ -86,6 +88,16 @@ export default {
         if (!ok) {
           return jsonResponse({ ok: false, error: 'INVALID_PUBLIC_KEY' }, 400);
         }
+        return jsonResponse({ ok: true });
+      }
+
+      if (action === 'register_push_token') {
+        const pushToken = String(body?.token || '').trim();
+        const platform = body?.platform === 'android' ? 'android' : 'ios';
+        if (!pushToken) {
+          return jsonResponse({ ok: false, error: 'MISSING_PUSH_TOKEN' }, 400);
+        }
+        await saveUserPushToken(userId, pushToken, platform);
         return jsonResponse({ ok: true });
       }
 
@@ -300,6 +312,20 @@ export default {
           recipientPublicKey,
           alg,
         });
+
+        const sender = await getCloudUser(userId).catch(() => null);
+        const senderTitle = sender?.displayName || (sender?.nickname ? `@${sender.nickname}` : 'Iron Routine');
+        await sendPushNotificationToUser({
+          recipientUserId: friendId,
+          title: senderTitle,
+          body: sender?.nickname ? `@${sender.nickname} · nowa wiadomość` : 'Nowa wiadomość',
+          data: {
+            type: 'chat_message',
+            friendId: userId,
+            messageId: message.id,
+          },
+        });
+
         return jsonResponse({ ok: true, message });
       }
 

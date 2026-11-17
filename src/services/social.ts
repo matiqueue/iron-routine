@@ -115,6 +115,28 @@ export async function ensureE2eeKeyRegistered(): Promise<StoredE2eeKeyPair | nul
   return keyPair;
 }
 
+export async function registerPushTokenInCloud(
+  pushToken: string,
+  platform: 'ios' | 'android'
+): Promise<void> {
+  const session = await getStoredCloudSession();
+  if (!session?.token || !pushToken) return;
+  try {
+    await fetch(SOCIAL_API_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${session.token}`,
+      },
+      body: JSON.stringify({
+        action: 'register_push_token',
+        token: pushToken,
+        platform,
+      }),
+    });
+  } catch {}
+}
+
 export async function getCachedSocialHub(userId: string): Promise<SocialHubData | null> {
   try {
     const raw = await AsyncStorage.getItem(`${SOCIAL_CACHE_KEY_PREFIX}${userId}`);
