@@ -1467,6 +1467,16 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
 
   const canTypeSend = inputText.trim().length > 0 && !isSending;
 
+  const hasWallpaperSurface =
+    appearance.wallpaperId !== 'none' || appearance.themeId !== 'monochrome';
+  const chromeOverlayBg = hasWallpaperSurface
+    ? theme.isDark
+      ? 'rgba(8, 10, 14, 0.34)'
+      : 'rgba(255, 255, 255, 0.44)'
+    : theme.isDark
+    ? 'rgba(10, 10, 12, 0.72)'
+    : 'rgba(255, 255, 255, 0.78)';
+
   return (
     <Modal
       visible={visible}
@@ -1481,16 +1491,14 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
           isDark={theme.isDark}
         />
 
-        {/* Sleek Monochrome Header */}
+        {/* Full-bleed translucent header so wallpaper extends cleanly underneath */}
         <View
           style={[
             styles.header,
             {
               paddingTop: Math.max(insets.top + 8, 18),
-              borderBottomColor: theme.hairline,
-              backgroundColor: theme.isDark
-                ? 'rgba(10, 10, 12, 0.92)'
-                : 'rgba(255, 255, 255, 0.94)',
+              borderBottomColor: hasWallpaperSurface ? 'rgba(255,255,255,0.09)' : theme.hairline,
+              backgroundColor: chromeOverlayBg,
             },
           ]}
         >
@@ -1618,15 +1626,13 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
           )}
         </View>
 
-        {/* Bottom Monochrome Composer Dock + Floating "+" Attachments */}
+        {/* Bottom Translucent Composer Dock + Floating "+" Attachments */}
         <View
           style={[
             styles.composerOuter,
             {
-              borderTopColor: theme.hairline,
-              backgroundColor: theme.isDark
-                ? 'rgba(10, 10, 12, 0.92)'
-                : 'rgba(255, 255, 255, 0.94)',
+              borderTopColor: hasWallpaperSurface ? 'rgba(255,255,255,0.09)' : theme.hairline,
+              backgroundColor: chromeOverlayBg,
               paddingBottom:
                 keyboardHeight > 0
                   ? keyboardHeight + 10

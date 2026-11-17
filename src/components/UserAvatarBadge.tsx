@@ -49,7 +49,7 @@ export const UserAvatarBadge: React.FC<UserAvatarBadgeProps> = React.memo(
     const initials = getAvatarInitials(displayName);
     const rankColor = rank ? (RANK_TIER_MAP[rank] || RANK_TIER_MAP.F).color : '#10B981';
     const borderCol = ringColor || (rank ? `${rankColor}88` : `${avatarColor}66`);
-    const badgeSize = Math.max(16, Math.round(size * 0.42));
+    const badgeSize = Math.max(18, Math.round(size * 0.46));
 
     return (
       <View
@@ -101,19 +101,8 @@ export const UserAvatarBadge: React.FC<UserAvatarBadgeProps> = React.memo(
         </View>
 
         {showRankDot && rank && (
-          <View
-            style={[
-              styles.rankCrestPill,
-              {
-                width: badgeSize + 4,
-                height: badgeSize + 4,
-                borderRadius: (badgeSize + 4) / 2,
-                backgroundColor: isDark ? '#0B0B0F' : '#FFFFFF',
-                borderColor: rankColor,
-              },
-            ]}
-          >
-            <RankCrestIcon tier={rank} size={badgeSize} isSelected />
+          <View style={styles.rankCornerWrap}>
+            <RankCrestIcon tier={rank} size={badgeSize} isSelected animated={size >= 48} />
           </View>
         )}
       </View>
@@ -132,14 +121,15 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     letterSpacing: -0.4,
   },
-  rankCrestPill: {
+  rankCornerWrap: {
     position: 'absolute',
-    bottom: -3,
-    right: -3,
-    borderWidth: 1.25,
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 25,
-    elevation: 6,
+    bottom: -4,
+    right: -4,
+    zIndex: 30,
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.45,
+    shadowRadius: 3,
   },
 });
