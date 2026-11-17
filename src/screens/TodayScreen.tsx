@@ -242,7 +242,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
             <AnimatedIcon
               name="flame"
               preset="flame"
-              size={19}
+              size={24}
               color={streak > 0 ? '#F59E0B' : theme.textMuted}
               active={streak > 0}
             />

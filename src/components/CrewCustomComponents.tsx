@@ -236,17 +236,9 @@ export const SquadAvatarRing: React.FC<{
           )}
         </View>
 
-        {/* Bottom-right mini rank crest icon floating ABOVE avatar */}
-        <View
-          style={[
-            styles.ringRankPill,
-            {
-              backgroundColor: isDark ? '#0B0B0F' : '#FFFFFF',
-              borderColor: rankMeta.color,
-            },
-          ]}
-        >
-          <RankCrestIcon tier={friend.overallRank || 'F'} size={15} isSelected />
+        {/* Bottom-right floating rank crest directly on avatar (no enclosing circle) */}
+        <View style={styles.ringRankPill}>
+          <RankCrestIcon tier={friend.overallRank || 'F'} size={22} isSelected animated />
         </View>
 
         {unreadCount > 0 && (
@@ -434,16 +426,16 @@ const styles = StyleSheet.create({
   },
   ringRankPill: {
     position: 'absolute',
-    bottom: -1,
-    right: -1,
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    borderWidth: 1.5,
+    bottom: -3,
+    right: -3,
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 30,
     elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.45,
+    shadowRadius: 3,
   },
   ringRankText: {
     color: '#09090B',
