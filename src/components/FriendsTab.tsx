@@ -81,6 +81,7 @@ interface FriendsTabProps {
   pendingChatFriend?: { friendId: string; seq: number } | null;
   onActiveChatFriendChanged?: (friendId: string | null) => void;
   onCheerBursts?: (bursts: PendingCheerBurst[]) => void;
+  isTabActive?: boolean;
 }
 
 const RANK_ORDER: RankTier[] = ['F', 'E', 'D', 'C', 'B', 'A', 'S', 'S+'];
@@ -111,6 +112,7 @@ export const FriendsTab: React.FC<FriendsTabProps> = ({
   pendingChatFriend,
   onActiveChatFriendChanged,
   onCheerBursts,
+  isTabActive = true,
 }) => {
   const { theme, isDark } = useAppTheme();
   const { t, localeCode } = useLanguage();
@@ -169,6 +171,7 @@ export const FriendsTab: React.FC<FriendsTabProps> = ({
   const liveDotPulse = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
+    if (!isTabActive) return;
     const floatLoop = Animated.loop(
       Animated.sequence([
         Animated.timing(heroFloat, {
@@ -207,7 +210,7 @@ export const FriendsTab: React.FC<FriendsTabProps> = ({
       floatLoop.stop();
       pulseLoop.stop();
     };
-  }, [heroFloat, liveDotPulse]);
+  }, [heroFloat, isTabActive, liveDotPulse]);
 
   const switchSubTab = useCallback(
     (next: FriendsSubTab) => {
@@ -280,12 +283,13 @@ export const FriendsTab: React.FC<FriendsTabProps> = ({
 
   // Silent background refresh every 12s while viewing Friends tab
   useEffect(() => {
-    if (!cloudSession?.token) return;
+    if (!cloudSession?.token || !isTabActive) return;
+    void loadSocialState(false);
     const timer = setInterval(() => {
       void loadSocialState(false);
     }, 12000);
     return () => clearInterval(timer);
-  }, [cloudSession?.token, loadSocialState]);
+  }, [cloudSession?.token, isTabActive, loadSocialState]);
 
   const handleRefresh = async () => {
     setRefreshing(true);

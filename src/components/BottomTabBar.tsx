@@ -120,9 +120,7 @@ export const BottomTabBar: React.FC<BottomTabBarProps> = ({
           if (nextTab && nextTab !== activeTabRef.current) {
             activeTabRef.current = nextTab;
             triggerSelectionHaptic();
-            React.startTransition(() => {
-              onSelectTabRef.current(nextTab);
-            });
+            onSelectTabRef.current(nextTab);
           }
         },
         onPanResponderRelease: () => {

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Alert, Animated, AppState, Platform, StyleSheet, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -83,12 +83,12 @@ function MainApp() {
   // Startup splash
   const [showSplash, setShowSplash] = useState(true);
 
-  // Active Tab
+  // Active Tab + lazy keep-alive mounted tab set (prevents unmount/remount stutter)
   const [activeTab, setActiveTab] = useState<AppTabKey>('today');
+  const [visitedTabs, setVisitedTabs] = useState<Set<AppTabKey>>(() => new Set(['today']));
 
-  // Tab Transition Animations
+  // Subtle tab micro-fade animation
   const tabFadeAnim = useRef(new Animated.Value(1)).current;
-  const tabSlideAnim = useRef(new Animated.Value(0)).current;
 
   // Single Device Profile, Plans & Shared Canonical Best PRs
   const [activeProfile, setActiveProfile] = useState<UserProfile | null>(null);
@@ -367,27 +367,23 @@ function MainApp() {
       if (targetTab === activeTab) return;
       triggerSelectionHaptic();
 
-      tabFadeAnim.setValue(0.84);
-      tabSlideAnim.setValue(6);
-      React.startTransition(() => {
-        setActiveTab(targetTab);
+      setVisitedTabs((prev) => {
+        if (prev.has(targetTab)) return prev;
+        const next = new Set(prev);
+        next.add(targetTab);
+        return next;
       });
 
-      Animated.parallel([
-        Animated.timing(tabFadeAnim, {
-          toValue: 1,
-          duration: 140,
-          useNativeDriver: true,
-        }),
-        Animated.spring(tabSlideAnim, {
-          toValue: 0,
-          friction: 9,
-          tension: 95,
-          useNativeDriver: true,
-        }),
-      ]).start();
+      tabFadeAnim.setValue(0.92);
+      setActiveTab(targetTab);
+
+      Animated.timing(tabFadeAnim, {
+        toValue: 1,
+        duration: 100,
+        useNativeDriver: true,
+      }).start();
     },
-    [activeTab, tabFadeAnim, tabSlideAnim]
+    [activeTab, tabFadeAnim]
   );
 
   const handleOnboardingComplete = async (profile: UserProfile) => {
@@ -436,6 +432,7 @@ function MainApp() {
     setPreviewExercise(null);
     setHealthSummary(null);
     setActiveTab('today');
+    setVisitedTabs(new Set(['today']));
     setActiveProfile(null);
     setProfilePlans([]);
     setActivePlan(null);
@@ -671,8 +668,9 @@ function MainApp() {
 
   const currentPlan = planDays.find((p) => p.id === todayDayId) || planDays[0];
   const activeWorkoutPlan = planDays.find((p) => p.id === activeWorkoutDayId) || planDays[0];
-  const extraLibraryExercises = profilePlans.flatMap((p) =>
-    p.days.flatMap((d) => d.exercises || [])
+  const extraLibraryExercises = useMemo(
+    () => profilePlans.flatMap((p) => p.days.flatMap((d) => d.exercises || [])),
+    [profilePlans]
   );
 
   const incomingUrl = Linking.useLinkingURL();
@@ -770,103 +768,114 @@ function MainApp() {
     <View style={[styles.safeArea, { backgroundColor: theme.bg }]}>
       <StatusBar style={isDark ? 'light' : 'dark'} />
 
-        {/* Animated Tab View Container */}
+        {/* Animated Keep-Alive Tab Container */}
         <Animated.View
           style={[
             styles.animatedTabContainer,
             {
               opacity: tabFadeAnim,
-              transform: [{ translateY: tabSlideAnim }],
             },
           ]}
         >
-          {activeTab === 'today' && (
-            <TodayScreen
-              activeProfile={activeProfile}
-              activePlan={activePlan}
-              currentPlan={currentPlan}
-              dayProgress={dayProgress}
-              streak={streak}
-              bestPRs={bestPRs}
-              healthSummary={healthSummary}
-              isHealthLoading={isHealthLoading}
-              onRefreshHealth={refreshHealthIfEnabled}
-              onConnectHealth={handleConnectHealth}
-              onConfigureSession={() => handleConfigureSession(currentPlan.id)}
-              onOpenPlanManager={() => setShowPlanManagerModal(true)}
-              onOpenBodyStats={() => setShowBodyStatsModal(true)}
-              onStartWorkout={(dayId) => handleStartWorkout(dayId)}
-              onOpenExerciseDetail={(ex) => setPreviewExercise(ex)}
-              onSwitchToPlanTab={() => handleSwitchTab('plan')}
-            />
+          {visitedTabs.has('today') && (
+            <View style={[styles.tabSlot, { display: activeTab === 'today' ? 'flex' : 'none' }]}>
+              <TodayScreen
+                activeProfile={activeProfile}
+                activePlan={activePlan}
+                currentPlan={currentPlan}
+                dayProgress={dayProgress}
+                streak={streak}
+                bestPRs={bestPRs}
+                healthSummary={healthSummary}
+                isHealthLoading={isHealthLoading}
+                onRefreshHealth={refreshHealthIfEnabled}
+                onConnectHealth={handleConnectHealth}
+                onConfigureSession={() => handleConfigureSession(currentPlan.id)}
+                onOpenPlanManager={() => setShowPlanManagerModal(true)}
+                onOpenBodyStats={() => setShowBodyStatsModal(true)}
+                onStartWorkout={(dayId) => handleStartWorkout(dayId)}
+                onOpenExerciseDetail={(ex) => setPreviewExercise(ex)}
+                onSwitchToPlanTab={() => handleSwitchTab('plan')}
+              />
+            </View>
           )}
 
-          {activeTab === 'plan' && (
-            <PlanTab
-              profileId={activeProfile.id}
-              activePlan={activePlan}
-              allPlansCount={profilePlans.length}
-              extraLibraryExercises={extraLibraryExercises}
-              bestPRs={bestPRs}
-              onOpenPlanManager={() => setShowPlanManagerModal(true)}
-              onPlanUpdated={handlePlansUpdated}
-              onLibraryChanged={() => setProgressRefreshKey((k) => k + 1)}
-              onSelectExerciseForPR={() => handleSwitchTab('progress')}
-              onStartWorkoutForDay={(dayId) => handleStartWorkout(dayId)}
-            />
+          {visitedTabs.has('plan') && (
+            <View style={[styles.tabSlot, { display: activeTab === 'plan' ? 'flex' : 'none' }]}>
+              <PlanTab
+                profileId={activeProfile.id}
+                activePlan={activePlan}
+                allPlansCount={profilePlans.length}
+                extraLibraryExercises={extraLibraryExercises}
+                bestPRs={bestPRs}
+                onOpenPlanManager={() => setShowPlanManagerModal(true)}
+                onPlanUpdated={handlePlansUpdated}
+                onLibraryChanged={() => setProgressRefreshKey((k) => k + 1)}
+                onSelectExerciseForPR={() => handleSwitchTab('progress')}
+                onStartWorkoutForDay={(dayId) => handleStartWorkout(dayId)}
+              />
+            </View>
           )}
 
-          {activeTab === 'progress' && (
-            <ProgressTab
-              activeProfile={activeProfile}
-              activePlan={activePlan}
-              profilePlans={profilePlans}
-              refreshKey={progressRefreshKey}
-            />
+          {visitedTabs.has('progress') && (
+            <View style={[styles.tabSlot, { display: activeTab === 'progress' ? 'flex' : 'none' }]}>
+              <ProgressTab
+                activeProfile={activeProfile}
+                activePlan={activePlan}
+                profilePlans={profilePlans}
+                refreshKey={progressRefreshKey}
+                isTabActive={activeTab === 'progress'}
+              />
+            </View>
           )}
 
-          {activeTab === 'friends' && (
-            <FriendsTab
-              activeProfile={activeProfile}
-              onProfileUpdated={(updated) => {
-                setActiveProfile(updated);
-                setProgressRefreshKey((k) => k + 1);
-              }}
-              onUnreadCountChanged={(count) => {
-                setUnreadSocialCount(count);
-                void syncAppIconBadgeCount(count);
-              }}
-              onDataImported={handleFullDataRefresh}
-              pendingInviteNick={pendingInviteNick}
-              pendingChatFriend={pendingChatFriend}
-              onActiveChatFriendChanged={(friendId) => {
-                activeChatFriendIdRef.current = friendId;
-              }}
-              onCheerBursts={(bursts) => {
-                if (bursts.length > 0) {
-                  setPendingCheerBursts((prev) => [...prev, ...bursts]);
-                }
-              }}
-            />
+          {visitedTabs.has('friends') && (
+            <View style={[styles.tabSlot, { display: activeTab === 'friends' ? 'flex' : 'none' }]}>
+              <FriendsTab
+                activeProfile={activeProfile}
+                isTabActive={activeTab === 'friends'}
+                onProfileUpdated={(updated) => {
+                  setActiveProfile(updated);
+                  setProgressRefreshKey((k) => k + 1);
+                }}
+                onUnreadCountChanged={(count) => {
+                  setUnreadSocialCount(count);
+                  void syncAppIconBadgeCount(count);
+                }}
+                onDataImported={handleFullDataRefresh}
+                pendingInviteNick={pendingInviteNick}
+                pendingChatFriend={pendingChatFriend}
+                onActiveChatFriendChanged={(friendId) => {
+                  activeChatFriendIdRef.current = friendId;
+                }}
+                onCheerBursts={(bursts) => {
+                  if (bursts.length > 0) {
+                    setPendingCheerBursts((prev) => [...prev, ...bursts]);
+                  }
+                }}
+              />
+            </View>
           )}
 
-          {activeTab === 'settings' && (
-            <SettingsScreen
-              activeProfile={activeProfile}
-              onProfileUpdated={(updated) => {
-                setActiveProfile(updated);
-                setProgressRefreshKey((k) => k + 1);
-              }}
-              onSettingsUpdated={(next) => {
-                if (!next.healthSyncEnabled) {
-                  setHealthSummary(null);
-                }
-              }}
-              onDataImported={handleFullDataRefresh}
-              onLibraryChanged={() => setProgressRefreshKey((k) => k + 1)}
-              onHealthSynced={(summary) => setHealthSummary(summary)}
-              onAppReset={handleAppReset}
-            />
+          {visitedTabs.has('settings') && (
+            <View style={[styles.tabSlot, { display: activeTab === 'settings' ? 'flex' : 'none' }]}>
+              <SettingsScreen
+                activeProfile={activeProfile}
+                onProfileUpdated={(updated) => {
+                  setActiveProfile(updated);
+                  setProgressRefreshKey((k) => k + 1);
+                }}
+                onSettingsUpdated={(next) => {
+                  if (!next.healthSyncEnabled) {
+                    setHealthSummary(null);
+                  }
+                }}
+                onDataImported={handleFullDataRefresh}
+                onLibraryChanged={() => setProgressRefreshKey((k) => k + 1)}
+                onHealthSynced={(summary) => setHealthSummary(summary)}
+                onAppReset={handleAppReset}
+              />
+            </View>
           )}
         </Animated.View>
 
@@ -964,6 +973,9 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   animatedTabContainer: {
+    flex: 1,
+  },
+  tabSlot: {
     flex: 1,
   },
 });
