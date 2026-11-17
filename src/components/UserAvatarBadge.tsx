@@ -102,7 +102,7 @@ export const UserAvatarBadge: React.FC<UserAvatarBadgeProps> = React.memo(
 
         {showRankDot && rank && (
           <View style={styles.rankCornerWrap}>
-            <RankCrestIcon tier={rank} size={badgeSize} isSelected animated={size >= 48} />
+            <RankCrestIcon tier={rank} size={badgeSize} isSelected />
           </View>
         )}
       </View>

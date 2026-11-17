@@ -161,7 +161,7 @@ export const CrewRadarOrb: React.FC<{
 
       {/* Center Athlete Emblem */}
       <Animated.View style={{ transform: [{ scale: coreScale }, { rotate: counterRotate }] }}>
-        <RankCrestIcon tier={myRank} size={50} isSelected />
+        <RankCrestIcon tier={myRank} size={50} isSelected animated />
       </Animated.View>
     </View>
   );
@@ -238,7 +238,7 @@ export const SquadAvatarRing: React.FC<{
 
         {/* Bottom-right floating rank crest directly on avatar (no enclosing circle) */}
         <View style={styles.ringRankPill}>
-          <RankCrestIcon tier={friend.overallRank || 'F'} size={22} isSelected animated />
+          <RankCrestIcon tier={friend.overallRank || 'F'} size={22} isSelected />
         </View>
 
         {unreadCount > 0 && (
@@ -366,7 +366,12 @@ export const CrewPodiumStage: React.FC<{
             <Ionicons name="trophy" size={14} color="#FACC15" />
           </View>
         )}
-        <RankCrestIcon tier={entry.profile.overallRank || 'F'} size={rankPos === 1 ? 52 : 42} isSelected />
+        <RankCrestIcon
+          tier={entry.profile.overallRank || 'F'}
+          size={rankPos === 1 ? 52 : 42}
+          isSelected
+          animated={rankPos === 1}
+        />
         <Text style={[styles.podiumName, { color: theme.text }]} numberOfLines={1}>
           {entry.profile.displayName.split(' ')[0]}
         </Text>
