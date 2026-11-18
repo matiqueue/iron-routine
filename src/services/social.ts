@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getLocalDateKeyOffset } from '../utils/localDate';
 import {
   ChatMessage,
   ChatMessagePayload,
@@ -242,9 +243,7 @@ export async function buildAndPublishSocialProfile(
       workoutHistory: history,
     });
 
-    const sevenDaysAgo = new Date();
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-    const cutoff7Str = sevenDaysAgo.toISOString().slice(0, 10);
+    const cutoff7Str = getLocalDateKeyOffset(-7);
     const weeklyWorkouts = history.filter((h) => h.date >= cutoff7Str).length;
 
     const topMuscles = [...physique.muscleStatsList]

@@ -22,6 +22,8 @@ import { useAppTheme } from '../context/ThemeContext';
 import { useLanguage } from '../context/LanguageContext';
 import { useIsScreenActive } from '../context/TabActivityContext';
 import { matchesExerciseSearch } from '../i18n/exerciseTranslations';
+import { getTranslatedSupplement } from '../i18n/translations';
+import { getLocalDateKey, getLocalDateKeyOffset, parseLocalDateKey } from '../utils/localDate';
 import { SmartScrollView } from './SmartScrollView';
 import {
   DayPlan,
@@ -29,6 +31,7 @@ import {
   MuscleSubGroupId,
   PRRecord,
   RankTier,
+  SupplementItem,
   UserProfile,
   WeightEntry,
   WorkoutHistoryEntry,
@@ -49,16 +52,26 @@ import { mergeAllExercises, WORKOUT_PLAN } from '../data/planData';
 import {
   addPRRecord,
   addWeightEntry,
+  CreatineDayEntry,
   deletePRRecord,
   deleteWeightEntry,
   getAllBestPRs,
+  getCreatineLog,
   getCustomExercises,
   getExerciseHistory,
   getFavoriteExerciseIds,
+  getSupplementDayTakenIds,
   getWeightHistory,
   getWorkoutHistory,
+  setSupplementDayTakenIds,
   updateProfileStats,
 } from '../services/storage';
+import { getAppSettings } from '../services/settings';
+import { formatSupplementDose } from '../data/supplements';
+import {
+  cancelEveningCreatineReminder,
+  scheduleEveningCreatineReminder,
+} from '../services/notifications';
 import {
   computePhysiqueAnalytics,
   MuscleRankStat,
@@ -477,6 +490,10 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
   const [newWeightInput, setNewWeightInput] = useState('');
   const [workoutHistory, setWorkoutHistory] = useState<WorkoutHistoryEntry[]>([]);
   const [showAllJournalWorkouts, setShowAllJournalWorkouts] = useState(false);
+  const [enabledSupplements, setEnabledSupplements] = useState<SupplementItem[]>([]);
+  const [todayTakenSuppIds, setTodayTakenSuppIds] = useState<string[]>([]);
+  const [suppLog7Days, setSuppLog7Days] = useState<CreatineDayEntry[]>([]);
+  const [bodyWeightUnitLabel] = useState('kg');
 
   const allExercises = useMemo(() => {
     const planExercises: Exercise[] = [];
@@ -505,12 +522,16 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
   );
 
   const loadAllAnalytics = useCallback(async () => {
-    const [prs, weights, hist, custom, favs] = await Promise.all([
+    const todayKey = getLocalDateKey();
+    const [prs, weights, hist, custom, favs, appSettings, takenToday, supp7] = await Promise.all([
       getAllBestPRs(effectiveProfileId),
       getWeightHistory(effectiveProfileId),
       getWorkoutHistory(effectiveProfileId),
       getCustomExercises(),
       getFavoriteExerciseIds(),
+      getAppSettings(),
+      getSupplementDayTakenIds(todayKey, effectiveProfileId),
+      getCreatineLog(7, effectiveProfileId),
     ]);
 
     setBestPRs(prs);
@@ -518,6 +539,9 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
     setWorkoutHistory(hist);
     setCustomExercises(custom);
     setFavoriteIds(favs);
+    setEnabledSupplements((appSettings.supplements || []).filter((s) => s.enabled));
+    setTodayTakenSuppIds(takenToday);
+    setSuppLog7Days(supp7);
 
     const catalog = mergeAllExercises(custom, [
       ...EXERCISE_LIBRARY,
@@ -796,6 +820,56 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
     await loadAllAnalytics();
   };
 
+  const syncEveningSuppNotifState = async (anyTaken: boolean) => {
+    try {
+      const s = await getAppSettings();
+      if (!s.creatineRemindersEnabled) return;
+      if (anyTaken) {
+        await cancelEveningCreatineReminder();
+      } else {
+        await scheduleEveningCreatineReminder(s.creatineEveningHour, s.creatineEveningMinute);
+      }
+    } catch {}
+  };
+
+  const resolveEffectiveTakenIds = (rawIds: string[]): string[] => {
+    if (rawIds.includes('__all__')) {
+      return enabledSupplements.length > 0 ? enabledSupplements.map((s) => s.id) : ['__all__'];
+    }
+    return rawIds;
+  };
+
+  const handleToggleSupplementItem = async (suppId: string) => {
+    try {
+      Haptics.selectionAsync();
+    } catch {}
+    const todayKey = getLocalDateKey();
+    const current = resolveEffectiveTakenIds(todayTakenSuppIds);
+    const exists = current.includes(suppId);
+    const next = exists ? current.filter((id) => id !== suppId) : [...current, suppId];
+    setTodayTakenSuppIds(next);
+    await setSupplementDayTakenIds(next, todayKey, effectiveProfileId);
+    const updatedLog = await getCreatineLog(7, effectiveProfileId);
+    setSuppLog7Days(updatedLog);
+    void syncEveningSuppNotifState(next.length > 0);
+  };
+
+  const handleToggleAllSupplementsToday = async () => {
+    try {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch {}
+    const todayKey = getLocalDateKey();
+    const current = resolveEffectiveTakenIds(todayTakenSuppIds);
+    const targetIds = enabledSupplements.length > 0 ? enabledSupplements.map((s) => s.id) : ['__all__'];
+    const allTakenNow = targetIds.every((id) => current.includes(id));
+    const next = allTakenNow ? [] : targetIds;
+    setTodayTakenSuppIds(next);
+    await setSupplementDayTakenIds(next, todayKey, effectiveProfileId);
+    const updatedLog = await getCreatineLog(7, effectiveProfileId);
+    setSuppLog7Days(updatedLog);
+    void syncEveningSuppNotifState(next.length > 0);
+  };
+
   // Exercises grouped by muscle for the inline accordion & Exercises tab
   const exercisesByMuscle = useMemo(() => {
     const map: Record<MuscleSubGroupId, EnrichedExerciseRankStat[]> = {} as any;
@@ -970,8 +1044,8 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
   const filterByRange = <T extends { date: string }>(items: T[], range: ChartRange): T[] => {
     if (range === 'all') return items;
     const days = range === '7d' ? 7 : 30;
-    const cutoff = Date.now() - days * 86400000;
-    return items.filter((i) => new Date(i.date).getTime() >= cutoff);
+    const cutoffKey = getLocalDateKeyOffset(-days);
+    return items.filter((i) => i.date.slice(0, 10) >= cutoffKey);
   };
 
   const filteredWeightPoints = useMemo(
@@ -989,9 +1063,8 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
     const out: Array<{ key: string; label: string; active: boolean; isToday: boolean }> = [];
     const now = new Date();
     for (let i = 27; i >= 0; i--) {
-      const d = new Date(now);
-      d.setDate(now.getDate() - i);
-      const iso = d.toISOString().slice(0, 10);
+      const iso = getLocalDateKeyOffset(-i, now);
+      const d = parseLocalDateKey(iso);
       out.push({
         key: iso,
         label: String(d.getDate()),
@@ -2085,7 +2158,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                       style={[styles.simpleLogRow, { borderBottomColor: theme.hairline }]}
                     >
                       <Text style={[styles.simpleLogDate, { color: theme.textMuted }]}>
-                        {new Date(w.date).toLocaleDateString(localeCode, {
+                        {parseLocalDateKey(w.date).toLocaleDateString(localeCode, {
                           day: 'numeric',
                           month: 'short',
                           year: 'numeric',
@@ -2102,6 +2175,175 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                     </View>
                   ))}
               </View>
+
+              {/* Open Today's Supplements Check-In ("Czy brałeś dziś suple?") */}
+              {(() => {
+                const effectiveTaken = resolveEffectiveTakenIds(todayTakenSuppIds);
+                const hasItems = enabledSupplements.length > 0;
+                const totalItems = hasItems ? enabledSupplements.length : 1;
+                const takenCount = hasItems
+                  ? enabledSupplements.filter((s) => effectiveTaken.includes(s.id)).length
+                  : todayTakenSuppIds.length > 0
+                  ? 1
+                  : 0;
+                const allDone = takenCount >= totalItems && totalItems > 0;
+
+                return (
+                  <View style={[styles.openSection, { borderTopColor: theme.hairline }]}>
+                    <View style={styles.openSectionHeader}>
+                      <View>
+                        <Text style={[styles.sectionEyebrow, { color: allDone ? '#10B981' : theme.textMuted }]}>
+                          {t('journalSuppEyebrow')}
+                        </Text>
+                        <Text style={[styles.sectionHeading, { color: theme.text }]}>
+                          {t('journalSuppHeading')}
+                        </Text>
+                      </View>
+                      <View
+                        style={[
+                          styles.suppStatusBadge,
+                          {
+                            backgroundColor: allDone
+                              ? 'rgba(16, 185, 129, 0.14)'
+                              : theme.bgSecondary,
+                            borderColor: allDone ? '#10B981' : theme.border,
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.suppStatusBadgeText,
+                            { color: allDone ? '#10B981' : theme.textSecondary },
+                          ]}
+                        >
+                          {allDone
+                            ? t('journalSuppTakenBadge')
+                            : hasItems
+                            ? `${takenCount}/${totalItems}`
+                            : t('journalSuppPendingBadge')}
+                        </Text>
+                      </View>
+                    </View>
+
+                    {hasItems && (
+                      <View style={styles.suppChipsWrap}>
+                        {enabledSupplements.map((supp) => {
+                          const isChecked = effectiveTaken.includes(supp.id);
+                          const suppDisplayName = getTranslatedSupplement(
+                            supp.id,
+                            'name',
+                            supp.name,
+                            (localeCode.slice(0, 2) as any) || 'pl'
+                          );
+                          const dose = formatSupplementDose(supp, activeProfile?.weight);
+                          return (
+                            <TouchableOpacity
+                              key={supp.id}
+                              style={[
+                                styles.suppChip,
+                                {
+                                  backgroundColor: isChecked
+                                    ? 'rgba(16, 185, 129, 0.14)'
+                                    : theme.bgSecondary,
+                                  borderColor: isChecked ? '#10B981' : theme.border,
+                                },
+                              ]}
+                              onPress={() => handleToggleSupplementItem(supp.id)}
+                              activeOpacity={0.75}
+                            >
+                              <Ionicons
+                                name={isChecked ? 'checkmark-circle' : 'ellipse-outline'}
+                                size={16}
+                                color={isChecked ? '#10B981' : theme.textMuted}
+                              />
+                              <View style={{ flexShrink: 1 }}>
+                                <Text
+                                  style={[styles.suppChipName, { color: theme.text }]}
+                                  numberOfLines={1}
+                                >
+                                  {suppDisplayName}
+                                </Text>
+                                {dose ? (
+                                  <Text
+                                    style={[styles.suppChipDose, { color: theme.textMuted }]}
+                                    numberOfLines={1}
+                                  >
+                                    {dose}
+                                  </Text>
+                                ) : null}
+                              </View>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+                    )}
+
+                    <TouchableOpacity
+                      style={[
+                        styles.suppMarkAllBtn,
+                        {
+                          backgroundColor: allDone ? 'rgba(16, 185, 129, 0.14)' : theme.text,
+                          borderColor: allDone ? '#10B981' : theme.text,
+                        },
+                      ]}
+                      onPress={handleToggleAllSupplementsToday}
+                      activeOpacity={0.8}
+                    >
+                      <Ionicons
+                        name={allDone ? 'checkmark-done-circle' : 'sparkles-outline'}
+                        size={17}
+                        color={allDone ? '#10B981' : theme.bg}
+                      />
+                      <Text
+                        style={[
+                          styles.suppMarkAllText,
+                          { color: allDone ? '#10B981' : theme.bg },
+                        ]}
+                      >
+                        {allDone ? t('journalSuppAllDoneBtn') : t('journalSuppMarkAllBtn')}
+                      </Text>
+                    </TouchableOpacity>
+
+                    {suppLog7Days.length > 0 && (
+                      <View style={styles.suppWeekWrap}>
+                        <Text style={[styles.suppWeekLabel, { color: theme.textMuted }]}>
+                          {t('journalSuppLast7Days')}
+                        </Text>
+                        <View style={styles.suppWeekRow}>
+                          {suppLog7Days.map((entry) => (
+                            <View key={entry.date} style={styles.suppWeekCell}>
+                              <View
+                                style={[
+                                  styles.suppWeekDot,
+                                  {
+                                    backgroundColor: entry.taken ? '#10B981' : theme.bgSecondary,
+                                    borderColor: entry.isToday ? theme.text : 'transparent',
+                                    borderWidth: entry.isToday ? 1.5 : 0,
+                                  },
+                                ]}
+                              >
+                                <Ionicons
+                                  name={entry.taken ? 'checkmark' : 'close'}
+                                  size={12}
+                                  color={entry.taken ? '#09090B' : theme.textMuted}
+                                />
+                              </View>
+                              <Text
+                                style={[
+                                  styles.suppWeekDay,
+                                  { color: entry.isToday ? theme.text : theme.textMuted },
+                                ]}
+                              >
+                                {entry.dayLabel}
+                              </Text>
+                            </View>
+                          ))}
+                        </View>
+                      </View>
+                    )}
+                  </View>
+                );
+              })()}
 
               {/* Open 28-Day Activity Matrix */}
               <View style={[styles.openSection, { borderTopColor: theme.hairline }]}>
@@ -2200,7 +2442,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                             {entry.dayName}
                           </Text>
                           <Text style={[styles.workoutLogSub, { color: theme.textMuted }]}>
-                            {new Date(entry.date).toLocaleDateString(localeCode, {
+                            {parseLocalDateKey(entry.date).toLocaleDateString(localeCode, {
                               weekday: 'short',
                               day: 'numeric',
                               month: 'long',
@@ -2965,6 +3207,85 @@ const styles = StyleSheet.create({
   },
   simpleLogVal: {
     fontSize: 14,
+    fontWeight: '700',
+  },
+  suppStatusBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  suppStatusBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  suppChipsWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 6,
+    marginBottom: 12,
+  },
+  suppChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderRadius: 12,
+    borderWidth: 1,
+    maxWidth: '48%',
+  },
+  suppChipName: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  suppChipDose: {
+    fontSize: 11,
+    fontWeight: '500',
+    marginTop: 1,
+  },
+  suppMarkAllBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginTop: 4,
+  },
+  suppMarkAllText: {
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  suppWeekWrap: {
+    marginTop: 12,
+    gap: 6,
+  },
+  suppWeekLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  suppWeekRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 6,
+  },
+  suppWeekCell: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 4,
+  },
+  suppWeekDot: {
+    width: 28,
+    height: 28,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  suppWeekDay: {
+    fontSize: 10,
     fontWeight: '700',
   },
   dotsGrid: {

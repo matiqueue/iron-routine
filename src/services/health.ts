@@ -313,6 +313,236 @@ export async function fetchTodayHealthSummary(): Promise<HealthDailySummary> {
   }
 }
 
+export interface HealthSleepSchedule {
+  available: boolean;
+  authorized: boolean;
+  sourceName: 'Apple Health' | 'Health Connect' | 'none';
+  wakeHour: number;
+  wakeMinute: number;
+  bedHour: number;
+  bedMinute: number;
+  morningHour: number;
+  morningMinute: number;
+  eveningHour: number;
+  eveningMinute: number;
+  nightsAnalyzed: number;
+}
+
+function mergeSleepSessionsWithGap(
+  intervals: Array<[number, number]>,
+  maxGapMs = 90 * 60 * 1000,
+  minNightMs = 3 * 60 * 60 * 1000
+): Array<[number, number]> {
+  const valid = intervals
+    .filter(([s, e]) => e > s)
+    .sort((a, b) => a[0] - b[0]);
+  if (valid.length === 0) return [];
+
+  const merged: Array<[number, number]> = [];
+  let [curStart, curEnd] = valid[0];
+  for (let i = 1; i < valid.length; i++) {
+    const [s, e] = valid[i];
+    if (s <= curEnd + maxGapMs) {
+      curEnd = Math.max(curEnd, e);
+    } else {
+      merged.push([curStart, curEnd]);
+      curStart = s;
+      curEnd = e;
+    }
+  }
+  merged.push([curStart, curEnd]);
+
+  return merged.filter(([s, e]) => e - s >= minNightMs);
+}
+
+function computeMedian(values: number[]): number {
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  if (sorted.length % 2 === 1) return sorted[mid];
+  return Math.round((sorted[mid - 1] + sorted[mid]) / 2);
+}
+
+function clampMinutesOfDay(mins: number, minVal: number, maxVal: number): number {
+  return Math.max(minVal, Math.min(maxVal, Math.round(mins)));
+}
+
+function splitClockMinutes(totalMins: number): { hour: number; minute: number } {
+  const norm = ((Math.round(totalMins) % 1440) + 1440) % 1440;
+  return {
+    hour: Math.floor(norm / 60),
+    minute: norm % 60,
+  };
+}
+
+/**
+ * Reads recent sleep sessions from Apple HealthKit (iOS) or Health Connect / Samsung Health (Android)
+ * to derive the user's real wake-up & bedtime and schedule supplement reminders accordingly.
+ */
+export async function detectHealthSleepSchedule(): Promise<HealthSleepSchedule> {
+  const empty: HealthSleepSchedule = {
+    available: false,
+    authorized: false,
+    sourceName: 'none',
+    wakeHour: 8,
+    wakeMinute: 45,
+    bedHour: 22,
+    bedMinute: 45,
+    morningHour: 9,
+    morningMinute: 0,
+    eveningHour: 22,
+    eveningMinute: 0,
+    nightsAnalyzed: 0,
+  };
+
+  try {
+    const now = new Date();
+    const lookbackStart = new Date(now);
+    lookbackStart.setDate(lookbackStart.getDate() - 10);
+    lookbackStart.setHours(12, 0, 0, 0);
+
+    let nightEpisodes: Array<[number, number]> = [];
+    let sourceName: HealthSleepSchedule['sourceName'] = 'none';
+
+    if (Platform.OS === 'ios') {
+      const {
+        isHealthDataAvailableAsync,
+        queryCategorySamples,
+        CategoryValueSleepAnalysis,
+      } = getIosHealthKit();
+      const available = await isHealthDataAvailableAsync();
+      if (!available) return empty;
+      sourceName = 'Apple Health';
+
+      const sleepSamples = await queryCategorySamples('HKCategoryTypeIdentifierSleepAnalysis', {
+        limit: 0,
+        ascending: true,
+        filter: { date: { startDate: lookbackStart, endDate: now } },
+      }).catch(() => []);
+
+      const asleepStages = new Set<number>([
+        CategoryValueSleepAnalysis.asleepUnspecified,
+        CategoryValueSleepAnalysis.asleepCore,
+        CategoryValueSleepAnalysis.asleepDeep,
+        CategoryValueSleepAnalysis.asleepREM,
+      ]);
+
+      const asleepRaw: Array<[number, number]> = [];
+      const inBedRaw: Array<[number, number]> = [];
+      for (const s of sleepSamples || []) {
+        const sMs = new Date(s.startDate).getTime();
+        const eMs = new Date(s.endDate).getTime();
+        if (asleepStages.has(s.value)) {
+          asleepRaw.push([sMs, eMs]);
+        } else if (s.value === CategoryValueSleepAnalysis.inBed) {
+          inBedRaw.push([sMs, eMs]);
+        }
+      }
+      const primary = asleepRaw.length > 0 ? asleepRaw : inBedRaw;
+      nightEpisodes = mergeSleepSessionsWithGap(primary);
+    } else if (Platform.OS === 'android') {
+      const {
+        getSdkStatus,
+        SdkAvailabilityStatus,
+        initialize: initializeHealthConnect,
+        getGrantedPermissions,
+        readRecords,
+      } = getAndroidHealthConnect();
+      const status = await getSdkStatus();
+      if (status !== SdkAvailabilityStatus.SDK_AVAILABLE) return empty;
+      const initialized = await initializeHealthConnect();
+      if (!initialized) return empty;
+      const granted = await getGrantedPermissions();
+      if (granted.length === 0) return { ...empty, available: true, sourceName: 'Health Connect' };
+      sourceName = 'Health Connect';
+
+      const sleepRecords = await readRecords('SleepSession', {
+        timeRangeFilter: {
+          operator: 'between',
+          startTime: lookbackStart.toISOString(),
+          endTime: now.toISOString(),
+        },
+      }).catch(() => ({ records: [] }));
+
+      const rawIntervals: Array<[number, number]> = (sleepRecords?.records || []).map((rec) => [
+        new Date(rec.startTime).getTime(),
+        new Date(rec.endTime).getTime(),
+      ]);
+      nightEpisodes = mergeSleepSessionsWithGap(rawIntervals);
+    } else {
+      return empty;
+    }
+
+    if (nightEpisodes.length === 0) {
+      return {
+        ...empty,
+        available: true,
+        authorized: true,
+        sourceName,
+        nightsAnalyzed: 0,
+      };
+    }
+
+    const wakeMinsList: number[] = [];
+    const bedMinsList: number[] = [];
+    for (const [startMs, endMs] of nightEpisodes) {
+      const sDate = new Date(startMs);
+      const eDate = new Date(endMs);
+      const wakeMins = eDate.getHours() * 60 + eDate.getMinutes();
+      let bedMins = sDate.getHours() * 60 + sDate.getMinutes();
+      if (bedMins < 12 * 60) {
+        // Past midnight bedtime (e.g. 00:30 -> 24:30) keeps median near midnight accurate
+        bedMins += 1440;
+      }
+      if (wakeMins >= 3 * 60 && wakeMins <= 14 * 60) {
+        wakeMinsList.push(wakeMins);
+      }
+      bedMinsList.push(bedMins);
+    }
+
+    if (wakeMinsList.length === 0 || bedMinsList.length === 0) {
+      return {
+        ...empty,
+        available: true,
+        authorized: true,
+        sourceName,
+        nightsAnalyzed: nightEpisodes.length,
+      };
+    }
+
+    const medianWakeMins = computeMedian(wakeMinsList);
+    const medianBedMinsWrapped = computeMedian(bedMinsList);
+
+    const morningTargetMins = clampMinutesOfDay(medianWakeMins + 15, 5 * 60 + 30, 12 * 60 + 30);
+    const eveningTargetMins = clampMinutesOfDay(
+      medianBedMinsWrapped - 45,
+      19 * 60,
+      23 * 60 + 45
+    );
+
+    const wakeClock = splitClockMinutes(medianWakeMins);
+    const bedClock = splitClockMinutes(medianBedMinsWrapped);
+    const morningClock = splitClockMinutes(morningTargetMins);
+    const eveningClock = splitClockMinutes(eveningTargetMins);
+
+    return {
+      available: true,
+      authorized: true,
+      sourceName,
+      wakeHour: wakeClock.hour,
+      wakeMinute: wakeClock.minute,
+      bedHour: bedClock.hour,
+      bedMinute: bedClock.minute,
+      morningHour: morningClock.hour,
+      morningMinute: morningClock.minute,
+      eveningHour: eveningClock.hour,
+      eveningMinute: eveningClock.minute,
+      nightsAnalyzed: wakeMinsList.length,
+    };
+  } catch {
+    return empty;
+  }
+}
+
 export interface HealthCoachingInsight {
   id: string;
   icon: 'moon-outline' | 'footsteps-outline' | 'flame-outline' | 'battery-charging-outline';

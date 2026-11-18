@@ -46,6 +46,7 @@ import {
   getNotificationPermissionSummary,
   NotificationPermissionSummary,
   syncRemindersWithSettings,
+  syncSupplementScheduleFromHealth,
 } from '../services/notifications';
 import { fetchTodayHealthSummary, requestHealthPermissions } from '../services/health';
 import { buildActiveSupplementsSummary } from '../data/supplements';
@@ -490,6 +491,9 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
       const summary = await fetchTodayHealthSummary();
       setHealthSummary(summary);
       onHealthSynced?.(summary);
+      await syncSupplementScheduleFromHealth().catch(() => {});
+      const refreshedSettings = await getAppSettings();
+      setSettings(refreshedSettings);
       triggerNotificationHaptic('success');
     } finally {
       setIsSyncingHealth(false);
@@ -503,6 +507,11 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
       const summary = await fetchTodayHealthSummary();
       setHealthSummary(summary);
       onHealthSynced?.(summary);
+      if (settings.creatineSyncWithHealth !== false) {
+        await syncSupplementScheduleFromHealth().catch(() => {});
+        const refreshedSettings = await getAppSettings();
+        setSettings(refreshedSettings);
+      }
     } finally {
       setIsSyncingHealth(false);
     }
@@ -1328,58 +1337,90 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           </View>
 
           {settings.creatineRemindersEnabled && (
-            <View style={styles.hoursGrid}>
-              <View style={[styles.hourBox, { backgroundColor: theme.bgSecondary }]}>
-                <Text style={[styles.hourLabel, { color: theme.textMuted }]}>{t('morningUpper')}</Text>
-                <View style={styles.hourControls}>
-                  <TouchableOpacity
-                    style={[styles.hourBtn, { backgroundColor: theme.bg }]}
-                    onPress={() => {
-                      const next = Math.max(6, settings.creatineMorningHour - 1);
-                      handlePatchSettings({ creatineMorningHour: next }, true);
-                    }}
-                  >
-                    <Ionicons name="remove" size={14} color={theme.text} />
-                  </TouchableOpacity>
-                  <Text style={[styles.hourValue, { color: theme.text }]}>
-                    {String(settings.creatineMorningHour).padStart(2, '0')}:00
+            <View style={{ gap: 10 }}>
+              <View style={[styles.openSwitchLine, { paddingVertical: 6 }]}>
+                <View style={styles.switchLabelWrap}>
+                  <Text style={[styles.rowTitle, { color: theme.text, fontSize: 14 }]}>
+                    {t('syncSuppWithHealthTitle')}
                   </Text>
-                  <TouchableOpacity
-                    style={[styles.hourBtn, { backgroundColor: theme.bg }]}
-                    onPress={() => {
-                      const next = Math.min(14, settings.creatineMorningHour + 1);
-                      handlePatchSettings({ creatineMorningHour: next }, true);
-                    }}
-                  >
-                    <Ionicons name="add" size={14} color={theme.text} />
-                  </TouchableOpacity>
+                  <Text style={[styles.rowSub, { color: theme.textSecondary }]}>
+                    {settings.healthSyncEnabled && settings.creatineSyncWithHealth !== false && settings.healthDetectedWakeTime
+                      ? t('syncSuppWithHealthActive', {
+                          morning: `${String(settings.creatineMorningHour).padStart(2, '0')}:${String(settings.creatineMorningMinute ?? 0).padStart(2, '0')}`,
+                          evening: `${String(settings.creatineEveningHour).padStart(2, '0')}:${String(settings.creatineEveningMinute ?? 0).padStart(2, '0')}`,
+                        })
+                      : settings.creatineSyncWithHealth !== false
+                      ? t('syncSuppWithHealthNoData')
+                      : t('syncSuppWithHealthSub')}
+                  </Text>
                 </View>
+                <Switch
+                  value={settings.creatineSyncWithHealth !== false}
+                  onValueChange={async (v) => {
+                    await handlePatchSettings({ creatineSyncWithHealth: v }, true);
+                    if (v) {
+                      const refreshed = await getAppSettings();
+                      setSettings(refreshed);
+                    }
+                  }}
+                  trackColor={switchTrack}
+                  thumbColor={switchThumb}
+                />
               </View>
 
-              <View style={[styles.hourBox, { backgroundColor: theme.bgSecondary }]}>
-                <Text style={[styles.hourLabel, { color: theme.textMuted }]}>{t('eveningUpper')}</Text>
-                <View style={styles.hourControls}>
-                  <TouchableOpacity
-                    style={[styles.hourBtn, { backgroundColor: theme.bg }]}
-                    onPress={() => {
-                      const next = Math.max(17, settings.creatineEveningHour - 1);
-                      handlePatchSettings({ creatineEveningHour: next }, true);
-                    }}
-                  >
-                    <Ionicons name="remove" size={14} color={theme.text} />
-                  </TouchableOpacity>
-                  <Text style={[styles.hourValue, { color: theme.text }]}>
-                    {String(settings.creatineEveningHour).padStart(2, '0')}:00
-                  </Text>
-                  <TouchableOpacity
-                    style={[styles.hourBtn, { backgroundColor: theme.bg }]}
-                    onPress={() => {
-                      const next = Math.min(23, settings.creatineEveningHour + 1);
-                      handlePatchSettings({ creatineEveningHour: next }, true);
-                    }}
-                  >
-                    <Ionicons name="add" size={14} color={theme.text} />
-                  </TouchableOpacity>
+              <View style={styles.hoursGrid}>
+                <View style={[styles.hourBox, { backgroundColor: theme.bgSecondary }]}>
+                  <Text style={[styles.hourLabel, { color: theme.textMuted }]}>{t('morningUpper')}</Text>
+                  <View style={styles.hourControls}>
+                    <TouchableOpacity
+                      style={[styles.hourBtn, { backgroundColor: theme.bg }]}
+                      onPress={() => {
+                        const next = Math.max(6, settings.creatineMorningHour - 1);
+                        handlePatchSettings({ creatineMorningHour: next, creatineMorningMinute: 0, creatineSyncWithHealth: false }, true);
+                      }}
+                    >
+                      <Ionicons name="remove" size={14} color={theme.text} />
+                    </TouchableOpacity>
+                    <Text style={[styles.hourValue, { color: theme.text }]}>
+                      {String(settings.creatineMorningHour).padStart(2, '0')}:{String(settings.creatineMorningMinute ?? 0).padStart(2, '0')}
+                    </Text>
+                    <TouchableOpacity
+                      style={[styles.hourBtn, { backgroundColor: theme.bg }]}
+                      onPress={() => {
+                        const next = Math.min(14, settings.creatineMorningHour + 1);
+                        handlePatchSettings({ creatineMorningHour: next, creatineMorningMinute: 0, creatineSyncWithHealth: false }, true);
+                      }}
+                    >
+                      <Ionicons name="add" size={14} color={theme.text} />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
+                <View style={[styles.hourBox, { backgroundColor: theme.bgSecondary }]}>
+                  <Text style={[styles.hourLabel, { color: theme.textMuted }]}>{t('eveningUpper')}</Text>
+                  <View style={styles.hourControls}>
+                    <TouchableOpacity
+                      style={[styles.hourBtn, { backgroundColor: theme.bg }]}
+                      onPress={() => {
+                        const next = Math.max(17, settings.creatineEveningHour - 1);
+                        handlePatchSettings({ creatineEveningHour: next, creatineEveningMinute: 0, creatineSyncWithHealth: false }, true);
+                      }}
+                    >
+                      <Ionicons name="remove" size={14} color={theme.text} />
+                    </TouchableOpacity>
+                    <Text style={[styles.hourValue, { color: theme.text }]}>
+                      {String(settings.creatineEveningHour).padStart(2, '0')}:{String(settings.creatineEveningMinute ?? 0).padStart(2, '0')}
+                    </Text>
+                    <TouchableOpacity
+                      style={[styles.hourBtn, { backgroundColor: theme.bg }]}
+                      onPress={() => {
+                        const next = Math.min(23, settings.creatineEveningHour + 1);
+                        handlePatchSettings({ creatineEveningHour: next, creatineEveningMinute: 0, creatineSyncWithHealth: false }, true);
+                      }}
+                    >
+                      <Ionicons name="add" size={14} color={theme.text} />
+                    </TouchableOpacity>
+                  </View>
                 </View>
               </View>
             </View>
