@@ -547,23 +547,25 @@ export async function getSocialHubForUser(userId: string) {
     return tb.localeCompare(ta);
   });
 
-  const feedUserIds = [userId, ...friendIds];
-  const actRows: any[] = await sql`
-    SELECT
-      sa.*,
-      u.nickname, u.display_name,
-      COALESCE(ap.avatar_url, u.avatar_url) AS avatar_url,
-      ap.avatar_color, ap.show_activity
-    FROM social_activities sa
-    JOIN users u ON u.user_id = sa.user_id
-    LEFT JOIN athlete_profiles ap ON ap.user_id = sa.user_id
-    WHERE sa.user_id = ANY(${feedUserIds}::text[])
-    ORDER BY sa.created_at DESC
-    LIMIT 45
-  `;
+  const actRows: any[] =
+    friendIds.length > 0
+      ? await sql`
+          SELECT
+            sa.*,
+            u.nickname, u.display_name,
+            COALESCE(ap.avatar_url, u.avatar_url) AS avatar_url,
+            ap.avatar_color, ap.show_activity
+          FROM social_activities sa
+          JOIN users u ON u.user_id = sa.user_id
+          LEFT JOIN athlete_profiles ap ON ap.user_id = sa.user_id
+          WHERE sa.user_id = ANY(${friendIds}::text[])
+          ORDER BY sa.created_at DESC
+          LIMIT 45
+        `
+      : [];
 
   const activities = actRows
-    .filter((row) => row.user_id === userId || row.show_activity !== false)
+    .filter((row) => row.user_id !== userId && row.show_activity !== false)
     .map((row) => {
       const cheeredBy: string[] = Array.isArray(row.cheered_by) ? row.cheered_by : [];
       const numericCheers = Number(row.cheers_count || 0);
@@ -740,6 +742,20 @@ export async function markChatRead(userId: string, friendId: string): Promise<vo
     VALUES (${userId}, ${friendId}, NOW())
     ON CONFLICT (user_id, friend_id) DO UPDATE SET last_read_at = NOW()
   `;
+}
+
+export async function getFriendLastReadAt(
+  userId: string,
+  friendId: string
+): Promise<string | null> {
+  await ensureSchema();
+  const sql = getSql();
+  const rows: any[] = await sql`
+    SELECT last_read_at FROM chat_read_state
+    WHERE user_id = ${friendId} AND friend_id = ${userId}
+    LIMIT 1
+  `;
+  return rows[0]?.last_read_at ? new Date(rows[0].last_read_at).toISOString() : null;
 }
 
 export async function saveEncryptedChatMessage(params: {

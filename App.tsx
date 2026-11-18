@@ -43,6 +43,7 @@ import { parseVoiceDeepLink } from './src/services/voiceCommands';
 import { triggerNotificationHaptic, triggerSelectionHaptic } from './src/services/haptics';
 import {
   cancelRestFinishedNotification,
+  ensureNotificationPermissions,
   handleNotificationResponse,
   notifyIncomingChatMessages,
   registerExpoPushTokenIfSupported,
@@ -69,6 +70,10 @@ import { ProgressTab } from './src/components/ProgressTab';
 import { FriendsTab } from './src/components/FriendsTab';
 import { SettingsScreen } from './src/screens/SettingsScreen';
 import { CheerStormOverlay } from './src/components/CheerStormOverlay';
+import {
+  ChatNotificationBanner,
+  IncomingChatToast,
+} from './src/components/ChatNotificationBanner';
 import { fetchSocialHub } from './src/services/social';
 import { WorkoutSummaryModal } from './src/components/WorkoutSummaryModal';
 import { ExerciseDetailModal } from './src/components/ExerciseDetailModal';
@@ -108,6 +113,7 @@ function MainApp() {
     friendId: string;
     seq: number;
   } | null>(null);
+  const [chatToast, setChatToast] = useState<IncomingChatToast | null>(null);
   const activeChatFriendIdRef = useRef<string | null>(null);
   const activeCloudUserIdRef = useRef<string | null>(null);
 
@@ -198,7 +204,12 @@ function MainApp() {
     }
     const uid = explicitUserId || activeCloudUserIdRef.current;
     if (uid && Array.isArray(hub.friends)) {
-      void notifyIncomingChatMessages(hub.friends, uid, activeChatFriendIdRef.current);
+      void notifyIncomingChatMessages(
+        hub.friends,
+        uid,
+        activeChatFriendIdRef.current,
+        (toast) => setChatToast(toast)
+      );
     }
   }, []);
 
@@ -223,6 +234,12 @@ function MainApp() {
       const data: any = response.notification.request.content.data;
       if (data?.type === 'chat_message' && data?.friendId) {
         setIsActiveWorkout(false);
+        setVisitedTabs((prev) => {
+          if (prev.has('friends')) return prev;
+          const next = new Set(prev);
+          next.add('friends');
+          return next;
+        });
         setActiveTab('friends');
         setPendingChatFriend({ friendId: String(data.friendId), seq: Date.now() });
       }
@@ -274,6 +291,7 @@ function MainApp() {
 
   useEffect(() => {
     if (!activeProfile?.cloudUserId) return;
+    void ensureNotificationPermissions(true);
     void registerExpoPushTokenIfSupported();
     const timer = setInterval(() => {
       if (AppState.currentState !== 'active') return;
@@ -951,6 +969,23 @@ function MainApp() {
           bursts={pendingCheerBursts}
           onFinished={() => setPendingCheerBursts([])}
           onPressBanner={() => handleSwitchTab('friends')}
+        />
+
+        <ChatNotificationBanner
+          toast={chatToast}
+          onDismiss={() => setChatToast(null)}
+          onPress={(fr) => {
+            setChatToast(null);
+            setIsActiveWorkout(false);
+            setVisitedTabs((prev) => {
+              if (prev.has('friends')) return prev;
+              const next = new Set(prev);
+              next.add('friends');
+              return next;
+            });
+            setActiveTab('friends');
+            setPendingChatFriend({ friendId: fr.userId, seq: Date.now() });
+          }}
         />
     </View>
   );

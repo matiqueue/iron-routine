@@ -533,7 +533,16 @@ export const FriendsTab: React.FC<FriendsTabProps> = ({
 
   const leaderboardEntries = useMemo(() => {
     const pool: Array<{ profile: FriendProfileSummary; isMe: boolean }> = [];
-    if (hub.myProfile) pool.push({ profile: hub.myProfile, isMe: true });
+    if (hub.myProfile) {
+      pool.push({
+        profile: {
+          ...hub.myProfile,
+          avatarUrl: hub.myProfile.avatarUrl ?? activeProfile.avatarUrl ?? null,
+          avatarColor: hub.myProfile.avatarColor || activeProfile.avatarColor,
+        },
+        isMe: true,
+      });
+    }
     for (const f of hub.friends) pool.push({ profile: f.friend, isMe: false });
 
     return pool.sort((a, b) => {
@@ -548,7 +557,12 @@ export const FriendsTab: React.FC<FriendsTabProps> = ({
         rankScore(a.profile.overallRank, a.profile.overallProgressPct)
       );
     });
-  }, [hub.myProfile, hub.friends, leaderboardMetric]);
+  }, [activeProfile.avatarColor, activeProfile.avatarUrl, hub.myProfile, hub.friends, leaderboardMetric]);
+
+  const friendActivities = useMemo(
+    () => (hub.activities || []).filter((act) => act.userId !== myUserId),
+    [hub.activities, myUserId]
+  );
 
   const cardFloatY = heroFloat.interpolate({ inputRange: [0, 1], outputRange: [0, -3] });
   const liveScale = liveDotPulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.35] });
@@ -974,7 +988,7 @@ export const FriendsTab: React.FC<FriendsTabProps> = ({
                ===================================================== */}
             {subTab === 'feed' && (
               <View style={styles.subSection}>
-                {hub.activities.length === 0 ? (
+                {friendActivities.length === 0 ? (
                   <View
                     style={[
                       styles.emptyCard,
@@ -993,57 +1007,86 @@ export const FriendsTab: React.FC<FriendsTabProps> = ({
                     </Text>
                   </View>
                 ) : (
-                  hub.activities.map((act) => (
-                    <View
-                      key={act.id}
-                      style={[
-                        styles.feedCard,
-                        {
-                          backgroundColor: isDark ? 'rgba(24,24,28,0.8)' : 'rgba(255,255,255,0.9)',
-                          borderColor: theme.border,
-                        },
-                      ]}
-                    >
-                      {act.userId === myUserId ? (
-  <RankCrestIcon tier={act.rankTier || 'F'} size={36} isSelected />
-) : (
-  <UserAvatarBadge
-    avatarUrl={act.avatarUrl}
-    displayName={act.displayName}
-    avatarColor={act.avatarColor}
-    rank={act.rankTier || 'F'}
-    size={38}
-    showRankDot
-  />
-)}
-                      <View style={{ flex: 1, minWidth: 0 }}>
-                        <View style={styles.feedTopRow}>
-                          <Text style={[styles.feedAuthor, { color: theme.text }]} numberOfLines={1}>
-                            {act.displayName}
-                          </Text>
-                          <Text style={[styles.feedHandle, { color: '#10B981' }]}>
-                            @{act.nickname}
-                          </Text>
-                          <Text style={[styles.timeText, { color: theme.textMuted }]}>
-                            {formatRelativeTime(act.createdAt)}
-                          </Text>
-                        </View>
-                        <Text style={[styles.feedTitle, { color: theme.text }]}>{act.title}</Text>
-                        {act.subtitle ? (
-                          <Text style={[styles.feedSub, { color: theme.textSecondary }]}>
-                            {act.subtitle}
-                          </Text>
-                        ) : null}
+                  friendActivities.map((act) => {
+                    const handleOpenActorProfile = () => {
+                      const matched = hub.friends.find((f) => f.friend.userId === act.userId)?.friend;
+                      const fallbackProfile: FriendProfileSummary = matched || {
+                        userId: act.userId,
+                        nickname: act.nickname,
+                        displayName: act.displayName,
+                        avatarColor: act.avatarColor,
+                        avatarUrl: act.avatarUrl,
+                        overallRank: act.rankTier || 'F',
+                        overallProgressPct: 0,
+                        balanceScorePct: 100,
+                        streak: 0,
+                        totalWorkouts: 0,
+                        totalSets: 0,
+                        weeklyWorkouts: 0,
+                        topMuscles: [],
+                        recentPrs: [],
+                        cheersCount: act.cheersCount || 0,
+                        cheeredByMe: act.cheeredByMe,
+                        lastActiveAt: act.createdAt,
+                      };
+                      triggerSelectionHaptic();
+                      setSelectedProfileFriend(fallbackProfile);
+                    };
+
+                    return (
+                      <View
+                        key={act.id}
+                        style={[
+                          styles.feedCard,
+                          {
+                            backgroundColor: isDark ? 'rgba(24,24,28,0.8)' : 'rgba(255,255,255,0.9)',
+                            borderColor: theme.border,
+                          },
+                        ]}
+                      >
+                        <TouchableOpacity
+                          style={styles.feedAuthorTapZone}
+                          onPress={handleOpenActorProfile}
+                          activeOpacity={0.78}
+                        >
+                          <UserAvatarBadge
+                            avatarUrl={act.avatarUrl}
+                            displayName={act.displayName}
+                            avatarColor={act.avatarColor}
+                            rank={act.rankTier || 'F'}
+                            size={38}
+                            showRankDot
+                          />
+                          <View style={{ flex: 1, minWidth: 0 }}>
+                            <View style={styles.feedTopRow}>
+                              <Text style={[styles.feedAuthor, { color: theme.text }]} numberOfLines={1}>
+                                {act.displayName}
+                              </Text>
+                              <Text style={[styles.feedHandle, { color: '#10B981' }]}>
+                                @{act.nickname}
+                              </Text>
+                              <Text style={[styles.timeText, { color: theme.textMuted }]}>
+                                {formatRelativeTime(act.createdAt)}
+                              </Text>
+                            </View>
+                            <Text style={[styles.feedTitle, { color: theme.text }]}>{act.title}</Text>
+                            {act.subtitle ? (
+                              <Text style={[styles.feedSub, { color: theme.textSecondary }]}>
+                                {act.subtitle}
+                              </Text>
+                            ) : null}
+                          </View>
+                        </TouchableOpacity>
+                        <HighFiveSpamButton
+                          targetUserId={act.userId}
+                          activityId={act.id}
+                          initialCount={act.cheersCount || 0}
+                          cheeredByMe={act.cheeredByMe}
+                          compact
+                        />
                       </View>
-                      <HighFiveSpamButton
-                        targetUserId={act.userId}
-                        activityId={act.id}
-                        initialCount={act.cheersCount || 0}
-                        cheeredByMe={act.cheeredByMe}
-                        compact
-                      />
-                    </View>
-                  ))
+                    );
+                  })
                 )}
               </View>
             )}
@@ -1160,18 +1203,14 @@ export const FriendsTab: React.FC<FriendsTabProps> = ({
                       activeOpacity={0.82}
                     >
                       <Text style={[styles.leaderPos, { color: medalColor }]}>#{idx + 1}</Text>
-                      {entry.isMe ? (
-  <RankCrestIcon tier={p.overallRank || 'F'} size={36} isSelected={idx < 3} />
-) : (
-  <UserAvatarBadge
-    avatarUrl={p.avatarUrl}
-    displayName={p.displayName}
-    avatarColor={p.avatarColor}
-    rank={p.overallRank || 'F'}
-    size={38}
-    showRankDot
-  />
-)}
+                      <UserAvatarBadge
+                        avatarUrl={p.avatarUrl}
+                        displayName={p.displayName}
+                        avatarColor={p.avatarColor}
+                        rank={p.overallRank || 'F'}
+                        size={38}
+                        showRankDot
+                      />
                       <View style={{ flex: 1, minWidth: 0 }}>
                         <Text style={[styles.friendName, { color: theme.text }]} numberOfLines={1}>
                           {p.displayName} {entry.isMe ? `(${t('friendsYouLabel')})` : ''}
@@ -1730,6 +1769,13 @@ const styles = StyleSheet.create({
     padding: 13,
     borderRadius: 17,
     borderWidth: StyleSheet.hairlineWidth,
+  },
+  feedAuthorTapZone: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 11,
+    minWidth: 0,
   },
   feedTopRow: {
     flexDirection: 'row',
