@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getLocalDateKey, getLocalDateKeyOffset, parseLocalDateKey } from '../utils/localDate';
 import type {
   DayPlan,
   Exercise,
@@ -146,7 +147,7 @@ async function applyLocalDeviceSeedIfNeeded(): Promise<void> {
           JSON.stringify([
             {
               id: `initial_weight_${seededProfile.id}`,
-              date: new Date().toISOString().slice(0, 10),
+              date: getLocalDateKey(),
               weight: seededProfile.weight,
               note: translateText(getStoredLanguageSync(), 'initialMeasurementNote'),
             } satisfies WeightEntry,
@@ -296,7 +297,7 @@ export async function createProfile(
     if (parsedWeight) {
       const initialWeight: WeightEntry = {
         id: 'initial_weight_' + Date.now(),
-        date: new Date().toISOString().slice(0, 10),
+        date: getLocalDateKey(),
         weight: parsedWeight,
         note: translateText(lang, 'initialMeasurementNote'),
       };
@@ -919,7 +920,7 @@ export async function getWeightHistory(profileId?: string): Promise<WeightEntry[
       if (targetProfile?.weight && targetProfile.weight > 0) {
         const entry: WeightEntry = {
           id: `initial_weight_${pid}`,
-          date: new Date().toISOString().slice(0, 10),
+          date: getLocalDateKey(),
           weight: targetProfile.weight,
           note: translateText(getStoredLanguageSync(), 'initialMeasurementNote'),
         };
@@ -947,7 +948,7 @@ export async function addWeightEntry(
   const pid = await resolveProfileId(profileId);
   if (!pid) throw new Error('Brak aktywnego profilu.');
   const history = await getWeightHistory(pid);
-  const entryDate = date || new Date().toISOString().slice(0, 10);
+  const entryDate = date || getLocalDateKey();
 
   // Check if today already has an entry - replace or add
   const existingIndex = history.findIndex((h) => h.date === entryDate);
@@ -1043,22 +1044,83 @@ export interface ExerciseImprovement {
 
 const DAY_INDEX_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 
-export async function getCreatineLog(daysCount: number = 7): Promise<CreatineDayEntry[]> {
+const SUPP_LOG_PREFIX = '@iron_routine:supp_day_log_';
+
+export async function getSupplementDayTakenIds(
+  dateStr: string = getLocalDateKey(),
+  profileId?: string
+): Promise<string[]> {
+  try {
+    const pid = await resolveProfileId(profileId);
+    const raw = pid ? await AsyncStorage.getItem(`${SUPP_LOG_PREFIX}${pid}`) : null;
+    const map: Record<string, string[]> = raw ? JSON.parse(raw) : {};
+    if (Array.isArray(map[dateStr])) {
+      return map[dateStr];
+    }
+    const legacy = await AsyncStorage.getItem(`@iron_routine_creatine_taken_${dateStr}`);
+    if (legacy === 'true') {
+      return ['__all__'];
+    }
+    return [];
+  } catch {
+    return [];
+  }
+}
+
+export async function setSupplementDayTakenIds(
+  ids: string[],
+  dateStr: string = getLocalDateKey(),
+  profileId?: string
+): Promise<string[]> {
+  const pid = await resolveProfileId(profileId);
+  const cleanIds = Array.from(new Set(ids));
+  if (pid) {
+    try {
+      const key = `${SUPP_LOG_PREFIX}${pid}`;
+      const raw = await AsyncStorage.getItem(key);
+      const map: Record<string, string[]> = raw ? JSON.parse(raw) : {};
+      map[dateStr] = cleanIds;
+      await AsyncStorage.setItem(key, JSON.stringify(map));
+    } catch {}
+  }
+  await AsyncStorage.setItem(
+    `@iron_routine_creatine_taken_${dateStr}`,
+    cleanIds.length > 0 ? 'true' : 'false'
+  );
+  return cleanIds;
+}
+
+export async function getCreatineLog(
+  daysCount: number = 7,
+  profileId?: string
+): Promise<CreatineDayEntry[]> {
   const result: CreatineDayEntry[] = [];
   const lang = getStoredLanguageSync();
   const today = new Date();
-  const todayStr = today.toISOString().slice(0, 10);
+  const todayStr = getLocalDateKey(today);
+  let profileMap: Record<string, string[]> = {};
+  try {
+    const pid = await resolveProfileId(profileId);
+    if (pid) {
+      const raw = await AsyncStorage.getItem(`${SUPP_LOG_PREFIX}${pid}`);
+      if (raw) profileMap = JSON.parse(raw) || {};
+    }
+  } catch {}
 
   for (let i = daysCount - 1; i >= 0; i--) {
-    const d = new Date();
-    d.setDate(today.getDate() - i);
-    const dateStr = d.toISOString().slice(0, 10);
+    const dateStr = getLocalDateKeyOffset(-i, today);
+    const d = parseLocalDateKey(dateStr);
     const dayLabel = getTranslatedDay(DAY_INDEX_KEYS[d.getDay()], lang, true);
     const dayNum = String(d.getDate());
     const isToday = dateStr === todayStr;
 
-    const val = await AsyncStorage.getItem(`@iron_routine_creatine_taken_${dateStr}`);
-    const taken = val === 'true';
+    let taken = false;
+    if (Array.isArray(profileMap[dateStr])) {
+      taken = profileMap[dateStr].length > 0;
+    } else {
+      const val = await AsyncStorage.getItem(`@iron_routine_creatine_taken_${dateStr}`);
+      taken = val === 'true';
+    }
 
     result.push({
       date: dateStr,
@@ -1072,8 +1134,12 @@ export async function getCreatineLog(daysCount: number = 7): Promise<CreatineDay
   return result;
 }
 
-export async function toggleCreatineDay(dateStr: string, taken: boolean): Promise<void> {
-  await AsyncStorage.setItem(`@iron_routine_creatine_taken_${dateStr}`, taken ? 'true' : 'false');
+export async function toggleCreatineDay(
+  dateStr: string,
+  taken: boolean,
+  profileId?: string
+): Promise<void> {
+  await setSupplementDayTakenIds(taken ? ['__all__'] : [], dateStr, profileId);
 }
 
 export async function getWeightStatsSummary(
@@ -1086,10 +1152,8 @@ export async function getWeightStatsSummary(
   }
   const history = await getWeightHistory(pid);
 
-  // Filter within daysCount
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - daysCount);
-  const cutoffStr = cutoff.toISOString().slice(0, 10);
+  // Filter within daysCount using local date key
+  const cutoffStr = getLocalDateKeyOffset(-daysCount);
 
   const filtered = history.filter((h) => h.date >= cutoffStr).reverse();
 

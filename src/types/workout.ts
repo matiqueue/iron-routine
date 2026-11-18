@@ -121,7 +121,12 @@ export interface AppSettings {
   restTimeSensitive: boolean;
   creatineRemindersEnabled: boolean;
   creatineMorningHour: number;
+  creatineMorningMinute?: number;
   creatineEveningHour: number;
+  creatineEveningMinute?: number;
+  creatineSyncWithHealth?: boolean;
+  healthDetectedWakeTime?: string;
+  healthDetectedBedTime?: string;
   weightReminderEnabled: boolean;
   weightReminderHour: number;
   defaultRestSeconds: number;

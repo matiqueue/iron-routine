@@ -4,10 +4,12 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { File, Paths } from 'expo-file-system';
 import { AppSettings, FriendChatThreadSummary, FriendProfileSummary } from '../types/workout';
 import { buildActiveSupplementsSummary, formatSupplementDose } from '../data/supplements';
-import { getAppSettings, getCurrentAppLanguage } from './settings';
-import { getActiveProfile } from './storage';
+import { getAppSettings, getCurrentAppLanguage, updateAppSettings } from './settings';
+import { getActiveProfile, getSupplementDayTakenIds, setSupplementDayTakenIds } from './storage';
 import { getTranslatedSupplement, translateText } from '../i18n/translations';
 import { base64ToBytes } from '../utils/e2ee';
+import { getLocalDateKey } from '../utils/localDate';
+import { detectHealthSleepSchedule, HealthSleepSchedule } from './health';
 import { registerPushTokenInCloud } from './social';
 
 // Storage keys
@@ -235,9 +237,11 @@ async function getDynamicSupplementCopy(settings?: AppSettings): Promise<{
 
 export async function hasTakenCreatineToday(): Promise<boolean> {
   try {
-    const todayStr = new Date().toISOString().slice(0, 10);
+    const todayStr = getLocalDateKey();
     const val = await AsyncStorage.getItem(`${CREATINE_TAKEN_KEY_PREFIX}${todayStr}`);
-    return val === 'true';
+    if (val === 'true') return true;
+    const ids = await getSupplementDayTakenIds(todayStr);
+    return ids.length > 0;
   } catch {
     return false;
   }
@@ -245,8 +249,18 @@ export async function hasTakenCreatineToday(): Promise<boolean> {
 
 export async function setCreatineTakenToday(taken: boolean): Promise<void> {
   try {
-    const todayStr = new Date().toISOString().slice(0, 10);
+    const todayStr = getLocalDateKey();
     await AsyncStorage.setItem(`${CREATINE_TAKEN_KEY_PREFIX}${todayStr}`, taken ? 'true' : 'false');
+    if (taken) {
+      const settings = await getAppSettings();
+      const enabledIds = (settings.supplements || []).filter((s) => s.enabled).map((s) => s.id);
+      await setSupplementDayTakenIds(
+        enabledIds.length > 0 ? enabledIds : ['__all__'],
+        todayStr
+      );
+    } else {
+      await setSupplementDayTakenIds([], todayStr);
+    }
   } catch (e) {
     console.warn('Error saving supplement status:', e);
   }
@@ -263,11 +277,15 @@ export async function isCreatineReminderEnabled(): Promise<boolean> {
   }
 }
 
-export async function scheduleEveningCreatineReminder(hour?: number): Promise<void> {
+export async function scheduleEveningCreatineReminder(
+  hour?: number,
+  minute?: number
+): Promise<void> {
   try {
     await cancelEveningCreatineReminder();
     const settings = await getAppSettings();
     const targetHour = hour ?? settings.creatineEveningHour ?? 22;
+    const targetMinute = minute ?? settings.creatineEveningMinute ?? 0;
     const copy = await getDynamicSupplementCopy(settings);
 
     await Notifications.scheduleNotificationAsync({
@@ -281,7 +299,7 @@ export async function scheduleEveningCreatineReminder(hour?: number): Promise<vo
       trigger: {
         type: Notifications.SchedulableTriggerInputTypes.DAILY,
         hour: targetHour,
-        minute: 0,
+        minute: targetMinute,
       },
     });
   } catch (e) {
@@ -304,13 +322,17 @@ export async function cancelAllCreatineReminders(): Promise<void> {
 
 export async function scheduleCreatineReminders(
   morningHour?: number,
-  eveningHour?: number
+  eveningHour?: number,
+  morningMinute?: number,
+  eveningMinute?: number
 ): Promise<void> {
   try {
     await setupCreatineNotificationCategories();
     const settings = await getAppSettings();
     const targetMorning = morningHour ?? settings.creatineMorningHour ?? 9;
+    const targetMorningMin = morningMinute ?? settings.creatineMorningMinute ?? 0;
     const targetEvening = eveningHour ?? settings.creatineEveningHour ?? 22;
+    const targetEveningMin = eveningMinute ?? settings.creatineEveningMinute ?? 0;
     const copy = await getDynamicSupplementCopy(settings);
 
     await cancelAllCreatineReminders();
@@ -326,17 +348,67 @@ export async function scheduleCreatineReminders(
       trigger: {
         type: Notifications.SchedulableTriggerInputTypes.DAILY,
         hour: targetMorning,
-        minute: 0,
+        minute: targetMorningMin,
       },
     });
 
     const takenToday = await hasTakenCreatineToday();
     if (!takenToday) {
-      await scheduleEveningCreatineReminder(targetEvening);
+      await scheduleEveningCreatineReminder(targetEvening, targetEveningMin);
     }
   } catch (e) {
     console.warn('Error scheduling supplement reminders', e);
   }
+}
+
+/**
+ * Syncs morning & evening supplement reminder hours/minutes with the user's
+ * Apple Health (iOS) or Health Connect / Samsung Health (Android) sleep schedule.
+ */
+export async function syncSupplementScheduleFromHealth(): Promise<{
+  synced: boolean;
+  schedule: HealthSleepSchedule;
+}> {
+  const schedule = await detectHealthSleepSchedule();
+  if (!schedule.available || !schedule.authorized || schedule.nightsAnalyzed === 0) {
+    return { synced: false, schedule };
+  }
+
+  const fmt = (h: number, m: number) =>
+    `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+  const wakeStr = fmt(schedule.wakeHour, schedule.wakeMinute);
+  const bedStr = fmt(schedule.bedHour, schedule.bedMinute);
+
+  const settings = await getAppSettings();
+  const changed =
+    settings.creatineMorningHour !== schedule.morningHour ||
+    (settings.creatineMorningMinute ?? 0) !== schedule.morningMinute ||
+    settings.creatineEveningHour !== schedule.eveningHour ||
+    (settings.creatineEveningMinute ?? 0) !== schedule.eveningMinute ||
+    settings.healthDetectedWakeTime !== wakeStr ||
+    settings.healthDetectedBedTime !== bedStr;
+
+  if (changed) {
+    await updateAppSettings({
+      creatineMorningHour: schedule.morningHour,
+      creatineMorningMinute: schedule.morningMinute,
+      creatineEveningHour: schedule.eveningHour,
+      creatineEveningMinute: schedule.eveningMinute,
+      healthDetectedWakeTime: wakeStr,
+      healthDetectedBedTime: bedStr,
+    });
+  }
+
+  if (settings.creatineRemindersEnabled && settings.creatineSyncWithHealth !== false) {
+    await scheduleCreatineReminders(
+      schedule.morningHour,
+      schedule.eveningHour,
+      schedule.morningMinute,
+      schedule.eveningMinute
+    );
+  }
+
+  return { synced: true, schedule };
 }
 
 export async function setCreatineReminderEnabled(enabled: boolean): Promise<boolean> {
@@ -459,6 +531,13 @@ export async function cancelDailyWeightReminder(): Promise<void> {
 
 export async function syncRemindersWithSettings(settings: AppSettings): Promise<void> {
   try {
+    if (
+      settings.creatineRemindersEnabled &&
+      settings.healthSyncEnabled &&
+      settings.creatineSyncWithHealth !== false
+    ) {
+      await syncSupplementScheduleFromHealth().catch(() => {});
+    }
     await setCreatineReminderEnabled(settings.creatineRemindersEnabled);
     await setDailyWeightReminder(settings.weightReminderEnabled, settings.weightReminderHour);
   } catch (e) {

@@ -51,6 +51,7 @@ import {
   setupCreatineNotificationCategories,
   syncAppIconBadgeCount,
   syncRemindersWithSettings,
+  syncSupplementScheduleFromHealth,
 } from './src/services/notifications';
 import {
   startWorkoutLiveActivity,
@@ -173,6 +174,9 @@ function MainApp() {
       setIsHealthLoading(true);
       const summary = await fetchTodayHealthSummary();
       setHealthSummary(summary);
+      if (settings.creatineRemindersEnabled && settings.creatineSyncWithHealth !== false) {
+        void syncSupplementScheduleFromHealth().catch(() => {});
+      }
     } finally {
       setIsHealthLoading(false);
     }
@@ -195,6 +199,7 @@ function MainApp() {
       await updateAppSettings({ healthSyncEnabled: true });
       const summary = await fetchTodayHealthSummary();
       setHealthSummary(summary);
+      void syncSupplementScheduleFromHealth().catch(() => {});
       triggerNotificationHaptic('success');
     } finally {
       setIsHealthLoading(false);
@@ -253,6 +258,7 @@ function MainApp() {
     const routeChatNotification = (response: Notifications.NotificationResponse | null) => {
       if (!response) return;
       handleNotificationResponse(response);
+      setProgressRefreshKey((k) => k + 1);
       const data: any = response.notification.request.content.data;
       if (data?.type === 'chat_message' && data?.friendId) {
         setIsActiveWorkout(false);

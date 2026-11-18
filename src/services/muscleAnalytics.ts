@@ -79,6 +79,8 @@ export interface PhysiqueAnalyticsReport {
   strongestMuscles: MuscleRankStat[];
 }
 
+import { getLocalDateKey, getLocalDateKeyOffset, parseLocalDateKey } from '../utils/localDate';
+
 function getMondayDateOffset(mondayKey: string, dayId: string): string {
   const offsetMap: Record<string, number> = {
     mon: 0,
@@ -89,10 +91,10 @@ function getMondayDateOffset(mondayKey: string, dayId: string): string {
     sat: 5,
     sun: 6,
   };
-  const base = new Date(mondayKey);
+  const base = parseLocalDateKey(mondayKey);
   if (isNaN(base.getTime())) return mondayKey;
   base.setDate(base.getDate() + (offsetMap[dayId] ?? 0));
-  return base.toISOString().slice(0, 10);
+  return getLocalDateKey(base);
 }
 
 export async function computePhysiqueAnalytics(params: {
@@ -103,9 +105,7 @@ export async function computePhysiqueAnalytics(params: {
 }): Promise<PhysiqueAnalyticsReport> {
   const { profileId, allExercises, activePlanDays, workoutHistory } = params;
 
-  const cutoff30 = new Date();
-  cutoff30.setDate(cutoff30.getDate() - 30);
-  const cutoff30Str = cutoff30.toISOString().slice(0, 10);
+  const cutoff30Str = getLocalDateKeyOffset(-30);
 
   const exerciseMap = new Map<string, Exercise>();
   for (const ex of allExercises) {
