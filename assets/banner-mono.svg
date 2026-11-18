@@ -11,6 +11,16 @@
       <stop offset="0%" stop-color="#FAFAFA" />
       <stop offset="100%" stop-color="#D4D4D8" />
     </linearGradient>
+    <linearGradient id="skySlashGrad" x1="9.7" y1="49.7" x2="54.3" y2="14.3" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#BAE6FD" />
+      <stop offset="35%" stop-color="#7DD3FC" />
+      <stop offset="70%" stop-color="#38BDF8" />
+      <stop offset="100%" stop-color="#0EA5E9" />
+    </linearGradient>
+    <radialGradient id="iconAmbient" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#0EA5E9" stop-opacity="0.22" />
+      <stop offset="100%" stop-color="#09090B" stop-opacity="0" />
+    </radialGradient>
   </defs>
 
   <rect width="1280" height="360" fill="url(#bgFade)" />
@@ -26,13 +36,20 @@
     100% OFFLINE
   </text>
 
-  <!-- Minimalist Barbell Icon -->
-  <g transform="translate(64, 128)">
-    <rect x="0" y="22" width="12" height="44" rx="2" fill="#71717A" />
-    <rect x="16" y="10" width="16" height="68" rx="2" fill="url(#plateGrad)" />
-    <rect x="36" y="39" width="44" height="10" fill="#FAFAFA" />
-    <rect x="84" y="10" width="16" height="68" rx="2" fill="url(#plateGrad)" />
-    <rect x="104" y="22" width="12" height="44" rx="2" fill="#71717A" />
+  <!-- Hex Collar + Light-Blue Gradient Talon App Emblem -->
+  <g transform="translate(64, 118)">
+    <rect x="0" y="0" width="112" height="112" rx="26" fill="#06080D" stroke="#27272A" stroke-width="1.5" />
+    <circle cx="56" cy="56" r="52" fill="url(#iconAmbient)" />
+    <g transform="translate(12, 12) scale(1.375)">
+      <path
+        fill="url(#plateGrad)"
+        d="M8.6 41.4 L8.6 21.5 L11.2 17.0 L29.4 6.5 L34.6 6.5 L46.9 13.6 L37.8 20.2 L33.4 17.7 L30.6 17.7 L20.3 23.6 L18.9 26.1 L18.9 34.0 Z M55.4 22.6 L55.4 42.5 L52.8 47.0 L34.6 57.5 L29.4 57.5 L17.1 50.4 L26.2 43.8 L30.6 46.3 L33.4 46.3 L43.7 40.4 L45.1 37.9 L45.1 30.0 Z"
+      />
+      <path
+        fill="url(#skySlashGrad)"
+        d="M9.7 49.7 C29.0 40.0 40.1 29.6 54.3 14.3 C35.0 24.0 23.9 34.4 9.7 49.7 Z"
+      />
+    </g>
   </g>
 
   <!-- Main Title -->

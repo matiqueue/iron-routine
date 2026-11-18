@@ -54,7 +54,7 @@ export function useBottomSheetContext(): BottomSheetContextValue {
  * ScrollView bound to BottomSheetContext so pulling down at the top edge
  * smoothly drags and dismisses the sheet natively on iOS and Android.
  */
-export const BottomSheetScrollView: React.FC<ScrollViewProps> = ({
+export const BottomSheetScrollView = React.forwardRef<React.ComponentRef<typeof ScrollView>, ScrollViewProps>(({
   onScroll,
   onScrollBeginDrag,
   onScrollEndDrag,
@@ -62,12 +62,13 @@ export const BottomSheetScrollView: React.FC<ScrollViewProps> = ({
   bounces,
   alwaysBounceVertical,
   ...rest
-}) => {
+}, ref) => {
   const { setScrollOffsetY, onOverscrollPull, onOverscrollRelease } = useBottomSheetContext();
   const isDraggingRef = useRef(false);
 
   return (
     <ScrollView
+      ref={ref}
       {...rest}
       bounces={Platform.OS === 'ios' ? true : bounces}
       alwaysBounceVertical={Platform.OS === 'ios' ? true : alwaysBounceVertical}
@@ -94,7 +95,7 @@ export const BottomSheetScrollView: React.FC<ScrollViewProps> = ({
       }}
     />
   );
-};
+});
 
 interface InteractiveBottomSheetProps {
   visible: boolean;
