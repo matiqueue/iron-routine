@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
+  AppState,
   Easing,
   LayoutAnimation,
   RefreshControl,
@@ -19,6 +20,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAppTheme } from '../context/ThemeContext';
 import { useLanguage } from '../context/LanguageContext';
+import { useIsScreenActive } from '../context/TabActivityContext';
 import {
   FriendProfileSummary,
   PendingCheerBurst,
@@ -165,13 +167,18 @@ export const FriendsTab: React.FC<FriendsTabProps> = ({
     };
   }, []);
 
-  // Ambient & entrance animations
+  // Ambient & entrance animations (auto-paused when tab hidden or backgrounded)
+  const isScreenActive = useIsScreenActive();
   const heroFloat = useRef(new Animated.Value(0)).current;
   const contentFade = useRef(new Animated.Value(1)).current;
   const liveDotPulse = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    if (!isTabActive) return;
+    if (!isTabActive || !isScreenActive) {
+      heroFloat.stopAnimation();
+      liveDotPulse.stopAnimation();
+      return;
+    }
     const floatLoop = Animated.loop(
       Animated.sequence([
         Animated.timing(heroFloat, {
@@ -210,7 +217,7 @@ export const FriendsTab: React.FC<FriendsTabProps> = ({
       floatLoop.stop();
       pulseLoop.stop();
     };
-  }, [heroFloat, isTabActive, liveDotPulse]);
+  }, [heroFloat, isTabActive, isScreenActive, liveDotPulse]);
 
   const switchSubTab = useCallback(
     (next: FriendsSubTab) => {
@@ -281,13 +288,14 @@ export const FriendsTab: React.FC<FriendsTabProps> = ({
     loadSocialState(true).finally(() => setLoadingHub(false));
   }, [activeProfile.id]);
 
-  // Silent background refresh every 12s while viewing Friends tab
+  // Silent background refresh every 18s while viewing Friends tab in foreground
   useEffect(() => {
     if (!cloudSession?.token || !isTabActive) return;
     void loadSocialState(false);
     const timer = setInterval(() => {
+      if (AppState.currentState !== 'active') return;
       void loadSocialState(false);
-    }, 12000);
+    }, 18000);
     return () => clearInterval(timer);
   }, [cloudSession?.token, isTabActive, loadSocialState]);
 

@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
+  AppState,
   Easing,
   FlatList,
   Image,
@@ -647,6 +648,7 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
   const themeNotifyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastAnnouncedAppearanceRef = useRef<string>('');
   const pendingThemeAnnounceRef = useRef<ChatAppearance | null>(null);
+  const isPollingMessagesRef = useRef(false);
 
   // Voice recording + real-time metering state
   const recorder = useAudioRecorder(VOICE_RECORDING_OPTIONS);
@@ -869,9 +871,16 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
       .catch(() => {});
     void loadMessages(false);
     const interval = setInterval(() => {
-      void loadMessages(true);
-    }, 2800);
-    return () => clearInterval(interval);
+      if (AppState.currentState !== 'active' || isPollingMessagesRef.current) return;
+      isPollingMessagesRef.current = true;
+      void loadMessages(true).finally(() => {
+        isPollingMessagesRef.current = false;
+      });
+    }, 3500);
+    return () => {
+      clearInterval(interval);
+      isPollingMessagesRef.current = false;
+    };
   }, [visible, friend?.userId, loadMessages]);
 
   useEffect(() => {

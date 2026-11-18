@@ -415,7 +415,7 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
               ]}
             >
               <View style={styles.warmupHeaderLine}>
-                <AnimatedIcon name="sparkles-outline" preset="pulse" size={13} color="#10B981" active />
+                <Ionicons name="sparkles-outline" size={13} color="#10B981" />
                 <Text style={[styles.warmupEyebrow, { color: '#10B981' }]}>
                   {t('warmupMobilityUpper')}
                 </Text>

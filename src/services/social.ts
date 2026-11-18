@@ -149,9 +149,15 @@ export async function getCachedSocialHub(userId: string): Promise<SocialHubData 
   }
 }
 
+let lastCachedHubJson = '';
+let inFlightSocialHubPromise: Promise<{ ok: boolean; hub?: SocialHubData; error?: string }> | null = null;
+
 async function saveCachedSocialHub(userId: string, hub: SocialHubData): Promise<void> {
   try {
-    await AsyncStorage.setItem(`${SOCIAL_CACHE_KEY_PREFIX}${userId}`, JSON.stringify(hub));
+    const serialized = JSON.stringify(hub);
+    if (serialized === lastCachedHubJson) return;
+    lastCachedHubJson = serialized;
+    await AsyncStorage.setItem(`${SOCIAL_CACHE_KEY_PREFIX}${userId}`, serialized);
   } catch {}
 }
 
@@ -312,40 +318,47 @@ export async function fetchSocialHub(): Promise<{
   hub?: SocialHubData;
   error?: string;
 }> {
+  if (inFlightSocialHubPromise) return inFlightSocialHubPromise;
   const session = await getStoredCloudSession();
   if (!session?.token) {
     return { ok: false, error: getFriendlySocialError('UNAUTHORIZED') };
   }
-  try {
-    const [keyPair, res] = await Promise.all([
-      getOrCreateE2eeKeyPair(session.userId),
-      fetch(`${SOCIAL_API_URL}?action=hub`, {
-        method: 'GET',
-        headers: { Authorization: `Bearer ${session.token}` },
-      }),
-    ]);
+  const run = (async () => {
+    try {
+      const [keyPair, res] = await Promise.all([
+        getOrCreateE2eeKeyPair(session.userId),
+        fetch(`${SOCIAL_API_URL}?action=hub`, {
+          method: 'GET',
+          headers: { Authorization: `Bearer ${session.token}` },
+        }),
+      ]);
 
-    const data = await res.json().catch(() => null);
-    if (!res.ok || !data?.ok || !data?.hub) {
-      return { ok: false, error: getFriendlySocialError(data?.error) };
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.ok || !data?.hub) {
+        return { ok: false, error: getFriendlySocialError(data?.error) };
+      }
+
+      const rawHub = data.hub as SocialHubData;
+      const decryptedHub: SocialHubData = {
+        ...rawHub,
+        friends: (rawHub.friends || []).map((thread) => ({
+          ...thread,
+          lastMessage: thread.lastMessage
+            ? decryptWireChatMessage(thread.lastMessage, session.userId, keyPair)
+            : null,
+        })),
+      };
+
+      await saveCachedSocialHub(session.userId, decryptedHub);
+      return { ok: true, hub: decryptedHub };
+    } catch {
+      return { ok: false, error: translateText(getCurrentAppLanguage(), 'socialNetworkError') };
+    } finally {
+      inFlightSocialHubPromise = null;
     }
-
-    const rawHub = data.hub as SocialHubData;
-    const decryptedHub: SocialHubData = {
-      ...rawHub,
-      friends: (rawHub.friends || []).map((thread) => ({
-        ...thread,
-        lastMessage: thread.lastMessage
-          ? decryptWireChatMessage(thread.lastMessage, session.userId, keyPair)
-          : null,
-      })),
-    };
-
-    await saveCachedSocialHub(session.userId, decryptedHub);
-    return { ok: true, hub: decryptedHub };
-  } catch {
-    return { ok: false, error: translateText(getCurrentAppLanguage(), 'socialNetworkError') };
-  }
+  })();
+  inFlightSocialHubPromise = run;
+  return run;
 }
 
 export async function searchUsersByNickname(query: string): Promise<{

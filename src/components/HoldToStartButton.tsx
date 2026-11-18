@@ -11,6 +11,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useAppTheme } from '../context/ThemeContext';
 import { useLanguage } from '../context/LanguageContext';
+import { useIsScreenActive } from '../context/TabActivityContext';
 
 interface HoldToStartButtonProps {
   onComplete: () => void;
@@ -27,6 +28,7 @@ export const HoldToStartButton: React.FC<HoldToStartButtonProps> = ({
   const { t } = useLanguage();
   const resolvedTitle = title || t('holdToStartDefault');
   const resolvedSubtitle = subtitle || t('todayEditSession');
+  const isScreenActive = useIsScreenActive();
   const [isHolding, setIsHolding] = useState(false);
   const progressAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(1)).current;
@@ -34,7 +36,7 @@ export const HoldToStartButton: React.FC<HoldToStartButtonProps> = ({
   const hapticTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
-    if (isHolding) {
+    if (isHolding || !isScreenActive) {
       idlePulseAnim.stopAnimation();
       idlePulseAnim.setValue(0);
       return;
@@ -59,7 +61,7 @@ export const HoldToStartButton: React.FC<HoldToStartButtonProps> = ({
     return () => {
       loop.stop();
     };
-  }, [isHolding, idlePulseAnim]);
+  }, [isHolding, isScreenActive, idlePulseAnim]);
 
   const iconPulseScale = idlePulseAnim.interpolate({
     inputRange: [0, 1],

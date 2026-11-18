@@ -2,6 +2,7 @@ import React, { useEffect, useId, useRef } from 'react';
 import { Animated, Easing, StyleProp, StyleSheet, View, ViewStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Circle, Defs, LinearGradient, Path, RadialGradient, Stop } from 'react-native-svg';
+import { useIsScreenActive } from '../context/TabActivityContext';
 
 export type AnimatedIconPreset =
   | 'flame'
@@ -169,6 +170,8 @@ export const AnimatedIcon: React.FC<AnimatedIconProps> = ({
   active = true,
   style,
 }) => {
+  const isScreenActive = useIsScreenActive();
+  const isAnimating = active && isScreenActive;
   const anim = useRef(new Animated.Value(0)).current;
   const sparkAnim = useRef(new Animated.Value(0)).current;
 
@@ -177,7 +180,7 @@ export const AnimatedIcon: React.FC<AnimatedIconProps> = ({
     sparkAnim.stopAnimation();
     anim.setValue(0);
     sparkAnim.setValue(0);
-    if (!active) return;
+    if (!isAnimating) return;
 
     let duration = 1800;
     if (preset === 'bell') duration = 900;
@@ -225,14 +228,14 @@ export const AnimatedIcon: React.FC<AnimatedIconProps> = ({
       loop.stop();
       sparkLoop?.stop();
     };
-  }, [active, preset, anim, sparkAnim]);
+  }, [isAnimating, preset, anim, sparkAnim]);
 
   if (preset === 'flame') {
     return (
       <View style={style}>
         <AnimatedFlameEmblem
           size={size}
-          active={active}
+          active={isAnimating}
           color={color}
           anim={anim}
           sparkAnim={sparkAnim}

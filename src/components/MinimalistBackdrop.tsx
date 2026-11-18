@@ -28,6 +28,8 @@ export const MinimalistBackdrop: React.FC<MinimalistBackdropProps> = React.memo(
 
     return (
       <View
+        key={isDark ? 'dark' : 'light'}
+        shouldRasterizeIOS
         renderToHardwareTextureAndroid
         style={[StyleSheet.absoluteFill, { pointerEvents: 'none' }]}
       >
