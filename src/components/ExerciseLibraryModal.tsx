@@ -37,18 +37,12 @@ export const ExerciseLibraryModal: React.FC<ExerciseLibraryModalProps> = ({
       ? t('libraryTitlePick')
       : t('libraryTitleManage'));
 
-  const resolvedSubtitle =
-    subtitle ||
-    (mode === 'manage'
-      ? t('librarySubtitleManage')
-      : t('librarySubtitlePick'));
-
   return (
     <InteractiveBottomSheet
       visible={visible}
       onClose={onClose}
       title={resolvedTitle}
-      subtitle={resolvedSubtitle}
+      subtitle={subtitle}
       initialHeightPercent={0.9}
     >
       <ExerciseLibraryContent

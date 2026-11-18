@@ -174,7 +174,13 @@ export const PlanTab: React.FC<PlanTabProps> = ({
       <View style={[styles.daySelectorWrapper, { borderBottomColor: theme.hairline }]}>
         <ScrollView
           horizontal
+          directionalLockEnabled
+          alwaysBounceVertical={false}
           showsHorizontalScrollIndicator={false}
+          showsVerticalScrollIndicator={false}
+          automaticallyAdjustContentInsets={false}
+          contentInsetAdjustmentBehavior="never"
+          style={styles.daySelectorScrollView}
           contentContainerStyle={styles.daySelectorScroll}
         >
           {DAYS_OF_WEEK.map((day) => {
@@ -452,9 +458,13 @@ const styles = StyleSheet.create({
     paddingBottom: 16,
     marginTop: 10,
   },
+  daySelectorScrollView: {
+    flexGrow: 0,
+  },
   daySelectorScroll: {
     paddingHorizontal: 20,
     gap: 10,
+    alignItems: 'center',
   },
   dayPill: {
     paddingHorizontal: 16,
