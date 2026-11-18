@@ -8,6 +8,7 @@ import {
   editEncryptedChatMessage,
   getChatPairTheme,
   getEncryptedChatMessages,
+  getFriendLastReadAt,
   getSocialHubForUser,
   markChatRead,
   normalizeNickServer,
@@ -72,12 +73,13 @@ export default {
           if (!isFriend) {
             return jsonResponse({ ok: false, error: 'NOT_FRIENDS' }, 403);
           }
-          const [messages, chatTheme] = await Promise.all([
+          const [messages, chatTheme, friendLastReadAt] = await Promise.all([
             getEncryptedChatMessages(userId, friendId),
             getChatPairTheme(userId, friendId),
+            getFriendLastReadAt(userId, friendId),
           ]);
           await markChatRead(userId, friendId);
-          return jsonResponse({ ok: true, messages, theme: chatTheme });
+          return jsonResponse({ ok: true, messages, theme: chatTheme, friendLastReadAt });
         }
 
         return jsonResponse({ ok: false, error: 'UNKNOWN_SOCIAL_ACTION' }, 400);

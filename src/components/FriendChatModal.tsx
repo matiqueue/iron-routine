@@ -7,6 +7,7 @@ import {
   FlatList,
   Image,
   Modal,
+  PanResponder,
   Platform,
   Pressable,
   ScrollView,
@@ -675,6 +676,54 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
   const mutationEpochRef = useRef<number>(0);
   const isSendingRef = useRef<boolean>(false);
   const prevMsgCountRef = useRef<number>(0);
+  const [friendLastReadAt, setFriendLastReadAt] = useState<string | null>(null);
+  const photoDragY = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (previewPhotoUri) {
+      photoDragY.setValue(0);
+    }
+  }, [photoDragY, previewPhotoUri]);
+
+  const photoPanResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => false,
+        onMoveShouldSetPanResponder: (_, g) =>
+          Math.abs(g.dy) > 8 && Math.abs(g.dy) > Math.abs(g.dx) * 1.15,
+        onPanResponderMove: (_, g) => {
+          photoDragY.setValue(g.dy);
+        },
+        onPanResponderRelease: (_, g) => {
+          if (Math.abs(g.dy) > 95 || g.vy > 0.65 || g.vy < -0.75) {
+            triggerSelectionHaptic();
+            Animated.timing(photoDragY, {
+              toValue: g.dy < 0 ? -480 : 520,
+              duration: 165,
+              useNativeDriver: true,
+            }).start(() => {
+              setPreviewPhotoUri(null);
+            });
+          } else {
+            Animated.spring(photoDragY, {
+              toValue: 0,
+              friction: 7,
+              tension: 120,
+              useNativeDriver: true,
+            }).start();
+          }
+        },
+        onPanResponderTerminate: () => {
+          Animated.spring(photoDragY, {
+            toValue: 0,
+            friction: 7,
+            tension: 120,
+            useNativeDriver: true,
+          }).start();
+        },
+      }),
+    [photoDragY]
+  );
 
   // Silently check microphone permission on chat open so hold-to-record starts instantly
   useEffect(() => {
@@ -704,6 +753,9 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
         // Discard stale background poll if a local send/edit/react/delete happened while GET was in flight
         if (!isInitialForFriend && (startEpoch !== mutationEpochRef.current || isSendingRef.current)) {
           return;
+        }
+        if (res.friendLastReadAt !== undefined) {
+          setFriendLastReadAt(res.friendLastReadAt || null);
         }
         if (res.theme) {
           const remoteAppearance: ChatAppearance = {
@@ -789,6 +841,7 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
       setShowInChatProfile(false);
       setShowThemeSheet(false);
       setPreviewPhotoUri(null);
+      setFriendLastReadAt(null);
       setInputText('');
       setIsRecordingMode(false);
       holdActiveRef.current = false;
@@ -1935,15 +1988,48 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
                       {t('voiceSendingBadge')}
                     </Text>
                   </>
-                ) : (
-                  <>
-                    <Ionicons name="checkmark-done" size={12} color={theme.textSecondary} />
-                    <Text style={[styles.timeText, { color: theme.textMuted }]}>
-                      {t('voiceSentBadge')} · {formatClockTime(item.createdAt)}
-                      {item.editedAt ? ` · ${t('chatEditedBadge')}` : ''}
-                    </Text>
-                  </>
-                )}
+                ) : (() => {
+                  const seenMs = friendLastReadAt ? new Date(friendLastReadAt).getTime() : 0;
+                  const msgMs = new Date(item.createdAt).getTime();
+                  const isSeen = seenMs > 0 && !Number.isNaN(msgMs) && seenMs >= msgMs;
+                  return isSeen ? (
+                    <>
+                      <Ionicons
+                        name="checkmark-done"
+                        size={13}
+                        color={theme.isDark ? '#38BDF8' : '#0284C7'}
+                      />
+                      <Text
+                        style={[
+                          styles.timeText,
+                          { color: theme.isDark ? '#38BDF8' : '#0284C7', fontWeight: '700' },
+                        ]}
+                      >
+                        {t('chatSeenBadge')} · {formatClockTime(item.createdAt)}
+                        {item.editedAt ? ` · ${t('chatEditedBadge')}` : ''}
+                      </Text>
+                      {friend && (
+                        <View style={{ marginLeft: 2 }}>
+                          <UserAvatarBadge
+                            avatarUrl={friend.avatarUrl}
+                            displayName={friend.displayName}
+                            avatarColor={friend.avatarColor}
+                            rank={friend.overallRank || 'F'}
+                            size={14}
+                          />
+                        </View>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <Ionicons name="checkmark" size={12} color={theme.textSecondary} />
+                      <Text style={[styles.timeText, { color: theme.textMuted }]}>
+                        {t('voiceSentBadge')} · {formatClockTime(item.createdAt)}
+                        {item.editedAt ? ` · ${t('chatEditedBadge')}` : ''}
+                      </Text>
+                    </>
+                  );
+                })()}
               </View>
             )}
           </View>
@@ -2731,7 +2817,7 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
           </Pressable>
         </Modal>
 
-        {/* Fullscreen Photo Preview Lightbox */}
+        {/* Fullscreen Photo Preview Lightbox (swipe down to minimize + translucent backdrop) */}
         <Modal
           visible={previewPhotoUri !== null}
           transparent
@@ -2739,16 +2825,48 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
           onRequestClose={() => setPreviewPhotoUri(null)}
         >
           <View style={styles.photoLightboxRoot}>
+            <Animated.View
+              style={[
+                StyleSheet.absoluteFill,
+                {
+                  backgroundColor: '#000000',
+                  opacity: photoDragY.interpolate({
+                    inputRange: [-220, 0, 260],
+                    outputRange: [0.22, 0.72, 0.12],
+                    extrapolate: 'clamp',
+                  }),
+                },
+              ]}
+            />
             <Pressable
               style={StyleSheet.absoluteFill}
               onPress={() => setPreviewPhotoUri(null)}
             />
             {previewPhotoUri && (
-              <Image
-                source={{ uri: previewPhotoUri }}
-                style={styles.photoLightboxImg}
-                resizeMode="contain"
-              />
+              <Animated.View
+                {...photoPanResponder.panHandlers}
+                style={[
+                  styles.photoLightboxSwipeWrap,
+                  {
+                    transform: [
+                      { translateY: photoDragY },
+                      {
+                        scale: photoDragY.interpolate({
+                          inputRange: [-260, 0, 260],
+                          outputRange: [0.88, 1, 0.84],
+                          extrapolate: 'clamp',
+                        }),
+                      },
+                    ],
+                  },
+                ]}
+              >
+                <Image
+                  source={{ uri: previewPhotoUri }}
+                  style={styles.photoLightboxImg}
+                  resizeMode="contain"
+                />
+              </Animated.View>
             )}
             <TouchableOpacity
               onPress={() => setPreviewPhotoUri(null)}
@@ -3530,33 +3648,21 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
   },
-  deleteMsgBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingHorizontal: 18,
-    paddingVertical: 11,
-    borderRadius: 999,
-    backgroundColor: 'rgba(127, 29, 29, 0.92)',
-    borderWidth: 1,
-    borderColor: 'rgba(248, 113, 113, 0.5)',
-  },
-  deleteMsgBtnText: {
-    color: '#FEE2E2',
-    fontSize: 13.5,
-    fontWeight: '800',
-  },
   photoLightboxRoot: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.94)',
     alignItems: 'center',
     justifyContent: 'center',
     padding: 16,
   },
-  photoLightboxImg: {
+  photoLightboxSwipeWrap: {
     width: '100%',
     height: '82%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  photoLightboxImg: {
+    width: '100%',
+    height: '100%',
   },
   photoLightboxClose: {
     position: 'absolute',

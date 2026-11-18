@@ -497,6 +497,7 @@ export async function fetchChatMessages(friendId: string): Promise<{
   ok: boolean;
   messages: ChatMessage[];
   theme?: SharedChatTheme;
+  friendLastReadAt?: string | null;
   error?: string;
 }> {
   const session = await getStoredCloudSession();
@@ -522,6 +523,7 @@ export async function fetchChatMessages(friendId: string): Promise<{
       ok: true,
       messages: decrypted,
       theme: data.theme as SharedChatTheme | undefined,
+      friendLastReadAt: data.friendLastReadAt ? String(data.friendLastReadAt) : null,
     };
   } catch {
     return {

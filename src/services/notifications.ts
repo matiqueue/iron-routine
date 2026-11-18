@@ -1,11 +1,13 @@
 import * as Notifications from 'expo-notifications';
 import { AppState, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { AppSettings, FriendChatThreadSummary } from '../types/workout';
+import { File, Paths } from 'expo-file-system';
+import { AppSettings, FriendChatThreadSummary, FriendProfileSummary } from '../types/workout';
 import { buildActiveSupplementsSummary, formatSupplementDose } from '../data/supplements';
 import { getAppSettings, getCurrentAppLanguage } from './settings';
 import { getActiveProfile } from './storage';
 import { getTranslatedSupplement, translateText } from '../i18n/translations';
+import { base64ToBytes } from '../utils/e2ee';
 import { registerPushTokenInCloud } from './social';
 
 // Storage keys
@@ -109,16 +111,27 @@ export async function ensureNotificationPermissions(
   }
 }
 
-// Suppress foreground banner/sound for rest timer alarms (user wants haptics/alerts ONLY outside app)
+// Suppress foreground OS banner for rest alarms (alerts ONLY outside app) and for chat
+// messages (which render the Messages-style circular-avatar ChatNotificationBanner while active).
 Notifications.setNotificationHandler({
   handleNotification: async (notification) => {
-    const isRestAlarm = REST_TIMER_NOTIF_IDS.includes(notification.request.identifier);
+    const id = notification.request.identifier;
+    const isRestAlarm = REST_TIMER_NOTIF_IDS.includes(id);
     if (isRestAlarm && AppState.currentState === 'active') {
       return {
         shouldPlaySound: false,
         shouldSetBadge: false,
         shouldShowBanner: false,
         shouldShowList: false,
+      };
+    }
+    const isChatNotif = id.startsWith('chat_msg_');
+    if (isChatNotif && AppState.currentState === 'active') {
+      return {
+        shouldPlaySound: true,
+        shouldSetBadge: false,
+        shouldShowBanner: false,
+        shouldShowList: true,
       };
     }
     return {
@@ -666,21 +679,61 @@ export async function dismissChatNotificationsForFriend(friendId: string): Promi
   } catch {}
 }
 
+export interface ForegroundChatNotifEvent {
+  id: string;
+  friend: FriendProfileSummary;
+  body: string;
+  createdAt: string;
+}
+
+async function prepareSenderAvatarAttachment(
+  friend: FriendProfileSummary
+): Promise<{ uri: string; type: string } | null> {
+  if (Platform.OS !== 'ios' || !friend.avatarUrl) return null;
+  const safeUid = friend.userId.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const rawUrl = friend.avatarUrl.trim();
+  if (!rawUrl) return null;
+
+  try {
+    if (rawUrl.startsWith('data:image/')) {
+      const commaIdx = rawUrl.indexOf(',');
+      if (commaIdx < 0) return null;
+      const header = rawUrl.slice(0, commaIdx);
+      const isPng = header.includes('png');
+      const ext = isPng ? 'png' : 'jpg';
+      const uti = isPng ? 'public.png' : 'public.jpeg';
+      const b64 = rawUrl.slice(commaIdx + 1);
+      const outFile = new File(Paths.cache, `notif_avatar_${safeUid}.${ext}`);
+      outFile.create({ overwrite: true });
+      await outFile.write(base64ToBytes(b64));
+      return { uri: outFile.uri, type: uti };
+    }
+
+    if (rawUrl.startsWith('https://') || rawUrl.startsWith('http://')) {
+      const destFile = new File(Paths.cache, `notif_avatar_${safeUid}.jpg`);
+      const downloaded = await File.downloadFileAsync(rawUrl, destFile, { idempotent: true });
+      return { uri: downloaded.uri, type: 'public.jpeg' };
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
 export async function notifyIncomingChatMessages(
   threads: FriendChatThreadSummary[],
   myUserId: string,
-  openChatFriendId?: string | null
+  openChatFriendId?: string | null,
+  onForegroundToast?: (event: ForegroundChatNotifEvent) => void
 ): Promise<void> {
   if (!threads || threads.length === 0 || !myUserId) return;
   try {
-    const perm = await ensureNotificationPermissions(false);
-    if (!perm.granted) return;
-
     const seenSet = await getNotifiedChatIds();
     const lang = getCurrentAppLanguage();
     const cutoffMs = Date.now() - 24 * 60 * 60 * 1000;
     const newlyNotified: string[] = [];
 
+    const perm = await ensureNotificationPermissions(false);
     await ensureChatMessagesChannel();
 
     for (const thread of threads) {
@@ -722,31 +775,54 @@ export async function notifyIncomingChatMessages(
         bodyPreview = msg.text.trim().slice(0, 140);
       }
 
-      const senderTitle =
-        thread.friend.displayName ||
-        (thread.friend.nickname ? `@${thread.friend.nickname}` : 'Iron Routine');
-      const senderSubtitle =
-        thread.friend.nickname && thread.friend.displayName
-          ? `@${thread.friend.nickname}`
-          : undefined;
-
-      await Notifications.scheduleNotificationAsync({
-        identifier: `chat_msg_${msg.id}`,
-        content: {
-          title: senderTitle,
-          subtitle: senderSubtitle,
+      if (AppState.currentState === 'active' && onForegroundToast) {
+        onForegroundToast({
+          id: msg.id,
+          friend: thread.friend,
           body: bodyPreview,
-          sound: 'default',
-          interruptionLevel: 'active',
-          data: {
-            type: 'chat_message',
-            friendId: thread.friend.userId,
-            messageId: msg.id,
-          },
-          ...(Platform.OS === 'android' ? { channelId: CHAT_NOTIF_CHANNEL_ID } : {}),
-        } as Notifications.NotificationContentInput,
-        trigger: null,
-      });
+          createdAt: msg.createdAt,
+        });
+      }
+
+      if (perm.granted) {
+        const senderTitle =
+          thread.friend.displayName ||
+          (thread.friend.nickname ? `@${thread.friend.nickname}` : 'Iron Routine');
+        const senderSubtitle =
+          thread.friend.nickname && thread.friend.displayName
+            ? `@${thread.friend.nickname}`
+            : undefined;
+        const avatarAttachment = await prepareSenderAvatarAttachment(thread.friend);
+
+        await Notifications.scheduleNotificationAsync({
+          identifier: `chat_msg_${msg.id}`,
+          content: {
+            title: senderTitle,
+            subtitle: senderSubtitle,
+            body: bodyPreview,
+            sound: 'default',
+            interruptionLevel: 'active',
+            ...(avatarAttachment
+              ? {
+                  attachments: [
+                    {
+                      identifier: `avatar_${thread.friend.userId}`,
+                      url: avatarAttachment.uri,
+                      type: avatarAttachment.type,
+                    },
+                  ],
+                }
+              : {}),
+            data: {
+              type: 'chat_message',
+              friendId: thread.friend.userId,
+              messageId: msg.id,
+            },
+            ...(Platform.OS === 'android' ? { channelId: CHAT_NOTIF_CHANNEL_ID } : {}),
+          } as Notifications.NotificationContentInput,
+          trigger: null,
+        });
+      }
 
       newlyNotified.push(msg.id);
     }
