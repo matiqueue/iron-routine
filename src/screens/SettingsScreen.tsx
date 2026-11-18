@@ -1655,12 +1655,10 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 
           <View style={[styles.openSwitchLine, { borderTopColor: theme.hairline, borderTopWidth: StyleSheet.hairlineWidth, marginTop: 10 }]}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
-              <AnimatedIcon
+              <Ionicons
                 name="heart"
-                preset="heart"
                 size={18}
                 color={settings.healthSyncEnabled ? '#EF4444' : theme.text}
-                active={settings.healthSyncEnabled}
               />
               <View style={styles.switchLabelWrap}>
                 <Text style={[styles.rowTitle, { color: theme.text }]}>
@@ -1685,7 +1683,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           {settings.healthSyncEnabled && healthSummary?.authorized && (
             <View style={styles.healthPillRow}>
               <View style={[styles.healthChip, { backgroundColor: theme.bgSecondary }]}>
-                <AnimatedIcon name="footsteps-outline" preset="footsteps" size={13} color={theme.text} active />
+                <Ionicons name="footsteps-outline" size={13} color={theme.text} />
                 <Text style={[styles.healthChipText, { color: theme.text }]}>
                   {healthSummary.steps !== null
                     ? t('stepsValue', { steps: healthSummary.steps.toLocaleString(localeCode) })
@@ -1693,7 +1691,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                 </Text>
               </View>
               <View style={[styles.healthChip, { backgroundColor: theme.bgSecondary }]}>
-                <AnimatedIcon name="moon-outline" preset="moon" size={13} color={theme.text} active />
+                <Ionicons name="moon-outline" size={13} color={theme.text} />
                 <Text style={[styles.healthChipText, { color: theme.text }]}>
                   {healthSummary.sleepHours !== null
                     ? t('sleepHoursValue', { hours: healthSummary.sleepHours })
@@ -2094,7 +2092,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             }}
             activeOpacity={0.85}
           >
-            <AnimatedIcon name="cafe-outline" preset="pulse" size={18} color="#FDBA74" active />
+            <Ionicons name="cafe-outline" size={18} color="#FDBA74" />
             <Text style={[styles.coffeeBtnText, { color: '#FFF7ED' }]}>{t('coffeeNote')}</Text>
             <Ionicons name="open-outline" size={15} color="#FDBA74" />
           </TouchableOpacity>

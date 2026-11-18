@@ -13,6 +13,29 @@ nacl.setPRNG((dest, count) => {
 
 const E2EE_KEY_PREFIX = '@iron_routine:e2ee_keypair_v1_';
 
+// In-memory caches avoid repeated AsyncStorage reads and X25519 scalar mults on polling ticks
+const keyPairMemCache = new Map<string, StoredE2eeKeyPair>();
+const secretBytesMemCache = new Map<string, Uint8Array>();
+const sharedKeyMemCache = new Map<string, Uint8Array>();
+const decryptedEnvelopeMemCache = new Map<string, PlainChatEnvelope>();
+const MAX_DECRYPT_CACHE_ENTRIES = 600;
+
+function getCachedSharedKey(mySecretB64: string, peerPubB64: string): Uint8Array {
+  const cacheKey = `${mySecretB64.slice(0, 12)}|${peerPubB64}`;
+  const existing = sharedKeyMemCache.get(cacheKey);
+  if (existing) return existing;
+
+  let mySecret = secretBytesMemCache.get(mySecretB64);
+  if (!mySecret) {
+    mySecret = base64ToBytes(mySecretB64);
+    secretBytesMemCache.set(mySecretB64, mySecret);
+  }
+  const peerPub = base64ToBytes(peerPubB64);
+  const sharedKey = nacl.box.before(peerPub, mySecret);
+  sharedKeyMemCache.set(cacheKey, sharedKey);
+  return sharedKey;
+}
+
 export interface StoredE2eeKeyPair {
   publicKey: string; // Base64 (32 bytes Curve25519)
   secretKey: string; // Base64 (32 bytes Curve25519)
@@ -92,12 +115,16 @@ function utf8Decode(bytes: Uint8Array): string {
 }
 
 export async function getOrCreateE2eeKeyPair(userId = 'device'): Promise<StoredE2eeKeyPair> {
+  const mem = keyPairMemCache.get(userId);
+  if (mem) return mem;
+
   const storageKey = `${E2EE_KEY_PREFIX}${userId}`;
   try {
     const raw = await AsyncStorage.getItem(storageKey);
     if (raw) {
       const parsed = JSON.parse(raw) as StoredE2eeKeyPair;
       if (parsed?.publicKey && parsed?.secretKey) {
+        keyPairMemCache.set(userId, parsed);
         return parsed;
       }
     }
@@ -108,6 +135,7 @@ export async function getOrCreateE2eeKeyPair(userId = 'device'): Promise<StoredE
     publicKey: bytesToBase64(pair.publicKey),
     secretKey: bytesToBase64(pair.secretKey),
   };
+  keyPairMemCache.set(userId, created);
   try {
     await AsyncStorage.setItem(storageKey, JSON.stringify(created));
   } catch {}
@@ -120,9 +148,7 @@ export function encryptChatEnvelope(
   myKeyPair: StoredE2eeKeyPair
 ): EncryptedChatWirePayload {
   const nonce = ExpoCrypto.getRandomBytes(nacl.box.nonceLength);
-  const mySecret = base64ToBytes(myKeyPair.secretKey);
-  const recipientPub = base64ToBytes(recipientPublicKeyB64);
-  const sharedKey = nacl.box.before(recipientPub, mySecret);
+  const sharedKey = getCachedSharedKey(myKeyPair.secretKey, recipientPublicKeyB64);
   const plaintextBytes = utf8Encode(JSON.stringify(envelope));
   const sealed = nacl.box.after(plaintextBytes, nonce, sharedKey);
 
@@ -159,11 +185,12 @@ export function decryptChatEnvelope(
 
   const isMine = raw.senderId === myUserId;
   const peerPubB64 = isMine ? raw.recipientPublicKey : raw.senderPublicKey;
+  const msgCacheKey = `${myKeyPair.publicKey.slice(0, 10)}|${peerPubB64.slice(0, 10)}|${raw.nonce}|${raw.ciphertext.length}|${raw.ciphertext.slice(0, 20)}`;
+  const cachedEnvelope = decryptedEnvelopeMemCache.get(msgCacheKey);
+  if (cachedEnvelope) return cachedEnvelope;
 
   try {
-    const mySecret = base64ToBytes(myKeyPair.secretKey);
-    const peerPub = base64ToBytes(peerPubB64);
-    const sharedKey = nacl.box.before(peerPub, mySecret);
+    const sharedKey = getCachedSharedKey(myKeyPair.secretKey, peerPubB64);
     const cipherBytes = base64ToBytes(raw.ciphertext);
     const nonceBytes = base64ToBytes(raw.nonce);
 
@@ -172,11 +199,17 @@ export function decryptChatEnvelope(
 
     const jsonStr = utf8Decode(opened);
     const parsed = JSON.parse(jsonStr) as PlainChatEnvelope;
-    return {
+    const result: PlainChatEnvelope = {
       type: parsed.type || 'text',
       text: parsed.text || '',
       payload: parsed.payload,
     };
+    if (decryptedEnvelopeMemCache.size >= MAX_DECRYPT_CACHE_ENTRIES) {
+      const firstKey = decryptedEnvelopeMemCache.keys().next().value;
+      if (firstKey) decryptedEnvelopeMemCache.delete(firstKey);
+    }
+    decryptedEnvelopeMemCache.set(msgCacheKey, result);
+    return result;
   } catch {
     return null;
   }

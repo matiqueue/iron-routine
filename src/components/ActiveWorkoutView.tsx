@@ -44,6 +44,113 @@ import {
   triggerSelectionHaptic,
 } from '../services/haptics';
 
+const formatDurationClock = (secs: number): string => {
+  const safe = Math.max(0, Math.floor(secs));
+  const mins = Math.floor(safe / 60);
+  const s = safe % 60;
+  return `${mins}:${s < 10 ? '0' : ''}${s}`;
+};
+
+const WorkoutStopwatchPill: React.FC<{
+  startTimeMs: number;
+  bgColor: string;
+  borderColor: string;
+  textColor: string;
+  mutedColor: string;
+}> = React.memo(({ startTimeMs, bgColor, borderColor, textColor, mutedColor }) => {
+  const [secs, setSecs] = useState(() => Math.max(0, Math.floor((Date.now() - startTimeMs) / 1000)));
+
+  useEffect(() => {
+    const syncNow = () => {
+      setSecs(Math.max(0, Math.floor((Date.now() - startTimeMs) / 1000)));
+    };
+    syncNow();
+    let interval: ReturnType<typeof setInterval> | null = null;
+
+    const startTick = () => {
+      if (interval) return;
+      interval = setInterval(syncNow, 1000);
+    };
+    const stopTick = () => {
+      if (interval) {
+        clearInterval(interval);
+        interval = null;
+      }
+    };
+
+    if (AppState.currentState === 'active') {
+      startTick();
+    }
+
+    const sub = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') {
+        syncNow();
+        startTick();
+      } else {
+        stopTick();
+      }
+    });
+
+    return () => {
+      stopTick();
+      sub.remove();
+    };
+  }, [startTimeMs]);
+
+  return (
+    <View style={[styles.stopwatchPill, { backgroundColor: bgColor, borderColor }]}>
+      <Ionicons name="stopwatch-outline" size={14} color={mutedColor} />
+      <Text style={[styles.stopwatchText, { color: textColor }]}>{formatDurationClock(secs)}</Text>
+    </View>
+  );
+});
+
+const FloatingRestTimeText: React.FC<{
+  endTimeMs: number;
+  isPaused: boolean;
+  pausedSeconds: number;
+  isFinished: boolean;
+  finishedLabel: string;
+  color: string;
+}> = React.memo(({ endTimeMs, isPaused, pausedSeconds, isFinished, finishedLabel, color }) => {
+  const [secsLeft, setSecsLeft] = useState(() =>
+    isPaused ? pausedSeconds : Math.max(0, Math.ceil((endTimeMs - Date.now()) / 1000))
+  );
+
+  useEffect(() => {
+    if (isFinished || isPaused || endTimeMs <= 0) {
+      setSecsLeft(pausedSeconds);
+      return;
+    }
+
+    const update = () => {
+      setSecsLeft(Math.max(0, Math.ceil((endTimeMs - Date.now()) / 1000)));
+    };
+    update();
+    const interval = setInterval(() => {
+      if (AppState.currentState !== 'active') return;
+      update();
+    }, 500);
+    const sub = AppState.addEventListener('change', (next) => {
+      if (next === 'active') update();
+    });
+    return () => {
+      clearInterval(interval);
+      sub.remove();
+    };
+  }, [endTimeMs, isPaused, pausedSeconds, isFinished]);
+
+  return (
+    <Text style={[styles.floatingTimerTime, { color }]} numberOfLines={1}>
+      {isFinished
+        ? finishedLabel
+        : isPaused
+        ? `PAUZA • ${formatDurationClock(pausedSeconds)}`
+        : formatDurationClock(secsLeft)}
+    </Text>
+  );
+});
+
 export interface ActiveWorkoutFinishSummary {
   durationMinutes: number;
   totalVolumeKg: number;
@@ -177,12 +284,11 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
     };
   }, []);
 
-  // Rest Timer State
+  // Rest Timer State (single timeout avoids 2Hz full-screen re-renders)
   const [isResting, setIsResting] = useState(false);
   const [isRestPaused, setIsRestPaused] = useState(false);
   const [isRestFinished, setIsRestFinished] = useState(false);
   const [isRestModalVisible, setIsRestModalVisible] = useState(false);
-  const [restSecondsLeft, setRestSecondsLeft] = useState(90);
   const [restModalSeedSecs, setRestModalSeedSecs] = useState(90);
   const [restModalTargetMs, setRestModalTargetMs] = useState<number | undefined>(undefined);
   const [timerLabel, setTimerLabel] = useState('');
@@ -190,14 +296,13 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
   const restEndTimeRef = useRef<number>(0);
   const restFinishNotifiedRef = useRef(false);
 
-  // Background-persistent tick for rest timer (no in-app haptic; background alarm handles outside-app alert)
+  // Background-persistent finish check (single timeout + foreground resume check)
   useEffect(() => {
     if (!isResting || isRestPaused) return;
 
-    const tick = () => {
-      const diff = Math.max(0, Math.ceil((restEndTimeRef.current - Date.now()) / 1000));
-      setRestSecondsLeft(diff);
-      if (diff <= 0) {
+    const completeIfDue = () => {
+      const msLeft = restEndTimeRef.current - Date.now();
+      if (msLeft <= 0) {
         setIsResting(false);
         setIsRestPaused(false);
         setIsRestFinished(true);
@@ -207,26 +312,36 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
             cancelRestFinishedNotification();
           }
         }
+        return true;
       }
+      return false;
     };
 
-    tick();
-    const interval = setInterval(tick, 500);
+    let timeout: ReturnType<typeof setTimeout> | null = null;
+    const scheduleTimeout = () => {
+      if (timeout) clearTimeout(timeout);
+      if (completeIfDue()) return;
+      const msLeft = Math.max(0, restEndTimeRef.current - Date.now());
+      timeout = setTimeout(() => {
+        completeIfDue();
+      }, msLeft + 40);
+    };
+
+    scheduleTimeout();
 
     const sub = AppState.addEventListener('change', (next) => {
       if (next === 'active') {
-        tick();
+        scheduleTimeout();
       }
     });
 
     return () => {
-      clearInterval(interval);
+      if (timeout) clearTimeout(timeout);
       sub.remove();
     };
-  }, [isResting, isRestPaused]);
+  }, [isResting, isRestPaused, restModalTargetMs]);
 
-  // Elapsed
-  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const workoutStartTimeRef = useRef<number>(Date.now());
 
   // Animations: directional slide & crossfade for exercise changes
   const exerciseSlideAnim = useRef(new Animated.Value(0)).current;
@@ -337,37 +452,7 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
     })
   ).current;
 
-  const workoutStartTimeRef = useRef<number>(0);
-
-  useEffect(() => {
-    if (!workoutStartTimeRef.current) {
-      workoutStartTimeRef.current = Date.now();
-    }
-    const updateElapsed = () => {
-      const diff = Math.floor((Date.now() - workoutStartTimeRef.current) / 1000);
-      setElapsedSeconds(Math.max(0, diff));
-    };
-
-    updateElapsed();
-    const interval = setInterval(updateElapsed, 1000);
-
-    const subscription = AppState.addEventListener('change', (nextState) => {
-      if (nextState === 'active') {
-        updateElapsed();
-      }
-    });
-
-    return () => {
-      clearInterval(interval);
-      subscription.remove();
-    };
-  }, []);
-
-  const formatTime = (secs: number) => {
-    const mins = Math.floor(secs / 60);
-    const s = secs % 60;
-    return `${mins}:${s < 10 ? '0' : ''}${s}`;
-  };
+  const formatTime = formatDurationClock;
 
   const currentExercise = exercises[currentExerciseIndex] || exercises[0];
   const currentExerciseId = currentExercise?.id;
@@ -690,7 +775,6 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
     restFinishNotifiedRef.current = false;
     setIsRestPaused(false);
     setIsRestFinished(false);
-    setRestSecondsLeft(restDur);
     setRestModalSeedSecs(restDur);
     setRestModalTargetMs(targetEndMs);
     const currentDisplay = exerciseName(currentExercise.id, currentExercise.name);
@@ -741,7 +825,6 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
     setIsRestPaused(true);
     setIsResting(safeRem > 0);
     setIsRestFinished(safeRem <= 0);
-    setRestSecondsLeft(safeRem);
     setRestModalSeedSecs(safeRem);
     setRestModalTargetMs(undefined);
   };
@@ -758,7 +841,6 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
     setIsRestPaused(false);
     setIsRestFinished(false);
     setIsResting(true);
-    setRestSecondsLeft(safeRem);
     setRestModalSeedSecs(safeRem);
     setRestModalTargetMs(newEnd);
     scheduleRestFinishedNotification(safeRem, timerLabel || currentExerciseName || '', timerNextInfo);
@@ -773,7 +855,6 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
       setIsRestPaused(true);
       setIsResting(safe > 0);
       setIsRestFinished(false);
-      setRestSecondsLeft(safe);
       setRestModalSeedSecs(safe);
       setRestModalTargetMs(undefined);
       return;
@@ -785,7 +866,6 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
     setIsRestPaused(false);
     setIsRestFinished(safe <= 0);
     setIsResting(safe > 0);
-    setRestSecondsLeft(safe);
     setRestModalSeedSecs(safe);
     setRestModalTargetMs(newEnd);
     if (safe > 0) {
@@ -851,8 +931,9 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
       }
     }
 
+    const elapsedNow = Math.max(0, Math.floor((Date.now() - workoutStartTimeRef.current) / 1000));
     onFinishWorkout({
-      durationMinutes: Math.max(1, Math.round(elapsedSeconds / 60)),
+      durationMinutes: Math.max(1, Math.round(elapsedNow / 60)),
       totalVolumeKg: Math.round(totalVolumeKg),
       exercises,
       completedSets: completedSetsCount,
@@ -998,10 +1079,13 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
           <Text style={[styles.exitBtnText, { color: theme.text }]}>{t('exitBtn')}</Text>
         </TouchableOpacity>
 
-        <View style={[styles.stopwatchPill, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
-          <Ionicons name="stopwatch-outline" size={14} color={theme.textMuted} />
-          <Text style={[styles.stopwatchText, { color: theme.text }]}>{formatTime(elapsedSeconds)}</Text>
-        </View>
+        <WorkoutStopwatchPill
+          startTimeMs={workoutStartTimeRef.current}
+          bgColor={theme.bgSecondary}
+          borderColor={theme.border}
+          textColor={theme.text}
+          mutedColor={theme.textMuted}
+        />
 
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
           <TouchableOpacity
@@ -1451,7 +1535,12 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
               },
             ]}
             onPress={() => {
-              setRestModalSeedSecs(restSecondsLeft);
+              const liveSeed = isRestPaused
+                ? restModalSeedSecs
+                : isRestFinished
+                ? 0
+                : Math.max(0, Math.ceil((restEndTimeRef.current - Date.now()) / 1000));
+              setRestModalSeedSecs(liveSeed);
               setRestModalTargetMs(
                 isRestPaused ? undefined : isRestFinished ? Date.now() : restEndTimeRef.current
               );
@@ -1490,25 +1579,20 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
               </View>
               <View style={{ flex: 1, paddingRight: 8 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <Text
-                    style={[
-                      styles.floatingTimerTime,
-                      {
-                        color: isRestFinished
-                          ? theme.primaryText
-                          : isRestPaused
-                          ? '#F59E0B'
-                          : theme.text,
-                      },
-                    ]}
-                    numberOfLines={1}
-                  >
-                    {isRestFinished
-                      ? 'KONIEC PRZERWY!'
-                      : isRestPaused
-                      ? `PAUZA • ${formatTime(restSecondsLeft)}`
-                      : formatTime(restSecondsLeft)}
-                  </Text>
+                  <FloatingRestTimeText
+                    endTimeMs={restEndTimeRef.current}
+                    isPaused={isRestPaused}
+                    pausedSeconds={restModalSeedSecs}
+                    isFinished={isRestFinished}
+                    finishedLabel="KONIEC PRZERWY!"
+                    color={
+                      isRestFinished
+                        ? theme.primaryText
+                        : isRestPaused
+                        ? '#F59E0B'
+                        : theme.text
+                    }
+                  />
                   {!isRestFinished && (
                     <Text style={[styles.floatingTapHint, { color: theme.textMuted }]} numberOfLines={1}>
                       {t('tapToExpandDot')}
@@ -1607,7 +1691,7 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
             : t('setsProgressTime', {
                 done: completedSetsCount,
                 total: totalSets,
-                time: formatTime(elapsedSeconds),
+                time: formatTime(Math.max(0, Math.floor((Date.now() - workoutStartTimeRef.current) / 1000))),
               })
         }
         initialHeightPercent={0.88}

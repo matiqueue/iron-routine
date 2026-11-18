@@ -28,6 +28,7 @@ import Svg, {
 } from 'react-native-svg';
 import { useAppTheme } from '../context/ThemeContext';
 import { useLanguage } from '../context/LanguageContext';
+import { useIsScreenActive } from '../context/TabActivityContext';
 import { FriendProfileSummary, RankTier } from '../types/workout';
 import { RANK_TIER_MAP } from '../data/muscleMap';
 import { RankCrestIcon } from './RankCrestIcon';
@@ -59,12 +60,16 @@ function rankToScore(tier?: RankTier, pct = 0): number {
 /**
  * Crisp 60fps SVG rotating multi-stop energy halo around profile avatar.
  */
-const AvatarHaloRing: React.FC<{ color: string; size?: number }> = React.memo(
-  ({ color, size = 108 }) => {
+const AvatarHaloRing: React.FC<{ color: string; size?: number; active?: boolean }> = React.memo(
+  ({ color, size = 108, active = true }) => {
     const uid = useId().replace(/:/g, '_');
+    const isScreenActive = useIsScreenActive();
+    const shouldSpin = active && isScreenActive;
     const rot = useRef(new Animated.Value(0)).current;
 
     useEffect(() => {
+      rot.stopAnimation();
+      if (!shouldSpin) return;
       rot.setValue(0);
       const loop = Animated.loop(
         Animated.timing(rot, {
@@ -76,7 +81,7 @@ const AvatarHaloRing: React.FC<{ color: string; size?: number }> = React.memo(
       );
       loop.start();
       return () => loop.stop();
-    }, [rot]);
+    }, [rot, shouldSpin]);
 
     const rotateDeg = rot.interpolate({
       inputRange: [0, 1],
@@ -300,6 +305,7 @@ export const FriendProfileModal: React.FC<FriendProfileModalProps> = ({
 }) => {
   const { theme, isDark } = useAppTheme();
   const { t, muscleLabel, rankTitle } = useLanguage();
+  const isScreenActive = useIsScreenActive();
   const insets = useSafeAreaInsets();
   const uid = useId().replace(/:/g, '_');
 
@@ -311,23 +317,26 @@ export const FriendProfileModal: React.FC<FriendProfileModalProps> = ({
   useEffect(() => {
     if (!visible) return;
 
-    const vsLoop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(vsPulse, {
-          toValue: 1,
-          duration: 1150,
-          easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-        }),
-        Animated.timing(vsPulse, {
-          toValue: 0,
-          duration: 1150,
-          easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-        }),
-      ])
-    );
-    vsLoop.start();
+    let vsLoop: Animated.CompositeAnimation | null = null;
+    if (isScreenActive) {
+      vsLoop = Animated.loop(
+        Animated.sequence([
+          Animated.timing(vsPulse, {
+            toValue: 1,
+            duration: 1150,
+            easing: Easing.inOut(Easing.sin),
+            useNativeDriver: true,
+          }),
+          Animated.timing(vsPulse, {
+            toValue: 0,
+            duration: 1150,
+            easing: Easing.inOut(Easing.sin),
+            useNativeDriver: true,
+          }),
+        ])
+      );
+      vsLoop.start();
+    }
 
     entranceAnim.setValue(0);
     Animated.timing(entranceAnim, {
@@ -356,9 +365,9 @@ export const FriendProfileModal: React.FC<FriendProfileModalProps> = ({
     }
 
     return () => {
-      vsLoop.stop();
+      vsLoop?.stop();
     };
-  }, [visible, friend?.userId, embeddedOverlay, vsPulse, entranceAnim, overlayFade, overlaySlide]);
+  }, [visible, friend?.userId, embeddedOverlay, isScreenActive, vsPulse, entranceAnim, overlayFade, overlaySlide]);
 
   const radarAxes = useMemo<RadarAxis[]>(() => {
     if (!friend) return [];
@@ -499,7 +508,7 @@ export const FriendProfileModal: React.FC<FriendProfileModalProps> = ({
         </Svg>
 
         <View style={styles.emblemStage}>
-          <AvatarHaloRing color={rankMeta.color} size={108} />
+          <AvatarHaloRing color={rankMeta.color} size={108} active={visible} />
           <UserAvatarBadge
             avatarUrl={friend.avatarUrl}
             displayName={friend.displayName}

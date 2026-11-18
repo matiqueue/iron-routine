@@ -12,6 +12,7 @@ import Svg, {
 } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
 import { useAppTheme } from '../context/ThemeContext';
+import { useIsScreenActive } from '../context/TabActivityContext';
 import { FriendProfileSummary, RankTier } from '../types/workout';
 import { RANK_TIER_MAP } from '../data/muscleMap';
 import { RankCrestIcon } from './RankCrestIcon';
@@ -26,11 +27,16 @@ export const CrewRadarOrb: React.FC<{
   size?: number;
 }> = React.memo(({ myRank = 'F', friendRanks = [], size = 148 }) => {
   const { isDark } = useAppTheme();
+  const isScreenActive = useIsScreenActive();
   const uid = useId().replace(/:/g, '_');
   const spinAnim = useRef(new Animated.Value(0)).current;
   const pulseAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
+    spinAnim.stopAnimation();
+    pulseAnim.stopAnimation();
+    if (!isScreenActive) return;
+
     const spin = Animated.loop(
       Animated.timing(spinAnim, {
         toValue: 1,
@@ -61,7 +67,7 @@ export const CrewRadarOrb: React.FC<{
       spin.stop();
       pulse.stop();
     };
-  }, [spinAnim, pulseAnim]);
+  }, [isScreenActive, spinAnim, pulseAnim]);
 
   const rotate = spinAnim.interpolate({
     inputRange: [0, 1],
@@ -269,6 +275,7 @@ export const VsComparisonArc: React.FC<{
   friendColor?: string;
 }> = React.memo(({ myLabel, friendLabel, myScore, friendScore, friendColor = '#10B981' }) => {
   const { theme, isDark } = useAppTheme();
+  const isScreenActive = useIsScreenActive();
   const safeMy = Math.max(1, myScore);
   const safeFr = Math.max(1, friendScore);
   const total = safeMy + safeFr;
@@ -287,6 +294,7 @@ export const VsComparisonArc: React.FC<{
       useNativeDriver: false,
     }).start();
 
+    if (!isScreenActive) return;
     const loop = Animated.loop(
       Animated.sequence([
         Animated.timing(sparkPulse, {
@@ -305,7 +313,7 @@ export const VsComparisonArc: React.FC<{
     );
     loop.start();
     return () => loop.stop();
-  }, [myScore, friendScore, clashAnim, sparkPulse]);
+  }, [myScore, friendScore, isScreenActive, clashAnim, sparkPulse]);
 
   const leftBarWidth = clashAnim.interpolate({
     inputRange: [0, 1],

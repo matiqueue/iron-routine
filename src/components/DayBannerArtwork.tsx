@@ -24,7 +24,7 @@ interface DayBannerArtworkProps {
  * Crisp offline geometric & athletic monochrome vector artwork keyed by DayBannerTag.
  * Renders safely on any device width with calibrated subtle ink contrast.
  */
-export const DayBannerArtwork: React.FC<DayBannerArtworkProps> = ({
+export const DayBannerArtwork: React.FC<DayBannerArtworkProps> = React.memo(({
   tag,
   inverted = false,
   compact = false,
@@ -119,7 +119,12 @@ export const DayBannerArtwork: React.FC<DayBannerArtworkProps> = ({
   };
 
   return (
-    <View style={[styles.wrap, compact && styles.wrapCompact, { pointerEvents: 'none' }]}>
+    <View
+      key={`${tag}_${isDark ? 'd' : 'l'}_${inverted ? 'i' : 'n'}`}
+      shouldRasterizeIOS
+      renderToHardwareTextureAndroid
+      style={[styles.wrap, compact && styles.wrapCompact, { pointerEvents: 'none' }]}
+    >
       <Svg width="100%" height="100%" viewBox="0 0 320 170" preserveAspectRatio="xMaxYMid slice">
         <Defs>
           <LinearGradient id="bannerFade" x1="0" y1="0" x2="1" y2="0">
@@ -138,7 +143,7 @@ export const DayBannerArtwork: React.FC<DayBannerArtworkProps> = ({
       </Svg>
     </View>
   );
-};
+});
 
 const styles = StyleSheet.create({
   wrap: {

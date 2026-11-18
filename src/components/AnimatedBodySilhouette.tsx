@@ -26,6 +26,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { useAppTheme } from '../context/ThemeContext';
 import { useLanguage } from '../context/LanguageContext';
+import { useIsScreenActive } from '../context/TabActivityContext';
 import { Exercise, MuscleSubGroupId, UserGender } from '../types/workout';
 import {
   BODY_BACK_PARTS,
@@ -284,6 +285,7 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = Rea
   const floatAnim = useRef(new Animated.Value(0)).current;
 
   // Fullscreen zoom-to-muscle & card slide animations
+  const isScreenActive = useIsScreenActive();
   const fsZoomScale = useRef(new Animated.Value(1)).current;
   const fsZoomX = useRef(new Animated.Value(0)).current;
   const fsZoomY = useRef(new Animated.Value(0)).current;
@@ -294,7 +296,7 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = Rea
   }, [viewSide]);
 
   useEffect(() => {
-    if (!isTabActive && !isFullscreen) return;
+    if (!isScreenActive || (!isTabActive && !isFullscreen)) return;
     const floatLoop = Animated.loop(
       Animated.sequence([
         Animated.timing(floatAnim, {
@@ -315,7 +317,7 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = Rea
     return () => {
       floatLoop.stop();
     };
-  }, [floatAnim, isFullscreen, isTabActive]);
+  }, [floatAnim, isFullscreen, isTabActive, isScreenActive]);
 
   const selectedStat = selectedMuscle ? muscleStatsMap[selectedMuscle] : null;
 

@@ -20,6 +20,7 @@ import * as Haptics from 'expo-haptics';
 import { MinimalistBackdrop } from './MinimalistBackdrop';
 import { useAppTheme } from '../context/ThemeContext';
 import { useLanguage } from '../context/LanguageContext';
+import { useIsScreenActive } from '../context/TabActivityContext';
 import { matchesExerciseSearch } from '../i18n/exerciseTranslations';
 import { SmartScrollView } from './SmartScrollView';
 import {
@@ -408,10 +409,14 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
   const navThumbAnim = useRef(new Animated.Value(0)).current;
   const navScaleAnim = useRef(new Animated.Value(1)).current;
   const viewFadeAnim = useRef(new Animated.Value(1)).current;
+  const isScreenActive = useIsScreenActive();
   const heroCrestPulse = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    if (!isTabActive) return;
+    if (!isTabActive || !isScreenActive) {
+      heroCrestPulse.stopAnimation();
+      return;
+    }
     const loop = Animated.loop(
       Animated.sequence([
         Animated.timing(heroCrestPulse, {
@@ -430,7 +435,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
     );
     loop.start();
     return () => loop.stop();
-  }, [heroCrestPulse, isTabActive]);
+  }, [heroCrestPulse, isTabActive, isScreenActive]);
 
   const scrollViewRef = useRef<any>(null);
 

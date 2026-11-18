@@ -13,6 +13,7 @@ import Svg, {
 } from 'react-native-svg';
 import { RankTier } from '../types/workout';
 import { RANK_TIER_MAP } from '../data/muscleMap';
+import { useIsScreenActive } from '../context/TabActivityContext';
 
 interface RankCrestIconProps {
   tier: RankTier;
@@ -63,8 +64,9 @@ export const RankCrestIcon: React.FC<RankCrestIconProps> = React.memo(
     const rimId = `crm_${tierKey}`;
     const glowId = `cgw_${tierKey}`;
 
+    const isScreenActive = useIsScreenActive();
     const tierRankIdx = TIER_ORDER[tier] ?? 0;
-    const shouldAnimate = animated && !dimmed;
+    const shouldAnimate = animated && !dimmed && isScreenActive;
     const showOrbitRing = shouldAnimate && tierRankIdx >= 4;
 
     const pulseAnim = useRef(new Animated.Value(0)).current;
