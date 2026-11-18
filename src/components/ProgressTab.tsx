@@ -133,14 +133,26 @@ const AnimatedVerticalSpectrumBar: React.FC<{
   delayMs?: number;
 }> = React.memo(({ pct, color, trackColor, isSelected }) => {
   const clamped = Math.max(10, Math.min(100, pct));
+  const barScaleAnim = useRef(new Animated.Value(isSelected ? 1.08 : 1)).current;
+
+  useEffect(() => {
+    Animated.spring(barScaleAnim, {
+      toValue: isSelected ? 1.1 : 1,
+      tension: 140,
+      friction: 8,
+      useNativeDriver: true,
+    }).start();
+  }, [isSelected, barScaleAnim]);
+
   return (
-    <View
+    <Animated.View
       style={[
         styles.spectrumColTrack,
         {
           backgroundColor: trackColor,
           borderColor: isSelected ? color : 'transparent',
           borderWidth: isSelected ? 1.5 : 0,
+          transform: [{ scaleY: barScaleAnim }],
         },
       ]}
     >
@@ -154,9 +166,223 @@ const AnimatedVerticalSpectrumBar: React.FC<{
           },
         ]}
       />
-    </View>
+    </Animated.View>
   );
 });
+
+const RankLadderColumn: React.FC<{
+  tier: RankTier;
+  color: string;
+  count: number;
+  heightPct: number;
+  isSelected: boolean;
+  anySelected: boolean;
+  trackColor: string;
+  textColor: string;
+  mutedColor: string;
+  borderColor: string;
+  onPress: () => void;
+}> = React.memo(
+  ({
+    tier,
+    color,
+    count,
+    heightPct,
+    isSelected,
+    anySelected,
+    trackColor,
+    textColor,
+    mutedColor,
+    borderColor,
+    onPress,
+  }) => {
+    const badgePopAnim = useRef(new Animated.Value(isSelected ? 1 : 0)).current;
+
+    useEffect(() => {
+      Animated.spring(badgePopAnim, {
+        toValue: isSelected ? 1 : 0,
+        tension: 150,
+        friction: 9,
+        useNativeDriver: true,
+      }).start();
+    }, [isSelected, badgePopAnim]);
+
+    const badgeTranslateY = badgePopAnim.interpolate({
+      inputRange: [0, 1],
+      outputRange: [0, -5],
+    });
+    const badgeScale = badgePopAnim.interpolate({
+      inputRange: [0, 1],
+      outputRange: [1, 1.14],
+    });
+
+    return (
+      <TouchableOpacity
+        style={[
+          styles.spectrumColWrap,
+          isSelected && {
+            backgroundColor: `${color}16`,
+            borderColor: `${color}55`,
+            borderWidth: 1,
+            borderRadius: 14,
+          },
+          anySelected && !isSelected && { opacity: 0.56 },
+        ]}
+        onPress={onPress}
+        activeOpacity={0.75}
+      >
+        <Text
+          style={[
+            styles.spectrumCountLabel,
+            {
+              color: isSelected ? color : count > 0 ? textColor : mutedColor,
+              opacity: isSelected || count > 0 ? 1 : 0.45,
+            },
+          ]}
+        >
+          {count}
+        </Text>
+
+        <AnimatedVerticalSpectrumBar
+          pct={heightPct}
+          color={count > 0 || isSelected ? color : borderColor}
+          trackColor={trackColor}
+          isSelected={isSelected}
+        />
+
+        <Animated.View
+          style={{
+            transform: [{ translateY: badgeTranslateY }, { scale: badgeScale }],
+          }}
+        >
+          <RankCrestIcon
+            tier={tier}
+            size={34}
+            isSelected={isSelected}
+            dimmed={count === 0 && !isSelected}
+          />
+        </Animated.View>
+      </TouchableOpacity>
+    );
+  }
+);
+
+const RankSpotlightDropCard: React.FC<{
+  tier: RankTier;
+  color: string;
+  titleText: string;
+  subtitleText: string;
+  bgColor: string;
+  titleColor: string;
+  subColor: string;
+}> = ({ tier, color, titleText, subtitleText, bgColor, titleColor, subColor }) => {
+  const dropAnim = useRef(new Animated.Value(0)).current;
+  const crestAnim = useRef(new Animated.Value(0)).current;
+  const sheenAnim = useRef(new Animated.Value(-1)).current;
+
+  useEffect(() => {
+    dropAnim.stopAnimation();
+    crestAnim.stopAnimation();
+    sheenAnim.stopAnimation();
+
+    dropAnim.setValue(0);
+    crestAnim.setValue(0);
+    sheenAnim.setValue(-1);
+
+    Animated.parallel([
+      Animated.spring(dropAnim, {
+        toValue: 1,
+        tension: 120,
+        friction: 8,
+        useNativeDriver: true,
+      }),
+      Animated.spring(crestAnim, {
+        toValue: 1,
+        tension: 105,
+        friction: 6.5,
+        useNativeDriver: true,
+      }),
+      Animated.timing(sheenAnim, {
+        toValue: 1.35,
+        duration: 620,
+        delay: 70,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [tier, dropAnim, crestAnim, sheenAnim]);
+
+  const cardTranslateY = dropAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [-22, 0],
+  });
+  const cardScale = dropAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.92, 1],
+  });
+  const crestTranslateY = crestAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [-14, 0],
+  });
+  const crestScale = crestAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.55, 1],
+  });
+  const crestRotate = crestAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['-14deg', '0deg'],
+  });
+  const sheenTranslateX = sheenAnim.interpolate({
+    inputRange: [-1, 1.35],
+    outputRange: [-220, 420],
+  });
+
+  return (
+    <Animated.View
+      style={[
+        styles.tierSpotlightRow,
+        {
+          borderLeftColor: color,
+          borderColor: `${color}38`,
+          backgroundColor: bgColor,
+          opacity: dropAnim,
+          transform: [{ translateY: cardTranslateY }, { scale: cardScale }],
+        },
+      ]}
+    >
+      {/* Sweeping metallic highlight streak */}
+      <Animated.View
+        style={[
+          styles.tierSpotlightSheen,
+          {
+            pointerEvents: 'none',
+            backgroundColor: `${color}1C`,
+            transform: [{ translateX: sheenTranslateX }, { skewX: '-22deg' }],
+          },
+        ]}
+      />
+      <Animated.View
+        style={{
+          transform: [
+            { translateY: crestTranslateY },
+            { scale: crestScale },
+            { rotate: crestRotate },
+          ],
+        }}
+      >
+        <RankCrestIcon tier={tier} size={50} isSelected animated />
+      </Animated.View>
+      <View style={{ flex: 1 }}>
+        <Text style={[styles.tierSpotlightTitle, { color: titleColor }]}>
+          {titleText}
+        </Text>
+        <Text style={[styles.tierSpotlightSub, { color: subColor }]}>
+          {subtitleText}
+        </Text>
+      </View>
+    </Animated.View>
+  );
+};
 
 export const ProgressTab: React.FC<ProgressTabProps> = ({
   activeProfile,
@@ -1095,16 +1321,12 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                           {t('showAllCount', { count: physiqueReport.muscleStatsList.length })}
                         </Text>
                       </TouchableOpacity>
-                    ) : (
-                      <Text style={[styles.sectionRightMeta, { color: theme.textMuted }]}>
-                        {t('tapBadgeToFilter')}
-                      </Text>
-                    )}
+                    ) : null}
                   </View>
 
                   {/* 8-Column Interactive Emblem + Spectrum Chart */}
                   <View style={styles.spectrumGridRow}>
-                    {RANK_TIERS.map((tierObj, idx) => {
+                    {RANK_TIERS.map((tierObj) => {
                       const count = tierDistribution[tierObj.tier] || 0;
                       const isSelected = selectedRankTier === tierObj.tier;
                       const heightPct =
@@ -1113,15 +1335,18 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                           : Math.min(100, Math.max(24, Math.round((count / 10) * 100)));
 
                       return (
-                        <TouchableOpacity
+                        <RankLadderColumn
                           key={tierObj.tier}
-                          style={[
-                            styles.spectrumColWrap,
-                            isSelected && {
-                              backgroundColor: `${tierObj.color}14`,
-                              borderRadius: 14,
-                            },
-                          ]}
+                          tier={tierObj.tier}
+                          color={tierObj.color}
+                          count={count}
+                          heightPct={heightPct}
+                          isSelected={isSelected}
+                          anySelected={selectedRankTier !== null}
+                          trackColor={theme.bgSecondary}
+                          textColor={theme.text}
+                          mutedColor={theme.textMuted}
+                          borderColor={theme.border}
                           onPress={() => {
                             try {
                               Haptics.selectionAsync();
@@ -1131,68 +1356,30 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                               selectedRankTier === tierObj.tier ? null : tierObj.tier
                             );
                           }}
-                          activeOpacity={0.75}
-                        >
-                          <Text
-                            style={[
-                              styles.spectrumCountLabel,
-                              {
-                                color: count > 0 ? theme.text : theme.textMuted,
-                                opacity: count > 0 ? 1 : 0.45,
-                              },
-                            ]}
-                          >
-                            {count}
-                          </Text>
-
-                          <AnimatedVerticalSpectrumBar
-                            pct={heightPct}
-                            color={count > 0 || isSelected ? tierObj.color : theme.border}
-                            trackColor={theme.bgSecondary}
-                            isSelected={isSelected}
-                            delayMs={idx * 40}
-                          />
-
-                          <RankCrestIcon
-                            tier={tierObj.tier}
-                            size={34}
-                            isSelected={isSelected}
-                            dimmed={count === 0 && !isSelected}
-                          />
-                        </TouchableOpacity>
+                        />
                       );
                     })}
                   </View>
 
-                  {/* Selected Tier Info Strip */}
+                  {/* Selected Tier Info Strip (Dynamic spring entrance + sheen sweep) */}
                   {selectedRankTier ? (
-                    <View
-                      style={[
-                        styles.tierSpotlightRow,
-                        {
-                          borderLeftColor: RANK_TIER_MAP[selectedRankTier].color,
-                          backgroundColor: theme.bgSecondary,
-                        },
-                      ]}
-                    >
-                      <RankCrestIcon tier={selectedRankTier} size={46} isSelected />
-                      <View style={{ flex: 1 }}>
-                        <Text style={[styles.tierSpotlightTitle, { color: theme.text }]}>
-                          {t('tierSpotlightTitle', {
-                            tier: selectedRankTier,
-                            title: rankTitle(selectedRankTier),
-                            count: tierDistribution[selectedRankTier],
-                          })}
-                        </Text>
-                        <Text style={[styles.tierSpotlightSub, { color: theme.textSecondary }]}>
-                          {t('rankThresholdInfo', {
-                            subtitle: rankSubtitle(selectedRankTier),
-                            muscleSets: RANK_TIER_MAP[selectedRankTier].minMuscleSets,
-                            exSets: RANK_TIER_MAP[selectedRankTier].minExerciseSets,
-                          })}
-                        </Text>
-                      </View>
-                    </View>
+                    <RankSpotlightDropCard
+                      tier={selectedRankTier}
+                      color={RANK_TIER_MAP[selectedRankTier].color}
+                      bgColor={theme.bgSecondary}
+                      titleColor={theme.text}
+                      subColor={theme.textSecondary}
+                      titleText={t('tierSpotlightTitle', {
+                        tier: selectedRankTier,
+                        title: rankTitle(selectedRankTier),
+                        count: tierDistribution[selectedRankTier],
+                      })}
+                      subtitleText={t('rankThresholdInfo', {
+                        subtitle: rankSubtitle(selectedRankTier),
+                        muscleSets: RANK_TIER_MAP[selectedRankTier].minMuscleSets,
+                        exSets: RANK_TIER_MAP[selectedRankTier].minExerciseSets,
+                      })}
+                    />
                   ) : null}
 
                   {/* Closest to Rank-Up Milestone Strip ("Najbliżej awansu") */}
@@ -2401,14 +2588,23 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
   tierSpotlightRow: {
+    position: 'relative',
+    overflow: 'hidden',
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
     marginTop: 10,
-    paddingVertical: 12,
+    paddingVertical: 13,
     paddingHorizontal: 14,
-    borderLeftWidth: 3,
-    borderRadius: 12,
+    borderLeftWidth: 3.5,
+    borderWidth: 1,
+    borderRadius: 14,
+  },
+  tierSpotlightSheen: {
+    position: 'absolute',
+    top: -12,
+    bottom: -12,
+    width: 72,
   },
   tierSpotlightTitle: {
     fontSize: 14,

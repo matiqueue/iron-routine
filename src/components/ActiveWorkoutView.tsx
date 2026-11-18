@@ -27,7 +27,10 @@ import { ExerciseLibraryContent } from './ExerciseLibraryContent';
 import { SessionExercisePickerModal } from './SessionExercisePickerModal';
 import { calculate1RM, getLastExerciseMetrics } from '../services/storage';
 import { cloneExercise } from '../data/exerciseLibrary';
-import { resolveOrderedSessionExercises } from '../utils/sessionExercises';
+import {
+  resolveOrderedSessionExercises,
+  resolveResumeExerciseIndex,
+} from '../utils/sessionExercises';
 import { updateWorkoutLiveActivity } from '../services/liveActivity';
 import {
   cancelRestFinishedNotification,
@@ -123,7 +126,13 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
   }, [allSessionExercises, skippedIds]);
 
   const [extraSetsMap, setExtraSetsMap] = useState<{ [exId: string]: number }>({});
-  const [currentExerciseIndex, setCurrentExerciseIndex] = useState(0);
+  const [currentExerciseIndex, setCurrentExerciseIndex] = useState<number>(() => {
+    const ordered = resolveOrderedSessionExercises(dayPlan.exercises || [], dayProgress.sessionConfig);
+    const skippedSet = new Set(dayProgress.sessionConfig?.skippedIds || []);
+    const activeOnly = ordered.filter((ex) => !skippedSet.has(ex.id));
+    const active = activeOnly.length > 0 ? activeOnly : ordered;
+    return resolveResumeExerciseIndex(active, dayProgress.sets, dayProgress.sessionConfig?.activeExerciseId);
+  });
   const [currentSetIndex, setCurrentSetIndex] = useState(0);
   const [detailModalExercise, setDetailModalExercise] = useState<Exercise | null>(null);
 
@@ -132,14 +141,28 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
   const [overviewMode, setOverviewMode] = useState<'list' | 'library'>('list');
   const [swapExerciseIdx, setSwapExerciseIdx] = useState<number | null>(null);
 
+  const lastSavedActiveExIdRef = useRef<string | undefined>(dayProgress.sessionConfig?.activeExerciseId);
+  const lastSyncedSetExerciseIdRef = useRef<string | undefined>(undefined);
   const prevDayPlanIdRef = useRef(dayPlan.id);
   useEffect(() => {
-    setAllSessionExercises(
-      resolveOrderedSessionExercises(dayPlan.exercises || [], dayProgress.sessionConfig)
+    if (prevDayPlanIdRef.current === dayPlan.id) return;
+    prevDayPlanIdRef.current = dayPlan.id;
+    const ordered = resolveOrderedSessionExercises(dayPlan.exercises || [], dayProgress.sessionConfig);
+    const nextSkipped = dayProgress.sessionConfig?.skippedIds || [];
+    const skippedSet = new Set(nextSkipped);
+    const activeOnly = ordered.filter((ex) => !skippedSet.has(ex.id));
+    const active = activeOnly.length > 0 ? activeOnly : ordered;
+    const resumeIdx = resolveResumeExerciseIndex(
+      active,
+      dayProgress.sets,
+      dayProgress.sessionConfig?.activeExerciseId
     );
-    setSkippedIds(dayProgress.sessionConfig?.skippedIds || []);
+    lastSavedActiveExIdRef.current = dayProgress.sessionConfig?.activeExerciseId;
+    lastSyncedSetExerciseIdRef.current = undefined;
+    setAllSessionExercises(ordered);
+    setSkippedIds(nextSkipped);
     setExtraSetsMap({});
-    setCurrentExerciseIndex(0);
+    setCurrentExerciseIndex(resumeIdx);
     setCurrentSetIndex(0);
   }, [dayPlan.id]);
 
@@ -294,6 +317,11 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
   };
 
   // Header swipe responder: horizontal flick to navigate exercises
+  const currentExerciseIndexRef = useRef(currentExerciseIndex);
+  currentExerciseIndexRef.current = currentExerciseIndex;
+  const handleTransitionRef = useRef(handleTransitionExercise);
+  handleTransitionRef.current = handleTransitionExercise;
+
   const headerPanResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => false,
@@ -301,9 +329,9 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
         Math.abs(gesture.dx) > 18 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.5,
       onPanResponderRelease: (_, gesture) => {
         if (gesture.dx < -40) {
-          handleTransitionExercise(currentExerciseIndex + 1);
+          handleTransitionRef.current(currentExerciseIndexRef.current + 1);
         } else if (gesture.dx > 40) {
-          handleTransitionExercise(currentExerciseIndex - 1);
+          handleTransitionRef.current(currentExerciseIndexRef.current - 1);
         }
       },
     })
@@ -387,10 +415,27 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
 
   const currentTotalSets = currentExercise ? getEffectiveSets(currentExercise) : 0;
 
-  // When changing exercise, jump to first uncompleted set
+  // Persist active exercise id whenever the focused exercise changes
+  useEffect(() => {
+    if (!currentExerciseId || lastSavedActiveExIdRef.current === currentExerciseId) return;
+    lastSavedActiveExIdRef.current = currentExerciseId;
+    const persistedAdded = allSessionExercises.filter(
+      (ex) => !(dayPlan.exercises || []).some((base) => base.id === ex.id)
+    );
+    onSaveSessionConfig?.({
+      orderedIds: allSessionExercises.map((e) => e.id),
+      skippedIds,
+      addedExercises: persistedAdded.length > 0 ? persistedAdded : undefined,
+      activeExerciseId: currentExerciseId,
+    });
+  }, [currentExerciseId, allSessionExercises, skippedIds, dayPlan.exercises, onSaveSessionConfig]);
+
+  // When changing to a DIFFERENT exercise, jump to its first uncompleted set (skip reset if merely reordered)
   useEffect(() => {
     const activeEx = currentExerciseRef.current;
     if (!activeEx) return;
+    if (lastSyncedSetExerciseIdRef.current === activeEx.id) return;
+    lastSyncedSetExerciseIdRef.current = activeEx.id;
     const setsObj = dayProgressRef.current.sets[activeEx.id] || {};
     const extra = extraSetsMapRef.current[activeEx.id] || 0;
     const loggedIndices = Object.keys(setsObj).map((k) => Number(k));
@@ -816,28 +861,45 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
   };
 
   const handleApplySessionConfig = (config: SessionExerciseConfig) => {
+    const prevExId = currentExercise?.id;
+    const prevIdx = currentExerciseIndex;
     const reordered = resolveOrderedSessionExercises(allSessionExercises, config);
     const persistedAdded = reordered.filter(
       (ex) => !(dayPlan.exercises || []).some((base) => base.id === ex.id)
     );
+    const skippedSet = new Set(config.skippedIds);
+    const activeOnly = reordered.filter((e) => !skippedSet.has(e.id));
+    const activeAfter = activeOnly.length > 0 ? activeOnly : reordered;
+
+    let nextIdx = 0;
+    if (activeAfter.length > 0) {
+      const currentPos = prevExId ? activeAfter.findIndex((e) => e.id === prevExId) : -1;
+      if (currentPos >= 0) {
+        nextIdx = currentPos;
+      } else {
+        // If current exercise was unchecked, keep position nearby instead of jumping to #1
+        nextIdx = Math.max(0, Math.min(prevIdx, activeAfter.length - 1));
+      }
+    }
+
+    const nextActiveId = activeAfter[nextIdx]?.id;
     const mergedConfig: SessionExerciseConfig = {
       orderedIds: reordered.map((e) => e.id),
       skippedIds: config.skippedIds,
       addedExercises: persistedAdded.length > 0 ? persistedAdded : undefined,
+      activeExerciseId: nextActiveId,
     };
 
+    lastSavedActiveExIdRef.current = nextActiveId;
     setAllSessionExercises(reordered);
     setSkippedIds(config.skippedIds);
     onSaveSessionConfig?.(mergedConfig);
 
-    const skippedSet = new Set(config.skippedIds);
-    const activeAfter = reordered.filter((e) => !skippedSet.has(e.id));
     if (activeAfter.length > 0) {
-      const currentPos = currentExercise
-        ? activeAfter.findIndex((e) => e.id === currentExercise.id)
-        : 0;
-      setCurrentExerciseIndex(currentPos >= 0 ? currentPos : 0);
-      setCurrentSetIndex(0);
+      setCurrentExerciseIndex(nextIdx);
+      if (nextActiveId !== prevExId) {
+        lastSyncedSetExerciseIdRef.current = undefined;
+      }
     }
   };
 
@@ -881,10 +943,18 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
     const persistedAdded = nextAllList.filter(
       (ex) => !(dayPlan.exercises || []).some((b) => b.id === ex.id)
     );
+    const skippedSet = new Set(skippedIds);
+    const nextActiveOnly = nextAllList.filter((e) => !skippedSet.has(e.id));
+    const nextActiveList = nextActiveOnly.length > 0 ? nextActiveOnly : nextAllList;
+    const nextIdx =
+      swapExerciseIdx !== null ? swapExerciseIdx : Math.max(0, nextActiveList.length - 1);
+    const nextActiveId = nextActiveList[nextIdx]?.id;
+    lastSavedActiveExIdRef.current = nextActiveId;
     onSaveSessionConfig?.({
       orderedIds: nextAllList.map((e) => e.id),
       skippedIds,
       addedExercises: persistedAdded.length > 0 ? persistedAdded : undefined,
+      activeExerciseId: nextActiveId,
     });
 
     setSwapExerciseIdx(null);

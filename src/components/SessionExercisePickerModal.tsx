@@ -5,6 +5,7 @@ import {
   LayoutChangeEvent,
   PanResponder,
   PanResponderInstance,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -45,6 +46,11 @@ const SessionChecklistView: React.FC<{
   draggingId: string | null;
   dragYAnim: Animated.Value;
   mode: 'start' | 'edit';
+  scrollViewRef: React.RefObject<React.ComponentRef<typeof ScrollView> | null>;
+  listContainerRef: React.RefObject<React.ComponentRef<typeof View> | null>;
+  onListLayout: (e: LayoutChangeEvent) => void;
+  onListContentSizeChange: (w: number, h: number) => void;
+  onListScroll: (y: number) => void;
   onToggleExercise: (id: string) => void;
   onSelectAll: () => void;
   onResetOrder: () => void;
@@ -59,6 +65,11 @@ const SessionChecklistView: React.FC<{
   draggingId,
   dragYAnim,
   mode,
+  scrollViewRef,
+  listContainerRef,
+  onListLayout,
+  onListContentSizeChange,
+  onListScroll,
   onToggleExercise,
   onSelectAll,
   onResetOrder,
@@ -96,11 +107,16 @@ const SessionChecklistView: React.FC<{
         </View>
       </View>
 
-      <BottomSheetScrollView
-        style={styles.list}
-        showsVerticalScrollIndicator={false}
-        scrollEnabled={!draggingId}
-      >
+      <View ref={listContainerRef} style={styles.listViewport} onLayout={onListLayout}>
+        <BottomSheetScrollView
+          ref={scrollViewRef}
+          style={styles.list}
+          showsVerticalScrollIndicator={false}
+          scrollEnabled={!draggingId}
+          scrollEventThrottle={16}
+          onContentSizeChange={onListContentSizeChange}
+          onScroll={(e) => onListScroll(e.nativeEvent.contentOffset.y)}
+        >
         {orderedExercises.map((ex, idx) => {
           const isSkipped = skippedSet.has(ex.id);
           const isDragging = draggingId === ex.id;
@@ -210,7 +226,8 @@ const SessionChecklistView: React.FC<{
           );
         })}
         <View style={{ height: 18 }} />
-      </BottomSheetScrollView>
+        </BottomSheetScrollView>
+      </View>
 
       <View style={[styles.footer, { borderTopColor: theme.border, backgroundColor: theme.card }]}>
         <TouchableOpacity
@@ -272,17 +289,120 @@ export const SessionExercisePickerModal: React.FC<SessionExercisePickerModalProp
 
   const rowHeightsRef = useRef<Record<string, number>>({});
   const dragYAnim = useRef(new Animated.Value(0)).current;
+  const scrollViewRef = useRef<React.ComponentRef<typeof ScrollView> | null>(null);
+  const listContainerRef = useRef<React.ComponentRef<typeof View> | null>(null);
+  const scrollOffsetRef = useRef(0);
+  const viewportHeightRef = useRef(0);
+  const contentHeightRef = useRef(0);
+  const viewportTopYRef = useRef(0);
+  const autoScrollDirRef = useRef<-1 | 0 | 1>(0);
+  const autoScrollSpeedRef = useRef(0);
+  const autoScrollRafRef = useRef<number | null>(null);
   const dragStateRef = useRef<{
     id: string;
     currentIndex: number;
     swapAccumulatedDy: number;
+    startScrollY: number;
+    latestDy: number;
   } | null>(null);
   const panRespondersRef = useRef<Record<string, PanResponderInstance>>({});
+
+  const stopAutoScrollLoop = () => {
+    autoScrollDirRef.current = 0;
+    autoScrollSpeedRef.current = 0;
+    if (autoScrollRafRef.current !== null) {
+      cancelAnimationFrame(autoScrollRafRef.current);
+      autoScrollRafRef.current = null;
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      stopAutoScrollLoop();
+    };
+  }, []);
+
+  const evaluateDragPosition = (st: {
+    id: string;
+    currentIndex: number;
+    swapAccumulatedDy: number;
+    startScrollY: number;
+    latestDy: number;
+  }) => {
+    const scrollDelta = scrollOffsetRef.current - st.startScrollY;
+    const totalListDy = st.latestDy + scrollDelta;
+    let localDy = totalListDy - st.swapAccumulatedDy;
+    const list = [...orderedIdsRef.current];
+    let changed = false;
+
+    while (localDy > 0 && st.currentIndex < list.length - 1) {
+      const nextId = list[st.currentIndex + 1];
+      const nextStep = (rowHeightsRef.current[nextId] || DEFAULT_ROW_HEIGHT) + ROW_GAP;
+      if (localDy <= nextStep * 0.52) break;
+      list[st.currentIndex] = nextId;
+      list[st.currentIndex + 1] = st.id;
+      st.currentIndex += 1;
+      st.swapAccumulatedDy += nextStep;
+      localDy = totalListDy - st.swapAccumulatedDy;
+      changed = true;
+    }
+
+    while (localDy < 0 && st.currentIndex > 0) {
+      const prevId = list[st.currentIndex - 1];
+      const prevStep = (rowHeightsRef.current[prevId] || DEFAULT_ROW_HEIGHT) + ROW_GAP;
+      if (localDy >= -(prevStep * 0.52)) break;
+      list[st.currentIndex] = prevId;
+      list[st.currentIndex - 1] = st.id;
+      st.currentIndex -= 1;
+      st.swapAccumulatedDy -= prevStep;
+      localDy = totalListDy - st.swapAccumulatedDy;
+      changed = true;
+    }
+
+    if (changed) {
+      orderedIdsRef.current = list;
+      setOrderedIds(list);
+      triggerSelectionHaptic();
+    }
+
+    dragYAnim.setValue(localDy);
+  };
+
+  const ensureAutoScrollLoop = () => {
+    if (autoScrollRafRef.current !== null) return;
+    const step = () => {
+      const st = dragStateRef.current;
+      const dir = autoScrollDirRef.current;
+      if (!st || dir === 0) {
+        autoScrollRafRef.current = null;
+        return;
+      }
+
+      const maxScroll = Math.max(0, contentHeightRef.current - viewportHeightRef.current);
+      const curY = scrollOffsetRef.current;
+      const nextY = Math.max(0, Math.min(maxScroll, curY + dir * autoScrollSpeedRef.current));
+
+      if (Math.abs(nextY - curY) > 0.2) {
+        scrollOffsetRef.current = nextY;
+        scrollViewRef.current?.scrollTo({ y: nextY, animated: false });
+        evaluateDragPosition(st);
+      } else {
+        autoScrollRafRef.current = null;
+        return;
+      }
+
+      autoScrollRafRef.current = requestAnimationFrame(step);
+    };
+    autoScrollRafRef.current = requestAnimationFrame(step);
+  };
 
   useEffect(() => {
     const justOpened = !prevVisibleRef.current && visible;
     prevVisibleRef.current = visible;
-    if (!justOpened) return;
+    if (!justOpened) {
+      if (!visible) stopAutoScrollLoop();
+      return;
+    }
 
     const savedAdded = (initialConfig?.addedExercises || []).filter(
       (extra) => !exercises.some((b) => b.id === extra.id)
@@ -307,6 +427,8 @@ export const SessionExercisePickerModal: React.FC<SessionExercisePickerModalProp
     }
     setDraggingId(null);
     dragStateRef.current = null;
+    stopAutoScrollLoop();
+    scrollOffsetRef.current = 0;
     dragYAnim.setValue(0);
   }, [visible, exercises, initialConfig, dragYAnim]);
 
@@ -362,12 +484,21 @@ export const SessionExercisePickerModal: React.FC<SessionExercisePickerModalProp
         onPanResponderGrant: () => {
           const idx = orderedIdsRef.current.indexOf(exerciseId);
           if (idx === -1) return;
+          stopAutoScrollLoop();
+          listContainerRef.current?.measureInWindow((_x, y, _w, h) => {
+            if (h > 40) {
+              viewportTopYRef.current = y;
+              viewportHeightRef.current = h;
+            }
+          });
           dragYAnim.stopAnimation();
           dragYAnim.setValue(0);
           dragStateRef.current = {
             id: exerciseId,
             currentIndex: idx,
             swapAccumulatedDy: 0,
+            startScrollY: scrollOffsetRef.current,
+            latestDy: 0,
           };
           setDraggingId(exerciseId);
           triggerImpactHaptic('light');
@@ -376,43 +507,43 @@ export const SessionExercisePickerModal: React.FC<SessionExercisePickerModalProp
           const st = dragStateRef.current;
           if (!st || st.id !== exerciseId) return;
 
-          let localDy = gestureState.dy - st.swapAccumulatedDy;
-          const list = orderedIdsRef.current;
+          st.latestDy = gestureState.dy;
+          evaluateDragPosition(st);
 
-          if (localDy > 0 && st.currentIndex < list.length - 1) {
-            const nextId = list[st.currentIndex + 1];
-            const nextStep = (rowHeightsRef.current[nextId] || DEFAULT_ROW_HEIGHT) + ROW_GAP;
-            if (localDy > nextStep * 0.52) {
-              const updated = [...list];
-              updated[st.currentIndex] = nextId;
-              updated[st.currentIndex + 1] = st.id;
-              orderedIdsRef.current = updated;
-              setOrderedIds(updated);
-              st.currentIndex += 1;
-              st.swapAccumulatedDy += nextStep;
-              localDy = gestureState.dy - st.swapAccumulatedDy;
-              triggerSelectionHaptic();
-            }
-          } else if (localDy < 0 && st.currentIndex > 0) {
-            const prevId = list[st.currentIndex - 1];
-            const prevStep = (rowHeightsRef.current[prevId] || DEFAULT_ROW_HEIGHT) + ROW_GAP;
-            if (localDy < -(prevStep * 0.52)) {
-              const updated = [...list];
-              updated[st.currentIndex] = prevId;
-              updated[st.currentIndex - 1] = st.id;
-              orderedIdsRef.current = updated;
-              setOrderedIds(updated);
-              st.currentIndex -= 1;
-              st.swapAccumulatedDy -= prevStep;
-              localDy = gestureState.dy - st.swapAccumulatedDy;
-              triggerSelectionHaptic();
+          const vh = viewportHeightRef.current;
+          const topY = viewportTopYRef.current;
+          if (vh > 60 && gestureState.moveY > 0) {
+            const bottomY = topY + vh;
+            const edgeZone = Math.min(78, Math.max(54, vh * 0.17));
+            const maxScroll = Math.max(0, contentHeightRef.current - vh);
+
+            if (gestureState.moveY < topY + edgeZone && scrollOffsetRef.current > 0) {
+              const intensity = Math.min(
+                1,
+                Math.max(0.18, (topY + edgeZone - gestureState.moveY) / edgeZone)
+              );
+              autoScrollDirRef.current = -1;
+              autoScrollSpeedRef.current = 3.5 + intensity * 10.5;
+              ensureAutoScrollLoop();
+            } else if (
+              gestureState.moveY > bottomY - edgeZone &&
+              scrollOffsetRef.current < maxScroll
+            ) {
+              const intensity = Math.min(
+                1,
+                Math.max(0.18, (gestureState.moveY - (bottomY - edgeZone)) / edgeZone)
+              );
+              autoScrollDirRef.current = 1;
+              autoScrollSpeedRef.current = 3.5 + intensity * 10.5;
+              ensureAutoScrollLoop();
+            } else {
+              stopAutoScrollLoop();
             }
           }
-
-          dragYAnim.setValue(localDy);
         },
         onPanResponderTerminationRequest: () => false,
         onPanResponderRelease: () => {
+          stopAutoScrollLoop();
           dragStateRef.current = null;
           Animated.spring(dragYAnim, {
             toValue: 0,
@@ -425,6 +556,7 @@ export const SessionExercisePickerModal: React.FC<SessionExercisePickerModalProp
           triggerImpactHaptic('light');
         },
         onPanResponderTerminate: () => {
+          stopAutoScrollLoop();
           dragStateRef.current = null;
           dragYAnim.setValue(0);
           setDraggingId(null);
@@ -524,6 +656,23 @@ export const SessionExercisePickerModal: React.FC<SessionExercisePickerModalProp
           draggingId={draggingId}
           dragYAnim={dragYAnim}
           mode={mode}
+          scrollViewRef={scrollViewRef}
+          listContainerRef={listContainerRef}
+          onListLayout={(e) => {
+            viewportHeightRef.current = e.nativeEvent.layout.height;
+            listContainerRef.current?.measureInWindow((_x, y, _w, h) => {
+              if (h > 40) {
+                viewportTopYRef.current = y;
+                viewportHeightRef.current = h;
+              }
+            });
+          }}
+          onListContentSizeChange={(_w, h) => {
+            contentHeightRef.current = h;
+          }}
+          onListScroll={(y) => {
+            scrollOffsetRef.current = y;
+          }}
           onToggleExercise={toggleExercise}
           onSelectAll={handleSelectAll}
           onResetOrder={handleResetOrder}
@@ -576,6 +725,10 @@ const styles = StyleSheet.create({
   toolBtnText: {
     fontSize: 12,
     fontWeight: '700',
+  },
+  listViewport: {
+    flex: 1,
+    overflow: 'hidden',
   },
   list: {
     flex: 1,

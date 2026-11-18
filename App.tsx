@@ -55,7 +55,10 @@ import {
   startWorkoutLiveActivity,
   stopWorkoutLiveActivity,
 } from './src/services/liveActivity';
-import { resolveActiveSessionExercises } from './src/utils/sessionExercises';
+import {
+  resolveActiveSessionExercises,
+  resolveResumeExerciseIndex,
+} from './src/utils/sessionExercises';
 
 import { SplashScreen } from './src/components/SplashScreen';
 import { OnboardingScreen } from './src/components/OnboardingScreen';
@@ -524,7 +527,12 @@ function MainApp() {
     setAutoOpenSessionPicker(false);
     setIsActiveWorkout(true);
 
-    const firstEx = effectiveList[0] || raw[0];
+    const resumeIdx = resolveResumeExerciseIndex(
+      effectiveList,
+      prog.sets,
+      prog.sessionConfig?.activeExerciseId
+    );
+    const firstEx = effectiveList[resumeIdx] || effectiveList[0] || raw[0];
     const total = effectiveList.reduce((sum, e) => sum + e.sets, 0);
     if (firstEx) {
       startWorkoutLiveActivity({
@@ -583,9 +591,14 @@ function MainApp() {
     const target = sessionPickerTarget;
     if (!target) return;
 
+    const mergedConfig: SessionExerciseConfig = {
+      ...config,
+      activeExerciseId: config.activeExerciseId ?? target.progress.sessionConfig?.activeExerciseId,
+    };
+
     const updatedProgress: DayProgress = {
       ...target.progress,
-      sessionConfig: config,
+      sessionConfig: mergedConfig,
     };
 
     if (activeProfile) {
@@ -593,7 +606,7 @@ function MainApp() {
         setDayProgress(updatedProgress);
       }
       try {
-        await saveSessionExerciseConfig(target.dayPlan.id, config, undefined, activeProfile.id);
+        await saveSessionExerciseConfig(target.dayPlan.id, mergedConfig, undefined, activeProfile.id);
       } catch (e) {
         console.error('Error saving pre-workout session config', e);
       }

@@ -82,6 +82,8 @@ export interface SessionExerciseConfig {
   skippedIds: string[];
   /** Extra ad-hoc exercises picked from the library for this day's session only */
   addedExercises?: Exercise[];
+  /** Currently focused exercise id during an active/resumable workout */
+  activeExerciseId?: string;
 }
 
 export type SupplementDosingMode = 'recommended' | 'per_kg' | 'fixed';
