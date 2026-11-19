@@ -7,6 +7,7 @@ import {
   Easing,
   FlatList,
   Image,
+  Keyboard,
   Modal,
   PanResponder,
   Platform,
@@ -680,6 +681,98 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
   const prevMsgCountRef = useRef<number>(0);
   const [friendLastReadAt, setFriendLastReadAt] = useState<string | null>(null);
   const photoDragY = useRef(new Animated.Value(0)).current;
+  const chatSlideX = useRef(new Animated.Value(screenWidth)).current;
+  const isClosingChatRef = useRef(false);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  const screenWidthRef = useRef(screenWidth);
+  screenWidthRef.current = screenWidth;
+  const swipeDismissBlockedRef = useRef(false);
+  swipeDismissBlockedRef.current = Boolean(
+    showInChatProfile ||
+      showThemeSheet ||
+      previewPhotoUri ||
+      reactionTarget ||
+      isRecordingMode ||
+      showAttachMenu
+  );
+
+  useEffect(() => {
+    if (!visible) return;
+    isClosingChatRef.current = false;
+    chatSlideX.stopAnimation();
+    chatSlideX.setValue(screenWidthRef.current);
+    Animated.timing(chatSlideX, {
+      toValue: 0,
+      duration: 240,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [visible, friend?.userId, chatSlideX]);
+
+  const handleAnimatedClose = useCallback(() => {
+    if (isClosingChatRef.current) return;
+    isClosingChatRef.current = true;
+    Keyboard.dismiss();
+    Animated.timing(chatSlideX, {
+      toValue: screenWidthRef.current,
+      duration: 185,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start(() => {
+      isClosingChatRef.current = false;
+      onCloseRef.current();
+    });
+  }, [chatSlideX]);
+
+  const chatSwipePanResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => false,
+        onMoveShouldSetPanResponder: (_, g) =>
+          !swipeDismissBlockedRef.current &&
+          !isClosingChatRef.current &&
+          g.dx > 14 &&
+          g.dx > Math.abs(g.dy) * 1.4,
+        onPanResponderGrant: () => {
+          Keyboard.dismiss();
+        },
+        onPanResponderMove: (_, g) => {
+          chatSlideX.setValue(Math.max(0, g.dx));
+        },
+        onPanResponderRelease: (_, g) => {
+          if (g.dx > screenWidthRef.current * 0.25 || g.vx > 0.55) {
+            triggerSelectionHaptic();
+            isClosingChatRef.current = true;
+            Animated.timing(chatSlideX, {
+              toValue: screenWidthRef.current,
+              duration: 165,
+              easing: Easing.out(Easing.cubic),
+              useNativeDriver: true,
+            }).start(() => {
+              isClosingChatRef.current = false;
+              onCloseRef.current();
+            });
+          } else {
+            Animated.spring(chatSlideX, {
+              toValue: 0,
+              friction: 9,
+              tension: 115,
+              useNativeDriver: true,
+            }).start();
+          }
+        },
+        onPanResponderTerminate: () => {
+          Animated.spring(chatSlideX, {
+            toValue: 0,
+            friction: 9,
+            tension: 115,
+            useNativeDriver: true,
+          }).start();
+        },
+      }),
+    [chatSlideX]
+  );
 
   useEffect(() => {
     if (previewPhotoUri) {
@@ -2061,43 +2154,68 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
     ? 'rgba(10, 10, 12, 0.72)'
     : 'rgba(255, 255, 255, 0.78)';
 
+  const chatBackdropOpacity = chatSlideX.interpolate({
+    inputRange: [0, Math.max(1, screenWidth)],
+    outputRange: [0.46, 0],
+    extrapolate: 'clamp',
+  });
+
   return (
     <Modal
       visible={visible}
-      animationType="slide"
-      presentationStyle="fullScreen"
-      onRequestClose={onClose}
+      transparent
+      animationType="none"
+      presentationStyle="overFullScreen"
+      statusBarTranslucent
+      onRequestClose={handleAnimatedClose}
     >
-      <View style={[styles.screen, { backgroundColor: theme.bg }]}>
-        <ChatWallpaperLayer
-          appearance={appearance}
-          accentColor={activeChatTheme.accent}
-          isDark={theme.isDark}
-        />
-
-        {/* Full-bleed translucent header so wallpaper extends cleanly underneath */}
-        <View
+      <View style={styles.modalOverlayHost}>
+        <Animated.View
           style={[
-            styles.header,
+            styles.modalSwipeDimBackdrop,
+            { opacity: chatBackdropOpacity, pointerEvents: 'none' },
+          ]}
+        />
+        <Animated.View
+          {...chatSwipePanResponder.panHandlers}
+          style={[
+            styles.screen,
+            styles.screenSwipeShadow,
             {
-              paddingTop: Math.max(insets.top + 8, 18),
-              borderBottomColor: hasWallpaperSurface ? 'rgba(255,255,255,0.09)' : theme.hairline,
-              backgroundColor: chromeOverlayBg,
+              backgroundColor: theme.bg,
+              transform: [{ translateX: chatSlideX }],
             },
           ]}
         >
-          <TouchableOpacity
+          <ChatWallpaperLayer
+            appearance={appearance}
+            accentColor={activeChatTheme.accent}
+            isDark={theme.isDark}
+          />
+
+          {/* Full-bleed translucent header so wallpaper extends cleanly underneath */}
+          <View
             style={[
-              styles.headerCircleBtn,
+              styles.header,
               {
-                backgroundColor: theme.isDark
-                  ? 'rgba(255,255,255,0.08)'
-                  : 'rgba(0,0,0,0.06)',
+                paddingTop: Math.max(insets.top + 8, 18),
+                borderBottomColor: hasWallpaperSurface ? 'rgba(255,255,255,0.09)' : theme.hairline,
+                backgroundColor: chromeOverlayBg,
               },
             ]}
-            onPress={onClose}
-            activeOpacity={0.78}
           >
+            <TouchableOpacity
+              style={[
+                styles.headerCircleBtn,
+                {
+                  backgroundColor: theme.isDark
+                    ? 'rgba(255,255,255,0.08)'
+                    : 'rgba(0,0,0,0.06)',
+                },
+              ]}
+              onPress={handleAnimatedClose}
+              activeOpacity={0.78}
+            >
             <Ionicons name="chevron-back" size={20} color={theme.text} />
           </TouchableOpacity>
 
@@ -3068,14 +3186,29 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
             onClose();
           }}
         />
+        </Animated.View>
       </View>
     </Modal>
   );
 };
 
 const styles = StyleSheet.create({
+  modalOverlayHost: {
+    flex: 1,
+  },
+  modalSwipeDimBackdrop: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: '#000000',
+  },
   screen: {
     flex: 1,
+  },
+  screenSwipeShadow: {
+    shadowColor: '#000000',
+    shadowOffset: { width: -8, height: 0 },
+    shadowOpacity: 0.28,
+    shadowRadius: 16,
+    elevation: 18,
   },
   header: {
     flexDirection: 'row',

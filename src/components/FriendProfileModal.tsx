@@ -20,6 +20,7 @@ import Svg, {
   G,
   Line,
   LinearGradient,
+  Path,
   Polygon,
   RadialGradient,
   Rect,
@@ -58,10 +59,10 @@ function rankToScore(tier?: RankTier, pct = 0): number {
 }
 
 /**
- * Crisp 60fps SVG rotating multi-stop energy halo around profile avatar.
+ * Sleek high-precision dual-arc orbital ring around the profile avatar.
  */
-const AvatarHaloRing: React.FC<{ color: string; size?: number; active?: boolean }> = React.memo(
-  ({ color, size = 108, active = true }) => {
+const AvatarPrecisionRing: React.FC<{ color: string; size?: number; active?: boolean }> = React.memo(
+  ({ color, size = 104, active = true }) => {
     const uid = useId().replace(/:/g, '_');
     const isScreenActive = useIsScreenActive();
     const shouldSpin = active && isScreenActive;
@@ -74,7 +75,7 @@ const AvatarHaloRing: React.FC<{ color: string; size?: number; active?: boolean 
       const loop = Animated.loop(
         Animated.timing(rot, {
           toValue: 1,
-          duration: 4600,
+          duration: 6400,
           easing: Easing.linear,
           useNativeDriver: true,
         })
@@ -100,33 +101,40 @@ const AvatarHaloRing: React.FC<{ color: string; size?: number; active?: boolean 
       >
         <Svg width={size} height={size} viewBox="0 0 240 240">
           <Defs>
-            <LinearGradient id={`halo_grad_${uid}`} x1="0" y1="0" x2="1" y2="1">
+            <LinearGradient id={`ring_arc_a_${uid}`} x1="0" y1="0" x2="1" y2="1">
               <Stop offset="0%" stopColor={color} stopOpacity={1} />
-              <Stop offset="45%" stopColor="#38BDF8" stopOpacity={0.95} />
-              <Stop offset="100%" stopColor="#10B981" stopOpacity={0.35} />
+              <Stop offset="55%" stopColor="#38BDF8" stopOpacity={0.9} />
+              <Stop offset="100%" stopColor={color} stopOpacity={0} />
+            </LinearGradient>
+            <LinearGradient id={`ring_arc_b_${uid}`} x1="1" y1="1" x2="0" y2="0">
+              <Stop offset="0%" stopColor="#38BDF8" stopOpacity={0.85} />
+              <Stop offset="65%" stopColor={color} stopOpacity={0.45} />
+              <Stop offset="100%" stopColor="#38BDF8" stopOpacity={0} />
             </LinearGradient>
           </Defs>
           <Circle
             cx="120"
             cy="120"
-            r="108"
-            fill="none"
-            stroke={`url(#halo_grad_${uid})`}
-            strokeWidth="5"
-            strokeDasharray="110 38 60 32"
-            strokeLinecap="round"
-          />
-          <Circle
-            cx="120"
-            cy="120"
-            r="96"
+            r="110"
             fill="none"
             stroke={color}
-            strokeOpacity={0.28}
-            strokeWidth="2.5"
+            strokeOpacity={0.14}
+            strokeWidth="2"
           />
-          <Circle cx="120" cy="12" r="5.5" fill={color} />
-          <Circle cx="120" cy="228" r="4" fill="#38BDF8" />
+          <Path
+            d="M 120 10 A 110 110 0 0 1 226 150"
+            fill="none"
+            stroke={`url(#ring_arc_a_${uid})`}
+            strokeWidth="4.2"
+            strokeLinecap="round"
+          />
+          <Path
+            d="M 120 230 A 110 110 0 0 1 16 88"
+            fill="none"
+            stroke={`url(#ring_arc_b_${uid})`}
+            strokeWidth="3.4"
+            strokeLinecap="round"
+          />
         </Svg>
       </Animated.View>
     );
@@ -137,11 +145,14 @@ interface RadarAxis {
   label: string;
   myVal: number;
   friendVal: number;
+  myDisplay: string;
+  friendDisplay: string;
   max: number;
 }
 
 /**
- * Animated 5-Axis Head-to-Head SVG Radar Chart (compares 5 metrics in one unified graphic).
+ * Elevated 5-Axis Animated Head-to-Head SVG Radar Chart with gradient polygons,
+ * layered depth rings, glowing vertices, and per-axis numeric breakdown strip.
  */
 const AnimatedRadarComparison: React.FC<{
   axes: RadarAxis[];
@@ -151,40 +162,40 @@ const AnimatedRadarComparison: React.FC<{
   triggerKey: string;
 }> = React.memo(({ axes, myLabel, friendLabel, friendColor, triggerKey }) => {
   const { theme, isDark } = useAppTheme();
+  const uid = useId().replace(/:/g, '_');
   const [reveal, setReveal] = useState(0);
 
   useEffect(() => {
     let raf = 0;
     const start = Date.now();
-    const duration = 640;
+    const duration = 620;
     const tick = () => {
       const elapsed = Date.now() - start;
       const raw = Math.min(1, elapsed / duration);
-      // Cubic ease-out
       const eased = 1 - Math.pow(1 - raw, 3);
       setReveal(eased);
       if (raw < 1) {
         raf = requestAnimationFrame(tick);
       }
     };
-    setReveal(0.05);
+    setReveal(0.06);
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
   }, [triggerKey]);
 
-  const w = 290;
-  const h = 228;
+  const w = 296;
+  const h = 232;
   const cx = w / 2;
-  const cy = 114;
-  const maxR = 72;
+  const cy = 116;
+  const maxR = 74;
 
   const getPoint = (idx: number, ratio: number) => {
     const angle = -Math.PI / 2 + (idx / axes.length) * Math.PI * 2;
     return {
       x: cx + Math.cos(angle) * maxR * ratio,
       y: cy + Math.sin(angle) * maxR * ratio,
-      lx: cx + Math.cos(angle) * (maxR + 22),
-      ly: cy + Math.sin(angle) * (maxR + 18),
+      lx: cx + Math.cos(angle) * (maxR + 24),
+      ly: cy + Math.sin(angle) * (maxR + 19),
     };
   };
 
@@ -204,29 +215,43 @@ const AnimatedRadarComparison: React.FC<{
   const toPolyStr = (pts: Array<{ x: number; y: number }>) =>
     pts.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
 
-  const gridLineColor = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(15,23,42,0.1)';
+  const gridLineColor = isDark ? 'rgba(255,255,255,0.11)' : 'rgba(15,23,42,0.11)';
+  const ringDepthFill = isDark ? 'rgba(255,255,255,0.025)' : 'rgba(15,23,42,0.025)';
 
   return (
     <View style={styles.radarWrap}>
       <Svg width={w} height={h} viewBox={`0 0 ${w} ${h}`}>
-        {/* Web rings */}
-        {[0.34, 0.67, 1].map((scale) => {
+        <Defs>
+          <LinearGradient id={`rad_my_${uid}`} x1="0" y1="0" x2="1" y2="1">
+            <Stop offset="0%" stopColor="#7DD3FC" stopOpacity={0.34} />
+            <Stop offset="100%" stopColor="#0EA5E9" stopOpacity={0.14} />
+          </LinearGradient>
+          <LinearGradient id={`rad_fr_${uid}`} x1="1" y1="0" x2="0" y2="1">
+            <Stop offset="0%" stopColor={friendColor} stopOpacity={0.36} />
+            <Stop offset="100%" stopColor={friendColor} stopOpacity={0.12} />
+          </LinearGradient>
+        </Defs>
+
+        {/* Layered depth web rings */}
+        {[1, 0.67, 0.34].map((scale, idx) => {
           const ringPts = axes.map((_, i) => getPoint(i, scale));
           return (
             <Polygon
               key={scale}
               points={toPolyStr(ringPts)}
-              fill="none"
+              fill={idx % 2 === 0 ? ringDepthFill : 'none'}
               stroke={gridLineColor}
-              strokeWidth={scale === 1 ? 1.4 : 1}
+              strokeWidth={scale === 1 ? 1.3 : 0.9}
               strokeDasharray={scale === 1 ? undefined : '4 4'}
             />
           );
         })}
 
-        {/* Axis spokes & labels */}
+        {/* Axis spokes & crisp labels */}
         {axes.map((ax, i) => {
           const edge = getPoint(i, 1);
+          const myLeads = ax.myVal > ax.friendVal;
+          const frLeads = ax.friendVal > ax.myVal;
           return (
             <G key={ax.label}>
               <Line
@@ -235,13 +260,13 @@ const AnimatedRadarComparison: React.FC<{
                 x2={edge.x}
                 y2={edge.y}
                 stroke={gridLineColor}
-                strokeWidth={1}
+                strokeWidth={0.9}
               />
               <SvgText
                 x={edge.lx}
                 y={edge.ly + 4}
                 textAnchor="middle"
-                fill={theme.textSecondary}
+                fill={myLeads ? '#38BDF8' : frLeads ? friendColor : theme.textSecondary}
                 fontSize="10.5"
                 fontWeight="800"
               >
@@ -254,8 +279,7 @@ const AnimatedRadarComparison: React.FC<{
         {/* Friend polygon */}
         <Polygon
           points={toPolyStr(frPoints)}
-          fill={friendColor}
-          fillOpacity={0.25}
+          fill={`url(#rad_fr_${uid})`}
           stroke={friendColor}
           strokeWidth={2.2}
           strokeLinejoin="round"
@@ -264,31 +288,84 @@ const AnimatedRadarComparison: React.FC<{
         {/* My polygon */}
         <Polygon
           points={toPolyStr(myPoints)}
-          fill="#38BDF8"
-          fillOpacity={0.24}
+          fill={`url(#rad_my_${uid})`}
           stroke="#38BDF8"
           strokeWidth={2.2}
           strokeLinejoin="round"
         />
 
-        {/* Vertex dots */}
+        {/* Glowing vertex markers */}
         {frPoints.map((pt, i) => (
-          <Circle key={`f_${i}`} cx={pt.x} cy={pt.y} r="3.8" fill={friendColor} />
+          <G key={`f_${i}`}>
+            <Circle cx={pt.x} cy={pt.y} r="6.8" fill={friendColor} fillOpacity={0.22} />
+            <Circle cx={pt.x} cy={pt.y} r="3.4" fill={friendColor} stroke="#FFFFFF" strokeOpacity={0.7} strokeWidth={0.9} />
+          </G>
         ))}
         {myPoints.map((pt, i) => (
-          <Circle key={`m_${i}`} cx={pt.x} cy={pt.y} r="3.8" fill="#38BDF8" />
+          <G key={`m_${i}`}>
+            <Circle cx={pt.x} cy={pt.y} r="6.8" fill="#38BDF8" fillOpacity={0.22} />
+            <Circle cx={pt.x} cy={pt.y} r="3.4" fill="#38BDF8" stroke="#FFFFFF" strokeOpacity={0.75} strokeWidth={0.9} />
+          </G>
         ))}
       </Svg>
 
+      {/* Legend pills */}
       <View style={styles.radarLegendRow}>
-        <View style={styles.radarLegendPill}>
+        <View
+          style={[
+            styles.radarLegendPill,
+            {
+              backgroundColor: 'rgba(56, 189, 248, 0.12)',
+              borderColor: 'rgba(56, 189, 248, 0.35)',
+            },
+          ]}
+        >
           <View style={[styles.radarLegendDot, { backgroundColor: '#38BDF8' }]} />
           <Text style={[styles.radarLegendText, { color: theme.text }]}>{myLabel}</Text>
         </View>
-        <View style={styles.radarLegendPill}>
+        <View
+          style={[
+            styles.radarLegendPill,
+            {
+              backgroundColor: `${friendColor}1C`,
+              borderColor: `${friendColor}52`,
+            },
+          ]}
+        >
           <View style={[styles.radarLegendDot, { backgroundColor: friendColor }]} />
           <Text style={[styles.radarLegendText, { color: theme.text }]}>{friendLabel}</Text>
         </View>
+      </View>
+
+      {/* Compact 5-axis numeric comparison row */}
+      <View style={[styles.radarBreakdownRow, { borderTopColor: theme.hairline }]}>
+        {axes.map((ax) => {
+          const myLeads = ax.myVal > ax.friendVal;
+          const frLeads = ax.friendVal > ax.myVal;
+          return (
+            <View key={`bk_${ax.label}`} style={styles.radarBreakdownCell}>
+              <Text style={[styles.radarBreakdownLabel, { color: theme.textMuted }]} numberOfLines={1}>
+                {ax.label}
+              </Text>
+              <Text
+                style={[
+                  styles.radarBreakdownVal,
+                  { color: myLeads ? '#38BDF8' : theme.textSecondary, fontWeight: myLeads ? '900' : '700' },
+                ]}
+              >
+                {ax.myDisplay}
+              </Text>
+              <Text
+                style={[
+                  styles.radarBreakdownVal,
+                  { color: frLeads ? friendColor : theme.textMuted, fontWeight: frLeads ? '900' : '700' },
+                ]}
+              >
+                {ax.friendDisplay}
+              </Text>
+            </View>
+          );
+        })}
       </View>
     </View>
   );
@@ -323,13 +400,13 @@ export const FriendProfileModal: React.FC<FriendProfileModalProps> = ({
         Animated.sequence([
           Animated.timing(vsPulse, {
             toValue: 1,
-            duration: 1150,
+            duration: 1200,
             easing: Easing.inOut(Easing.sin),
             useNativeDriver: true,
           }),
           Animated.timing(vsPulse, {
             toValue: 0,
-            duration: 1150,
+            duration: 1200,
             easing: Easing.inOut(Easing.sin),
             useNativeDriver: true,
           }),
@@ -341,13 +418,13 @@ export const FriendProfileModal: React.FC<FriendProfileModalProps> = ({
     entranceAnim.setValue(0);
     Animated.timing(entranceAnim, {
       toValue: 1,
-      duration: 420,
+      duration: 380,
       easing: Easing.out(Easing.cubic),
       useNativeDriver: true,
     }).start();
 
     if (embeddedOverlay) {
-      overlaySlide.setValue(SCREEN_HEIGHT * 0.6);
+      overlaySlide.setValue(SCREEN_HEIGHT * 0.55);
       overlayFade.setValue(0);
       Animated.parallel([
         Animated.timing(overlayFade, {
@@ -367,7 +444,16 @@ export const FriendProfileModal: React.FC<FriendProfileModalProps> = ({
     return () => {
       vsLoop?.stop();
     };
-  }, [visible, friend?.userId, embeddedOverlay, isScreenActive, vsPulse, entranceAnim, overlayFade, overlaySlide]);
+  }, [
+    visible,
+    friend?.userId,
+    embeddedOverlay,
+    isScreenActive,
+    vsPulse,
+    entranceAnim,
+    overlayFade,
+    overlaySlide,
+  ]);
 
   const radarAxes = useMemo<RadarAxis[]>(() => {
     if (!friend) return [];
@@ -378,30 +464,40 @@ export const FriendProfileModal: React.FC<FriendProfileModalProps> = ({
         label: t('friendsRankByTier'),
         myVal: myRankScore,
         friendVal: frRankScore,
+        myDisplay: myProfile?.overallRank || 'F',
+        friendDisplay: friend.overallRank || 'F',
         max: Math.max(200, myRankScore, frRankScore),
       },
       {
         label: t('friendsStreakLabel'),
         myVal: myProfile?.streak || 0,
         friendVal: friend.streak || 0,
+        myDisplay: `${myProfile?.streak || 0}d`,
+        friendDisplay: `${friend.streak || 0}d`,
         max: Math.max(7, myProfile?.streak || 0, friend.streak || 0),
       },
       {
         label: t('compareTotalWorkouts'),
         myVal: myProfile?.totalWorkouts || 0,
         friendVal: friend.totalWorkouts || 0,
+        myDisplay: String(myProfile?.totalWorkouts || 0),
+        friendDisplay: String(friend.totalWorkouts || 0),
         max: Math.max(10, myProfile?.totalWorkouts || 0, friend.totalWorkouts || 0),
       },
       {
         label: t('friendsWorkoutsWeekLabel'),
         myVal: myProfile?.weeklyWorkouts || 0,
         friendVal: friend.weeklyWorkouts || 0,
+        myDisplay: `${myProfile?.weeklyWorkouts || 0}/t`,
+        friendDisplay: `${friend.weeklyWorkouts || 0}/t`,
         max: Math.max(4, myProfile?.weeklyWorkouts || 0, friend.weeklyWorkouts || 0),
       },
       {
         label: t('friendsBalanceLabel'),
         myVal: myProfile?.balanceScorePct || 100,
         friendVal: friend.balanceScorePct || 100,
+        myDisplay: `${myProfile?.balanceScorePct || 100}%`,
+        friendDisplay: `${friend.balanceScorePct || 100}%`,
         max: 100,
       },
     ];
@@ -430,6 +526,10 @@ export const FriendProfileModal: React.FC<FriendProfileModalProps> = ({
   const headlineColor =
     myWins > friendWins ? '#38BDF8' : friendWins > myWins ? rankMeta.color : theme.textSecondary;
 
+  const surfaceTileBg = isDark ? 'rgba(255, 255, 255, 0.042)' : 'rgba(15, 23, 42, 0.035)';
+  const surfaceTileBorder = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(15, 23, 42, 0.08)';
+  const arenaCardBg = isDark ? '#0D1017' : '#F8FAFC';
+
   const handleConfirmRemove = () => {
     triggerNotificationHaptic('warning');
     Alert.alert(
@@ -449,108 +549,154 @@ export const FriendProfileModal: React.FC<FriendProfileModalProps> = ({
     );
   };
 
-  const vsScale = vsPulse.interpolate({ inputRange: [0, 1], outputRange: [0.94, 1.09] });
-  const heroTranslateY = entranceAnim.interpolate({ inputRange: [0, 1], outputRange: [14, 0] });
+  const vsScale = vsPulse.interpolate({ inputRange: [0, 1], outputRange: [0.95, 1.08] });
+  const heroTranslateY = entranceAnim.interpolate({ inputRange: [0, 1], outputRange: [12, 0] });
+
+  const telemetryCards = [
+    {
+      key: 'streak',
+      icon: 'flame-outline' as const,
+      color: '#F59E0B',
+      value: `${friend.streak || 0}`,
+      label: t('friendsStreakLabel'),
+    },
+    {
+      key: 'weekly',
+      icon: 'calendar-outline' as const,
+      color: '#38BDF8',
+      value: `${friend.weeklyWorkouts || 0}`,
+      label: t('friendsWorkoutsWeekLabel'),
+    },
+    {
+      key: 'balance',
+      icon: 'pulse-outline' as const,
+      color: '#10B981',
+      value: `${friend.balanceScorePct || 100}%`,
+      label: t('friendsBalanceLabel'),
+    },
+    {
+      key: 'total',
+      icon: 'barbell-outline' as const,
+      color: rankMeta.color,
+      value: `${friend.totalWorkouts || 0}`,
+      label: t('friendsRankByWorkouts'),
+    },
+  ];
 
   const profileBody = (
     <>
-      {/* Full-bleed Ambient Color-Adaptive Hero Card */}
+      {/* Seamless Open Editorial Athlete Profile Header */}
       <Animated.View
         style={[
-          styles.heroCard,
+          styles.heroShell,
           {
-            backgroundColor: isDark ? '#12131A' : '#F8FAFC',
-            borderColor: `${rankMeta.color}66`,
             opacity: entranceAnim,
             transform: [{ translateY: heroTranslateY }],
           },
         ]}
       >
-        {/* Adaptive atmospheric color aura extracted directly from friend's profile picture when present */}
-        {friend.avatarUrl ? (
-          <>
+        {/* Soft fading top cover bleed (no hard box, blends seamlessly into sheet background) */}
+        <View style={styles.coverAtmosphere} pointerEvents="none">
+          {friend.avatarUrl ? (
             <Image
               source={{ uri: friend.avatarUrl }}
-              blurRadius={44}
+              blurRadius={56}
               style={[
                 StyleSheet.absoluteFill,
-                { opacity: isDark ? 0.5 : 0.34, transform: [{ scale: 1.25 }] },
+                { opacity: isDark ? 0.34 : 0.2, transform: [{ scale: 1.35 }] },
               ]}
               resizeMode="cover"
             />
-            <View
-              style={[
-                StyleSheet.absoluteFill,
-                {
-                  backgroundColor: isDark
-                    ? 'rgba(11, 13, 19, 0.56)'
-                    : 'rgba(255, 255, 255, 0.54)',
-                },
-              ]}
-            />
-          </>
-        ) : null}
+          ) : null}
+          <Svg width="100%" height="100%" style={StyleSheet.absoluteFill}>
+            <Defs>
+              <RadialGradient id={`top_bloom_${uid}`} cx="50%" cy="22%" r="65%">
+                <Stop offset="0%" stopColor={rankMeta.color} stopOpacity={isDark ? 0.28 : 0.16} />
+                <Stop offset="55%" stopColor="#38BDF8" stopOpacity={isDark ? 0.08 : 0.05} />
+                <Stop offset="100%" stopColor={theme.bg} stopOpacity={0} />
+              </RadialGradient>
+              <LinearGradient id={`top_fade_${uid}`} x1="0" y1="0" x2="0" y2="1">
+                <Stop offset="0%" stopColor={theme.bg} stopOpacity={0.18} />
+                <Stop offset="62%" stopColor={theme.bg} stopOpacity={0.72} />
+                <Stop offset="100%" stopColor={theme.bg} stopOpacity={1} />
+              </LinearGradient>
+            </Defs>
+            <Rect x="0" y="0" width="100%" height="100%" fill={`url(#top_bloom_${uid})`} />
+            <Rect x="0" y="0" width="100%" height="100%" fill={`url(#top_fade_${uid})`} />
+          </Svg>
+        </View>
 
-        <Svg width="100%" height="100%" style={[StyleSheet.absoluteFill, { pointerEvents: 'none' }]}>
-          <Defs>
-            <LinearGradient id={`hero_grad_${uid}`} x1="0" y1="0" x2="1" y2="1">
-              <Stop offset="0%" stopColor={rankMeta.color} stopOpacity={isDark ? 0.24 : 0.18} />
-              <Stop offset="55%" stopColor={friend.avatarColor || '#38BDF8'} stopOpacity={isDark ? 0.14 : 0.12} />
-              <Stop offset="100%" stopColor={rankMeta.color} stopOpacity={isDark ? 0.08 : 0.06} />
-            </LinearGradient>
-            <RadialGradient id={`hero_amb_${uid}`} cx="50%" cy="28%" r="78%">
-              <Stop offset="0%" stopColor={rankMeta.color} stopOpacity={isDark ? 0.26 : 0.18} />
-              <Stop offset="100%" stopColor={rankMeta.color} stopOpacity={0} />
-            </RadialGradient>
-          </Defs>
-          <Rect x="0" y="0" width="100%" height="100%" fill={`url(#hero_grad_${uid})`} />
-          <Rect x="0" y="0" width="100%" height="100%" fill={`url(#hero_amb_${uid})`} />
-        </Svg>
-
+        {/* Centered Avatar Stage */}
         <View style={styles.emblemStage}>
-          <AvatarHaloRing color={rankMeta.color} size={108} active={visible} />
+          <AvatarPrecisionRing color={rankMeta.color} size={108} active={visible} />
           <UserAvatarBadge
             avatarUrl={friend.avatarUrl}
             displayName={friend.displayName}
             avatarColor={friend.avatarColor}
             rank={friend.overallRank || 'F'}
-            size={80}
-            ringColor={rankMeta.color}
+            size={84}
+            ringColor={isDark ? 'rgba(255,255,255,0.14)' : 'rgba(15,23,42,0.1)'}
             showRankDot
           />
         </View>
 
-        <Text style={[styles.displayName, { color: theme.text }]}>{friend.displayName}</Text>
-        <View style={styles.handleMetaRow}>
-          <Text style={[styles.handleText, { color: '#10B981' }]}>@{friend.nickname}</Text>
-          <View style={[styles.dotSep, { backgroundColor: theme.textMuted }]} />
-          <Text style={[styles.rankNameText, { color: rankMeta.color }]}>
-            {friend.overallRank} · {rankTitle(friend.overallRank || 'F')}
-          </Text>
+        {/* Name & Compact Metadata Pills */}
+        <Text style={[styles.displayName, { color: theme.text }]} numberOfLines={1}>
+          {friend.displayName}
+        </Text>
+
+        <View style={styles.identityPillRow}>
+          <View
+            style={[
+              styles.identityChip,
+              {
+                backgroundColor: surfaceTileBg,
+                borderColor: surfaceTileBorder,
+              },
+            ]}
+          >
+            <Text style={[styles.identityHandleText, { color: theme.textSecondary }]}>
+              @{friend.nickname}
+            </Text>
+          </View>
+
+          <View
+            style={[
+              styles.identityChip,
+              {
+                backgroundColor: `${rankMeta.color}18`,
+                borderColor: `${rankMeta.color}48`,
+              },
+            ]}
+          >
+            <RankCrestIcon tier={friend.overallRank || 'F'} size={15} />
+            <Text style={[styles.identityRankText, { color: rankMeta.color }]}>
+              {friend.overallRank} · {rankTitle(friend.overallRank || 'F')}
+            </Text>
+          </View>
         </View>
 
         {friend.statusNote ? (
           <View
             style={[
-              styles.statusBadge,
+              styles.statusPill,
               {
-                backgroundColor: isDark
-                  ? 'rgba(255,255,255,0.1)'
-                  : 'rgba(15,23,42,0.07)',
-                borderColor: theme.border,
+                backgroundColor: isDark ? 'rgba(16, 185, 129, 0.1)' : 'rgba(16, 185, 129, 0.09)',
+                borderColor: 'rgba(16, 185, 129, 0.28)',
               },
             ]}
           >
-            <View style={[styles.liveDot, { backgroundColor: '#10B981' }]} />
-            <Text style={[styles.statusBadgeText, { color: theme.text }]}>
+            <View style={styles.liveDot} />
+            <Text style={[styles.statusPillText, { color: theme.text }]} numberOfLines={2}>
               {friend.statusNote}
             </Text>
           </View>
         ) : null}
 
-        <View style={styles.actionRow}>
+        {/* Clean Matched Action Dock */}
+        <View style={styles.actionDock}>
           <TouchableOpacity
-            style={[styles.primaryBtn, { backgroundColor: rankMeta.color }]}
+            style={[styles.messagePrimaryBtn, { backgroundColor: theme.text }]}
             onPress={() => {
               triggerSelectionHaptic();
               onClose();
@@ -560,8 +706,8 @@ export const FriendProfileModal: React.FC<FriendProfileModalProps> = ({
             }}
             activeOpacity={0.86}
           >
-            <Ionicons name="chatbubble-ellipses" size={16} color="#09090B" />
-            <Text style={[styles.primaryBtnText, { color: '#09090B' }]}>
+            <Ionicons name="chatbubble-ellipses" size={16} color={theme.bg} />
+            <Text style={[styles.messagePrimaryBtnText, { color: theme.bg }]}>
               {t('friendsWriteMsgBtn')}
             </Text>
           </TouchableOpacity>
@@ -576,49 +722,33 @@ export const FriendProfileModal: React.FC<FriendProfileModalProps> = ({
         </View>
       </Animated.View>
 
-      {/* Telemetry Strip */}
-      <View
-        style={[
-          styles.telemetryStrip,
-          { backgroundColor: theme.bgSecondary, borderColor: theme.border },
-        ]}
-      >
-        <View style={styles.teleCell}>
-          <Text style={[styles.teleValue, { color: '#F59E0B' }]}>{friend.streak || 0}</Text>
-          <Text style={[styles.teleLabel, { color: theme.textMuted }]}>
-            {t('friendsStreakLabel')}
-          </Text>
-        </View>
-        <View style={[styles.teleDiv, { backgroundColor: theme.hairline }]} />
-        <View style={styles.teleCell}>
-          <Text style={[styles.teleValue, { color: '#38BDF8' }]}>
-            {friend.weeklyWorkouts || 0}
-          </Text>
-          <Text style={[styles.teleLabel, { color: theme.textMuted }]}>
-            {t('friendsWorkoutsWeekLabel')}
-          </Text>
-        </View>
-        <View style={[styles.teleDiv, { backgroundColor: theme.hairline }]} />
-        <View style={styles.teleCell}>
-          <Text style={[styles.teleValue, { color: '#10B981' }]}>
-            {friend.balanceScorePct || 100}%
-          </Text>
-          <Text style={[styles.teleLabel, { color: theme.textMuted }]}>
-            {t('friendsBalanceLabel')}
-          </Text>
-        </View>
-        <View style={[styles.teleDiv, { backgroundColor: theme.hairline }]} />
-        <View style={styles.teleCell}>
-          <Text style={[styles.teleValue, { color: rankMeta.color }]}>
-            {friend.totalWorkouts || 0}
-          </Text>
-          <Text style={[styles.teleLabel, { color: theme.textMuted }]}>
-            {t('friendsRankByWorkouts')}
-          </Text>
-        </View>
+      {/* 2x2 Bento Telemetry Grid */}
+      <View style={styles.bentoGrid}>
+        {telemetryCards.map((cell) => (
+          <View
+            key={cell.key}
+            style={[
+              styles.bentoTile,
+              {
+                backgroundColor: surfaceTileBg,
+                borderColor: surfaceTileBorder,
+              },
+            ]}
+          >
+            <View style={styles.bentoTileTop}>
+              <Text style={[styles.bentoLabel, { color: theme.textMuted }]} numberOfLines={1}>
+                {cell.label}
+              </Text>
+              <View style={[styles.bentoIconChip, { backgroundColor: `${cell.color}1C` }]}>
+                <Ionicons name={cell.icon} size={13} color={cell.color} />
+              </View>
+            </View>
+            <Text style={[styles.bentoValue, { color: theme.text }]}>{cell.value}</Text>
+          </View>
+        ))}
       </View>
 
-      {/* Simplified 2-Graphic Animated Comparison Suite */}
+      {/* Elevated 2-Card Comparison Suite */}
       <View style={styles.sectionBlock}>
         <View style={styles.compareHeaderRow}>
           <Text style={[styles.sectionEyebrow, { color: theme.textMuted, marginBottom: 0 }]}>
@@ -628,8 +758,8 @@ export const FriendProfileModal: React.FC<FriendProfileModalProps> = ({
             style={[
               styles.tallyPill,
               {
-                backgroundColor: `${headlineColor}1F`,
-                borderColor: `${headlineColor}66`,
+                backgroundColor: `${headlineColor}1A`,
+                borderColor: `${headlineColor}55`,
               },
             ]}
           >
@@ -639,30 +769,50 @@ export const FriendProfileModal: React.FC<FriendProfileModalProps> = ({
           </View>
         </View>
 
-        {/* Graphic #1: Unified Duel Gauge + Animated Crests */}
+        {/* Stat Card #1: Head-to-Head Duel Arena */}
         <View
           style={[
             styles.vsArenaCard,
-            { backgroundColor: theme.bgSecondary, borderColor: theme.border },
+            {
+              backgroundColor: arenaCardBg,
+              borderColor: surfaceTileBorder,
+            },
           ]}
         >
+          <Svg width="100%" height="100%" style={[StyleSheet.absoluteFill, { pointerEvents: 'none' }]}>
+            <Defs>
+              <RadialGradient id={`duel_l_${uid}`} cx="14%" cy="20%" r="55%">
+                <Stop offset="0%" stopColor="#38BDF8" stopOpacity={isDark ? 0.16 : 0.1} />
+                <Stop offset="100%" stopColor="#38BDF8" stopOpacity={0} />
+              </RadialGradient>
+              <RadialGradient id={`duel_r_${uid}`} cx="86%" cy="20%" r="55%">
+                <Stop offset="0%" stopColor={rankMeta.color} stopOpacity={isDark ? 0.18 : 0.1} />
+                <Stop offset="100%" stopColor={rankMeta.color} stopOpacity={0} />
+              </RadialGradient>
+            </Defs>
+            <Rect x="0" y="0" width="100%" height="100%" fill={`url(#duel_l_${uid})`} />
+            <Rect x="0" y="0" width="100%" height="100%" fill={`url(#duel_r_${uid})`} />
+          </Svg>
+
           <View style={styles.vsCrestsRow}>
             <View style={styles.vsFighterCol}>
-              <RankCrestIcon tier={myProfile?.overallRank || 'F'} size={48} isSelected animated />
+              <RankCrestIcon tier={myProfile?.overallRank || 'F'} size={50} isSelected animated />
               <Text style={[styles.vsFighterName, { color: '#38BDF8' }]} numberOfLines={1}>
                 {t('friendsYouLabel')}
               </Text>
-              <Text style={[styles.vsFighterSub, { color: theme.textMuted }]}>
-                {myProfile?.overallRank || 'F'} · {myProfile?.overallProgressPct || 0}%
-              </Text>
+              <View style={[styles.vsRankTag, { backgroundColor: 'rgba(56,189,248,0.12)' }]}>
+                <Text style={[styles.vsFighterSub, { color: '#38BDF8' }]}>
+                  {myProfile?.overallRank || 'F'} · {myProfile?.overallProgressPct || 0}%
+                </Text>
+              </View>
             </View>
 
             <Animated.View
               style={[
                 styles.vsCenterBadge,
                 {
-                  borderColor: `${rankMeta.color}66`,
-                  backgroundColor: isDark ? '#18181F' : '#FFFFFF',
+                  borderColor: surfaceTileBorder,
+                  backgroundColor: isDark ? '#141822' : '#FFFFFF',
                   transform: [{ scale: vsScale }],
                 },
               ]}
@@ -671,13 +821,15 @@ export const FriendProfileModal: React.FC<FriendProfileModalProps> = ({
             </Animated.View>
 
             <View style={styles.vsFighterCol}>
-              <RankCrestIcon tier={friend.overallRank || 'F'} size={48} isSelected animated />
+              <RankCrestIcon tier={friend.overallRank || 'F'} size={50} isSelected animated />
               <Text style={[styles.vsFighterName, { color: rankMeta.color }]} numberOfLines={1}>
                 @{friend.nickname}
               </Text>
-              <Text style={[styles.vsFighterSub, { color: theme.textMuted }]}>
-                {friend.overallRank} · {friend.overallProgressPct || 0}%
-              </Text>
+              <View style={[styles.vsRankTag, { backgroundColor: `${rankMeta.color}18` }]}>
+                <Text style={[styles.vsFighterSub, { color: rankMeta.color }]}>
+                  {friend.overallRank} · {friend.overallProgressPct || 0}%
+                </Text>
+              </View>
             </View>
           </View>
 
@@ -690,11 +842,15 @@ export const FriendProfileModal: React.FC<FriendProfileModalProps> = ({
           />
         </View>
 
-        {/* Graphic #2: Multi-Axis Animated Radar Spider Chart */}
+        {/* Stat Card #2: 5-Axis Animated Radar Spider Chart + Breakdown */}
         <View
           style={[
             styles.vsArenaCard,
-            { backgroundColor: theme.bgSecondary, borderColor: theme.border, marginBottom: 0 },
+            {
+              backgroundColor: arenaCardBg,
+              borderColor: surfaceTileBorder,
+              marginBottom: 0,
+            },
           ]}
         >
           <AnimatedRadarComparison
@@ -707,76 +863,100 @@ export const FriendProfileModal: React.FC<FriendProfileModalProps> = ({
         </View>
       </View>
 
-      {/* Top Muscle Groups */}
+      {/* Top Muscle Groups (Compact 3-Column Row) */}
       {friend.topMuscles && friend.topMuscles.length > 0 && (
         <View style={styles.sectionBlock}>
           <Text style={[styles.sectionEyebrow, { color: theme.textMuted }]}>
             {t('friendsTopMusclesHeading')}
           </Text>
-          <View style={styles.topMusclesGrid}>
-            {friend.topMuscles.map((m) => (
+          <View style={styles.topMusclesRow}>
+            {friend.topMuscles.slice(0, 3).map((m) => (
               <View
                 key={m.muscleId}
                 style={[
-                  styles.musclePillCard,
-                  { backgroundColor: theme.bgSecondary, borderColor: theme.border },
+                  styles.muscleCompactTile,
+                  {
+                    backgroundColor: surfaceTileBg,
+                    borderColor: surfaceTileBorder,
+                  },
                 ]}
               >
-                <RankCrestIcon tier={m.rank} size={30} isSelected />
-                <View style={{ flex: 1, minWidth: 0 }}>
-                  <Text
-                    style={[styles.musclePillName, { color: theme.text }]}
-                    numberOfLines={1}
-                  >
-                    {muscleLabel(m.muscleId)}
-                  </Text>
-                  <Text style={[styles.musclePillSets, { color: theme.textMuted }]}>
-                    {m.effectiveSetsTotal} {t('friendsSetsCountShort')}
-                  </Text>
-                </View>
+                <RankCrestIcon tier={m.rank} size={32} isSelected />
+                <Text
+                  style={[styles.muscleCompactName, { color: theme.text }]}
+                  numberOfLines={1}
+                >
+                  {muscleLabel(m.muscleId)}
+                </Text>
+                <Text style={[styles.muscleCompactSets, { color: theme.textMuted }]}>
+                  {m.effectiveSetsTotal} {t('friendsSetsCountShort')}
+                </Text>
               </View>
             ))}
           </View>
         </View>
       )}
 
-      {/* Recent PRs */}
+      {/* Recent PRs Grouped Card */}
       <View style={styles.sectionBlock}>
         <Text style={[styles.sectionEyebrow, { color: theme.textMuted }]}>
           {t('friendsRecentPrsHeading')}
         </Text>
-        {friend.recentPrs && friend.recentPrs.length > 0 ? (
-          friend.recentPrs.map((pr, idx) => (
-            <View
-              key={`${pr.exerciseId}-${idx}`}
-              style={[styles.prRow, { borderBottomColor: theme.hairline }]}
-            >
-              <View style={styles.prIconDot}>
-                <Ionicons name="trophy-outline" size={14} color="#F59E0B" />
+        <View
+          style={[
+            styles.prGroupCard,
+            {
+              backgroundColor: surfaceTileBg,
+              borderColor: surfaceTileBorder,
+            },
+          ]}
+        >
+          {friend.recentPrs && friend.recentPrs.length > 0 ? (
+            friend.recentPrs.map((pr, idx) => (
+              <View
+                key={`${pr.exerciseId}-${idx}`}
+                style={[
+                  styles.prRow,
+                  idx < (friend.recentPrs?.length || 0) - 1 && {
+                    borderBottomWidth: StyleSheet.hairlineWidth,
+                    borderBottomColor: theme.hairline,
+                  },
+                ]}
+              >
+                <View style={styles.prIconDot}>
+                  <Ionicons name="trophy" size={13} color="#F59E0B" />
+                </View>
+                <Text style={[styles.prName, { color: theme.text }]} numberOfLines={1}>
+                  {pr.exerciseName}
+                </Text>
+                <View
+                  style={[
+                    styles.prValPill,
+                    { backgroundColor: isDark ? 'rgba(255,255,255,0.07)' : 'rgba(15,23,42,0.06)' },
+                  ]}
+                >
+                  <Text style={[styles.prVal, { color: theme.text }]}>
+                    {pr.weight} kg × {pr.reps}
+                  </Text>
+                </View>
               </View>
-              <Text style={[styles.prName, { color: theme.text }]} numberOfLines={1}>
-                {pr.exerciseName}
-              </Text>
-              <Text style={[styles.prVal, { color: theme.text }]}>
-                {pr.weight} kg × {pr.reps}
-              </Text>
-            </View>
-          ))
-        ) : (
-          <Text style={[styles.emptyPrText, { color: theme.textMuted }]}>
-            {t('friendsNoPrsYet')}
-          </Text>
-        )}
+            ))
+          ) : (
+            <Text style={[styles.emptyPrText, { color: theme.textMuted }]}>
+              {t('friendsNoPrsYet')}
+            </Text>
+          )}
+        </View>
       </View>
 
-      {/* Destructive Remove Friend */}
+      {/* Subtle Destructive Footer Action */}
       <TouchableOpacity
-        style={[styles.removeBtn, { borderColor: 'rgba(239, 68, 68, 0.35)' }]}
+        style={styles.removeFooterBtn}
         onPress={handleConfirmRemove}
-        activeOpacity={0.8}
+        activeOpacity={0.75}
       >
-        <Ionicons name="person-remove-outline" size={16} color={theme.danger} />
-        <Text style={[styles.removeBtnText, { color: theme.danger }]}>
+        <Ionicons name="person-remove-outline" size={15} color={theme.danger} />
+        <Text style={[styles.removeFooterText, { color: theme.danger }]}>
           {t('friendsRemoveBtn')}
         </Text>
       </TouchableOpacity>
@@ -793,7 +973,7 @@ export const FriendProfileModal: React.FC<FriendProfileModalProps> = ({
             {
               backgroundColor: theme.bg,
               borderColor: theme.border,
-              maxHeight: SCREEN_HEIGHT * 0.88,
+              maxHeight: SCREEN_HEIGHT * 0.89,
               paddingBottom: Math.max(insets.bottom, 16),
               transform: [{ translateY: overlaySlide }],
             },
@@ -802,19 +982,18 @@ export const FriendProfileModal: React.FC<FriendProfileModalProps> = ({
           <View style={styles.overlayHandleRow}>
             <View style={[styles.overlayHandle, { backgroundColor: theme.border }]} />
           </View>
-          <View style={[styles.overlayHeaderRow, { borderBottomColor: theme.hairline }]}>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.overlayTitle, { color: theme.text }]}>@{friend.nickname}</Text>
-              <Text style={[styles.overlaySub, { color: theme.textMuted }]}>{friend.displayName}</Text>
-            </View>
-            <TouchableOpacity
-              onPress={onClose}
-              style={[styles.overlayCloseBtn, { backgroundColor: theme.bgSecondary }]}
-              activeOpacity={0.75}
-            >
-              <Ionicons name="close" size={18} color={theme.text} />
-            </TouchableOpacity>
-          </View>
+          <TouchableOpacity
+            onPress={onClose}
+            style={[
+              styles.overlayFloatingClose,
+              {
+                backgroundColor: isDark ? 'rgba(255,255,255,0.09)' : 'rgba(15,23,42,0.07)',
+              },
+            ]}
+            activeOpacity={0.75}
+          >
+            <Ionicons name="close" size={18} color={theme.text} />
+          </TouchableOpacity>
           <ScrollView
             contentContainerStyle={styles.scrollContent}
             showsVerticalScrollIndicator={false}
@@ -831,7 +1010,7 @@ export const FriendProfileModal: React.FC<FriendProfileModalProps> = ({
       visible={visible}
       onClose={onClose}
       title={`@${friend.nickname}`}
-      subtitle={friend.displayName}
+      initialHeightPercent={0.89}
     >
       <BottomSheetScrollView
         contentContainerStyle={styles.scrollContent}
@@ -860,12 +1039,12 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.56)',
+    backgroundColor: 'rgba(0, 0, 0, 0.58)',
   },
   overlaySheet: {
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    borderTopWidth: 1,
+    borderTopLeftRadius: 30,
+    borderTopRightRadius: 30,
+    borderTopWidth: StyleSheet.hairlineWidth,
     overflow: 'hidden',
   },
   overlayHandleRow: {
@@ -878,43 +1057,36 @@ const styles = StyleSheet.create({
     height: 4,
     borderRadius: 2,
   },
-  overlayHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingBottom: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  overlayTitle: {
-    fontSize: 16,
-    fontWeight: '900',
-  },
-  overlaySub: {
-    fontSize: 12,
-    fontWeight: '600',
-    marginTop: 1,
-  },
-  overlayCloseBtn: {
+  overlayFloatingClose: {
+    position: 'absolute',
+    top: 14,
+    right: 16,
     width: 32,
     height: 32,
     borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
+    zIndex: 10,
   },
   scrollContent: {
     paddingHorizontal: 18,
-    paddingTop: 10,
-    paddingBottom: 34,
+    paddingTop: 4,
+    paddingBottom: 38,
   },
-  heroCard: {
+  heroShell: {
+    position: 'relative',
     alignItems: 'center',
-    paddingTop: 18,
-    paddingBottom: 18,
-    paddingHorizontal: 16,
-    borderRadius: 24,
-    borderWidth: 1,
+    paddingTop: 16,
+    paddingBottom: 6,
+    marginBottom: 16,
+  },
+  coverAtmosphere: {
+    position: 'absolute',
+    top: -18,
+    left: -18,
+    right: -18,
+    height: 210,
     overflow: 'hidden',
-    marginBottom: 14,
   },
   emblemStage: {
     position: 'relative',
@@ -922,59 +1094,68 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     width: 112,
     height: 112,
-    marginBottom: 8,
+    marginBottom: 10,
   },
   displayName: {
-    fontSize: 22,
+    fontSize: 24,
     fontWeight: '900',
-    letterSpacing: -0.5,
+    letterSpacing: -0.6,
+    textAlign: 'center',
   },
-  handleMetaRow: {
+  identityPillRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: 8,
-    marginTop: 4,
+    marginTop: 8,
   },
-  handleText: {
-    fontSize: 13,
-    fontWeight: '800',
-  },
-  dotSep: {
-    width: 3,
-    height: 3,
-    borderRadius: 2,
-  },
-  rankNameText: {
-    fontSize: 13,
-    fontWeight: '800',
-  },
-  statusBadge: {
+  identityChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  identityHandleText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  identityRankText: {
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  statusPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
     marginTop: 10,
-    paddingHorizontal: 12,
+    paddingHorizontal: 13,
     paddingVertical: 6,
     borderRadius: 999,
     borderWidth: StyleSheet.hairlineWidth,
+    maxWidth: '92%',
   },
   liveDot: {
     width: 6,
     height: 6,
     borderRadius: 3,
+    backgroundColor: '#10B981',
   },
-  statusBadgeText: {
+  statusPillText: {
     fontSize: 12,
     fontWeight: '600',
   },
-  actionRow: {
+  actionDock: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    marginTop: 16,
+    marginTop: 18,
     width: '100%',
   },
-  primaryBtn: {
+  messagePrimaryBtn: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
@@ -983,38 +1164,52 @@ const styles = StyleSheet.create({
     height: 46,
     borderRadius: 14,
   },
-  primaryBtnText: {
+  messagePrimaryBtnText: {
     fontSize: 13.5,
     fontWeight: '800',
   },
-  telemetryStrip: {
+  bentoGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 22,
+  },
+  bentoTile: {
+    width: '48.6%',
+    flexGrow: 1,
+    borderRadius: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 13,
+    paddingVertical: 11,
+    gap: 6,
+  },
+  bentoTileTop: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: 18,
-    borderWidth: StyleSheet.hairlineWidth,
-    paddingVertical: 14,
-    marginBottom: 20,
+    justifyContent: 'space-between',
+    gap: 6,
   },
-  teleCell: {
-    flex: 1,
+  bentoIconChip: {
+    width: 24,
+    height: 24,
+    borderRadius: 8,
     alignItems: 'center',
-    gap: 2,
+    justifyContent: 'center',
   },
-  teleValue: {
-    fontSize: 17.5,
+  bentoLabel: {
+    flex: 1,
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+  },
+  bentoValue: {
+    fontSize: 21,
     fontWeight: '900',
+    letterSpacing: -0.5,
     fontVariant: ['tabular-nums'],
   },
-  teleLabel: {
-    fontSize: 10.5,
-    fontWeight: '700',
-  },
-  teleDiv: {
-    width: StyleSheet.hairlineWidth,
-    height: 26,
-  },
   sectionBlock: {
-    marginBottom: 22,
+    marginBottom: 20,
   },
   compareHeaderRow: {
     flexDirection: 'row',
@@ -1034,17 +1229,19 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   vsArenaCard: {
-    borderRadius: 20,
+    position: 'relative',
+    overflow: 'hidden',
+    borderRadius: 22,
     borderWidth: StyleSheet.hairlineWidth,
-    paddingVertical: 14,
-    paddingHorizontal: 12,
+    paddingVertical: 15,
+    paddingHorizontal: 13,
     marginBottom: 10,
   },
   vsCrestsRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 8,
+    marginBottom: 10,
   },
   vsFighterCol: {
     flex: 1,
@@ -1056,9 +1253,14 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     marginTop: 2,
   },
+  vsRankTag: {
+    paddingHorizontal: 8,
+    paddingVertical: 2.5,
+    borderRadius: 999,
+  },
   vsFighterSub: {
     fontSize: 10.5,
-    fontWeight: '700',
+    fontWeight: '800',
   },
   vsCenterBadge: {
     width: 38,
@@ -1069,7 +1271,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   vsCenterText: {
-    fontSize: 12,
+    fontSize: 11.5,
     fontWeight: '900',
     letterSpacing: 1,
   },
@@ -1080,22 +1282,48 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 18,
-    marginTop: 4,
+    gap: 10,
+    marginTop: 2,
+    marginBottom: 12,
   },
   radarLegendPill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 4.5,
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
   },
   radarLegendDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
   },
   radarLegendText: {
-    fontSize: 11.5,
+    fontSize: 11,
     fontWeight: '800',
+  },
+  radarBreakdownRow: {
+    width: '100%',
+    flexDirection: 'row',
+    paddingTop: 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    gap: 4,
+  },
+  radarBreakdownCell: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 2,
+  },
+  radarBreakdownLabel: {
+    fontSize: 9.5,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
+  radarBreakdownVal: {
+    fontSize: 11,
+    fontVariant: ['tabular-nums'],
   },
   sectionEyebrow: {
     fontSize: 10,
@@ -1103,32 +1331,40 @@ const styles = StyleSheet.create({
     letterSpacing: 1.2,
     marginBottom: 10,
   },
-  topMusclesGrid: {
+  topMusclesRow: {
+    flexDirection: 'row',
     gap: 8,
   },
-  musclePillCard: {
-    flexDirection: 'row',
+  muscleCompactTile: {
+    flex: 1,
     alignItems: 'center',
-    gap: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    borderRadius: 16,
     borderWidth: StyleSheet.hairlineWidth,
+    gap: 5,
   },
-  musclePillName: {
-    fontSize: 13.5,
+  muscleCompactName: {
+    fontSize: 12,
     fontWeight: '800',
+    textAlign: 'center',
   },
-  musclePillSets: {
-    fontSize: 11.5,
+  muscleCompactSets: {
+    fontSize: 10.5,
     fontWeight: '600',
+    fontVariant: ['tabular-nums'],
+  },
+  prGroupCard: {
+    borderRadius: 18,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 13,
+    paddingVertical: 4,
   },
   prRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    paddingVertical: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    paddingVertical: 11,
   },
   prIconDot: {
     width: 26,
@@ -1143,27 +1379,32 @@ const styles = StyleSheet.create({
     fontSize: 13.5,
     fontWeight: '700',
   },
+  prValPill: {
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
   prVal: {
-    fontSize: 13,
-    fontWeight: '900',
+    fontSize: 12.5,
+    fontWeight: '800',
     fontVariant: ['tabular-nums'],
   },
   emptyPrText: {
     fontSize: 12.5,
     fontWeight: '600',
+    paddingVertical: 12,
   },
-  removeBtn: {
+  removeFooterBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 7,
-    paddingVertical: 13,
-    borderRadius: 14,
-    borderWidth: 1,
-    marginTop: 6,
+    gap: 6,
+    paddingVertical: 12,
+    marginTop: 2,
+    opacity: 0.85,
   },
-  removeBtnText: {
-    fontSize: 13.5,
-    fontWeight: '800',
+  removeFooterText: {
+    fontSize: 13,
+    fontWeight: '700',
   },
 });
