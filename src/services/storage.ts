@@ -1070,12 +1070,12 @@ export async function addWeightEntry(
   const sorted = history.sort((a, b) => b.date.localeCompare(a.date));
   await AsyncStorage.setItem(`${STORAGE_KEYS.WEIGHT_PREFIX}${pid}`, JSON.stringify(sorted));
 
-  // Also update active profile's weight
+  // Sync active profile's weight with the chronologically newest weight entry
   try {
     const profiles = await getProfiles();
     const target = profiles.find((p) => p.id === pid);
-    if (target) {
-      target.weight = newEntry.weight;
+    if (target && sorted[0]) {
+      target.weight = sorted[0].weight;
       await AsyncStorage.setItem(STORAGE_KEYS.PROFILES, JSON.stringify(profiles));
     }
   } catch {}
@@ -1090,8 +1090,18 @@ export async function deleteWeightEntry(id: string, profileId?: string): Promise
   const pid = await resolveProfileId(profileId);
   if (!pid) return;
   const history = await getWeightHistory(pid);
-  const filtered = history.filter((h) => h.id !== id);
+  const filtered = history
+    .filter((h) => h.id !== id)
+    .sort((a, b) => b.date.localeCompare(a.date));
   await AsyncStorage.setItem(`${STORAGE_KEYS.WEIGHT_PREFIX}${pid}`, JSON.stringify(filtered));
+  try {
+    const profiles = await getProfiles();
+    const target = profiles.find((p) => p.id === pid);
+    if (target && filtered[0]) {
+      target.weight = filtered[0].weight;
+      await AsyncStorage.setItem(STORAGE_KEYS.PROFILES, JSON.stringify(profiles));
+    }
+  } catch {}
   notifyCloudAutoSync(pid);
 }
 

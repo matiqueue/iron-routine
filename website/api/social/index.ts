@@ -80,7 +80,10 @@ export default {
             getChatPairTheme(userId, friendId),
             getFriendLastReadAt(userId, friendId),
           ]);
-          await markChatRead(userId, friendId);
+          const shouldMarkRead = url.searchParams.get('markRead') !== '0';
+          if (shouldMarkRead) {
+            await markChatRead(userId, friendId);
+          }
           return jsonResponse({ ok: true, messages, theme: chatTheme, friendLastReadAt });
         }
 

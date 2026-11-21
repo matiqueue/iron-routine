@@ -286,12 +286,65 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = Rea
   const flipOpacity = useRef(new Animated.Value(1)).current;
   const floatAnim = useRef(new Animated.Value(0)).current;
 
-  // Fullscreen zoom-to-muscle & card slide animations
+  // Fullscreen zoom-to-muscle, card slide, and modal open/shrink animations
   const isScreenActive = useIsScreenActive();
   const fsZoomScale = useRef(new Animated.Value(1)).current;
   const fsZoomX = useRef(new Animated.Value(0)).current;
   const fsZoomY = useRef(new Animated.Value(0)).current;
   const fsCardAnim = useRef(new Animated.Value(0)).current;
+  const fsModalAnim = useRef(new Animated.Value(0)).current;
+  const isClosingFsRef = useRef(false);
+  const prevFsMuscleRef = useRef<MuscleSubGroupId | null>(null);
+  const isFlipLockedRef = useRef(false);
+  isFlipLockedRef.current = isFullscreen && Boolean(selectedMuscle);
+
+  const handleOpenFullscreen = useCallback(() => {
+    try {
+      Haptics.selectionAsync();
+    } catch {}
+    isClosingFsRef.current = false;
+    prevFsMuscleRef.current = null;
+    fsModalAnim.setValue(0);
+    setIsFullscreen(true);
+    requestAnimationFrame(() => {
+      Animated.timing(fsModalAnim, {
+        toValue: 1,
+        duration: 240,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }).start();
+    });
+  }, [fsModalAnim]);
+
+  const handleCloseFullscreen = useCallback(
+    (afterClose?: () => void) => {
+      if (isClosingFsRef.current) return;
+      isClosingFsRef.current = true;
+      try {
+        Haptics.selectionAsync();
+      } catch {}
+      Animated.parallel([
+        Animated.timing(fsModalAnim, {
+          toValue: 0,
+          duration: 210,
+          easing: Easing.inOut(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.timing(fsCardAnim, {
+          toValue: 0,
+          duration: 140,
+          easing: Easing.out(Easing.quad),
+          useNativeDriver: true,
+        }),
+      ]).start(() => {
+        isClosingFsRef.current = false;
+        prevFsMuscleRef.current = null;
+        setIsFullscreen(false);
+        afterClose?.();
+      });
+    },
+    [fsModalAnim, fsCardAnim]
+  );
 
   useEffect(() => {
     viewSideRef.current = viewSide;
@@ -324,8 +377,9 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = Rea
   const selectedStat = selectedMuscle ? muscleStatsMap[selectedMuscle] : null;
 
   const rotateToSide = useCallback(
-    (targetSide?: SilhouetteViewSide) => {
+    (targetSide?: SilhouetteViewSide, allowWhileLocked = false) => {
       if (isAnimatingRef.current) return;
+      if (!allowWhileLocked && isFlipLockedRef.current) return;
       const current = viewSideRef.current;
       const next = targetSide || (current === 'front' ? 'back' : 'front');
       if (next === current) return;
@@ -386,31 +440,34 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = Rea
     [flipOpacity, flipScaleX, flipScaleY]
   );
 
-  // Auto-flip when user selects a muscle from the list that belongs to the opposite side
+  // Auto-flip when user selects a muscle from the list that belongs to the opposite side (only outside fullscreen focus)
   useEffect(() => {
-    if (!selectedMuscle) return;
+    if (!selectedMuscle || isFullscreen) return;
     const meta = MUSCLE_SUBGROUP_MAP[selectedMuscle];
     if (!meta) return;
     if (meta.side === 'front' && viewSideRef.current === 'back') {
-      rotateToSide('front');
+      rotateToSide('front', true);
     } else if (meta.side === 'back' && viewSideRef.current === 'front') {
-      rotateToSide('back');
+      rotateToSide('back', true);
     }
-  }, [selectedMuscle, rotateToSide]);
+  }, [selectedMuscle, isFullscreen, rotateToSide]);
 
   const panResponder = useMemo(
     () =>
       PanResponder.create({
         onMoveShouldSetPanResponder: (_, gestureState) =>
+          !isFlipLockedRef.current &&
           Math.abs(gestureState.dx) > 10 &&
           Math.abs(gestureState.dx) > Math.abs(gestureState.dy) * 1.15,
         onPanResponderMove: (_, gestureState) => {
+          if (isFlipLockedRef.current) return;
           // Rotate strictly in place around central vertical spine (no horizontal shift!)
           const progress = Math.min(1, Math.abs(gestureState.dx) / 140);
           flipScaleX.setValue(Math.max(0.28, 1 - progress * 0.72));
           flipScaleY.setValue(1 - progress * 0.02);
         },
         onPanResponderRelease: (_, gestureState) => {
+          if (isFlipLockedRef.current) return;
           if (Math.abs(gestureState.dx) > 24 || Math.abs(gestureState.vx) > 0.3) {
             rotateToSide();
           } else {
@@ -444,26 +501,55 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = Rea
 
   const handleMusclePress = (muscleId: MuscleSubGroupId | null) => {
     if (!muscleId) return;
+
+    const isSameChestZone =
+      (muscleId === 'mid_lower_chest' || muscleId === 'upper_chest') &&
+      (selectedMuscle === 'mid_lower_chest' || selectedMuscle === 'upper_chest');
+    const isSameDeltZone =
+      (muscleId === 'side_delts' || muscleId === 'front_delts') &&
+      (selectedMuscle === 'side_delts' || selectedMuscle === 'front_delts');
+
+    // In fullscreen mode: tapping the currently focused muscle cleanly unselects and zooms back out to full body (never shifts card!)
+    if (isFullscreen) {
+      if (selectedMuscle === muscleId || isSameChestZone || isSameDeltZone) {
+        try {
+          Haptics.selectionAsync();
+        } catch {}
+        onSelectMuscle(null);
+        return;
+      }
+      try {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      } catch {}
+      onSelectMuscle(muscleId);
+      return;
+    }
+
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     } catch {}
 
-    if (muscleId === 'mid_lower_chest' && selectedMuscle === 'mid_lower_chest') {
-      onSelectMuscle('upper_chest');
-      return;
-    }
-    if (muscleId === 'upper_chest' && selectedMuscle === 'upper_chest') {
-      onSelectMuscle(null);
-      return;
+    // Compact mode: cycle sub-zones cleanly mid_lower -> upper -> null (no infinite loop!)
+    if (muscleId === 'mid_lower_chest') {
+      if (selectedMuscle === 'mid_lower_chest') {
+        onSelectMuscle('upper_chest');
+        return;
+      }
+      if (selectedMuscle === 'upper_chest') {
+        onSelectMuscle(null);
+        return;
+      }
     }
 
-    if (muscleId === 'side_delts' && selectedMuscle === 'side_delts') {
-      onSelectMuscle('front_delts');
-      return;
-    }
-    if (muscleId === 'front_delts' && selectedMuscle === 'front_delts') {
-      onSelectMuscle(null);
-      return;
+    if (muscleId === 'side_delts') {
+      if (selectedMuscle === 'side_delts') {
+        onSelectMuscle('front_delts');
+        return;
+      }
+      if (selectedMuscle === 'front_delts') {
+        onSelectMuscle(null);
+        return;
+      }
     }
 
     onSelectMuscle(selectedMuscle === muscleId ? null : muscleId);
@@ -533,6 +619,11 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = Rea
 
   useEffect(() => {
     if (!isFullscreen) {
+      prevFsMuscleRef.current = null;
+      fsZoomScale.stopAnimation();
+      fsZoomX.stopAnimation();
+      fsZoomY.stopAnimation();
+      fsCardAnim.stopAnimation();
       fsZoomScale.setValue(1);
       fsZoomX.setValue(0);
       fsZoomY.setValue(0);
@@ -541,63 +632,94 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = Rea
     }
 
     if (selectedMuscle) {
-      const anchor = MUSCLE_FOCUS_ANCHORS[selectedMuscle] || { fx: 0, fy: -0.1 };
-      const z = 1.92;
+      const wasFocused = prevFsMuscleRef.current !== null;
+      const isSameMuscle = prevFsMuscleRef.current === selectedMuscle;
+      prevFsMuscleRef.current = selectedMuscle;
+
+      // Never re-animate or shift card if the same muscle is already focused
+      if (isSameMuscle) return;
+
+      const anchor = MUSCLE_FOCUS_ANCHORS[selectedMuscle] || { fx: 0, fy: -0.08 };
+      // Pulled-back, comfortable framing next to the detail card
+      const z = 1.38;
       const dx = anchor.fx * fsSvgW;
       const dy = anchor.fy * fsSvgH;
-      const targetPanX = -screenWidth * 0.24 - dx * z;
-      const targetPanY = -fsStageH * 0.04 - dy * z;
+      const targetPanX = -screenWidth * 0.21 - dx * z * 0.72;
+      const rawPanY = -fsStageH * 0.02 - dy * z * 0.72;
+      const targetPanY = Math.max(-fsStageH * 0.26, Math.min(fsStageH * 0.26, rawPanY));
 
-      fsCardAnim.setValue(0);
-      Animated.parallel([
-        Animated.spring(fsZoomScale, {
+      fsZoomScale.stopAnimation();
+      fsZoomX.stopAnimation();
+      fsZoomY.stopAnimation();
+
+      const anims: Animated.CompositeAnimation[] = [
+        Animated.timing(fsZoomScale, {
           toValue: z,
-          friction: 8,
-          tension: 76,
+          duration: 280,
+          easing: Easing.out(Easing.cubic),
           useNativeDriver: true,
         }),
-        Animated.spring(fsZoomX, {
+        Animated.timing(fsZoomX, {
           toValue: targetPanX,
-          friction: 8,
-          tension: 76,
+          duration: 280,
+          easing: Easing.out(Easing.cubic),
           useNativeDriver: true,
         }),
-        Animated.spring(fsZoomY, {
+        Animated.timing(fsZoomY, {
           toValue: targetPanY,
-          friction: 8,
-          tension: 76,
+          duration: 280,
+          easing: Easing.out(Easing.cubic),
           useNativeDriver: true,
         }),
-        Animated.spring(fsCardAnim, {
-          toValue: 1,
-          friction: 7.5,
-          tension: 92,
-          useNativeDriver: true,
-        }),
-      ]).start();
+      ];
+
+      // Only slide the detail card in when opening from unfocused state
+      if (!wasFocused) {
+        fsCardAnim.stopAnimation();
+        fsCardAnim.setValue(0);
+        anims.push(
+          Animated.timing(fsCardAnim, {
+            toValue: 1,
+            duration: 240,
+            easing: Easing.out(Easing.cubic),
+            useNativeDriver: true,
+          })
+        );
+      } else {
+        fsCardAnim.setValue(1);
+      }
+
+      Animated.parallel(anims).start();
     } else {
+      prevFsMuscleRef.current = null;
+      fsZoomScale.stopAnimation();
+      fsZoomX.stopAnimation();
+      fsZoomY.stopAnimation();
+      fsCardAnim.stopAnimation();
+
       Animated.parallel([
-        Animated.spring(fsZoomScale, {
+        Animated.timing(fsZoomScale, {
           toValue: 1,
-          friction: 8,
-          tension: 82,
+          duration: 260,
+          easing: Easing.out(Easing.cubic),
           useNativeDriver: true,
         }),
-        Animated.spring(fsZoomX, {
+        Animated.timing(fsZoomX, {
           toValue: 0,
-          friction: 8,
-          tension: 82,
+          duration: 260,
+          easing: Easing.out(Easing.cubic),
           useNativeDriver: true,
         }),
-        Animated.spring(fsZoomY, {
+        Animated.timing(fsZoomY, {
           toValue: 0,
-          friction: 8,
-          tension: 82,
+          duration: 260,
+          easing: Easing.out(Easing.cubic),
           useNativeDriver: true,
         }),
         Animated.timing(fsCardAnim, {
           toValue: 0,
           duration: 150,
+          easing: Easing.out(Easing.quad),
           useNativeDriver: true,
         }),
       ]).start();
@@ -783,12 +905,7 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = Rea
                   : 'rgba(24, 24, 27, 0.1)',
               },
             ]}
-            onPress={() => {
-              try {
-                Haptics.selectionAsync();
-              } catch {}
-              setIsFullscreen(true);
-            }}
+            onPress={handleOpenFullscreen}
             activeOpacity={0.75}
             accessibilityLabel={t('anatomyFullscreenTitle')}
           >
@@ -1018,338 +1135,382 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = Rea
       {/* Fullscreen Interactive Anatomical Zoom Explorer + Side Detail Card */}
       <Modal
         visible={isFullscreen}
-        animationType="fade"
-        presentationStyle="fullScreen"
-        onRequestClose={() => setIsFullscreen(false)}
+        transparent
+        animationType="none"
+        statusBarTranslucent
+        onRequestClose={() => handleCloseFullscreen()}
       >
-        <View style={[styles.fsRoot, { backgroundColor: theme.bg }]}>
-          {/* Subtle architectural blueprint grid background (zero green glow) */}
-          <Svg
-            width="100%"
-            height="100%"
-            style={[StyleSheet.absoluteFill, { pointerEvents: 'none' }]}
-          >
-            <Defs>
-              <Pattern
-                id="fsSilhouetteGrid"
-                width={44}
-                height={44}
-                patternUnits="userSpaceOnUse"
-              >
-                <Path
-                  d="M 44 0 L 0 0 0 44"
-                  fill="none"
-                  stroke={isDark ? 'rgba(255, 255, 255, 0.055)' : 'rgba(24, 24, 27, 0.048)'}
-                  strokeWidth={0.9}
-                />
-                <Circle
-                  cx={0}
-                  cy={0}
-                  r={1.15}
-                  fill={isDark ? 'rgba(255, 255, 255, 0.14)' : 'rgba(24, 24, 27, 0.12)'}
-                />
-              </Pattern>
-            </Defs>
-            <Rect x={0} y={0} width="100%" height="100%" fill="url(#fsSilhouetteGrid)" />
-          </Svg>
-
-          {/* Top Floating Controls Bar */}
-          <View
+        <View style={styles.fsModalShell}>
+          <Animated.View
             style={[
-              styles.fsTopBar,
+              StyleSheet.absoluteFill,
               {
-                paddingTop: Math.max(insets.top + 8, 18),
-                borderBottomColor: theme.hairline,
-                backgroundColor: isDark ? 'rgba(9, 9, 12, 0.72)' : 'rgba(255, 255, 255, 0.82)',
+                backgroundColor: isDark ? 'rgba(0, 0, 0, 0.82)' : 'rgba(15, 23, 42, 0.45)',
+                opacity: fsModalAnim,
+              },
+            ]}
+            pointerEvents="none"
+          />
+
+          <Animated.View
+            style={[
+              styles.fsRoot,
+              {
+                backgroundColor: theme.bg,
+                opacity: fsModalAnim,
+                transform: [
+                  {
+                    scale: fsModalAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0.86, 1],
+                    }),
+                  },
+                  {
+                    translateY: fsModalAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [30, 0],
+                    }),
+                  },
+                ],
               },
             ]}
           >
-            <View style={styles.fsTitleGroup}>
-              <Text style={[styles.fsTitle, { color: theme.text }]}>
-                {t('anatomyFullscreenTitle')}
-              </Text>
-              <Text style={[styles.fsSubTitle, { color: theme.textMuted }]}>
-                {viewSide === 'front' ? t('frontSilhouetteCaps') : t('backSilhouetteCaps')}
-              </Text>
+            {/* Subtle architectural blueprint grid background (zero green glow) */}
+            <Svg
+              width="100%"
+              height="100%"
+              style={[StyleSheet.absoluteFill, { pointerEvents: 'none' }]}
+            >
+              <Defs>
+                <Pattern
+                  id="fsSilhouetteGrid"
+                  width={44}
+                  height={44}
+                  patternUnits="userSpaceOnUse"
+                >
+                  <Path
+                    d="M 44 0 L 0 0 0 44"
+                    fill="none"
+                    stroke={isDark ? 'rgba(255, 255, 255, 0.055)' : 'rgba(24, 24, 27, 0.048)'}
+                    strokeWidth={0.9}
+                  />
+                  <Circle
+                    cx={0}
+                    cy={0}
+                    r={1.15}
+                    fill={isDark ? 'rgba(255, 255, 255, 0.14)' : 'rgba(24, 24, 27, 0.12)'}
+                  />
+                </Pattern>
+              </Defs>
+              <Rect x={0} y={0} width="100%" height="100%" fill="url(#fsSilhouetteGrid)" />
+            </Svg>
+
+            {/* Top Floating Controls Bar — Clean Non-Overlapping Layout */}
+            <View
+              style={[
+                styles.fsTopBar,
+                {
+                  paddingTop: Math.max(insets.top + 8, 18),
+                  borderBottomColor: theme.hairline,
+                  backgroundColor: isDark ? 'rgba(9, 9, 12, 0.78)' : 'rgba(255, 255, 255, 0.88)',
+                },
+              ]}
+            >
+              <View style={styles.fsTitleGroup}>
+                <Text style={[styles.fsTitle, { color: theme.text }]} numberOfLines={1}>
+                  {t('anatomyFullscreenTitle')}
+                </Text>
+                <Text style={[styles.fsSubTitle, { color: theme.textMuted }]} numberOfLines={1}>
+                  {viewSide === 'front' ? t('frontSilhouetteCaps') : t('backSilhouetteCaps')}
+                </Text>
+              </View>
+
+              <View style={styles.fsControlsRight}>
+                {selectedMuscle ? (
+                  <TouchableOpacity
+                    onPress={() => {
+                      try {
+                        Haptics.selectionAsync();
+                      } catch {}
+                      onSelectMuscle(null);
+                    }}
+                    style={[
+                      styles.fsPillBtn,
+                      {
+                        backgroundColor: isDark
+                          ? 'rgba(56, 189, 248, 0.14)'
+                          : 'rgba(14, 165, 233, 0.1)',
+                        borderColor: isDark
+                          ? 'rgba(56, 189, 248, 0.36)'
+                          : 'rgba(14, 165, 233, 0.3)',
+                      },
+                    ]}
+                    activeOpacity={0.78}
+                  >
+                    <Ionicons name="contract-outline" size={14} color="#38BDF8" />
+                    <Text
+                      style={[styles.fsPillBtnText, { color: isDark ? '#7DD3FC' : '#0284C7' }]}
+                      numberOfLines={1}
+                    >
+                      {t('resetZoomBtn')}
+                    </Text>
+                  </TouchableOpacity>
+                ) : (
+                  <TouchableOpacity
+                    onPress={() => rotateToSide()}
+                    style={[
+                      styles.fsPillBtn,
+                      {
+                        backgroundColor: isDark
+                          ? 'rgba(255,255,255,0.1)'
+                          : 'rgba(15,23,42,0.07)',
+                        borderColor: theme.border,
+                      },
+                    ]}
+                    activeOpacity={0.78}
+                  >
+                    <Ionicons name="sync-outline" size={14} color={theme.text} />
+                    <Text style={[styles.fsPillBtnText, { color: theme.text }]} numberOfLines={1}>
+                      {viewSide === 'front' ? t('viewCounterFront') : t('viewCounterBack')}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+
+                <TouchableOpacity
+                  onPress={() => handleCloseFullscreen()}
+                  style={[
+                    styles.fsCloseCircle,
+                    {
+                      backgroundColor: isDark
+                        ? 'rgba(255,255,255,0.12)'
+                        : 'rgba(15,23,42,0.08)',
+                    },
+                  ]}
+                  activeOpacity={0.78}
+                >
+                  <Ionicons name="close" size={20} color={theme.text} />
+                </TouchableOpacity>
+              </View>
             </View>
 
-            <View style={styles.fsControlsRight}>
+            {/* Main Interactive Zoom Stage */}
+            <View {...panResponder.panHandlers} style={styles.fsStageArea}>
               {selectedMuscle && (
-                <TouchableOpacity
+                <Pressable
+                  style={StyleSheet.absoluteFill}
                   onPress={() => {
                     try {
                       Haptics.selectionAsync();
                     } catch {}
                     onSelectMuscle(null);
                   }}
-                  style={[
-                    styles.fsPillBtn,
-                    {
-                      backgroundColor: isDark
-                        ? 'rgba(255,255,255,0.1)'
-                        : 'rgba(15,23,42,0.07)',
-                      borderColor: theme.border,
-                    },
-                  ]}
-                  activeOpacity={0.78}
-                >
-                  <Ionicons name="contract-outline" size={14} color={theme.text} />
-                  <Text style={[styles.fsPillBtnText, { color: theme.text }]}>
-                    {t('resetZoomBtn')}
-                  </Text>
-                </TouchableOpacity>
+                />
               )}
 
-              <TouchableOpacity
-                onPress={() => rotateToSide()}
-                style={[
-                  styles.fsPillBtn,
-                  {
-                    backgroundColor: isDark
-                      ? 'rgba(255,255,255,0.1)'
-                      : 'rgba(15,23,42,0.07)',
-                    borderColor: theme.border,
-                  },
-                ]}
-                activeOpacity={0.78}
-              >
-                <Ionicons name="sync-outline" size={14} color={theme.text} />
-                <Text style={[styles.fsPillBtnText, { color: theme.text }]}>
-                  {viewSide === 'front' ? t('viewCounterFront') : t('viewCounterBack')}
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                onPress={() => setIsFullscreen(false)}
-                style={[
-                  styles.fsCloseCircle,
-                  {
-                    backgroundColor: isDark
-                      ? 'rgba(255,255,255,0.12)'
-                      : 'rgba(15,23,42,0.08)',
-                  },
-                ]}
-                activeOpacity={0.78}
-              >
-                <Ionicons name="close" size={20} color={theme.text} />
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          {/* Main Interactive Zoom Stage */}
-          <View {...panResponder.panHandlers} style={styles.fsStageArea}>
-            {selectedMuscle && (
-              <Pressable
-                style={StyleSheet.absoluteFill}
-                onPress={() => onSelectMuscle(null)}
-              />
-            )}
-
-            <Animated.View
-              style={{
-                opacity: flipOpacity,
-                transform: [
-                  { translateX: fsZoomX },
-                  { translateY: fsZoomY },
-                  { scale: fsZoomScale },
-                  { scaleX: flipScaleX },
-                  { scaleY: flipScaleY },
-                ],
-              }}
-            >
-              {renderBodySvg(fsSvgW, fsSvgH)}
-            </Animated.View>
-
-            {/* Sleek Floating Muscle Detail Card beside the zoomed anatomy */}
-            {selectedStat && (
               <Animated.View
-                style={[
-                  styles.fsDetailCard,
-                  {
-                    width: Math.min(220, Math.round(screenWidth * 0.56)),
-                    maxHeight: Math.round(fsStageH * 0.74),
-                    top: Math.max(16, Math.round(fsStageH * 0.14)),
-                    backgroundColor: isDark
-                      ? 'rgba(17, 17, 22, 0.92)'
-                      : 'rgba(255, 255, 255, 0.94)',
-                    borderColor: selectedStatusAccent,
-                    opacity: fsCardAnim,
-                    transform: [
-                      {
-                        translateX: fsCardAnim.interpolate({
-                          inputRange: [0, 1],
-                          outputRange: [34, 0],
-                        }),
-                      },
-                      {
-                        scale: fsCardAnim.interpolate({
-                          inputRange: [0, 1],
-                          outputRange: [0.94, 1],
-                        }),
-                      },
-                    ],
-                  },
-                ]}
+                style={{
+                  opacity: flipOpacity,
+                  transform: [
+                    { translateX: fsZoomX },
+                    { translateY: fsZoomY },
+                    { scale: fsZoomScale },
+                    { scaleX: flipScaleX },
+                    { scaleY: flipScaleY },
+                  ],
+                }}
               >
-                <View
-                  style={[styles.fsCardAccentBar, { backgroundColor: selectedStatusAccent }]}
-                />
+                {renderBodySvg(fsSvgW, fsSvgH)}
+              </Animated.View>
 
-                <ScrollView
-                  showsVerticalScrollIndicator={false}
-                  contentContainerStyle={styles.fsCardScrollContent}
+              {/* Sleek Floating Muscle Detail Card beside the zoomed anatomy */}
+              {selectedStat && (
+                <Animated.View
+                  style={[
+                    styles.fsDetailCard,
+                    {
+                      width: Math.min(218, Math.round(screenWidth * 0.54)),
+                      maxHeight: Math.round(fsStageH * 0.74),
+                      top: Math.max(16, Math.round(fsStageH * 0.14)),
+                      backgroundColor: isDark
+                        ? 'rgba(17, 17, 22, 0.94)'
+                        : 'rgba(255, 255, 255, 0.96)',
+                      borderColor: selectedStatusAccent,
+                      opacity: fsCardAnim,
+                      transform: [
+                        {
+                          translateX: fsCardAnim.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: [28, 0],
+                          }),
+                        },
+                        {
+                          scale: fsCardAnim.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: [0.95, 1],
+                          }),
+                        },
+                      ],
+                    },
+                  ]}
                 >
-                  <View style={styles.fsCardHeaderRow}>
-                    <RankCrestIcon
-                      tier={selectedStat.rank}
-                      size={44}
-                      progressPct={selectedStat.progressPct}
-                      animated
-                    />
-                    <View style={{ flex: 1, minWidth: 0 }}>
-                      <Text style={[styles.fsCardMuscleName, { color: theme.text }]} numberOfLines={2}>
-                        {muscleLabel(selectedStat.meta.id)}
-                      </Text>
-                      <Text style={[styles.fsCardRankTitle, { color: selectedStatusAccent }]}>
-                        {rankTitle(selectedStat.rank)}
+                  <View
+                    style={[styles.fsCardAccentBar, { backgroundColor: selectedStatusAccent }]}
+                  />
+
+                  <ScrollView
+                    showsVerticalScrollIndicator={false}
+                    contentContainerStyle={styles.fsCardScrollContent}
+                  >
+                    <View style={styles.fsCardHeaderRow}>
+                      <RankCrestIcon
+                        tier={selectedStat.rank}
+                        size={44}
+                        progressPct={selectedStat.progressPct}
+                      />
+                      <View style={{ flex: 1, minWidth: 0 }}>
+                        <Text style={[styles.fsCardMuscleName, { color: theme.text }]} numberOfLines={2}>
+                          {muscleLabel(selectedStat.meta.id)}
+                        </Text>
+                        <Text style={[styles.fsCardRankTitle, { color: selectedStatusAccent }]}>
+                          {rankTitle(selectedStat.rank)}
+                        </Text>
+                      </View>
+                    </View>
+
+                    <View
+                      style={[
+                        styles.fsStatusPill,
+                        {
+                          backgroundColor: `${selectedStatusAccent}1F`,
+                          borderColor: `${selectedStatusAccent}55`,
+                        },
+                      ]}
+                    >
+                      <View style={[styles.fsStatusDot, { backgroundColor: selectedStatusAccent }]} />
+                      <Text
+                        style={[styles.fsStatusPillText, { color: selectedStatusAccent }]}
+                        numberOfLines={1}
+                      >
+                        {selectedStat.statusLabel}
                       </Text>
                     </View>
-                  </View>
 
+                    {/* Rank Progress */}
+                    <View style={styles.fsProgressBlock}>
+                      <View style={styles.fsProgressHeader}>
+                        <Text style={[styles.fsProgressLabel, { color: theme.textMuted }]}>
+                          {t('rankProgressLabel')}
+                        </Text>
+                        <Text style={[styles.fsProgressPct, { color: theme.text }]}>
+                          {selectedStat.progressPct}%
+                        </Text>
+                      </View>
+                      <View style={[styles.fsProgressTrack, { backgroundColor: theme.bgSecondary }]}>
+                        <View
+                          style={[
+                            styles.fsProgressFill,
+                            {
+                              backgroundColor: selectedStatusAccent,
+                              width: `${Math.max(4, Math.min(100, selectedStat.progressPct))}%`,
+                            },
+                          ]}
+                        />
+                      </View>
+                    </View>
+
+                    {/* Telemetry Metrics Grid */}
+                    <View style={styles.fsMetricsGrid}>
+                      <View style={[styles.fsMetricBox, { backgroundColor: theme.bgSecondary }]}>
+                        <Text style={[styles.fsMetricVal, { color: theme.text }]}>
+                          {Math.round(selectedStat.effectiveSetsTotal)}
+                        </Text>
+                        <Text style={[styles.fsMetricLbl, { color: theme.textMuted }]} numberOfLines={1}>
+                          {t('seriesMetricLabel')}
+                        </Text>
+                      </View>
+                      <View style={[styles.fsMetricBox, { backgroundColor: theme.bgSecondary }]}>
+                        <Text style={[styles.fsMetricVal, { color: theme.text }]}>
+                          {Math.round(selectedStat.effectiveSets30d)}
+                        </Text>
+                        <Text style={[styles.fsMetricLbl, { color: theme.textMuted }]} numberOfLines={1}>
+                          30d
+                        </Text>
+                      </View>
+                      <View style={[styles.fsMetricBox, { backgroundColor: theme.bgSecondary }]}>
+                        <Text style={[styles.fsMetricVal, { color: theme.text }]}>
+                          {Math.round(selectedStat.relativeDevelopmentRatio * 100)}%
+                        </Text>
+                        <Text style={[styles.fsMetricLbl, { color: theme.textMuted }]} numberOfLines={1}>
+                          {t('balanceMetricLabel')}
+                        </Text>
+                      </View>
+                    </View>
+
+                    {/* Exercises for this muscle */}
+                    {fullscreenExercises.length > 0 && (
+                      <View style={styles.fsExercisesList}>
+                        {fullscreenExercises.slice(0, 4).map((exStat) => (
+                          <TouchableOpacity
+                            key={exStat.exerciseId}
+                            style={[
+                              styles.fsExerciseRow,
+                              {
+                                backgroundColor: isDark
+                                  ? 'rgba(255,255,255,0.06)'
+                                  : 'rgba(15,23,42,0.05)',
+                              },
+                            ]}
+                            onPress={() => {
+                              handleCloseFullscreen(() => onPressExercise?.(exStat.exercise));
+                            }}
+                            activeOpacity={0.75}
+                          >
+                            <RankCrestIcon tier={exStat.rank} size={20} />
+                            <View style={{ flex: 1, minWidth: 0 }}>
+                              <Text style={[styles.fsExerciseName, { color: theme.text }]} numberOfLines={1}>
+                                {exerciseName(exStat.exercise.id, exStat.exercise.name)}
+                              </Text>
+                              <Text style={[styles.fsExerciseSets, { color: theme.textMuted }]}>
+                                {exStat.totalSets} {t('setsWord')}
+                              </Text>
+                            </View>
+                            <Ionicons name="chevron-forward" size={13} color={theme.textMuted} />
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    )}
+                  </ScrollView>
+                </Animated.View>
+              )}
+
+              {/* Bottom hint / Legend inside Fullscreen */}
+              {!selectedMuscle && (
+                <View
+                  style={[
+                    styles.fsBottomHintWrap,
+                    { bottom: Math.max(insets.bottom + 14, 24), pointerEvents: 'none' },
+                  ]}
+                >
                   <View
                     style={[
-                      styles.fsStatusPill,
+                      styles.fsBottomHintPill,
                       {
-                        backgroundColor: `${selectedStatusAccent}1F`,
-                        borderColor: `${selectedStatusAccent}55`,
+                        backgroundColor: isDark
+                          ? 'rgba(24,24,28,0.88)'
+                          : 'rgba(255,255,255,0.9)',
+                        borderColor: theme.border,
                       },
                     ]}
                   >
-                    <View style={[styles.fsStatusDot, { backgroundColor: selectedStatusAccent }]} />
-                    <Text
-                      style={[styles.fsStatusPillText, { color: selectedStatusAccent }]}
-                      numberOfLines={1}
-                    >
-                      {selectedStat.statusLabel}
+                    <Ionicons name="search" size={13} color={theme.textSecondary} />
+                    <Text style={[styles.fsBottomHintText, { color: theme.textSecondary }]}>
+                      {t('tapMuscleToZoomHint')}
                     </Text>
                   </View>
-
-                  {/* Rank Progress */}
-                  <View style={styles.fsProgressBlock}>
-                    <View style={styles.fsProgressHeader}>
-                      <Text style={[styles.fsProgressLabel, { color: theme.textMuted }]}>
-                        {t('rankProgressLabel')}
-                      </Text>
-                      <Text style={[styles.fsProgressPct, { color: theme.text }]}>
-                        {selectedStat.progressPct}%
-                      </Text>
-                    </View>
-                    <View style={[styles.fsProgressTrack, { backgroundColor: theme.bgSecondary }]}>
-                      <View
-                        style={[
-                          styles.fsProgressFill,
-                          {
-                            backgroundColor: selectedStatusAccent,
-                            width: `${Math.max(4, Math.min(100, selectedStat.progressPct))}%`,
-                          },
-                        ]}
-                      />
-                    </View>
-                  </View>
-
-                  {/* Telemetry Metrics Grid */}
-                  <View style={styles.fsMetricsGrid}>
-                    <View style={[styles.fsMetricBox, { backgroundColor: theme.bgSecondary }]}>
-                      <Text style={[styles.fsMetricVal, { color: theme.text }]}>
-                        {Math.round(selectedStat.effectiveSetsTotal)}
-                      </Text>
-                      <Text style={[styles.fsMetricLbl, { color: theme.textMuted }]} numberOfLines={1}>
-                        {t('seriesMetricLabel')}
-                      </Text>
-                    </View>
-                    <View style={[styles.fsMetricBox, { backgroundColor: theme.bgSecondary }]}>
-                      <Text style={[styles.fsMetricVal, { color: theme.text }]}>
-                        {Math.round(selectedStat.effectiveSets30d)}
-                      </Text>
-                      <Text style={[styles.fsMetricLbl, { color: theme.textMuted }]} numberOfLines={1}>
-                        30d
-                      </Text>
-                    </View>
-                    <View style={[styles.fsMetricBox, { backgroundColor: theme.bgSecondary }]}>
-                      <Text style={[styles.fsMetricVal, { color: theme.text }]}>
-                        {Math.round(selectedStat.relativeDevelopmentRatio * 100)}%
-                      </Text>
-                      <Text style={[styles.fsMetricLbl, { color: theme.textMuted }]} numberOfLines={1}>
-                        {t('balanceMetricLabel')}
-                      </Text>
-                    </View>
-                  </View>
-
-                  {/* Exercises for this muscle */}
-                  {fullscreenExercises.length > 0 && (
-                    <View style={styles.fsExercisesList}>
-                      {fullscreenExercises.slice(0, 4).map((exStat) => (
-                        <TouchableOpacity
-                          key={exStat.exerciseId}
-                          style={[
-                            styles.fsExerciseRow,
-                            {
-                              backgroundColor: isDark
-                                ? 'rgba(255,255,255,0.06)'
-                                : 'rgba(15,23,42,0.05)',
-                            },
-                          ]}
-                          onPress={() => {
-                            setIsFullscreen(false);
-                            onPressExercise?.(exStat.exercise);
-                          }}
-                          activeOpacity={0.75}
-                        >
-                          <RankCrestIcon tier={exStat.rank} size={20} />
-                          <View style={{ flex: 1, minWidth: 0 }}>
-                            <Text style={[styles.fsExerciseName, { color: theme.text }]} numberOfLines={1}>
-                              {exerciseName(exStat.exercise.id, exStat.exercise.name)}
-                            </Text>
-                            <Text style={[styles.fsExerciseSets, { color: theme.textMuted }]}>
-                              {exStat.totalSets} {t('setsWord')}
-                            </Text>
-                          </View>
-                          <Ionicons name="chevron-forward" size={13} color={theme.textMuted} />
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  )}
-                </ScrollView>
-              </Animated.View>
-            )}
-
-            {/* Bottom hint / Legend inside Fullscreen */}
-            {!selectedMuscle && (
-              <View
-                style={[
-                  styles.fsBottomHintWrap,
-                  { bottom: Math.max(insets.bottom + 14, 24), pointerEvents: 'none' },
-                ]}
-              >
-                <View
-                  style={[
-                    styles.fsBottomHintPill,
-                    {
-                      backgroundColor: isDark
-                        ? 'rgba(24,24,28,0.88)'
-                        : 'rgba(255,255,255,0.9)',
-                      borderColor: theme.border,
-                    },
-                  ]}
-                >
-                  <Ionicons name="search" size={13} color={theme.textSecondary} />
-                  <Text style={[styles.fsBottomHintText, { color: theme.textSecondary }]}>
-                    {t('tapMuscleToZoomHint')}
-                  </Text>
                 </View>
-              </View>
-            )}
-          </View>
+              )}
+            </View>
+          </Animated.View>
         </View>
       </Modal>
     </View>
@@ -1560,8 +1721,12 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '600',
   },
+  fsModalShell: {
+    flex: 1,
+  },
   fsRoot: {
     flex: 1,
+    overflow: 'hidden',
   },
   fsTopBar: {
     flexDirection: 'row',
@@ -1570,9 +1735,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingBottom: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
+    gap: 10,
     zIndex: 20,
   },
   fsTitleGroup: {
+    flex: 1,
+    minWidth: 0,
     gap: 2,
   },
   fsTitle: {
@@ -1589,6 +1757,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+    flexShrink: 0,
   },
   fsPillBtn: {
     flexDirection: 'row',

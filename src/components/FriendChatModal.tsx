@@ -50,7 +50,10 @@ import {
   deleteChatMessage,
   editChatMessage,
   fetchChatMessages,
+  getCachedChatSync,
+  loadCachedChat,
   reactToChatMessage,
+  saveCachedChat,
   saveSharedChatTheme,
   sendChatMessage,
 } from '../services/social';
@@ -1051,6 +1054,7 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
       pendingThemeAnnounceRef.current = null;
       lastAnnouncedAppearanceRef.current = '';
       setMessages([]);
+      setIsLoading(false);
       setReactionTarget(null);
       setEditingMsg(null);
       setShowAttachMenu(false);
@@ -1064,8 +1068,46 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
       isRecordingActiveRef.current = false;
       return;
     }
-    AsyncStorage.getItem(`${CHAT_APPEARANCE_KEY_PREFIX}${friend.userId}`)
+
+    let cancelled = false;
+    const targetFriendId = friend.userId;
+
+    const applyCachedSnapshot = (snap: {
+      messages: ChatMessage[];
+      theme?: { themeId?: string; wallpaperId?: string; customUri?: string | null };
+      friendLastReadAt?: string | null;
+    }) => {
+      if (cancelled) return;
+      const cachedMsgs = snap.messages || [];
+      knownMessageIdsRef.current = new Set(cachedMsgs.map((m) => m.id));
+      animatedIdsRef.current.clear();
+      hasLoadedFriendRef.current = targetFriendId;
+      prevMsgCountRef.current = cachedMsgs.length;
+      lastSignatureRef.current = buildMessagesSignature(cachedMsgs);
+      setMessages(cachedMsgs);
+      setIsLoading(false);
+      if (snap.friendLastReadAt !== undefined) {
+        setFriendLastReadAt(snap.friendLastReadAt || null);
+      }
+      if (snap.theme) {
+        const cachedAppearance: ChatAppearance = {
+          themeId: (snap.theme.themeId as ChatThemeId) || 'monochrome',
+          wallpaperId: (snap.theme.wallpaperId as ChatWallpaperId) || 'none',
+          customUri: snap.theme.customUri || null,
+        };
+        setAppearance(cachedAppearance);
+        lastAnnouncedAppearanceRef.current = `${cachedAppearance.themeId}|${cachedAppearance.wallpaperId}|${cachedAppearance.customUri ? '1' : '0'}`;
+      }
+      setTimeout(() => {
+        if (!cancelled) {
+          listRef.current?.scrollToEnd({ animated: false });
+        }
+      }, 24);
+    };
+
+    AsyncStorage.getItem(`${CHAT_APPEARANCE_KEY_PREFIX}${targetFriendId}`)
       .then((raw) => {
+        if (cancelled) return;
         if (!raw) {
           setAppearance({ themeId: 'monochrome', wallpaperId: 'none', customUri: null });
           lastAnnouncedAppearanceRef.current = 'monochrome|none';
@@ -1083,7 +1125,25 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
         } catch {}
       })
       .catch(() => {});
-    void loadMessages(false);
+
+    // Instant 0ms hydration from in-memory cache (or fast AsyncStorage fallback) + silent background refresh
+    const memSnap = getCachedChatSync(myUserId, targetFriendId);
+    if (memSnap) {
+      applyCachedSnapshot(memSnap);
+      void loadMessages(true);
+    } else {
+      void (async () => {
+        const diskSnap = await loadCachedChat(myUserId, targetFriendId);
+        if (cancelled) return;
+        if (diskSnap) {
+          applyCachedSnapshot(diskSnap);
+          void loadMessages(true);
+        } else {
+          void loadMessages(false);
+        }
+      })();
+    }
+
     const interval = setInterval(() => {
       if (AppState.currentState !== 'active' || isPollingMessagesRef.current) return;
       isPollingMessagesRef.current = true;
@@ -1092,10 +1152,21 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
       });
     }, 3500);
     return () => {
+      cancelled = true;
       clearInterval(interval);
       isPollingMessagesRef.current = false;
     };
-  }, [visible, friend?.userId, loadMessages]);
+  }, [visible, friend?.userId, myUserId, loadMessages]);
+
+  // Keep local memory + disk chat cache continuously updated after local sends/edits/deletes/reactions
+  useEffect(() => {
+    if (!visible || !friend || !myUserId) return;
+    if (hasLoadedFriendRef.current !== friend.userId) return;
+    saveCachedChat(myUserId, friend.userId, {
+      messages,
+      friendLastReadAt,
+    });
+  }, [visible, friend, myUserId, messages, friendLastReadAt]);
 
   useEffect(() => {
     Animated.spring(attachAnim, {
