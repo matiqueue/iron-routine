@@ -20,6 +20,13 @@ const sharedKeyMemCache = new Map<string, Uint8Array>();
 const decryptedEnvelopeMemCache = new Map<string, PlainChatEnvelope>();
 const MAX_DECRYPT_CACHE_ENTRIES = 600;
 
+export function clearE2eeMemoryCaches(): void {
+  keyPairMemCache.clear();
+  secretBytesMemCache.clear();
+  sharedKeyMemCache.clear();
+  decryptedEnvelopeMemCache.clear();
+}
+
 function getCachedSharedKey(mySecretB64: string, peerPubB64: string): Uint8Array {
   const cacheKey = `${mySecretB64.slice(0, 12)}|${peerPubB64}`;
   const existing = sharedKeyMemCache.get(cacheKey);
@@ -164,6 +171,7 @@ export function encryptChatEnvelope(
 export function decryptChatEnvelope(
   raw: {
     senderId: string;
+    isEncrypted?: boolean;
     ciphertext?: string;
     nonce?: string;
     senderPublicKey?: string;
@@ -176,7 +184,8 @@ export function decryptChatEnvelope(
   myKeyPair: StoredE2eeKeyPair | null
 ): PlainChatEnvelope | null {
   if (!raw.ciphertext || !raw.nonce || !raw.senderPublicKey || !raw.recipientPublicKey) {
-    if (raw.text) {
+    // Prevent plaintext downgrade attack: only accept unencrypted legacy messages if explicitly marked unencrypted
+    if (raw.isEncrypted === false && raw.text) {
       return { type: raw.type || 'text', text: raw.text, payload: raw.payload };
     }
     return null;

@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import {
   CloudAuthProvider,
   CloudUserRecord,
+  deleteOAuthAttempt,
   deriveUserId,
   getCloudBackupJson,
   getCloudUser,
@@ -12,6 +13,88 @@ import {
   signCloudToken,
   syncClerkAccount,
 } from '../_lib/cloudStore.js';
+
+const OAUTH_ATTEMPT_TTL_MS = 10 * 60 * 1000;
+
+function isAttemptFresh(createdAt?: string): boolean {
+  if (!createdAt) return false;
+  const ts = new Date(createdAt).getTime();
+  return !Number.isNaN(ts) && Date.now() - ts <= OAUTH_ATTEMPT_TTL_MS;
+}
+
+/**
+ * Verifies a Clerk frontend session JWT via Clerk Backend API (`CLERK_SECRET_KEY`),
+ * returning the cryptographically verified Clerk userId, email, displayName and avatarUrl.
+ */
+async function verifyClerkSessionJwt(jwt?: string | null): Promise<{
+  clerkUserId: string;
+  email: string;
+  displayName: string;
+  avatarUrl: string | null;
+} | null> {
+  const secretKey = process.env.CLERK_SECRET_KEY;
+  if (!secretKey || !jwt || typeof jwt !== 'string') return null;
+
+  const parts = jwt.trim().split('.');
+  if (parts.length !== 3) return null;
+
+  let payload: any = null;
+  try {
+    payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+  } catch {
+    return null;
+  }
+
+  const sub = typeof payload?.sub === 'string' ? payload.sub : '';
+  const sid = typeof payload?.sid === 'string' ? payload.sid : '';
+  const exp = typeof payload?.exp === 'number' ? payload.exp : 0;
+  const nowSec = Math.floor(Date.now() / 1000);
+  if (!sub.startsWith('user_') || !sid.startsWith('sess_') || exp < nowSec - 30) {
+    return null;
+  }
+
+  const headers = {
+    Authorization: `Bearer ${secretKey}`,
+    'Content-Type': 'application/json',
+  };
+
+  try {
+    const sessRes = await fetch(
+      `https://api.clerk.com/v1/sessions/${encodeURIComponent(sid)}`,
+      { headers }
+    );
+    if (!sessRes.ok) return null;
+    const session: any = await sessRes.json();
+    if (!session || session.user_id !== sub || session.status !== 'active') {
+      return null;
+    }
+
+    const userRes = await fetch(
+      `https://api.clerk.com/v1/users/${encodeURIComponent(sub)}`,
+      { headers }
+    );
+    if (!userRes.ok) return null;
+    const clerkUser: any = await userRes.json();
+
+    const primaryEmailObj =
+      (clerkUser.email_addresses || []).find(
+        (e: any) => e.id === clerkUser.primary_email_address_id
+      ) || clerkUser.email_addresses?.[0];
+    const email = String(primaryEmailObj?.email_address || '').trim().toLowerCase();
+    const displayName =
+      [clerkUser.first_name, clerkUser.last_name].filter(Boolean).join(' ').trim() ||
+      (email ? email.split('@')[0] : 'Athlete');
+
+    return {
+      clerkUserId: String(clerkUser.id),
+      email,
+      displayName,
+      avatarUrl: clerkUser.image_url || null,
+    };
+  } catch {
+    return null;
+  }
+}
 
 export default {
   async fetch(request: Request): Promise<Response> {
@@ -26,12 +109,12 @@ export default {
       const body: any = await request.json();
       const action = String(body?.action || '').trim();
 
-      // 1. Start a Clerk OAuth handoff attempt for mobile Google / Apple iCloud sign-in
+      // 1. Start a Clerk OAuth handoff attempt for mobile Google / Apple sign-in
       if (action === 'create_attempt') {
         const provider: CloudAuthProvider = body?.provider === 'apple' ? 'apple' : 'google';
-        const deviceIdentityId = String(body?.deviceIdentityId || '').trim();
-        const displayName = String(body?.displayName || '').trim();
-        const attemptId = `att_${crypto.randomBytes(14).toString('hex')}`;
+        const deviceIdentityId = String(body?.deviceIdentityId || '').trim().slice(0, 48);
+        const displayName = String(body?.displayName || '').trim().slice(0, 64);
+        const attemptId = `att_${crypto.randomBytes(16).toString('hex')}`;
         const nowIso = new Date().toISOString();
 
         await saveOAuthAttempt(attemptId, {
@@ -57,19 +140,24 @@ export default {
         });
       }
 
-      // 2. Poll an active Clerk OAuth attempt from the mobile app
+      // 2. Poll an active Clerk OAuth attempt from the mobile app (one-time consume + 10m TTL)
       if (action === 'poll_attempt') {
         const attemptId = String(body?.attemptId || '').trim();
         if (!attemptId) {
           return jsonResponse({ ok: false, error: 'Brak identyfikatora sesji OAuth.' }, 400);
         }
         const attempt = await getOAuthAttempt(attemptId);
-        if (!attempt) {
+        if (!attempt || !isAttemptFresh(attempt.createdAt)) {
+          if (attempt) {
+            await deleteOAuthAttempt(attemptId).catch(() => {});
+          }
           return jsonResponse({ ok: false, status: 'expired' }, 404);
         }
         if (attempt.status !== 'completed') {
           return jsonResponse({ ok: true, status: 'pending' });
         }
+        // Immediately consume and remove the handoff token from Postgres so it cannot be replayed
+        await deleteOAuthAttempt(attemptId).catch(() => {});
         return jsonResponse({
           ok: true,
           status: 'completed',
@@ -79,40 +167,46 @@ export default {
         });
       }
 
-      // 3. Mint a Clerk Sign-In Token (ticket) for Apple iCloud identity via Clerk Backend API
+      // 3. Mint a Clerk Sign-In Token (ticket) ONLY for a fresh pending Apple fallback attempt
+      // Strictly restricted to synthetic device-bound addresses — NEVER allows arbitrary user emails!
       if (action === 'mint_clerk_ticket') {
-        const provider: CloudAuthProvider = body?.provider === 'apple' ? 'apple' : 'google';
+        const attemptId = String(body?.attemptId || '').trim();
+        const attempt = attemptId ? await getOAuthAttempt(attemptId) : null;
+        if (
+          !attempt ||
+          attempt.status !== 'pending' ||
+          attempt.provider !== 'apple' ||
+          !isAttemptFresh(attempt.createdAt)
+        ) {
+          return jsonResponse(
+            { ok: false, error: 'Wygasła lub nieprawidłowa sesja logowania.' },
+            401
+          );
+        }
+
         const rawDeviceId = String(body?.deviceIdentityId || '')
           .trim()
           .toLowerCase()
           .replace(/[^a-z0-9._-]/g, '')
           .slice(0, 32);
-        const rawEmailInput = String(body?.email || '').trim().toLowerCase();
-        const rawEmail =
-          rawEmailInput && rawEmailInput.includes('@')
-            ? rawEmailInput
-            : rawDeviceId
-            ? `icloud.${rawDeviceId}@icloud.ironroutine.app`
-            : '';
 
-        const displayName =
-          String(body?.displayName || '').trim() ||
-          (rawEmailInput ? rawEmailInput.split('@')[0] : '') ||
-          (provider === 'apple' ? 'Apple iCloud' : 'Konto Google');
-
-        if (!rawEmail) {
+        if (rawDeviceId.length < 12) {
           return jsonResponse(
-            { ok: false, error: 'Nie udało się zweryfikować identyfikatora Apple iCloud.' },
+            { ok: false, error: 'Nieprawidłowy identyfikator urządzenia Apple.' },
             400
           );
         }
 
+        const rawEmail = `icloud.${rawDeviceId}@icloud.ironroutine.app`;
+        const displayName =
+          String(body?.displayName || '').trim().slice(0, 64) || 'Apple iCloud';
+
         const userId = deriveUserId(rawEmail);
         const clerkSynced = await syncClerkAccount({
-          externalId: rawDeviceId ? `apple_${rawDeviceId}` : `${provider}_${userId}`,
+          externalId: `apple_${rawDeviceId}`,
           email: rawEmail,
           displayName,
-          provider,
+          provider: 'apple',
           ironRoutineUserId: userId,
         });
 
@@ -128,7 +222,7 @@ export default {
               },
               body: JSON.stringify({
                 user_id: clerkSynced.clerkUserId,
-                expires_in_seconds: 600,
+                expires_in_seconds: 300,
               }),
             });
             if (ticketRes.ok) {
@@ -147,43 +241,48 @@ export default {
         });
       }
 
-      // 4. Complete Clerk OAuth handoff (called by /mobile-auth after Clerk sign-in)
-      if (action === 'complete_clerk_attempt' || action === 'clerk_direct') {
+      // 4. Complete Clerk OAuth handoff — requires a fresh pending attemptId AND verified Clerk session JWT
+      if (action === 'complete_clerk_attempt') {
         const attemptId = String(body?.attemptId || '').trim();
         const provider: CloudAuthProvider = body?.provider === 'apple' ? 'apple' : 'google';
-        const clerkUserId = String(body?.clerkUserId || '').trim();
-        let rawEmail = String(body?.email || '').trim().toLowerCase();
-        let displayName = String(body?.displayName || '').trim();
-        const incomingAvatarUrl =
-          typeof body?.avatarUrl === 'string' && body.avatarUrl.trim()
-            ? body.avatarUrl.trim()
-            : null;
+        const clerkSessionToken = String(body?.clerkSessionToken || '').trim();
 
-        if (!clerkUserId && !rawEmail) {
+        const attempt = attemptId ? await getOAuthAttempt(attemptId) : null;
+        if (!attempt || attempt.status !== 'pending' || !isAttemptFresh(attempt.createdAt)) {
           return jsonResponse(
-            { ok: false, error: 'Brak danych konta z Clerk OAuth.' },
-            400
+            { ok: false, error: 'Sesja logowania wygasła. Spróbuj ponownie z aplikacji.' },
+            401
           );
         }
 
-        const prelimId = deriveUserId(rawEmail || clerkUserId);
-        const clerkSynced = await syncClerkAccount({
-          clerkUserId,
-          externalId: prelimId,
+        // Cryptographically verify the Clerk session via Clerk Backend API — never trust client-supplied email!
+        const verifiedClerk = await verifyClerkSessionJwt(clerkSessionToken);
+        if (!verifiedClerk || !verifiedClerk.email) {
+          return jsonResponse(
+            { ok: false, error: 'Nie udało się zweryfikować tokenu sesji Clerk.' },
+            401
+          );
+        }
+
+        const rawEmail = verifiedClerk.email.toLowerCase();
+        const finalClerkId = verifiedClerk.clerkUserId;
+        const displayName =
+          verifiedClerk.displayName ||
+          String(body?.displayName || '').trim().slice(0, 64) ||
+          rawEmail.split('@')[0] ||
+          'Użytkownik';
+        const incomingAvatarUrl = verifiedClerk.avatarUrl || null;
+
+        const userId = deriveUserId(rawEmail);
+        await syncClerkAccount({
+          clerkUserId: finalClerkId,
+          externalId: userId,
           email: rawEmail,
           displayName,
           provider,
-          ironRoutineUserId: prelimId,
+          ironRoutineUserId: userId,
         });
 
-        if (clerkSynced?.email) {
-          rawEmail = clerkSynced.email.toLowerCase();
-        }
-        if (clerkSynced?.displayName) {
-          displayName = clerkSynced.displayName;
-        }
-        const finalClerkId = clerkSynced?.clerkUserId || clerkUserId || null;
-        const userId = deriveUserId(rawEmail || finalClerkId || prelimId);
         const [existing, existingBackupRaw] = await Promise.all([
           getCloudUser(userId),
           getCloudBackupJson(userId),
@@ -224,7 +323,7 @@ export default {
           : {
               userId,
               clerkUserId: finalClerkId,
-              email: rawEmail || `${userId}@clerk.ironroutine.app`,
+              email: rawEmail,
               provider,
               displayName: displayName || rawEmail.split('@')[0] || 'Użytkownik',
               avatarUrl: incomingAvatarUrl,
@@ -257,21 +356,18 @@ export default {
           backupSummary: userRecord.backupSummary || null,
         };
 
-        if (attemptId) {
-          await saveOAuthAttempt(attemptId, {
-            attemptId,
-            status: 'completed',
-            isNewAccount: !hasBackup,
-            token,
-            user: userPayload,
-            completedAt: nowIso,
-          });
-        }
+        await saveOAuthAttempt(attemptId, {
+          attemptId,
+          status: 'completed',
+          isNewAccount: !hasBackup,
+          token,
+          user: userPayload,
+          completedAt: nowIso,
+        });
 
         return jsonResponse({
           ok: true,
           isNewAccount: !hasBackup,
-          token,
           user: userPayload,
           deepLink: `ironroutine://auth?attemptId=${encodeURIComponent(attemptId)}`,
         });
@@ -284,7 +380,7 @@ export default {
     } catch (error) {
       console.error('Cloud auth error:', error);
       return jsonResponse(
-        { ok: false, error: 'Błąd połączenia z Clerk / bazą PostgreSQL.' },
+        { ok: false, error: 'Błąd połączenia z serwerem autoryzacji.' },
         500
       );
     }

@@ -86,6 +86,24 @@ export function Footer() {
                 {item.label}
               </RouteLink>
             ))}
+            <RouteLink
+              to="/privacy"
+              className="font-mono uppercase tracking-[0.12em] text-zinc-400 transition-colors hover:text-sky-400"
+            >
+              Prywatność
+            </RouteLink>
+            <RouteLink
+              to="/terms"
+              className="font-mono uppercase tracking-[0.12em] text-zinc-400 transition-colors hover:text-sky-400"
+            >
+              Regulamin
+            </RouteLink>
+            <RouteLink
+              to="/support"
+              className="font-mono uppercase tracking-[0.12em] text-zinc-400 transition-colors hover:text-sky-400"
+            >
+              Wsparcie
+            </RouteLink>
           </div>
           <span className="font-mono text-[11px] text-zinc-500">
             NEON POSTGRESQL (AES-256-GCM) • CZAT E2EE CURVE25519 • 5 JĘZYKÓW

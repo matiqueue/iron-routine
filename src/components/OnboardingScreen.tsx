@@ -676,8 +676,12 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
         nickname: resolvedNick,
         displayName: finalName,
       });
-      if (!claimRes.ok && claimRes.error === 'NICKNAME_TAKEN') {
+      if (!claimRes.ok && claimRes.errorCode === 'NICKNAME_TAKEN') {
         resolvedNick = generateRandomNickname(finalName);
+        await claimNicknameInCloud({
+          nickname: resolvedNick,
+          displayName: finalName,
+        }).catch(() => {});
       }
 
       const profile = await createProfile(finalName, {

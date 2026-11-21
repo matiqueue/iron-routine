@@ -163,6 +163,16 @@ export default {
           return jsonResponse({ ok: false, error: 'ALREADY_FRIENDS' }, 409);
         }
 
+        const blockCheck: any[] = await sql`
+          SELECT 1 FROM blocked_users
+          WHERE (blocker_id = ${userId} AND blocked_id = ${targetUserId})
+             OR (blocker_id = ${targetUserId} AND blocked_id = ${userId})
+          LIMIT 1
+        `;
+        if (blockCheck.length > 0) {
+          return jsonResponse({ ok: false, error: 'USER_BLOCKED' }, 403);
+        }
+
         // Check reverse request for instant mutual friendship
         const reverseRows: any[] = await sql`
           SELECT id FROM friend_requests
@@ -238,6 +248,55 @@ export default {
         return jsonResponse({ ok: true });
       }
 
+      if (action === 'block_user') {
+        const targetUserId = String(body?.targetUserId || '').trim();
+        if (!targetUserId || targetUserId === userId) {
+          return jsonResponse({ ok: false, error: 'INVALID_TARGET' }, 400);
+        }
+        const [ua, ub] = orderedPair(userId, targetUserId);
+        await Promise.all([
+          sql`
+            INSERT INTO blocked_users (blocker_id, blocked_id, created_at)
+            VALUES (${userId}, ${targetUserId}, NOW())
+            ON CONFLICT DO NOTHING
+          `,
+          sql`DELETE FROM friendships WHERE user_a = ${ua} AND user_b = ${ub}`,
+          sql`
+            DELETE FROM friend_requests
+            WHERE (from_user_id = ${userId} AND to_user_id = ${targetUserId})
+               OR (from_user_id = ${targetUserId} AND to_user_id = ${userId})
+          `,
+        ]);
+        return jsonResponse({ ok: true, blockedUserId: targetUserId });
+      }
+
+      if (action === 'unblock_user') {
+        const targetUserId = String(body?.targetUserId || '').trim();
+        if (!targetUserId) {
+          return jsonResponse({ ok: false, error: 'INVALID_TARGET' }, 400);
+        }
+        await sql`
+          DELETE FROM blocked_users
+          WHERE blocker_id = ${userId} AND blocked_id = ${targetUserId}
+        `;
+        return jsonResponse({ ok: true });
+      }
+
+      if (action === 'report_user') {
+        const targetUserId = String(body?.targetUserId || '').trim();
+        const reason = String(body?.reason || 'inappropriate').trim().slice(0, 80);
+        const details = String(body?.details || '').trim().slice(0, 500);
+        if (!targetUserId || targetUserId === userId) {
+          return jsonResponse({ ok: false, error: 'INVALID_TARGET' }, 400);
+        }
+        const reportId = `rep_${crypto.randomBytes(8).toString('hex')}`;
+        await sql`
+          INSERT INTO abuse_reports (id, reporter_id, target_user_id, reason, details, created_at)
+          VALUES (${reportId}, ${userId}, ${targetUserId}, ${reason}, ${details || null}, NOW())
+        `;
+        return jsonResponse({ ok: true, reportId });
+      }
+
       if (action === 'send_cheer') {
         const targetUserId = String(body?.targetUserId || '').trim();
         const activityId = body?.activityId ? String(body.activityId) : null;
@@ -248,6 +307,9 @@ export default {
           : new Date().toISOString().slice(0, 10);
         if (!targetUserId) {
           return jsonResponse({ ok: false, error: 'MISSING_TARGET' }, 400);
+        }
+        if (targetUserId !== userId && !(await areUsersFriends(userId, targetUserId))) {
+          return jsonResponse({ ok: false, error: 'NOT_FRIENDS' }, 403);
         }
 
         if (activityId) {
@@ -326,6 +388,9 @@ export default {
         if (!friendId || !ciphertext || !nonce || !senderPublicKey || !recipientPublicKey) {
           return jsonResponse({ ok: false, error: 'INVALID_ENCRYPTED_PAYLOAD' }, 400);
         }
+        if (ciphertext.length > 2_500_000) {
+          return jsonResponse({ ok: false, error: 'PAYLOAD_TOO_LARGE' }, 413);
+        }
 
         if (!(await areUsersFriends(userId, friendId))) {
           return jsonResponse({ ok: false, error: 'NOT_FRIENDS' }, 403);
@@ -373,6 +438,9 @@ export default {
         if (!friendId || !messageId || !ciphertext || !nonce || !senderPublicKey || !recipientPublicKey) {
           return jsonResponse({ ok: false, error: 'INVALID_EDIT_PAYLOAD' }, 400);
         }
+        if (ciphertext.length > 2_500_000) {
+          return jsonResponse({ ok: false, error: 'PAYLOAD_TOO_LARGE' }, 413);
+        }
         if (!(await areUsersFriends(userId, friendId))) {
           return jsonResponse({ ok: false, error: 'NOT_FRIENDS' }, 403);
         }
@@ -399,6 +467,9 @@ export default {
         if (!friendId || !messageId || !emoji) {
           return jsonResponse({ ok: false, error: 'INVALID_REACTION' }, 400);
         }
+        if (!(await areUsersFriends(userId, friendId))) {
+          return jsonResponse({ ok: false, error: 'NOT_FRIENDS' }, 403);
+        }
         const message = await toggleChatMessageReaction(userId, friendId, messageId, emoji);
         if (!message) {
           return jsonResponse({ ok: false, error: 'MESSAGE_NOT_FOUND' }, 404);
@@ -424,10 +495,14 @@ export default {
         if (!friendId || !(await areUsersFriends(userId, friendId))) {
           return jsonResponse({ ok: false, error: 'NOT_FRIENDS' }, 403);
         }
+        const customUri = body?.customUri ? String(body.customUri) : null;
+        if (customUri && customUri.length > 500_000) {
+          return jsonResponse({ ok: false, error: 'PAYLOAD_TOO_LARGE' }, 413);
+        }
         const saved = await saveChatPairTheme(userId, friendId, {
-          themeId: String(body?.themeId || 'monochrome'),
-          wallpaperId: String(body?.wallpaperId || 'none'),
-          customUri: body?.customUri ? String(body.customUri) : null,
+          themeId: String(body?.themeId || 'monochrome').slice(0, 32),
+          wallpaperId: String(body?.wallpaperId || 'none').slice(0, 32),
+          customUri,
         });
         return jsonResponse({ ok: true, theme: saved });
       }

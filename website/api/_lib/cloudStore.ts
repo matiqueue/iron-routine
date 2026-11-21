@@ -56,15 +56,15 @@ export interface OAuthAttemptRecord {
   completedAt?: string;
 }
 
-const FALLBACK_SECRET = 'ir_cloud_secret_9f8e7d6c5b4a3f2e1d0c9b8a7f6e5d4c';
-
 function getSecret(): string {
-  return (
+  const secret =
     process.env.CLOUD_AUTH_SECRET ||
     process.env.CLERK_SECRET_KEY ||
-    process.env.DATABASE_URL ||
-    FALLBACK_SECRET
-  );
+    process.env.DATABASE_URL;
+  if (!secret) {
+    throw new Error('Server auth secret environment variable is not configured.');
+  }
+  return secret;
 }
 
 function getEncryptionKey(): Buffer {
@@ -277,7 +277,23 @@ export async function saveCloudBackupJson(userId: string, backupJson: string): P
 export async function deleteCloudUserAndBackup(userId: string): Promise<void> {
   await ensureSchema();
   const sql = getSql();
+  const existing = await getCloudUser(userId).catch(() => null);
+
+  // Clean up non-FK pair themes and any pending OAuth handoff attempts belonging to this user
+  await sql`DELETE FROM chat_pair_themes WHERE pair_key LIKE ${'%' + userId + '%'}`.catch(() => {});
+  await sql`DELETE FROM oauth_attempts WHERE user_payload->>'userId' = ${userId}`.catch(() => {});
   await sql`DELETE FROM users WHERE user_id = ${userId}`;
+
+  // Also permanently delete the linked Clerk user record (GDPR / Apple Guideline 5.1.1(v))
+  const secretKey = process.env.CLERK_SECRET_KEY;
+  if (secretKey && existing?.clerkUserId && existing.clerkUserId.startsWith('user_')) {
+    await fetch(`https://api.clerk.com/v1/users/${encodeURIComponent(existing.clerkUserId)}`, {
+      method: 'DELETE',
+      headers: {
+        Authorization: `Bearer ${secretKey}`,
+      },
+    }).catch(() => {});
+  }
 }
 
 export async function saveOAuthAttempt(
@@ -454,6 +470,10 @@ export function jsonResponse(body: unknown, status = 200): Response {
     status,
     headers: {
       'Content-Type': 'application/json; charset=utf-8',
+      'Cache-Control': 'no-store',
+      'X-Content-Type-Options': 'nosniff',
+      'X-Frame-Options': 'DENY',
+      'Referrer-Policy': 'no-referrer',
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type, Authorization',

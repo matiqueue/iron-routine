@@ -6,6 +6,9 @@ import { HomePage } from './pages/HomePage';
 import { InstallPage } from './pages/InstallPage';
 import { InvitePage } from './pages/InvitePage';
 import { MobileAuthPage } from './pages/MobileAuthPage';
+import { PrivacyPage } from './pages/PrivacyPage';
+import { SupportPage } from './pages/SupportPage';
+import { TermsPage } from './pages/TermsPage';
 import { RouterProvider, useRouter } from './utils/router';
 
 function AppShell() {
@@ -34,6 +37,9 @@ function AppShell() {
         {route === '/funkcje' && <FeaturesPage />}
         {route === '/analityka' && <AnalyticsPage />}
         {route === '/instalacja' && <InstallPage />}
+        {route === '/privacy' && <PrivacyPage />}
+        {route === '/terms' && <TermsPage />}
+        {route === '/support' && <SupportPage />}
       </main>
       <Footer />
     </div>

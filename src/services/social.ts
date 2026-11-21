@@ -43,12 +43,17 @@ export interface CachedChatSnapshot {
 
 const chatCacheMemory = new Map<string, CachedChatSnapshot>();
 
+export function clearChatMemoryCaches(): void {
+  chatCacheMemory.clear();
+}
+
 function getChatCacheMapKey(myUserId: string, friendId: string): string {
   return `${myUserId}:${friendId}`;
 }
 
 function trimMessageForStorage(msg: ChatMessage): ChatMessage {
-  // Strip redundant encrypted wire payload from decrypted messages before AsyncStorage persistence
+  // Strip redundant encrypted wire payload AND oversized base64 media before AsyncStorage persistence
+  // (avoids Android 2MB SQLite CursorWindow limit while full media stays warm in RAM cache)
   if (!msg.decryptFailed) {
     const {
       ciphertext: _c,
@@ -58,6 +63,10 @@ function trimMessageForStorage(msg: ChatMessage): ChatMessage {
       alg: _a,
       ...clean
     } = msg;
+    if (clean.payload && (clean.payload.imageBase64 || clean.payload.audioBase64)) {
+      const { imageBase64: _ib, audioBase64: _ab, ...lightPayload } = clean.payload;
+      return { ...clean, payload: lightPayload };
+    }
     return clean;
   }
   return msg;
@@ -182,6 +191,7 @@ function decryptWireChatMessage(
   myUserId: string,
   myKeyPair: StoredE2eeKeyPair | null
 ): ChatMessage {
+  const hasCiphertext = Boolean(raw.ciphertext && raw.nonce && raw.senderPublicKey && raw.recipientPublicKey);
   const plain = decryptChatEnvelope(raw, myUserId, myKeyPair);
   if (plain) {
     return {
@@ -191,7 +201,7 @@ function decryptWireChatMessage(
       type: plain.type,
       text: plain.text,
       payload: plain.payload,
-      isEncrypted: raw.isEncrypted !== false,
+      isEncrypted: hasCiphertext,
       decryptFailed: false,
       ciphertext: raw.ciphertext,
       nonce: raw.nonce,
@@ -289,6 +299,7 @@ export async function claimNicknameInCloud(params: {
   nickname?: string;
   nicknameUpdatedAt?: string;
   daysRemaining?: number;
+  errorCode?: string;
   error?: string;
 }> {
   const cleanNick = normalizeNickname(params.nickname);
@@ -320,6 +331,7 @@ export async function claimNicknameInCloud(params: {
       return {
         ok: false,
         daysRemaining: data?.daysRemaining,
+        errorCode: data?.error ? String(data.error) : undefined,
         error: getFriendlySocialError(data?.error),
       };
     }
@@ -886,6 +898,56 @@ export async function reactToChatMessage(
       : null;
   } catch {
     return null;
+  }
+}
+
+export async function blockSocialUser(targetUserId: string): Promise<boolean> {
+  const session = await getStoredCloudSession();
+  if (!session?.token || !targetUserId) return false;
+  try {
+    const res = await fetch(SOCIAL_API_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${session.token}`,
+      },
+      body: JSON.stringify({
+        action: 'block_user',
+        targetUserId,
+      }),
+    });
+    const data = await res.json().catch(() => null);
+    return Boolean(res.ok && data?.ok);
+  } catch {
+    return false;
+  }
+}
+
+export async function reportSocialUser(
+  targetUserId: string,
+  reason: 'spam' | 'harassment' | 'inappropriate',
+  details?: string
+): Promise<boolean> {
+  const session = await getStoredCloudSession();
+  if (!session?.token || !targetUserId) return false;
+  try {
+    const res = await fetch(SOCIAL_API_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${session.token}`,
+      },
+      body: JSON.stringify({
+        action: 'report_user',
+        targetUserId,
+        reason,
+        details,
+      }),
+    });
+    const data = await res.json().catch(() => null);
+    return Boolean(res.ok && data?.ok);
+  } catch {
+    return false;
   }
 }
 
