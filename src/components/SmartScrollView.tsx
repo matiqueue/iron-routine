@@ -82,7 +82,7 @@ export const SmartScrollView = forwardRef<
         }}
         contentContainerStyle={[
           contentContainerStyle,
-          liftForKeyboard && keyboardHeight > 0
+          Platform.OS !== 'ios' && liftForKeyboard && keyboardHeight > 0
             ? { paddingBottom: basePaddingBottom + Math.max(20, keyboardHeight - 36) }
             : null,
         ]}

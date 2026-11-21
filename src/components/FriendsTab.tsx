@@ -288,14 +288,14 @@ export const FriendsTab: React.FC<FriendsTabProps> = ({
     loadSocialState(true).finally(() => setLoadingHub(false));
   }, [activeProfile.id]);
 
-  // Silent background refresh every 18s while viewing Friends tab in foreground
+  // Silent background refresh every 30s while viewing Friends tab in foreground
   useEffect(() => {
     if (!cloudSession?.token || !isTabActive) return;
     void loadSocialState(false);
     const timer = setInterval(() => {
       if (AppState.currentState !== 'active') return;
       void loadSocialState(false);
-    }, 18000);
+    }, 30000);
     return () => clearInterval(timer);
   }, [cloudSession?.token, isTabActive, loadSocialState]);
 
@@ -944,6 +944,24 @@ export const FriendsTab: React.FC<FriendsTabProps> = ({
                               <Text style={[styles.friendNickTag, { color: rankColor }]}>
                                 @{fr.nickname}
                               </Text>
+                              {(fr.cheerStreakDays || 0) > 0 ? (
+                                <View
+                                  style={{
+                                    flexDirection: 'row',
+                                    alignItems: 'center',
+                                    gap: 2,
+                                    paddingHorizontal: 6,
+                                    paddingVertical: 1.5,
+                                    borderRadius: 999,
+                                    backgroundColor: 'rgba(245, 158, 11, 0.14)',
+                                  }}
+                                >
+                                  <Ionicons name="flame" size={10} color="#F59E0B" />
+                                  <Text style={{ fontSize: 10, fontWeight: '800', color: '#F59E0B' }}>
+                                    {fr.cheerStreakDays}d
+                                  </Text>
+                                </View>
+                              ) : null}
                             </View>
                             <Text
                               style={[
@@ -1453,56 +1471,84 @@ export const FriendsTab: React.FC<FriendsTabProps> = ({
         )}
       </SmartScrollView>
 
-      <FriendProfileModal
-        visible={selectedProfileFriend !== null}
-        friend={selectedProfileFriend}
-        myProfile={hub.myProfile}
-        onClose={() => {
-          setSelectedProfileFriend(null);
-          const backTo = returnChatAfterProfileRef.current;
-          returnChatAfterProfileRef.current = null;
-          if (backTo) {
-            setTimeout(() => setActiveChatFriend(backTo), 220);
-          }
-        }}
-        onOpenChat={(f) => {
-          returnChatAfterProfileRef.current = null;
-          setSelectedProfileFriend(null);
-          setTimeout(() => setActiveChatFriend(f), 220);
-        }}
-        onSendKudos={handleSendKudos}
-        onRemoveFriend={async (f) => {
-          returnChatAfterProfileRef.current = null;
-          await removeFriend(f.userId);
-          await loadSocialState(false);
-        }}
-      />
+      {selectedProfileFriend && (
+        <FriendProfileModal
+          visible={true}
+          friend={selectedProfileFriend}
+          myProfile={hub.myProfile}
+          onClose={() => {
+            setSelectedProfileFriend(null);
+            const backTo = returnChatAfterProfileRef.current;
+            returnChatAfterProfileRef.current = null;
+            if (backTo) {
+              setTimeout(() => setActiveChatFriend(backTo), 220);
+            }
+          }}
+          onOpenChat={(f) => {
+            returnChatAfterProfileRef.current = null;
+            setSelectedProfileFriend(null);
+            setTimeout(() => setActiveChatFriend(f), 220);
+          }}
+          onSendKudos={handleSendKudos}
+          onCheerStreakUpdated={(friendUserId, nextStreak) => {
+            setSelectedProfileFriend((prev) =>
+              prev && prev.userId === friendUserId
+                ? { ...prev, cheerStreakDays: nextStreak, cheeredTodayWithMe: true }
+                : prev
+            );
+            setHub((prev) => ({
+              ...prev,
+              friends: prev.friends.map((th) =>
+                th.friend.userId === friendUserId
+                  ? {
+                      ...th,
+                      friend: {
+                        ...th.friend,
+                        cheerStreakDays: nextStreak,
+                        cheeredTodayWithMe: true,
+                      },
+                    }
+                  : th
+              ),
+            }));
+          }}
+          onRemoveFriend={async (f) => {
+            returnChatAfterProfileRef.current = null;
+            await removeFriend(f.userId);
+            await loadSocialState(false);
+          }}
+        />
+      )}
 
-      <FriendChatModal
-        visible={activeChatFriend !== null}
-        friend={activeChatFriend}
-        myProfile={hub.myProfile}
-        myUserId={myUserId}
-        onClose={() => {
-          returnChatAfterProfileRef.current = null;
-          setActiveChatFriend(null);
-        }}
-        onSendKudos={handleSendKudos}
-        onRemoveFriend={async (f) => {
-          returnChatAfterProfileRef.current = null;
-          await removeFriend(f.userId);
-          await loadSocialState(false);
-        }}
-        onMessagesChanged={handleChatMessagesChanged}
-      />
+      {activeChatFriend && (
+        <FriendChatModal
+          visible={true}
+          friend={activeChatFriend}
+          myProfile={hub.myProfile}
+          myUserId={myUserId}
+          onClose={() => {
+            returnChatAfterProfileRef.current = null;
+            setActiveChatFriend(null);
+          }}
+          onSendKudos={handleSendKudos}
+          onRemoveFriend={async (f) => {
+            returnChatAfterProfileRef.current = null;
+            await removeFriend(f.userId);
+            await loadSocialState(false);
+          }}
+          onMessagesChanged={handleChatMessagesChanged}
+        />
+      )}
 
-      <StatusPickerModal
-        visible={showStatusPicker}
-        nickname={myNick}
-        currentStatus={activeProfile.statusNote}
-        onClose={() => setShowStatusPicker(false)}
-        onSaveStatus={handleSetStatusPreset}
-      />
+      {showStatusPicker && (
+        <StatusPickerModal
+          visible={true}
+          nickname={myNick}
+          currentStatus={activeProfile.statusNote}
+          onClose={() => setShowStatusPicker(false)}
+          onSaveStatus={handleSetStatusPreset}
+        />
+      )}
     </View>
   );
 };

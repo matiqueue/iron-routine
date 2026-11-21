@@ -25,14 +25,20 @@ import {
   WorkoutPlan,
 } from './src/types/workout';
 import {
+  deleteSetEntry,
   getActiveProfile,
   getActiveWorkoutPlan,
   getAllBestPRs,
   getTodayDayId,
+  getWorkoutHistory,
   getWorkoutStreak,
   loadDayProgress,
+  loadWeekProgressMap,
   markWorkoutCompleted,
+  markWorkoutStarted,
   registerCloudAutoSyncTrigger,
+  resetDayProgress,
+  saveBatchSetEntries,
   saveSessionExerciseConfig,
   saveSetEntry,
 } from './src/services/storage';
@@ -58,8 +64,11 @@ import {
   stopWorkoutLiveActivity,
 } from './src/services/liveActivity';
 import {
+  countCompletedSetsInProgress,
   resolveActiveSessionExercises,
   resolveResumeExerciseIndex,
+  resolveSuggestedWorkoutDay,
+  SuggestedWorkoutResolution,
 } from './src/utils/sessionExercises';
 
 import { SplashScreen } from './src/components/SplashScreen';
@@ -68,6 +77,7 @@ import {
   ActiveWorkoutFinishSummary,
   ActiveWorkoutView,
 } from './src/components/ActiveWorkoutView';
+import { WorkoutLaunchOverlay } from './src/components/WorkoutLaunchOverlay';
 import { AppTabKey, BottomTabBar } from './src/components/BottomTabBar';
 import { TodayScreen } from './src/screens/TodayScreen';
 import { PlanTab } from './src/components/PlanTab';
@@ -88,7 +98,7 @@ import { SessionExercisePickerModal } from './src/components/SessionExercisePick
 
 function MainApp() {
   const { theme, isDark } = useAppTheme();
-  const { t } = useLanguage();
+  const { t, exerciseName } = useLanguage();
 
   // Startup splash
   const [showSplash, setShowSplash] = useState(true);
@@ -140,10 +150,23 @@ function MainApp() {
   const [healthSummary, setHealthSummary] = useState<HealthDailySummary | null>(null);
   const [isHealthLoading, setIsHealthLoading] = useState(false);
 
-  // Today / Active Workout Progress Data
+  // Today / Sequence Queue / Active Workout Progress Data
   const [todayDayId] = useState<string>(getTodayDayId());
+  const [selectedTodayDayId, setSelectedTodayDayId] = useState<string>(getTodayDayId());
+  const [weekProgressMap, setWeekProgressMap] = useState<Record<string, DayProgress>>({});
+  const [suggestedWorkout, setSuggestedWorkout] = useState<SuggestedWorkoutResolution>(() => ({
+    dayId: getTodayDayId(),
+    reason: 'scheduled_today',
+  }));
   const [dayProgress, setDayProgress] = useState<DayProgress>({ sets: {} });
   const [streak, setStreak] = useState<number>(0);
+  const [launchOverlayInfo, setLaunchOverlayInfo] = useState<{
+    workoutName: string;
+    firstExerciseName?: string;
+    exercisesCount: number;
+    totalSets: number;
+    isResuming: boolean;
+  } | null>(null);
 
   // Monotonic write sequence guard prevents out-of-order AsyncStorage state reverts on typing
   const setWriteSeqRef = useRef(0);
@@ -261,7 +284,15 @@ function MainApp() {
       setProgressRefreshKey((k) => k + 1);
       const data: any = response.notification.request.content.data;
       if (data?.type === 'chat_message' && data?.friendId) {
-        setIsActiveWorkout(false);
+        if (isActiveWorkoutRef.current) {
+          cancelRestFinishedNotification();
+          void stopWorkoutLiveActivity({
+            summaryTitle: t('workoutAbortedTitle'),
+            summarySubtitle: t('workoutAbortedSub'),
+          });
+          setIsActiveWorkout(false);
+          setLaunchOverlayInfo(null);
+        }
         setVisitedTabs((prev) => {
           if (prev.has('friends')) return prev;
           const next = new Set(prev);
@@ -317,11 +348,17 @@ function MainApp() {
     };
   }, [refreshHealthIfEnabled, applySocialHubUpdate]);
 
+  // Register push notifications ONCE per cloud login (never re-trigger on every tab switch)
   useEffect(() => {
-    if (!activeProfile?.cloudUserId || !isAppForeground) return;
+    if (!activeProfile?.cloudUserId) return;
     void ensureNotificationPermissions(true);
     void registerExpoPushTokenIfSupported();
-    const pollMs = activeTab === 'friends' ? 12000 : isActiveWorkout ? 24000 : 16000;
+  }, [activeProfile?.cloudUserId]);
+
+  // Background social poll ONLY when outside FriendsTab (FriendsTab manages its own poll while active)
+  useEffect(() => {
+    if (!activeProfile?.cloudUserId || !isAppForeground || activeTab === 'friends') return;
+    const pollMs = isActiveWorkout ? 45000 : 30000;
     const timer = setInterval(() => {
       if (AppState.currentState !== 'active') return;
       fetchSocialHub()
@@ -342,21 +379,29 @@ function MainApp() {
         setActivePlan(null);
         setBestPRs({});
         setStreak(0);
+        setWeekProgressMap({});
         setDayProgress({ sets: {} });
         return;
       }
 
-      const [{ plans, activePlan: ap }, curStreak, prog, prs] = await Promise.all([
+      const [{ plans, activePlan: ap }, curStreak, weekMap, prs, history] = await Promise.all([
         getActiveWorkoutPlan(profile.id),
         getWorkoutStreak(profile.id),
-        loadDayProgress(todayDayId, undefined, profile.id),
+        loadWeekProgressMap(undefined, profile.id),
         getAllBestPRs(profile.id),
+        getWorkoutHistory(profile.id),
       ]);
+
+      const resolvedDays = ap?.days?.length ? ap.days : WORKOUT_PLAN;
+      const suggestion = resolveSuggestedWorkoutDay(resolvedDays, history, weekMap, todayDayId);
 
       setProfilePlans(plans);
       setActivePlan(ap);
       setStreak(curStreak);
-      setDayProgress(prog);
+      setWeekProgressMap(weekMap);
+      setSuggestedWorkout(suggestion);
+      setSelectedTodayDayId(suggestion.dayId);
+      setDayProgress(weekMap[suggestion.dayId] || { sets: {} });
       setBestPRs(prs);
 
       activeCloudUserIdRef.current = profile.cloudUserId || null;
@@ -373,7 +418,7 @@ function MainApp() {
         void syncAppIconBadgeCount(0);
       }
     },
-    [todayDayId]
+    [todayDayId, applySocialHubUpdate]
   );
 
   const initApp = useCallback(async () => {
@@ -446,9 +491,19 @@ function MainApp() {
 
   const handlePlansUpdated = async () => {
     if (!activeProfile) return;
-    const { plans, activePlan: ap } = await getActiveWorkoutPlan(activeProfile.id);
+    const [{ plans, activePlan: ap }, weekMap, history] = await Promise.all([
+      getActiveWorkoutPlan(activeProfile.id),
+      loadWeekProgressMap(undefined, activeProfile.id),
+      getWorkoutHistory(activeProfile.id),
+    ]);
+    const resolvedDays = ap?.days?.length ? ap.days : WORKOUT_PLAN;
+    const suggestion = resolveSuggestedWorkoutDay(resolvedDays, history, weekMap, todayDayId);
     setProfilePlans(plans);
     setActivePlan(ap);
+    setWeekProgressMap(weekMap);
+    setSuggestedWorkout(suggestion);
+    setSelectedTodayDayId(suggestion.dayId);
+    setDayProgress(weekMap[suggestion.dayId] || { sets: {} });
     setProgressRefreshKey((k) => k + 1);
     if (ap) {
       getAppSettings()
@@ -471,7 +526,16 @@ function MainApp() {
   };
 
   const handleAppReset = () => {
+    if (isActiveWorkoutRef.current) {
+      cancelRestFinishedNotification();
+      void stopWorkoutLiveActivity({
+        summaryTitle: t('workoutAbortedTitle'),
+        summarySubtitle: t('workoutAbortedSub'),
+      });
+    }
+    setWriteSeqRef.current += 1;
     setIsActiveWorkout(false);
+    setLaunchOverlayInfo(null);
     setSessionPickerTarget(null);
     setShowBodyStatsModal(false);
     setShowPlanManagerModal(false);
@@ -485,7 +549,22 @@ function MainApp() {
     setActivePlan(null);
     setBestPRs({});
     setStreak(0);
+    setWeekProgressMap({});
     setDayProgress({ sets: {} });
+  };
+
+  const handleSelectTodayWorkoutDay = async (dayId: string) => {
+    setSelectedTodayDayId(dayId);
+    const cached = weekProgressMap[dayId];
+    if (cached) {
+      setDayProgress(cached);
+    } else if (activeProfile) {
+      const fresh = await loadDayProgress(dayId, undefined, activeProfile.id);
+      setDayProgress(fresh);
+      setWeekProgressMap((prev) => ({ ...prev, [dayId]: fresh }));
+    } else {
+      setDayProgress({ sets: {} });
+    }
   };
 
   const handleUpdateSet = async (
@@ -497,6 +576,7 @@ function MainApp() {
     if (!activeProfile) return;
 
     const seq = ++setWriteSeqRef.current;
+    const targetDayId = activeWorkoutDayId;
 
     // Immediate synchronous UI state update prevents text input bounce/reset while typing
     setDayProgress((prev) => {
@@ -510,14 +590,15 @@ function MainApp() {
 
     try {
       const updated = await saveSetEntry(
-        activeWorkoutDayId,
+        targetDayId,
         exerciseId,
         setIndex,
         data,
         undefined,
         activeProfile.id
       );
-      if (seq === setWriteSeqRef.current) {
+      setWeekProgressMap((prev) => ({ ...prev, [targetDayId]: updated }));
+      if (seq === setWriteSeqRef.current && isActiveWorkoutRef.current) {
         setDayProgress(updated);
       }
     } catch (e) {
@@ -525,11 +606,89 @@ function MainApp() {
     }
   };
 
+  const handleBatchUpdateSets = async (
+    updates: Array<{ exerciseId: string; setIndex: number; entry: Partial<SetEntry> }>
+  ) => {
+    if (!activeProfile || updates.length === 0) return;
+
+    const seq = ++setWriteSeqRef.current;
+    const targetDayId = activeWorkoutDayId;
+
+    setDayProgress((prev) => {
+      const nextSets = { ...prev.sets };
+      for (const u of updates) {
+        const exSets = { ...(nextSets[u.exerciseId] || {}) };
+        const existing = exSets[u.setIndex] || { completed: false };
+        exSets[u.setIndex] = { ...existing, ...u.entry };
+        nextSets[u.exerciseId] = exSets;
+      }
+      return { ...prev, sets: nextSets };
+    });
+
+    try {
+      const updated = await saveBatchSetEntries(
+        targetDayId,
+        updates,
+        undefined,
+        activeProfile.id
+      );
+      setWeekProgressMap((prev) => ({ ...prev, [targetDayId]: updated }));
+      if (seq === setWriteSeqRef.current && isActiveWorkoutRef.current) {
+        setDayProgress(updated);
+      }
+    } catch (e) {
+      console.error('Error batch saving sets', e);
+    }
+  };
+
+  const handleDeleteSetEntry = async (exerciseId: string, setIndex: number) => {
+    if (!activeProfile) return;
+    const seq = ++setWriteSeqRef.current;
+    const targetDayId = activeWorkoutDayId;
+
+    setDayProgress((prev) => {
+      const nextSets = { ...prev.sets };
+      if (nextSets[exerciseId]) {
+        const exSets = { ...nextSets[exerciseId] };
+        delete exSets[setIndex];
+        nextSets[exerciseId] = exSets;
+      }
+      return { ...prev, sets: nextSets };
+    });
+
+    try {
+      const updated = await deleteSetEntry(
+        targetDayId,
+        exerciseId,
+        setIndex,
+        undefined,
+        activeProfile.id
+      );
+      setWeekProgressMap((prev) => ({ ...prev, [targetDayId]: updated }));
+      if (seq === setWriteSeqRef.current && isActiveWorkoutRef.current) {
+        setDayProgress(updated);
+      }
+    } catch (e) {
+      console.error('Error deleting set entry', e);
+    }
+  };
+
   const handleSaveSessionConfig = async (config: SessionExerciseConfig) => {
     if (!activeProfile) return;
+    const seq = ++setWriteSeqRef.current;
+    const targetDayId = activeWorkoutDayId;
     setDayProgress((prev) => ({ ...prev, sessionConfig: config }));
     try {
-      await saveSessionExerciseConfig(activeWorkoutDayId, config, undefined, activeProfile.id);
+      const updated = await saveSessionExerciseConfig(
+        targetDayId,
+        config,
+        undefined,
+        activeProfile.id
+      );
+      setWeekProgressMap((prev) => ({ ...prev, [targetDayId]: updated }));
+      if (seq === setWriteSeqRef.current && isActiveWorkoutRef.current) {
+        setDayProgress(updated);
+      }
     } catch (e) {
       console.error('Error saving session config', e);
     }
@@ -537,34 +696,70 @@ function MainApp() {
 
   const planDays: DayPlan[] = activePlan?.days?.length ? activePlan.days : WORKOUT_PLAN;
 
-  const launchActiveWorkout = (plan: DayPlan, prog: DayProgress) => {
+  const launchActiveWorkout = async (plan: DayPlan, prog: DayProgress) => {
+    setWriteSeqRef.current += 1;
+    let workingProg = prog;
+    if (activeProfile && (!prog.startedAt || prog.finishedAt)) {
+      workingProg = await markWorkoutStarted(plan.id, undefined, activeProfile.id).catch(
+        () => ({ ...prog, startedAt: new Date().toISOString() })
+      );
+      setWeekProgressMap((prev) => ({ ...prev, [plan.id]: workingProg }));
+    }
+
     const raw = plan.exercises || [];
-    const { active: effectiveList } = resolveActiveSessionExercises(raw, prog.sessionConfig);
+    const { active: effectiveList } = resolveActiveSessionExercises(raw, workingProg.sessionConfig);
 
     let completedInSession = 0;
-    for (const setsMap of Object.values(prog.sets || {})) {
+    for (const ex of effectiveList) {
+      const setsMap = workingProg.sets?.[ex.id] || {};
       for (const entry of Object.values(setsMap)) {
         if (entry?.completed) completedInSession++;
       }
     }
 
-    setDayProgress(prog);
-    setActiveWorkoutDayId(plan.id);
-    setAutoOpenSessionPicker(false);
-    setIsActiveWorkout(true);
-
     const resumeIdx = resolveResumeExerciseIndex(
       effectiveList,
-      prog.sets,
-      prog.sessionConfig?.activeExerciseId
+      workingProg.sets,
+      workingProg.sessionConfig?.activeExerciseId
     );
     const firstEx = effectiveList[resumeIdx] || effectiveList[0] || raw[0];
-    const total = effectiveList.reduce((sum, e) => sum + e.sets, 0);
+    const total = effectiveList.reduce((sum, e) => {
+      const loggedIndices = Object.keys(workingProg.sets?.[e.id] || {}).map((k) => Number(k));
+      const maxLogged = loggedIndices.length > 0 ? Math.max(...loggedIndices) + 1 : 0;
+      return sum + Math.max(e.sets, maxLogged);
+    }, 0);
+
+    let resumeSetOneBased = 1;
     if (firstEx) {
+      const firstSets = workingProg.sets?.[firstEx.id] || {};
+      for (let i = 0; i < firstEx.sets; i++) {
+        if (!firstSets[i]?.completed) {
+          resumeSetOneBased = i + 1;
+          break;
+        }
+      }
+    }
+
+    const localizedFirstExName = firstEx ? exerciseName(firstEx.id, firstEx.name) : undefined;
+
+    setDayProgress(workingProg);
+    setActiveWorkoutDayId(plan.id);
+    setSelectedTodayDayId(plan.id);
+    setAutoOpenSessionPicker(false);
+    setLaunchOverlayInfo({
+      workoutName: plan.name,
+      firstExerciseName: localizedFirstExName,
+      exercisesCount: effectiveList.length,
+      totalSets: total,
+      isResuming: completedInSession > 0,
+    });
+    setIsActiveWorkout(true);
+
+    if (firstEx && localizedFirstExName) {
       startWorkoutLiveActivity({
         workoutName: plan.name,
-        exerciseName: firstEx.name,
-        currentSet: 1,
+        exerciseName: localizedFirstExName,
+        currentSet: resumeSetOneBased,
         totalSets: firstEx.sets,
         completedSets: completedInSession,
         totalWorkoutSets: total,
@@ -573,36 +768,31 @@ function MainApp() {
   };
 
   const handleConfigureSession = async (dayId?: string) => {
-    const targetDay = dayId || todayDayId;
+    const targetDay = dayId || selectedTodayDayId;
     const plan = planDays.find((p) => p.id === targetDay);
     if (!plan || !plan.exercises || plan.exercises.length === 0) return;
 
     let prog: DayProgress = dayProgress;
     if (activeProfile) {
       prog = await loadDayProgress(targetDay, undefined, activeProfile.id);
-      if (targetDay === todayDayId) setDayProgress(prog);
+      if (targetDay === selectedTodayDayId) setDayProgress(prog);
     }
 
     setSessionPickerTarget({ dayPlan: plan, progress: prog, mode: 'edit' });
   };
 
   const handleStartWorkout = async (dayId?: string) => {
-    const targetDay = dayId || todayDayId;
+    const targetDay = dayId || selectedTodayDayId;
     const plan = planDays.find((p) => p.id === targetDay);
     if (!plan || !plan.exercises || plan.exercises.length === 0) return;
 
-    let prog: DayProgress = dayProgress;
+    let prog: DayProgress = weekProgressMap[targetDay] || { sets: {} };
     if (activeProfile) {
       prog = await loadDayProgress(targetDay, undefined, activeProfile.id);
-      setDayProgress(prog);
+      setWeekProgressMap((prev) => ({ ...prev, [targetDay]: prog }));
     }
 
-    let completedInSession = 0;
-    for (const setsMap of Object.values(prog.sets || {})) {
-      for (const entry of Object.values(setsMap)) {
-        if (entry?.completed) completedInSession++;
-      }
-    }
+    const completedInSession = countCompletedSetsInProgress(prog);
 
     if (!prog.sessionConfig && completedInSession === 0) {
       // Pre-workout configuration modal happens BEFORE launching ActiveWorkoutView
@@ -610,7 +800,7 @@ function MainApp() {
       return;
     }
 
-    launchActiveWorkout(plan, prog);
+    await launchActiveWorkout(plan, prog);
   };
 
   const handleConfirmPreWorkoutPicker = async (config: SessionExerciseConfig) => {
@@ -628,7 +818,8 @@ function MainApp() {
     };
 
     if (activeProfile) {
-      if (target.dayPlan.id === todayDayId) {
+      setWeekProgressMap((prev) => ({ ...prev, [target.dayPlan.id]: updatedProgress }));
+      if (target.dayPlan.id === selectedTodayDayId) {
         setDayProgress(updatedProgress);
       }
       try {
@@ -640,25 +831,59 @@ function MainApp() {
 
     setSessionPickerTarget(null);
     if (target.mode === 'start') {
-      launchActiveWorkout(target.dayPlan, updatedProgress);
+      await launchActiveWorkout(target.dayPlan, updatedProgress);
     }
   };
 
+  const refreshQueueAfterWorkoutChange = async (preferredDayId?: string) => {
+    if (!activeProfile) return;
+    const [weekMap, history] = await Promise.all([
+      loadWeekProgressMap(undefined, activeProfile.id),
+      getWorkoutHistory(activeProfile.id),
+    ]);
+    const suggestion = resolveSuggestedWorkoutDay(planDays, history, weekMap, todayDayId);
+    setWeekProgressMap(weekMap);
+    setSuggestedWorkout(suggestion);
+    const nextSelected = preferredDayId || suggestion.dayId;
+    setSelectedTodayDayId(nextSelected);
+    setDayProgress(weekMap[nextSelected] || { sets: {} });
+  };
+
   const handleExitWorkout = async () => {
+    setWriteSeqRef.current += 1;
+    setLaunchOverlayInfo(null);
+    setIsActiveWorkout(false);
+    cancelRestFinishedNotification();
     await stopWorkoutLiveActivity({
       summaryTitle: t('workoutAbortedTitle'),
       summarySubtitle: t('workoutAbortedSub'),
     });
+    await refreshQueueAfterWorkoutChange(activeWorkoutDayId);
+  };
+
+  const handleDiscardWorkout = async () => {
+    setWriteSeqRef.current += 1;
+    setLaunchOverlayInfo(null);
     setIsActiveWorkout(false);
-    if (activeProfile && activeWorkoutDayId !== todayDayId) {
-      const todayProg = await loadDayProgress(todayDayId, undefined, activeProfile.id);
-      setDayProgress(todayProg);
+    cancelRestFinishedNotification();
+    await stopWorkoutLiveActivity({
+      summaryTitle: t('workoutAbortedTitle'),
+      summarySubtitle: t('workoutAbortedSub'),
+    });
+    if (activeProfile) {
+      await resetDayProgress(activeWorkoutDayId, undefined, activeProfile.id);
     }
+    await refreshQueueAfterWorkoutChange();
   };
 
   const handleFinishWorkout = async (summary?: ActiveWorkoutFinishSummary) => {
     const workoutDayPlan = planDays.find((p) => p.id === activeWorkoutDayId);
     if (!workoutDayPlan) return;
+
+    setWriteSeqRef.current += 1;
+    setLaunchOverlayInfo(null);
+    setIsActiveWorkout(false);
+    cancelRestFinishedNotification();
 
     const exercises = summary?.exercises || workoutDayPlan.exercises || [];
     const total = summary?.totalSets ?? exercises.reduce((sum, e) => sum + e.sets, 0);
@@ -699,11 +924,7 @@ function MainApp() {
       setStreak(curStreak);
       setBestPRs(updatedPRs);
       setProgressRefreshKey((k) => k + 1);
-
-      if (activeWorkoutDayId !== todayDayId) {
-        const todayProg = await loadDayProgress(todayDayId, undefined, activeProfile.id);
-        setDayProgress(todayProg);
-      }
+      await refreshQueueAfterWorkoutChange();
     }
 
     await stopWorkoutLiveActivity({
@@ -717,13 +938,15 @@ function MainApp() {
     setSummaryDurationMinutes(summary?.durationMinutes);
     setSummaryVolumeKg(totalVolumeKg);
     setSummaryNewPRs(newPRs);
-    setIsActiveWorkout(false);
     setShowSummaryModal(true);
 
     triggerNotificationHaptic('success');
   };
 
-  const currentPlan = planDays.find((p) => p.id === todayDayId) || planDays[0];
+  const currentPlan =
+    planDays.find((p) => p.id === selectedTodayDayId) ||
+    planDays.find((p) => p.id === todayDayId) ||
+    planDays[0];
   const activeWorkoutPlan = planDays.find((p) => p.id === activeWorkoutDayId) || planDays[0];
   const extraLibraryExercises = useMemo(
     () => profilePlans.flatMap((p) => p.days.flatMap((d) => d.exercises || [])),
@@ -741,26 +964,38 @@ function MainApp() {
     if (!cmd) return;
     lastHandledUrlRef.current = incomingUrl;
 
+    const exitWorkoutForRoute = () => {
+      if (isActiveWorkoutRef.current) {
+        cancelRestFinishedNotification();
+        void stopWorkoutLiveActivity({
+          summaryTitle: t('workoutAbortedTitle'),
+          summarySubtitle: t('workoutAbortedSub'),
+        });
+        setLaunchOverlayInfo(null);
+        setIsActiveWorkout(false);
+      }
+    };
+
     if (cmd.type === 'start_workout') {
       handleStartWorkout(cmd.dayId);
     } else if (cmd.type === 'open_plan') {
-      setIsActiveWorkout(false);
+      exitWorkoutForRoute();
       handleSwitchTab('plan');
     } else if (cmd.type === 'open_progress') {
-      setIsActiveWorkout(false);
+      exitWorkoutForRoute();
       handleSwitchTab('progress');
     } else if (cmd.type === 'open_friends') {
-      setIsActiveWorkout(false);
+      exitWorkoutForRoute();
       handleSwitchTab('friends');
     } else if (cmd.type === 'add_friend') {
-      setIsActiveWorkout(false);
+      exitWorkoutForRoute();
       setPendingInviteNick({ nick: cmd.nickname || '', seq: Date.now() });
       handleSwitchTab('friends');
     } else if (cmd.type === 'open_settings') {
-      setIsActiveWorkout(false);
+      exitWorkoutForRoute();
       handleSwitchTab('settings');
     } else if (cmd.type === 'log_weight') {
-      setIsActiveWorkout(false);
+      exitWorkoutForRoute();
       setShowBodyStatsModal(true);
     } else if (cmd.type === 'sync_calendar' && activePlan) {
       getAppSettings()
@@ -814,10 +1049,24 @@ function MainApp() {
             dayProgress={dayProgress}
             autoOpenSessionPicker={autoOpenSessionPicker}
             onUpdateSet={handleUpdateSet}
+            onBatchUpdateSets={handleBatchUpdateSets}
+            onDeleteSetEntry={handleDeleteSetEntry}
             onSaveSessionConfig={handleSaveSessionConfig}
             onFinishWorkout={handleFinishWorkout}
             onExitWorkout={handleExitWorkout}
+            onDiscardWorkout={handleDiscardWorkout}
           />
+          {launchOverlayInfo && (
+            <WorkoutLaunchOverlay
+              visible={true}
+              workoutName={launchOverlayInfo.workoutName}
+              firstExerciseName={launchOverlayInfo.firstExerciseName}
+              exercisesCount={launchOverlayInfo.exercisesCount}
+              totalSets={launchOverlayInfo.totalSets}
+              isResuming={launchOverlayInfo.isResuming}
+              onFinished={() => setLaunchOverlayInfo(null)}
+            />
+          )}
         </View>
       </TabActivityProvider>
     );
@@ -842,8 +1091,13 @@ function MainApp() {
                 <TodayScreen
                   activeProfile={activeProfile}
                   activePlan={activePlan}
+                  planDays={planDays}
+                  todayDayId={todayDayId}
+                  suggestedDayId={suggestedWorkout.dayId}
+                  suggestedReason={suggestedWorkout.reason}
                   currentPlan={currentPlan}
                   dayProgress={dayProgress}
+                  weekProgressMap={weekProgressMap}
                   streak={streak}
                   bestPRs={bestPRs}
                   healthSummary={healthSummary}
@@ -853,6 +1107,7 @@ function MainApp() {
                   onConfigureSession={() => handleConfigureSession(currentPlan.id)}
                   onOpenPlanManager={() => setShowPlanManagerModal(true)}
                   onOpenBodyStats={() => setShowBodyStatsModal(true)}
+                  onSelectWorkoutDay={handleSelectTodayWorkoutDay}
                   onStartWorkout={(dayId) => handleStartWorkout(dayId)}
                   onOpenExerciseDetail={(ex) => setPreviewExercise(ex)}
                   onSwitchToPlanTab={() => handleSwitchTab('plan')}
@@ -887,6 +1142,7 @@ function MainApp() {
                   activeProfile={activeProfile}
                   activePlan={activePlan}
                   profilePlans={profilePlans}
+                  extraExercises={extraLibraryExercises}
                   refreshKey={progressRefreshKey}
                   isTabActive={activeTab === 'progress'}
                 />
@@ -1030,7 +1286,15 @@ function MainApp() {
           onDismiss={() => setChatToast(null)}
           onPress={(fr) => {
             setChatToast(null);
-            setIsActiveWorkout(false);
+            if (isActiveWorkoutRef.current) {
+              cancelRestFinishedNotification();
+              void stopWorkoutLiveActivity({
+                summaryTitle: t('workoutAbortedTitle'),
+                summarySubtitle: t('workoutAbortedSub'),
+              });
+              setLaunchOverlayInfo(null);
+              setIsActiveWorkout(false);
+            }
             setVisitedTabs((prev) => {
               if (prev.has('friends')) return prev;
               const next = new Set(prev);

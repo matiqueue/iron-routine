@@ -9,6 +9,7 @@ import {
   getChatPairTheme,
   getEncryptedChatMessages,
   getFriendLastReadAt,
+  getPairCheerStreak,
   getSocialHubForUser,
   markChatRead,
   normalizeNickServer,
@@ -54,7 +55,8 @@ export default {
         const action = String(url.searchParams.get('action') || 'hub').trim();
 
         if (action === 'hub') {
-          const hub = await getSocialHubForUser(userId);
+          const localDate = url.searchParams.get('localDate');
+          const hub = await getSocialHubForUser(userId, localDate);
           return jsonResponse({ ok: true, hub });
         }
 
@@ -237,6 +239,10 @@ export default {
         const targetUserId = String(body?.targetUserId || '').trim();
         const activityId = body?.activityId ? String(body.activityId) : null;
         const count = Math.max(1, Math.min(200, Math.round(Number(body?.count || 1) || 1)));
+        const rawLocalDate = typeof body?.localDate === 'string' ? body.localDate.trim() : '';
+        const cheerDayKey = /^\d{4}-\d{2}-\d{2}$/.test(rawLocalDate)
+          ? rawLocalDate
+          : new Date().toISOString().slice(0, 10);
         if (!targetUserId) {
           return jsonResponse({ ok: false, error: 'MISSING_TARGET' }, 400);
         }
@@ -258,14 +264,19 @@ export default {
               WHERE id = ${activityId}
             `;
             const recipientId = String(rows[0].user_id || targetUserId);
+            let cheerStreakDays = 0;
+            let cheeredTodayWithMe = false;
             if (recipientId && recipientId !== userId) {
               const burstId = `cb_${crypto.randomBytes(8).toString('hex')}`;
               await sql`
-                INSERT INTO cheer_bursts (id, from_user_id, to_user_id, activity_id, burst_count)
-                VALUES (${burstId}, ${userId}, ${recipientId}, ${activityId}, ${count})
+                INSERT INTO cheer_bursts (id, from_user_id, to_user_id, activity_id, burst_count, day_key)
+                VALUES (${burstId}, ${userId}, ${recipientId}, ${activityId}, ${count}, ${cheerDayKey})
               `;
+              const st = await getPairCheerStreak(userId, recipientId, cheerDayKey);
+              cheerStreakDays = st.streakDays;
+              cheeredTodayWithMe = st.cheeredToday;
             }
-            return jsonResponse({ ok: true, cheersCount: nextCount });
+            return jsonResponse({ ok: true, cheersCount: nextCount, cheerStreakDays, cheeredTodayWithMe });
           }
         }
 
@@ -286,14 +297,19 @@ export default {
               cheers_count = ${nextCheers}
           WHERE user_id = ${targetUserId}
         `;
+        let cheerStreakDays = 0;
+        let cheeredTodayWithMe = false;
         if (targetUserId !== userId) {
           const burstId = `cb_${crypto.randomBytes(8).toString('hex')}`;
           await sql`
-            INSERT INTO cheer_bursts (id, from_user_id, to_user_id, activity_id, burst_count)
-            VALUES (${burstId}, ${userId}, ${targetUserId}, ${null}, ${count})
+            INSERT INTO cheer_bursts (id, from_user_id, to_user_id, activity_id, burst_count, day_key)
+            VALUES (${burstId}, ${userId}, ${targetUserId}, ${null}, ${count}, ${cheerDayKey})
           `;
+          const st = await getPairCheerStreak(userId, targetUserId, cheerDayKey);
+          cheerStreakDays = st.streakDays;
+          cheeredTodayWithMe = st.cheeredToday;
         }
-        return jsonResponse({ ok: true, cheersCount: nextCheers });
+        return jsonResponse({ ok: true, cheersCount: nextCheers, cheerStreakDays, cheeredTodayWithMe });
       }
 
       if (action === 'send_message') {

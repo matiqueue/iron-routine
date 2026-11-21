@@ -5,6 +5,7 @@ import { translateText } from '../i18n/translations';
 
 let currentActivityId: string | null = null;
 let startPromise: Promise<string | null> | null = null;
+let isLiveActivitySessionActive = false;
 
 export interface WorkoutLiveActivityParams {
   workoutName: string;
@@ -42,6 +43,7 @@ const DEFAULT_CONFIG: LiveActivity.LiveActivityConfig = {
  */
 export async function startWorkoutLiveActivity(params: WorkoutLiveActivityParams): Promise<string | null> {
   if (Platform.OS !== 'ios') return null;
+  isLiveActivitySessionActive = true;
   if (startPromise) return startPromise;
 
   startPromise = (async () => {
@@ -50,11 +52,17 @@ export async function startWorkoutLiveActivity(params: WorkoutLiveActivityParams
 
       // Stop any prior tracked activity first to prevent duplicate Dynamic Island pills
       if (currentActivityId) {
-        await stopWorkoutLiveActivity({
-          summaryTitle: translateText(lang, 'laNewWorkout'),
-          summarySubtitle: translateText(lang, 'laNewSession'),
-        });
+        try {
+          LiveActivity.stopActivity(currentActivityId, {
+            title: translateText(lang, 'laNewWorkout'),
+            subtitle: translateText(lang, 'laNewSession'),
+            progressBar: { progress: 1.0 },
+          });
+        } catch {}
+        currentActivityId = null;
       }
+
+      if (!isLiveActivitySessionActive) return null;
 
       const progress =
         params.totalWorkoutSets > 0
@@ -93,12 +101,13 @@ export async function startWorkoutLiveActivity(params: WorkoutLiveActivityParams
  * Updates the existing workout Live Activity with real-time set, exercise, or rest countdown state.
  */
 export async function updateWorkoutLiveActivity(params: WorkoutLiveActivityParams): Promise<void> {
-  if (Platform.OS !== 'ios') return;
+  if (Platform.OS !== 'ios' || !isLiveActivitySessionActive) return;
 
   try {
     if (startPromise) {
       await startPromise;
     }
+    if (!isLiveActivitySessionActive) return;
     if (!currentActivityId) {
       await startWorkoutLiveActivity(params);
       return;
@@ -161,9 +170,13 @@ export async function stopWorkoutLiveActivity(summary?: {
   summaryTitle?: string;
   summarySubtitle?: string;
 }): Promise<void> {
+  isLiveActivitySessionActive = false;
   if (Platform.OS !== 'ios') return;
 
   try {
+    if (startPromise) {
+      await startPromise.catch(() => {});
+    }
     if (currentActivityId) {
       const lang = getCurrentAppLanguage();
       LiveActivity.stopActivity(currentActivityId, {

@@ -136,13 +136,21 @@ export async function ensureSchema(): Promise<void> {
         activity_id TEXT,
         burst_count INTEGER NOT NULL DEFAULT 1,
         delivered BOOLEAN NOT NULL DEFAULT FALSE,
+        day_key TEXT,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
     `;
 
+    await sql`ALTER TABLE cheer_bursts ADD COLUMN IF NOT EXISTS day_key TEXT`;
+
     await sql`
       CREATE INDEX IF NOT EXISTS cheer_bursts_recipient_idx
       ON cheer_bursts (to_user_id, delivered, created_at ASC)
+    `;
+
+    await sql`
+      CREATE INDEX IF NOT EXISTS cheer_bursts_pair_day_idx
+      ON cheer_bursts (from_user_id, to_user_id, created_at DESC)
     `;
 
     await sql`

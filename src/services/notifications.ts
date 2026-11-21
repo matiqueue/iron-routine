@@ -561,7 +561,10 @@ async function ensureRestTimerChannel(): Promise<void> {
   } catch {}
 }
 
+let restScheduleToken = 0;
+
 export async function cancelRestFinishedNotification(): Promise<void> {
+  restScheduleToken += 1;
   await Promise.all(
     REST_TIMER_NOTIF_IDS.map(async (id) => {
       try {
@@ -638,15 +641,17 @@ export async function scheduleRestFinishedNotification(
 ): Promise<void> {
   try {
     await cancelRestFinishedNotification();
+    const myToken = ++restScheduleToken;
     if (seconds <= 1) return;
 
     const settings = await getAppSettings();
-    if (!settings.restNotificationsEnabled) return;
+    if (myToken !== restScheduleToken || !settings.restNotificationsEnabled) return;
 
     const perm = await ensureNotificationPermissions(false);
-    if (!perm.granted) return;
+    if (myToken !== restScheduleToken || !perm.granted) return;
 
     await ensureRestTimerChannel();
+    if (myToken !== restScheduleToken) return;
     await dispatchRestWave(seconds, exerciseName, nextInfo, settings.restEndMultiBuzz);
   } catch (e) {
     console.warn('Error scheduling rest alarm notifications:', e);

@@ -398,12 +398,15 @@ const RankSpotlightDropCard: React.FC<{
   );
 };
 
+const EMPTY_PLANS: WorkoutPlan[] = [];
+const EMPTY_EXERCISES: Exercise[] = [];
+
 export const ProgressTab: React.FC<ProgressTabProps> = ({
   activeProfile,
   activePlan,
-  profilePlans = [],
+  profilePlans = EMPTY_PLANS,
   profileId,
-  extraExercises = [],
+  extraExercises = EMPTY_EXERCISES,
   refreshKey = 0,
   isTabActive = true,
   focusedExercise,
@@ -521,7 +524,22 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
     [activePlan]
   );
 
+  const extraExercisesRef = useRef<Exercise[]>(extraExercises);
+  extraExercisesRef.current = extraExercises;
+  const activePlanDaysRef = useRef<DayPlan[]>(activePlanDays);
+  activePlanDaysRef.current = activePlanDays;
+  const analyticsLoadSeqRef = useRef(0);
+
+  const planContentKey = useMemo(
+    () =>
+      activePlanDays
+        .map((d) => `${d.id}:${(d.exercises || []).map((e) => `${e.id}:${e.sets}`).join(',')}`)
+        .join('|'),
+    [activePlanDays]
+  );
+
   const loadAllAnalytics = useCallback(async () => {
+    const seq = ++analyticsLoadSeqRef.current;
     const todayKey = getLocalDateKey();
     const [prs, weights, hist, custom, favs, appSettings, takenToday, supp7] = await Promise.all([
       getAllBestPRs(effectiveProfileId),
@@ -533,6 +551,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
       getSupplementDayTakenIds(todayKey, effectiveProfileId),
       getCreatineLog(7, effectiveProfileId),
     ]);
+    if (seq !== analyticsLoadSeqRef.current) return;
 
     setBestPRs(prs);
     setWeightHistory(weights);
@@ -545,16 +564,17 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
 
     const catalog = mergeAllExercises(custom, [
       ...EXERCISE_LIBRARY,
-      ...extraExercises,
+      ...extraExercisesRef.current,
     ]);
     const report = await computePhysiqueAnalytics({
       profileId: effectiveProfileId,
       allExercises: catalog,
-      activePlanDays,
+      activePlanDays: activePlanDaysRef.current,
       workoutHistory: hist,
     });
+    if (seq !== analyticsLoadSeqRef.current) return;
     setPhysiqueReport(report);
-  }, [effectiveProfileId, extraExercises, activePlanDays]);
+  }, [effectiveProfileId, planContentKey]);
 
   useEffect(() => {
     loadAllAnalytics();

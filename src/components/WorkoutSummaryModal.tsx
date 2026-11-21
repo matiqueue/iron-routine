@@ -17,6 +17,8 @@ interface WorkoutSummaryModalProps {
   onClose: () => void;
 }
 
+const EMPTY_NEW_PRS: NewPRHighlight[] = [];
+
 export const WorkoutSummaryModal: React.FC<WorkoutSummaryModalProps> = ({
   visible,
   dayName,
@@ -24,7 +26,7 @@ export const WorkoutSummaryModal: React.FC<WorkoutSummaryModalProps> = ({
   totalSets,
   durationMinutes,
   totalVolumeKg,
-  newPRs = [],
+  newPRs = EMPTY_NEW_PRS,
   onClose,
 }) => {
   const { theme } = useAppTheme();

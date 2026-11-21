@@ -264,11 +264,13 @@ const SessionChecklistView: React.FC<{
   );
 };
 
+const EMPTY_EXERCISES: Exercise[] = [];
+
 export const SessionExercisePickerModal: React.FC<SessionExercisePickerModalProps> = ({
   visible,
   onClose,
   exercises,
-  extraLibraryExercises = [],
+  extraLibraryExercises = EMPTY_EXERCISES,
   dayProgress,
   initialConfig,
   mode = 'edit',

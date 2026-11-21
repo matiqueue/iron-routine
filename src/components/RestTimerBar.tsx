@@ -141,6 +141,7 @@ export const RestTimerBar: React.FC<RestTimerBarProps> = ({
   const pausedRemainingRef = useRef<number | null>(isPaused ? initialSeconds : null);
 
   useEffect(() => {
+    if (isDismissingRef.current) return;
     if (isPaused) {
       pausedRemainingRef.current = initialSeconds;
       endTimeRef.current = 0;
@@ -215,10 +216,22 @@ export const RestTimerBar: React.FC<RestTimerBarProps> = ({
   const adjustTime = (delta: number) => {
     triggerImpactHaptic('light');
 
+    if (isFinished) {
+      if (delta <= 0) return;
+      const next = Math.max(1, delta);
+      endTimeRef.current = Date.now() + next * 1000;
+      pausedRemainingRef.current = null;
+      setSecondsLeft(next);
+      setIsFinished(false);
+      setIsRunning(true);
+      onSecondsChanged?.(next, false);
+      return;
+    }
+
     if (isRunning) {
       const currentRemaining = Math.max(0, Math.ceil((endTimeRef.current - Date.now()) / 1000));
       const next = Math.max(0, currentRemaining + delta);
-      endTimeRef.current = Date.now() + next * 1000;
+      endTimeRef.current = next > 0 ? Date.now() + next * 1000 : 0;
       setSecondsLeft(next);
       setIsFinished(next <= 0);
       if (next <= 0) setIsRunning(false);
@@ -226,6 +239,15 @@ export const RestTimerBar: React.FC<RestTimerBarProps> = ({
     } else {
       const prev = pausedRemainingRef.current ?? secondsLeft;
       const next = Math.max(0, prev + delta);
+      if (next <= 0) {
+        pausedRemainingRef.current = null;
+        endTimeRef.current = 0;
+        setSecondsLeft(0);
+        setIsRunning(false);
+        setIsFinished(true);
+        onSecondsChanged?.(0, false);
+        return;
+      }
       pausedRemainingRef.current = next;
       setSecondsLeft(next);
       setIsFinished(false);
@@ -240,7 +262,7 @@ export const RestTimerBar: React.FC<RestTimerBarProps> = ({
   };
 
   return (
-    <Modal visible transparent animationType="none" onRequestClose={animateHide}>
+    <Modal visible transparent statusBarTranslucent animationType="none" onRequestClose={animateHide}>
       <View style={styles.overlay}>
         <Animated.View
           style={[

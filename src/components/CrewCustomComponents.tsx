@@ -21,11 +21,13 @@ import { getAvatarInitials } from './UserAvatarBadge';
 /**
  * 1. Bespoke Rotating Orbital Radar Stage for Crew Discovery & Hero Banner
  */
+const EMPTY_FRIEND_RANKS: RankTier[] = [];
+
 export const CrewRadarOrb: React.FC<{
   myRank?: RankTier;
   friendRanks?: RankTier[];
   size?: number;
-}> = React.memo(({ myRank = 'F', friendRanks = [], size = 148 }) => {
+}> = React.memo(({ myRank = 'F', friendRanks = EMPTY_FRIEND_RANKS, size = 148 }) => {
   const { isDark } = useAppTheme();
   const isScreenActive = useIsScreenActive();
   const uid = useId().replace(/:/g, '_');

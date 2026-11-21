@@ -618,12 +618,29 @@ export function getMondayKey(date: Date = new Date()): string {
   const day = d.getDay();
   const diff = d.getDate() - day + (day === 0 ? -6 : 1);
   d.setDate(diff);
-  return d.toISOString().split('T')[0];
+  return getLocalDateKey(d);
 }
 
 export function getTodayDayId(): string {
   const dayMap = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
   return dayMap[new Date().getDay()];
+}
+
+export async function loadWeekProgressMap(
+  weekKey: string = getMondayKey(),
+  profileId?: string
+): Promise<Record<string, DayProgress>> {
+  try {
+    const pid = await resolveProfileId(profileId);
+    if (!pid) return {};
+    const key = `${STORAGE_KEYS.WEEK_PREFIX}${pid}_${weekKey}`;
+    const raw = await AsyncStorage.getItem(key);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
 }
 
 export async function loadDayProgress(
@@ -644,6 +661,27 @@ export async function loadDayProgress(
   }
 }
 
+export async function markWorkoutStarted(
+  dayId: string,
+  weekKey: string = getMondayKey(),
+  profileId?: string
+): Promise<DayProgress> {
+  const pid = await resolveProfileId(profileId);
+  if (!pid) return { sets: {} };
+  const key = `${STORAGE_KEYS.WEEK_PREFIX}${pid}_${weekKey}`;
+  return enqueueStorageWrite(key, async () => {
+    const raw = await AsyncStorage.getItem(key);
+    const weekData = raw ? JSON.parse(raw) : {};
+    if (!weekData[dayId]) weekData[dayId] = { sets: {} };
+    if (!weekData[dayId].startedAt || weekData[dayId].finishedAt) {
+      weekData[dayId].startedAt = new Date().toISOString();
+      delete weekData[dayId].finishedAt;
+      await AsyncStorage.setItem(key, JSON.stringify(weekData));
+    }
+    return weekData[dayId];
+  });
+}
+
 export async function saveSetEntry(
   dayId: string,
   exerciseId: string,
@@ -661,6 +699,7 @@ export async function saveSetEntry(
       const weekData = raw ? JSON.parse(raw) : {};
 
       if (!weekData[dayId]) weekData[dayId] = { sets: {} };
+      if (!weekData[dayId].startedAt) weekData[dayId].startedAt = new Date().toISOString();
       if (!weekData[dayId].sets[exerciseId]) weekData[dayId].sets[exerciseId] = {};
 
       const currentEntry: SetEntry = weekData[dayId].sets[exerciseId][setIndex] || {
@@ -681,6 +720,55 @@ export async function saveSetEntry(
     console.error('Error saving set entry:', error);
     throw error;
   }
+}
+
+export async function saveBatchSetEntries(
+  dayId: string,
+  updates: Array<{ exerciseId: string; setIndex: number; entry: Partial<SetEntry> }>,
+  weekKey: string = getMondayKey(),
+  profileId?: string
+): Promise<DayProgress> {
+  const pid = await resolveProfileId(profileId);
+  if (!pid) throw new Error('Brak aktywnego profilu.');
+  const key = `${STORAGE_KEYS.WEEK_PREFIX}${pid}_${weekKey}`;
+  return enqueueStorageWrite(key, async () => {
+    const raw = await AsyncStorage.getItem(key);
+    const weekData = raw ? JSON.parse(raw) : {};
+    if (!weekData[dayId]) weekData[dayId] = { sets: {} };
+    if (!weekData[dayId].startedAt) weekData[dayId].startedAt = new Date().toISOString();
+
+    for (const u of updates) {
+      if (!weekData[dayId].sets[u.exerciseId]) weekData[dayId].sets[u.exerciseId] = {};
+      const existing: SetEntry = weekData[dayId].sets[u.exerciseId][u.setIndex] || {
+        completed: false,
+      };
+      weekData[dayId].sets[u.exerciseId][u.setIndex] = { ...existing, ...u.entry };
+    }
+
+    await AsyncStorage.setItem(key, JSON.stringify(weekData));
+    return weekData[dayId];
+  });
+}
+
+export async function deleteSetEntry(
+  dayId: string,
+  exerciseId: string,
+  setIndex: number,
+  weekKey: string = getMondayKey(),
+  profileId?: string
+): Promise<DayProgress> {
+  const pid = await resolveProfileId(profileId);
+  if (!pid) return { sets: {} };
+  const key = `${STORAGE_KEYS.WEEK_PREFIX}${pid}_${weekKey}`;
+  return enqueueStorageWrite(key, async () => {
+    const raw = await AsyncStorage.getItem(key);
+    const weekData = raw ? JSON.parse(raw) : {};
+    if (weekData[dayId]?.sets?.[exerciseId]?.[setIndex] !== undefined) {
+      delete weekData[dayId].sets[exerciseId][setIndex];
+      await AsyncStorage.setItem(key, JSON.stringify(weekData));
+    }
+    return weekData[dayId] || { sets: {} };
+  });
 }
 
 export async function saveSessionExerciseConfig(
@@ -711,14 +799,16 @@ export async function resetDayProgress(
     const pid = await resolveProfileId(profileId);
     if (!pid) return { sets: {} };
     const key = `${STORAGE_KEYS.WEEK_PREFIX}${pid}_${weekKey}`;
-    const raw = await AsyncStorage.getItem(key);
-    const weekData = raw ? JSON.parse(raw) : {};
+    return enqueueStorageWrite(key, async () => {
+      const raw = await AsyncStorage.getItem(key);
+      const weekData = raw ? JSON.parse(raw) : {};
 
-    if (weekData[dayId]) {
-      delete weekData[dayId];
-      await AsyncStorage.setItem(key, JSON.stringify(weekData));
-    }
-    return { sets: {} };
+      if (weekData[dayId]) {
+        delete weekData[dayId];
+        await AsyncStorage.setItem(key, JSON.stringify(weekData));
+      }
+      return { sets: {} };
+    });
   } catch {
     return { sets: {} };
   }
@@ -743,16 +833,26 @@ export async function markWorkoutCompleted(
     const pid = await resolveProfileId(profileId);
     if (!pid) return { totalVolumeKg: 0, newPRs: [] };
     const key = `${STORAGE_KEYS.WEEK_PREFIX}${pid}_${weekKey}`;
-    const raw = await AsyncStorage.getItem(key);
-    const weekData = raw ? JSON.parse(raw) : {};
-
-    if (!weekData[dayId]) weekData[dayId] = { sets: {} };
     const todayIso = new Date().toISOString();
-    weekData[dayId].finishedAt = todayIso;
-    await AsyncStorage.setItem(key, JSON.stringify(weekData));
+    const persistedDayProgress = await enqueueStorageWrite(key, async () => {
+      const raw = await AsyncStorage.getItem(key);
+      const weekData = raw ? JSON.parse(raw) : {};
+      if (!weekData[dayId]) weekData[dayId] = { sets: {} };
+      weekData[dayId].finishedAt = todayIso;
+      await AsyncStorage.setItem(key, JSON.stringify(weekData));
+      return weekData[dayId] as DayProgress;
+    });
 
-    const setsSource: { [exId: string]: { [setIdx: string]: SetEntry } } =
-      options?.setsMap || weekData[dayId].sets || {};
+    const rawSetsSource: { [exId: string]: { [setIdx: string]: SetEntry } } =
+      options?.setsMap || persistedDayProgress?.sets || {};
+    const activeIdsSet = options?.exercises?.length
+      ? new Set(options.exercises.map((e) => e.id))
+      : null;
+    const setsSource: { [exId: string]: { [setIdx: string]: SetEntry } } = activeIdsSet
+      ? Object.fromEntries(
+          Object.entries(rawSetsSource).filter(([exId]) => activeIdsSet.has(exId))
+        )
+      : rawSetsSource;
 
     let totalVolumeKg = 0;
     const newPRs: NewPRHighlight[] = [];
@@ -781,23 +881,23 @@ export async function markWorkoutCompleted(
         }
       }
 
+      const matchedExMeta = options?.exercises?.find(
+        (e) => e.id === exId || resolveCanonicalExerciseId(e.id, e.name) === resolveCanonicalExerciseId(exId)
+      );
+      const canonicalExId = resolveCanonicalExerciseId(exId, matchedExMeta?.name);
+
       if (exCompletedSetsCount > 0) {
-        const canonicalExId = resolveCanonicalExerciseId(exId);
         exerciseSets[canonicalExId] = (exerciseSets[canonicalExId] || 0) + exCompletedSetsCount;
       }
 
       if (bestExercise1RM > 0) {
-        const canonicalExId = resolveCanonicalExerciseId(exId);
         const prevBest = currentBestPRs[canonicalExId];
         if (!prevBest || bestExercise1RM > prevBest.estimated1RM) {
-          const exMeta = options?.exercises?.find(
-            (e) => resolveCanonicalExerciseId(e.id, e.name) === canonicalExId || e.id === exId
-          );
-          if (exMeta) {
+          if (matchedExMeta) {
             await addPRRecord(
               canonicalExId,
-              exMeta.name,
-              exMeta.category,
+              matchedExMeta.name,
+              matchedExMeta.category,
               bestExerciseWeight,
               bestExerciseReps,
               `Trening: ${dayName}`,
@@ -805,7 +905,7 @@ export async function markWorkoutCompleted(
             );
             newPRs.push({
               exerciseId: canonicalExId,
-              exerciseName: exMeta.name,
+              exerciseName: matchedExMeta.name,
               weight: bestExerciseWeight,
               reps: bestExerciseReps,
               estimated1RM: bestExercise1RM,
@@ -891,10 +991,12 @@ export async function getWorkoutStreak(profileId?: string): Promise<number> {
 
 export async function getLastExerciseMetrics(
   exerciseId: string,
-  profileId?: string
+  profileId?: string,
+  exerciseName?: string
 ): Promise<{ weight?: string; reps?: string }> {
   try {
-    const history = await getExerciseHistory(exerciseId, profileId);
+    const canonicalId = resolveCanonicalExerciseId(exerciseId, exerciseName);
+    const history = await getExerciseHistory(canonicalId, profileId);
     if (history.length > 0) {
       return {
         weight: history[0].weight ? String(history[0].weight) : undefined,

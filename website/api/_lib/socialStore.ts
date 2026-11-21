@@ -33,6 +33,8 @@ export interface SocialProfileRecord {
   showActivityToFriends?: boolean;
   cheersCount: number;
   cheeredByMe?: boolean;
+  cheerStreakDays?: number;
+  cheeredTodayWithMe?: boolean;
   updatedAt: string;
 }
 
@@ -85,6 +87,109 @@ export function orderedPair(a: string, b: string): [string, string] {
 
 export function pairKeyFor(a: string, b: string): string {
   return [a, b].sort().join('__');
+}
+
+function shiftIsoDay(dayKey: string, deltaDays: number): string {
+  const parts = dayKey.split('-').map((n) => Number(n));
+  const d = new Date(Date.UTC(parts[0] || 2026, (parts[1] || 1) - 1, parts[2] || 1));
+  d.setUTCDate(d.getUTCDate() + deltaDays);
+  return d.toISOString().slice(0, 10);
+}
+
+function sanitizeDayKey(raw?: string | null): string | null {
+  if (!raw) return null;
+  const trimmed = String(raw).trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(trimmed) ? trimmed : null;
+}
+
+function computeStreakFromDaySet(
+  daySet: Set<string>,
+  referenceDayKey?: string | null
+): { streakDays: number; cheeredToday: boolean } {
+  if (daySet.size === 0) return { streakDays: 0, cheeredToday: false };
+  const todayKey = sanitizeDayKey(referenceDayKey) || new Date().toISOString().slice(0, 10);
+  const tomorrowKey = shiftIsoDay(todayKey, 1);
+  const yesterdayKey = shiftIsoDay(todayKey, -1);
+
+  const hasTodayOrAhead = daySet.has(todayKey) || daySet.has(tomorrowKey);
+  let cursor: string | null = null;
+  if (daySet.has(tomorrowKey)) {
+    cursor = tomorrowKey;
+  } else if (daySet.has(todayKey)) {
+    cursor = todayKey;
+  } else if (daySet.has(yesterdayKey)) {
+    cursor = yesterdayKey;
+  }
+
+  if (!cursor) {
+    return { streakDays: 0, cheeredToday: false };
+  }
+
+  let streakDays = 0;
+  let guard = 0;
+  while (daySet.has(cursor) && guard < 1000) {
+    streakDays += 1;
+    cursor = shiftIsoDay(cursor, -1);
+    guard += 1;
+  }
+  return { streakDays, cheeredToday: hasTodayOrAhead };
+}
+
+export async function getPairCheerStreak(
+  userId: string,
+  friendId: string,
+  referenceDayKey?: string | null
+): Promise<{ streakDays: number; cheeredToday: boolean }> {
+  await ensureSchema();
+  const sql = getSql();
+  const rows: any[] = await sql`
+    SELECT DISTINCT
+      COALESCE(day_key, TO_CHAR(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD')) AS dkey
+    FROM cheer_bursts
+    WHERE (from_user_id = ${userId} AND to_user_id = ${friendId})
+       OR (from_user_id = ${friendId} AND to_user_id = ${userId})
+  `;
+  const daySet = new Set<string>();
+  for (const r of rows) {
+    if (r?.dkey) daySet.add(String(r.dkey));
+  }
+  return computeStreakFromDaySet(daySet, referenceDayKey);
+}
+
+async function getCheerStreaksForFriends(
+  userId: string,
+  friendIds: string[],
+  referenceDayKey?: string | null
+): Promise<Record<string, { streakDays: number; cheeredToday: boolean }>> {
+  const out: Record<string, { streakDays: number; cheeredToday: boolean }> = {};
+  if (friendIds.length === 0) return out;
+  const sql = getSql();
+  const rows: any[] = await sql`
+    SELECT
+      CASE WHEN from_user_id = ${userId} THEN to_user_id ELSE from_user_id END AS friend_id,
+      COALESCE(day_key, TO_CHAR(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD')) AS dkey
+    FROM cheer_bursts
+    WHERE (from_user_id = ${userId} AND to_user_id = ANY(${friendIds}::text[]))
+       OR (to_user_id = ${userId} AND from_user_id = ANY(${friendIds}::text[]))
+    GROUP BY 1, 2
+  `;
+  const byFriend = new Map<string, Set<string>>();
+  for (const r of rows) {
+    const fid = String(r.friend_id || '');
+    const dk = String(r.dkey || '');
+    if (!fid || !dk) continue;
+    let set = byFriend.get(fid);
+    if (!set) {
+      set = new Set<string>();
+      byFriend.set(fid, set);
+    }
+    set.add(dk);
+  }
+  for (const fid of friendIds) {
+    const set = byFriend.get(fid);
+    out[fid] = set ? computeStreakFromDaySet(set, referenceDayKey) : { streakDays: 0, cheeredToday: false };
+  }
+  return out;
 }
 
 function mapSocialProfileRow(row: any, viewerUserId?: string): SocialProfileRecord {
@@ -455,7 +560,7 @@ export async function areUsersFriends(userA: string, userB: string): Promise<boo
   return rows.length > 0;
 }
 
-export async function getSocialHubForUser(userId: string) {
+export async function getSocialHubForUser(userId: string, referenceDayKey?: string | null) {
   await ensureSchema();
   const sql = getSql();
 
@@ -512,10 +617,14 @@ export async function getSocialHubForUser(userId: string) {
 
   const friendProfiles = (friendRows as any[]).map((r) => mapSocialProfileRow(r, userId));
   const friendIds = friendProfiles.map((f) => f.userId);
+  const cheerStreakMap = await getCheerStreaksForFriends(userId, friendIds, referenceDayKey);
 
   let totalUnread = 0;
   const friends = await Promise.all(
     friendProfiles.map(async (fp) => {
+      const streakInfo = cheerStreakMap[fp.userId] || { streakDays: 0, cheeredToday: false };
+      fp.cheerStreakDays = streakInfo.streakDays;
+      fp.cheeredTodayWithMe = streakInfo.cheeredToday;
       const pk = pairKeyFor(userId, fp.userId);
       const lastRead = readMap[fp.userId] || '1970-01-01T00:00:00.000Z';
       const [lastMsgRows, unreadRows] = await Promise.all([

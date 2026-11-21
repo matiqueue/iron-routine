@@ -41,12 +41,15 @@ interface PlanTabProps {
   onStartWorkoutForDay?: (dayId: string) => void;
 }
 
+const EMPTY_EXERCISES: Exercise[] = [];
+const EMPTY_PRS: { [exerciseId: string]: PRRecord } = {};
+
 export const PlanTab: React.FC<PlanTabProps> = ({
   profileId,
   activePlan,
   allPlansCount = 1,
-  extraLibraryExercises = [],
-  bestPRs = {},
+  extraLibraryExercises = EMPTY_EXERCISES,
+  bestPRs = EMPTY_PRS,
   onOpenPlanManager,
   onPlanUpdated,
   onLibraryChanged,

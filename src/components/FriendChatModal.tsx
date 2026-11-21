@@ -399,72 +399,51 @@ interface VoiceNoteBubbleProps {
   isMine: boolean;
 }
 
-const VoiceNoteBubble: React.FC<VoiceNoteBubbleProps> = ({
-  messageId,
-  audioBase64,
-  audioMime,
-  durationSec = 0,
-  waveform,
-  isMine,
+const ActiveVoiceNotePlayer: React.FC<{
+  audioUri: string;
+  durationSec: number;
+  bars: number[];
+  initialSeekRatio: number | null;
+  buttonBg: string;
+  buttonIconColor: string;
+  activeBarColor: string;
+  idleBarColor: string;
+  metaTextColor: string;
+  voiceLabel: string;
+}> = ({
+  audioUri,
+  durationSec,
+  bars,
+  initialSeekRatio,
+  buttonBg,
+  buttonIconColor,
+  activeBarColor,
+  idleBarColor,
+  metaTextColor,
+  voiceLabel,
 }) => {
-  const { theme } = useAppTheme();
-  const { t } = useLanguage();
-  const [audioUri, setAudioUri] = useState<string | null>(null);
-  const [isPreparing, setIsPreparing] = useState(false);
-
-  const bars = useMemo(
-    () => (waveform && waveform.length >= 8 ? downsampleWaveform(waveform) : DEFAULT_WAVEFORM),
-    [waveform]
-  );
+  const player = useAudioPlayer({ uri: audioUri }, { updateInterval: 200 });
+  const status = useAudioPlayerStatus(player);
+  const autoPlayedRef = useRef(false);
 
   useEffect(() => {
-    let cancelled = false;
-    if (!audioBase64) {
-      setAudioUri(null);
-      return;
-    }
-
-    if (Platform.OS === 'web') {
-      const mime = audioMime || 'audio/webm';
-      setAudioUri(`data:${mime};base64,${audioBase64}`);
-      return;
-    }
-
-    const ext = audioMime?.includes('webm') ? 'webm' : 'm4a';
-    const safeName = `ir_voice_hq_${messageId.replace(/[^a-zA-Z0-9_-]/g, '_')}.${ext}`;
-
-    setIsPreparing(true);
+    if (autoPlayedRef.current) return;
+    autoPlayedRef.current = true;
     (async () => {
       try {
-        const cached = new File(Paths.cache, safeName);
-        if (!cached.exists) {
-          cached.create({ overwrite: true });
-          const bytes = base64ToBytes(audioBase64);
-          await cached.write(bytes);
+        await setAudioModeAsync({
+          playsInSilentMode: true,
+          allowsRecording: false,
+        });
+      } catch {}
+      try {
+        if (initialSeekRatio !== null && durationSec > 0) {
+          await player.seekTo(initialSeekRatio * durationSec);
         }
-        if (!cancelled) {
-          setAudioUri(cached.uri);
-        }
-      } catch {
-        if (!cancelled) {
-          setAudioUri(null);
-        }
-      } finally {
-        if (!cancelled) {
-          setIsPreparing(false);
-        }
-      }
+        player.play();
+      } catch {}
     })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [audioBase64, audioMime, messageId]);
-
-  const player = useAudioPlayer(audioUri ? { uri: audioUri } : null, {
-    updateInterval: 80,
-  });
-  const status = useAudioPlayerStatus(player);
+  }, [player, initialSeekRatio, durationSec]);
 
   useEffect(() => {
     if (status.didJustFinish) {
@@ -478,16 +457,13 @@ const VoiceNoteBubble: React.FC<VoiceNoteBubbleProps> = ({
     totalSec > 0 ? Math.min(1, Math.max(0, status.currentTime / totalSec)) : 0;
 
   const handleTogglePlay = async () => {
-    if (!audioUri || isPreparing) return;
     triggerSelectionHaptic();
     try {
       await setAudioModeAsync({
         playsInSilentMode: true,
         allowsRecording: false,
       });
-    } catch {
-      // Ignore web fallback
-    }
+    } catch {}
     if (status.playing) {
       player.pause();
     } else {
@@ -499,7 +475,7 @@ const VoiceNoteBubble: React.FC<VoiceNoteBubbleProps> = ({
   };
 
   const handleSeekBar = async (barIdx: number) => {
-    if (!audioUri || totalSec <= 0) return;
+    if (totalSec <= 0) return;
     triggerSelectionHaptic();
     const ratio = (barIdx + 0.5) / bars.length;
     await player.seekTo(ratio * totalSec);
@@ -512,49 +488,19 @@ const VoiceNoteBubble: React.FC<VoiceNoteBubbleProps> = ({
     }
   };
 
-  const mineOnLight = isMine && !theme.isDark;
-  const mineOnDark = isMine && theme.isDark;
-
-  const buttonBg = mineOnDark
-    ? 'rgba(0,0,0,0.12)'
-    : mineOnLight
-    ? 'rgba(255,255,255,0.18)'
-    : theme.isDark
-    ? 'rgba(255,255,255,0.12)'
-    : 'rgba(0,0,0,0.08)';
-  const buttonIconColor = isMine ? theme.primaryText : theme.text;
-  const activeBarColor = isMine ? theme.primaryText : theme.text;
-  const idleBarColor = mineOnDark
-    ? 'rgba(0,0,0,0.24)'
-    : mineOnLight
-    ? 'rgba(255,255,255,0.34)'
-    : theme.isDark
-    ? 'rgba(255,255,255,0.24)'
-    : 'rgba(0,0,0,0.2)';
-  const metaTextColor = mineOnDark
-    ? 'rgba(0,0,0,0.68)'
-    : mineOnLight
-    ? 'rgba(255,255,255,0.82)'
-    : theme.textSecondary;
-
   return (
     <View style={styles.voiceWrap}>
       <TouchableOpacity
         style={[styles.voicePlayBtn, { backgroundColor: buttonBg }]}
         onPress={handleTogglePlay}
-        disabled={!audioUri || isPreparing}
         activeOpacity={0.78}
       >
-        {isPreparing ? (
-          <ActivityIndicator size="small" color={buttonIconColor} />
-        ) : (
-          <Ionicons
-            name={status.playing ? 'pause' : 'play'}
-            size={18}
-            color={buttonIconColor}
-            style={!status.playing ? { marginLeft: 2 } : undefined}
-          />
-        )}
+        <Ionicons
+          name={status.playing ? 'pause' : 'play'}
+          size={18}
+          color={buttonIconColor}
+          style={!status.playing ? { marginLeft: 2 } : undefined}
+        />
       </TouchableOpacity>
 
       <View style={styles.voiceWaveBlock}>
@@ -594,7 +540,182 @@ const VoiceNoteBubble: React.FC<VoiceNoteBubbleProps> = ({
           <View style={styles.voiceLockPill}>
             <Ionicons name="lock-closed" size={9} color={metaTextColor} />
             <Text style={[styles.voiceHintTag, { color: metaTextColor }]} numberOfLines={1}>
-              {t('voiceMsgLabel').replace('🎤 ', '')}
+              {voiceLabel}
+            </Text>
+          </View>
+        </View>
+      </View>
+    </View>
+  );
+};
+
+const VoiceNoteBubble: React.FC<VoiceNoteBubbleProps> = ({
+  messageId,
+  audioBase64,
+  audioMime,
+  durationSec = 0,
+  waveform,
+  isMine,
+}) => {
+  const { theme } = useAppTheme();
+  const { t } = useLanguage();
+  const [audioUri, setAudioUri] = useState<string | null>(null);
+  const [isPreparing, setIsPreparing] = useState(false);
+  const [activated, setActivated] = useState(false);
+  const [initialSeekRatio, setInitialSeekRatio] = useState<number | null>(null);
+
+  const bars = useMemo(
+    () => (waveform && waveform.length >= 8 ? downsampleWaveform(waveform) : DEFAULT_WAVEFORM),
+    [waveform]
+  );
+
+  // Lazy-decode audio to cache ONLY once user taps Play (zero idle CoreAudio/disk overhead)
+  useEffect(() => {
+    if (!activated || audioUri || !audioBase64) return;
+    let cancelled = false;
+
+    if (Platform.OS === 'web') {
+      const mime = audioMime || 'audio/webm';
+      setAudioUri(`data:${mime};base64,${audioBase64}`);
+      return;
+    }
+
+    const ext = audioMime?.includes('webm') ? 'webm' : 'm4a';
+    const safeName = `ir_voice_hq_${messageId.replace(/[^a-zA-Z0-9_-]/g, '_')}.${ext}`;
+
+    setIsPreparing(true);
+    (async () => {
+      try {
+        const cached = new File(Paths.cache, safeName);
+        if (!cached.exists) {
+          cached.create({ overwrite: true });
+          const bytes = base64ToBytes(audioBase64);
+          await cached.write(bytes);
+        }
+        if (!cancelled) {
+          setAudioUri(cached.uri);
+        }
+      } catch {
+        if (!cancelled) {
+          setAudioUri(null);
+          setActivated(false);
+        }
+      } finally {
+        if (!cancelled) {
+          setIsPreparing(false);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activated, audioUri, audioBase64, audioMime, messageId]);
+
+  const mineOnLight = isMine && !theme.isDark;
+  const mineOnDark = isMine && theme.isDark;
+
+  const buttonBg = mineOnDark
+    ? 'rgba(0,0,0,0.12)'
+    : mineOnLight
+    ? 'rgba(255,255,255,0.18)'
+    : theme.isDark
+    ? 'rgba(255,255,255,0.12)'
+    : 'rgba(0,0,0,0.08)';
+  const buttonIconColor = isMine ? theme.primaryText : theme.text;
+  const activeBarColor = isMine ? theme.primaryText : theme.text;
+  const idleBarColor = mineOnDark
+    ? 'rgba(0,0,0,0.24)'
+    : mineOnLight
+    ? 'rgba(255,255,255,0.34)'
+    : theme.isDark
+    ? 'rgba(255,255,255,0.24)'
+    : 'rgba(0,0,0,0.2)';
+  const metaTextColor = mineOnDark
+    ? 'rgba(0,0,0,0.68)'
+    : mineOnLight
+    ? 'rgba(255,255,255,0.82)'
+    : theme.textSecondary;
+  const voiceLabel = t('voiceMsgLabel').replace('🎤 ', '');
+
+  if (activated && audioUri) {
+    return (
+      <ActiveVoiceNotePlayer
+        audioUri={audioUri}
+        durationSec={durationSec}
+        bars={bars}
+        initialSeekRatio={initialSeekRatio}
+        buttonBg={buttonBg}
+        buttonIconColor={buttonIconColor}
+        activeBarColor={activeBarColor}
+        idleBarColor={idleBarColor}
+        metaTextColor={metaTextColor}
+        voiceLabel={voiceLabel}
+      />
+    );
+  }
+
+  return (
+    <View style={styles.voiceWrap}>
+      <TouchableOpacity
+        style={[styles.voicePlayBtn, { backgroundColor: buttonBg }]}
+        onPress={() => {
+          if (!audioBase64 || isPreparing) return;
+          triggerSelectionHaptic();
+          setInitialSeekRatio(null);
+          setActivated(true);
+        }}
+        disabled={!audioBase64 || isPreparing}
+        activeOpacity={0.78}
+      >
+        {isPreparing ? (
+          <ActivityIndicator size="small" color={buttonIconColor} />
+        ) : (
+          <Ionicons
+            name="play"
+            size={18}
+            color={buttonIconColor}
+            style={{ marginLeft: 2 }}
+          />
+        )}
+      </TouchableOpacity>
+
+      <View style={styles.voiceWaveBlock}>
+        <View style={styles.voiceBarsRow}>
+          {bars.map((amp, idx) => (
+            <TouchableOpacity
+              key={idx}
+              onPress={() => {
+                if (!audioBase64 || isPreparing) return;
+                triggerSelectionHaptic();
+                setInitialSeekRatio((idx + 0.5) / bars.length);
+                setActivated(true);
+              }}
+              hitSlop={{ top: 6, bottom: 6, left: 1, right: 1 }}
+              activeOpacity={0.7}
+              style={styles.voiceBarTouch}
+            >
+              <View
+                style={[
+                  styles.voiceBar,
+                  {
+                    height: Math.round(7 + amp * 20),
+                    backgroundColor: idleBarColor,
+                  },
+                ]}
+              />
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        <View style={styles.voiceMetaRow}>
+          <Text style={[styles.voiceTimerText, { color: metaTextColor }]}>
+            {formatDurationSec(durationSec)}
+          </Text>
+          <View style={styles.voiceLockPill}>
+            <Ionicons name="lock-closed" size={9} color={metaTextColor} />
+            <Text style={[styles.voiceHintTag, { color: metaTextColor }]} numberOfLines={1}>
+              {voiceLabel}
             </Text>
           </View>
         </View>
@@ -3170,22 +3291,27 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
         )}
 
         {/* In-Chat Friend Profile Overlay (never exits chat back to Friends tab) */}
-        <FriendProfileModal
-          visible={showInChatProfile}
-          friend={friend}
-          myProfile={myProfile}
-          embeddedOverlay
-          onClose={() => setShowInChatProfile(false)}
-          onOpenChat={() => setShowInChatProfile(false)}
-          onSendKudos={async (f) => {
-            await onSendKudos?.(f);
-          }}
-          onRemoveFriend={async (f) => {
-            setShowInChatProfile(false);
-            await onRemoveFriend?.(f);
-            onClose();
-          }}
-        />
+        {showInChatProfile && (
+          <FriendProfileModal
+            visible={true}
+            friend={friend}
+            myProfile={myProfile}
+            embeddedOverlay
+            onClose={() => setShowInChatProfile(false)}
+            onOpenChat={() => setShowInChatProfile(false)}
+            onSendKudos={async (f) => {
+              await onSendKudos?.(f);
+            }}
+            onCheerStreakUpdated={() => {
+              onMessagesChanged?.();
+            }}
+            onRemoveFriend={async (f) => {
+              setShowInChatProfile(false);
+              await onRemoveFriend?.(f);
+              onClose();
+            }}
+          />
+        )}
         </Animated.View>
       </View>
     </Modal>
