@@ -118,7 +118,7 @@ const PL = {
   step6Subtitle:
     'Wybierz logowanie iCloud lub Gmail (Clerk), aby automatycznie synchronizować dane w chmurze, albo korzystaj lokalnie.',
 
-  onboardingContinueCloud: 'Kontynuuj z iCloud',
+  onboardingContinueCloud: 'Kontynuuj z Apple',
   onboardingContinueGoogle: 'Kontynuuj z Google (Gmail)',
   onboardingUseLocal: 'Używaj lokalnie bez konta',
   onboardingPrivacyNote:
@@ -1117,7 +1117,7 @@ const EN: Record<TranslationKey, string> = {
   step6Subtitle:
     'Sign in with iCloud or Gmail (Clerk) to automatically sync your data, or stay local without an account.',
 
-  onboardingContinueCloud: 'Continue with iCloud',
+  onboardingContinueCloud: 'Continue with Apple',
   onboardingContinueGoogle: 'Continue with Google (Gmail)',
   onboardingUseLocal: 'Use locally without account',
   onboardingPrivacyNote:
@@ -2109,7 +2109,7 @@ const DE: Record<TranslationKey, string> = {
   step6Subtitle:
     'Melde dich mit iCloud oder Gmail (Clerk) zur Synchronisierung an oder nutze die App lokal.',
 
-  onboardingContinueCloud: 'Mit iCloud fortfahren',
+  onboardingContinueCloud: 'Mit Apple fortfahren',
   onboardingContinueGoogle: 'Mit Google (Gmail) fortfahren',
   onboardingUseLocal: 'Lokal ohne Konto nutzen',
   onboardingPrivacyNote:
@@ -3101,7 +3101,7 @@ const FR: Record<TranslationKey, string> = {
   step6Subtitle:
     'Connectez iCloud ou Gmail (Clerk) pour synchroniser vos données ou continuez en local.',
 
-  onboardingContinueCloud: 'Continuer avec iCloud',
+  onboardingContinueCloud: 'Continuer avec Apple',
   onboardingContinueGoogle: 'Continuer avec Google (Gmail)',
   onboardingUseLocal: 'Utiliser en local sans compte',
   onboardingPrivacyNote:
@@ -4093,7 +4093,7 @@ const ES: Record<TranslationKey, string> = {
   step6Subtitle:
     'Inicia con iCloud o Gmail (Clerk) para sincronizar en la nube, o úsala localmente sin cuenta.',
 
-  onboardingContinueCloud: 'Continuar con iCloud',
+  onboardingContinueCloud: 'Continuar con Apple',
   onboardingContinueGoogle: 'Continuar con Google (Gmail)',
   onboardingUseLocal: 'Usar localmente sin cuenta',
   onboardingPrivacyNote:

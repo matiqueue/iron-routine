@@ -1,5 +1,7 @@
 import { AppState, Linking, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as AppleAuthentication from 'expo-apple-authentication';
+import * as WebBrowser from 'expo-web-browser';
 import {
   exportProfileBackup,
   getActiveProfile,
@@ -81,20 +83,73 @@ async function getOrCreateAppleICloudIdentity(): Promise<string> {
   }
 }
 
+export interface CloudAuthResult {
+  ok: boolean;
+  canceled?: boolean;
+  isNewAccount?: boolean;
+  session?: CloudSession;
+  error?: string;
+}
+
+async function pollOAuthAttemptOnce(
+  attemptId: string,
+  fallbackProvider: CloudAuthProvider,
+  fallbackDisplayName?: string
+): Promise<CloudAuthResult | null> {
+  try {
+    const pollRes = await fetch(`${CLOUD_API_BASE}/auth`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'poll_attempt',
+        attemptId,
+      }),
+    });
+    const pollData = await pollRes.json().catch(() => null);
+    if (
+      pollData?.ok &&
+      pollData?.status === 'completed' &&
+      pollData?.token &&
+      pollData?.user
+    ) {
+      const resolvedProvider: CloudAuthProvider =
+        pollData.user.provider === 'apple' ? 'apple' : fallbackProvider;
+      const session: CloudSession = {
+        token: pollData.token,
+        userId: pollData.user.userId,
+        clerkUserId: pollData.user.clerkUserId || null,
+        email: pollData.user.email,
+        provider: resolvedProvider,
+        displayName:
+          pollData.user.displayName ||
+          fallbackDisplayName?.trim() ||
+          (resolvedProvider === 'apple' ? 'Apple' : 'Google'),
+        nickname: pollData.user.nickname || null,
+        nicknameUpdatedAt: pollData.user.nicknameUpdatedAt || null,
+        avatarUrl: pollData.user.avatarUrl || null,
+        lastSyncedAt: pollData.user.lastSyncedAt || null,
+        backupSummary: pollData.user.backupSummary || null,
+      };
+      await saveStoredCloudSession(session);
+      return {
+        ok: true,
+        isNewAccount: Boolean(pollData.isNewAccount),
+        session,
+      };
+    }
+  } catch {}
+  return null;
+}
+
 /**
- * Unified, normalized Clerk Core 3 authentication flow for both iCloud (Apple) and Gmail (Google).
- * Creates a Clerk handoff attempt in PostgreSQL, opens Clerk's `/mobile-auth` portal,
- * and resolves immediately via `ironroutine://auth` deep link / AppState / polling.
+ * Unified Clerk Core 3 authentication flow for Google (and non-iOS Apple fallback).
+ * On iOS & Android, runs inside a native in-app ASWebAuthenticationSession / Chrome Custom Tab
+ * (`expo-web-browser` openAuthSessionAsync) to comply with Apple App Store Guideline 4.0.
  */
 export async function signInWithClerkCloud(
   provider: CloudAuthProvider,
   displayName?: string
-): Promise<{
-  ok: boolean;
-  isNewAccount?: boolean;
-  session?: CloudSession;
-  error?: string;
-}> {
+): Promise<CloudAuthResult> {
   try {
     const deviceIdentityId =
       provider === 'apple' ? await getOrCreateAppleICloudIdentity() : undefined;
@@ -107,7 +162,7 @@ export async function signInWithClerkCloud(
         provider,
         deviceIdentityId,
         displayName:
-          displayName?.trim() || (provider === 'apple' ? 'Apple iCloud' : 'Konto Google'),
+          displayName?.trim() || (provider === 'apple' ? 'Apple' : 'Google'),
       }),
     });
 
@@ -118,14 +173,46 @@ export async function signInWithClerkCloud(
         error:
           startData?.error ||
           translateText(getCurrentAppLanguage(), 'cloudErrInitClerk', {
-            provider: provider === 'apple' ? 'iCloud' : 'Google',
+            provider: provider === 'apple' ? 'Apple' : 'Google',
           }),
       };
     }
 
     const { attemptId, authUrl } = startData;
+
+    // Native iOS (ASWebAuthenticationSession) & Android (Chrome Custom Tabs) in-app auth session
+    if (Platform.OS !== 'web') {
+      const authResult = await WebBrowser.openAuthSessionAsync(
+        authUrl,
+        'ironroutine://auth',
+        { preferEphemeralSession: false }
+      );
+
+      // Even on dismiss/cancel, check once in case the callback completed right before close
+      const maxChecks = authResult.type === 'success' ? 6 : 1;
+      for (let i = 0; i < maxChecks; i++) {
+        const completed = await pollOAuthAttemptOnce(attemptId, provider, displayName);
+        if (completed) {
+          return completed;
+        }
+        if (i < maxChecks - 1) {
+          await new Promise((r) => setTimeout(r, 450));
+        }
+      }
+
+      if (authResult.type === 'cancel' || authResult.type === 'dismiss') {
+        return { ok: false, canceled: true };
+      }
+
+      return {
+        ok: false,
+        error: translateText(getCurrentAppLanguage(), 'cloudErrTimeout'),
+      };
+    }
+
+    // Web fallback: open popup + poll attempt
     const win = (globalThis as any)?.window;
-    if (Platform.OS === 'web' && win?.open) {
+    if (win?.open) {
       win.open(authUrl, '_blank', 'noopener');
     } else {
       await Linking.openURL(authUrl);
@@ -139,49 +226,13 @@ export async function signInWithClerkCloud(
       const checkAttempt = async () => {
         if (finished) return;
         attempts += 1;
-        try {
-          const pollRes = await fetch(`${CLOUD_API_BASE}/auth`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              action: 'poll_attempt',
-              attemptId,
-            }),
-          });
-          const pollData = await pollRes.json().catch(() => null);
-          if (
-            pollData?.ok &&
-            pollData?.status === 'completed' &&
-            pollData?.token &&
-            pollData?.user
-          ) {
-            finished = true;
-            cleanup();
-            const resolvedProvider: CloudAuthProvider =
-              pollData.user.provider === 'apple' ? 'apple' : provider;
-            const session: CloudSession = {
-              token: pollData.token,
-              userId: pollData.user.userId,
-              clerkUserId: pollData.user.clerkUserId || null,
-              email: pollData.user.email,
-              provider: resolvedProvider,
-              displayName:
-                pollData.user.displayName ||
-                displayName?.trim() ||
-                (resolvedProvider === 'apple' ? 'Apple iCloud' : 'Google'),
-              avatarUrl: pollData.user.avatarUrl || null,
-              lastSyncedAt: pollData.user.lastSyncedAt || null,
-              backupSummary: pollData.user.backupSummary || null,
-            };
-            await saveStoredCloudSession(session);
-            resolve({
-              ok: true,
-              isNewAccount: Boolean(pollData.isNewAccount),
-              session,
-            });
-            return;
-          }
-        } catch {}
+        const completed = await pollOAuthAttemptOnce(attemptId, provider, displayName);
+        if (completed) {
+          finished = true;
+          cleanup();
+          resolve(completed);
+          return;
+        }
 
         if (attempts >= maxAttempts && !finished) {
           finished = true;
@@ -213,27 +264,106 @@ export async function signInWithClerkCloud(
     return {
       ok: false,
       error: translateText(getCurrentAppLanguage(), 'cloudErrOpenClerk', {
-        provider: provider === 'apple' ? 'iCloud' : 'Google',
+        provider: provider === 'apple' ? 'Apple' : 'Google',
       }),
     };
   }
 }
 
-export async function signInWithAppleCloud(displayName?: string): Promise<{
-  ok: boolean;
-  isNewAccount?: boolean;
-  session?: CloudSession;
-  error?: string;
-}> {
+/**
+ * Native Sign in with Apple on iOS (`expo-apple-authentication` with Face ID / Touch ID +
+ * server-side Apple JWKS identityToken verification), complying with App Store Guideline 4.8.
+ */
+export async function signInWithAppleCloud(displayName?: string): Promise<CloudAuthResult> {
+  if (Platform.OS === 'ios') {
+    try {
+      const available = await AppleAuthentication.isAvailableAsync();
+      if (available) {
+        const credential = await AppleAuthentication.signInAsync({
+          requestedScopes: [
+            AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+            AppleAuthentication.AppleAuthenticationScope.EMAIL,
+          ],
+        });
+
+        if (!credential.identityToken) {
+          return {
+            ok: false,
+            error: translateText(getCurrentAppLanguage(), 'cloudErrInitClerk', {
+              provider: 'Apple',
+            }),
+          };
+        }
+
+        const appleNameParts = [
+          credential.fullName?.givenName,
+          credential.fullName?.familyName,
+        ].filter(Boolean);
+        const resolvedName =
+          appleNameParts.join(' ').trim() || displayName?.trim() || undefined;
+
+        const res = await fetch(`${CLOUD_API_BASE}/auth`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'apple_native',
+            identityToken: credential.identityToken,
+            displayName: resolvedName,
+          }),
+        });
+
+        const data = await res.json().catch(() => null);
+        if (!res.ok || !data?.ok || !data?.token || !data?.user) {
+          return {
+            ok: false,
+            error:
+              data?.error ||
+              translateText(getCurrentAppLanguage(), 'cloudErrInitClerk', {
+                provider: 'Apple',
+              }),
+          };
+        }
+
+        const session: CloudSession = {
+          token: data.token,
+          userId: data.user.userId,
+          clerkUserId: data.user.clerkUserId || null,
+          email: data.user.email,
+          provider: 'apple',
+          displayName: data.user.displayName || resolvedName || 'Apple',
+          nickname: data.user.nickname || null,
+          nicknameUpdatedAt: data.user.nicknameUpdatedAt || null,
+          avatarUrl: data.user.avatarUrl || null,
+          lastSyncedAt: data.user.lastSyncedAt || null,
+          backupSummary: data.user.backupSummary || null,
+        };
+        await saveStoredCloudSession(session);
+
+        return {
+          ok: true,
+          isNewAccount: Boolean(data.isNewAccount),
+          session,
+        };
+      }
+    } catch (err: any) {
+      if (err?.code === 'ERR_REQUEST_CANCELED') {
+        return { ok: false, canceled: true };
+      }
+      return {
+        ok: false,
+        error:
+          err?.message ||
+          translateText(getCurrentAppLanguage(), 'cloudErrOpenClerk', {
+            provider: 'Apple',
+          }),
+      };
+    }
+  }
+
   return signInWithClerkCloud('apple', displayName);
 }
 
-export async function signInWithGoogleCloud(displayName?: string): Promise<{
-  ok: boolean;
-  isNewAccount?: boolean;
-  session?: CloudSession;
-  error?: string;
-}> {
+export async function signInWithGoogleCloud(displayName?: string): Promise<CloudAuthResult> {
   return signInWithClerkCloud('google', displayName);
 }
 

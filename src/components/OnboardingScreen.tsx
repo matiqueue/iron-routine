@@ -545,10 +545,12 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onCompleted 
           : await signInWithGoogleCloud(name.trim() || undefined);
 
       if (!authRes.ok || !authRes.session) {
-        Alert.alert(
-          t('cloudAuthTitle'),
-          authRes.error || t('cloudConnectFailed')
-        );
+        if (!authRes.canceled) {
+          Alert.alert(
+            t('cloudAuthTitle'),
+            authRes.error || t('cloudConnectFailed')
+          );
+        }
         return;
       }
 

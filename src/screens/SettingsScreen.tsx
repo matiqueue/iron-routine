@@ -387,7 +387,9 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           : await signInWithGoogleCloud(nameInput.trim() || activeProfile.name);
 
       if (!res.ok || !res.session) {
-        Alert.alert(t('cloudAuthTitle'), res.error || t('cloudConnectFailed'));
+        if (!res.canceled) {
+          Alert.alert(t('cloudAuthTitle'), res.error || t('cloudConnectFailed'));
+        }
         return;
       }
 
@@ -418,7 +420,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           Alert.alert(
             t('accountConnectedTitle'),
             t('accountConnectedBody', {
-              provider: session.provider === 'apple' ? 'iCloud' : 'Google',
+              provider: session.provider === 'apple' ? 'Apple' : 'Google',
               email: session.email ? ` (${session.email})` : '',
             })
           );
@@ -930,7 +932,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                 ) : (
                   <>
                     <Ionicons name="logo-apple" size={18} color={theme.bg} />
-                    <Text style={[styles.cloudTwoBtnText, { color: theme.bg }]}>iCloud</Text>
+                    <Text style={[styles.cloudTwoBtnText, { color: theme.bg }]}>Apple</Text>
                   </>
                 )}
               </TouchableOpacity>

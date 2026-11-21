@@ -15,6 +15,96 @@ import {
 } from '../_lib/cloudStore.js';
 
 const OAUTH_ATTEMPT_TTL_MS = 10 * 60 * 1000;
+const APPLE_BUNDLE_IDS = new Set(['com.matique.ironroutine']);
+
+let cachedAppleJwks: { keys: any[]; fetchedAt: number } | null = null;
+
+async function getAppleJwks(forceRefresh = false): Promise<any[]> {
+  if (
+    !forceRefresh &&
+    cachedAppleJwks &&
+    Date.now() - cachedAppleJwks.fetchedAt < 60 * 60 * 1000
+  ) {
+    return cachedAppleJwks.keys;
+  }
+  const res = await fetch('https://appleid.apple.com/auth/keys');
+  if (!res.ok) {
+    throw new Error('Failed to fetch Apple JWKS');
+  }
+  const data: any = await res.json();
+  const keys = Array.isArray(data?.keys) ? data.keys : [];
+  cachedAppleJwks = { keys, fetchedAt: Date.now() };
+  return keys;
+}
+
+/**
+ * Cryptographically verifies a native Sign in with Apple `identityToken` JWT
+ * against Apple's official JWKS (`https://appleid.apple.com/auth/keys`).
+ */
+async function verifyAppleIdentityToken(identityToken?: string | null): Promise<{
+  sub: string;
+  email: string;
+  emailVerified: boolean;
+} | null> {
+  if (!identityToken || typeof identityToken !== 'string') return null;
+  const parts = identityToken.trim().split('.');
+  if (parts.length !== 3) return null;
+
+  const [headerB64, payloadB64, sigB64] = parts;
+  let header: any;
+  let payload: any;
+  try {
+    header = JSON.parse(Buffer.from(headerB64, 'base64url').toString('utf8'));
+    payload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf8'));
+  } catch {
+    return null;
+  }
+
+  if (header?.alg !== 'RS256' || typeof header?.kid !== 'string') {
+    return null;
+  }
+
+  try {
+    let keys = await getAppleJwks(false);
+    let jwk = keys.find((k) => k?.kid === header.kid);
+    if (!jwk) {
+      keys = await getAppleJwks(true);
+      jwk = keys.find((k) => k?.kid === header.kid);
+    }
+    if (!jwk) return null;
+
+    const publicKey = crypto.createPublicKey({ key: jwk, format: 'jwk' });
+    const signingInput = Buffer.from(`${headerB64}.${payloadB64}`, 'utf8');
+    const signature = Buffer.from(sigB64, 'base64url');
+    const isValidSig = crypto.verify('RSA-SHA256', signingInput, publicKey, signature);
+    if (!isValidSig) return null;
+
+    const nowSec = Math.floor(Date.now() / 1000);
+    const iss = String(payload?.iss || '');
+    const audList = Array.isArray(payload?.aud) ? payload.aud : [payload?.aud];
+    const exp = typeof payload?.exp === 'number' ? payload.exp : 0;
+    const sub = typeof payload?.sub === 'string' ? payload.sub.trim() : '';
+
+    if (
+      iss !== 'https://appleid.apple.com' ||
+      !audList.some((a: unknown) => typeof a === 'string' && APPLE_BUNDLE_IDS.has(a)) ||
+      exp < nowSec - 60 ||
+      sub.length < 4
+    ) {
+      return null;
+    }
+
+    const email =
+      typeof payload?.email === 'string' ? payload.email.trim().toLowerCase() : '';
+    const emailVerified =
+      payload?.email_verified === true || payload?.email_verified === 'true';
+
+    return { sub, email, emailVerified };
+  } catch (err) {
+    console.error('Apple identityToken verification error:', err);
+    return null;
+  }
+}
 
 function isAttemptFresh(createdAt?: string): boolean {
   if (!createdAt) return false;
@@ -108,6 +198,121 @@ export default {
     try {
       const body: any = await request.json();
       const action = String(body?.action || '').trim();
+
+      // 0. Native Sign in with Apple (iOS Face ID / Touch ID via expo-apple-authentication)
+      if (action === 'apple_native') {
+        const identityToken = String(body?.identityToken || '').trim();
+        const verified = await verifyAppleIdentityToken(identityToken);
+        if (!verified) {
+          return jsonResponse(
+            { ok: false, error: 'Nie udało się zweryfikować tokenu Sign in with Apple.' },
+            401
+          );
+        }
+
+        const clientDisplayName = String(body?.displayName || '').trim().slice(0, 64);
+        const appleSubUserId = deriveUserId(`apple_sub:${verified.sub}`);
+        const emailUserId = verified.email ? deriveUserId(verified.email) : null;
+
+        let existing = await getCloudUser(appleSubUserId);
+        if (!existing && emailUserId) {
+          existing = await getCloudUser(emailUserId);
+        }
+
+        const resolvedUserId = existing?.userId || appleSubUserId;
+        const resolvedEmail =
+          verified.email || existing?.email || `${verified.sub}@appleid.ironroutine.app`;
+        const resolvedDisplayName =
+          (clientDisplayName && clientDisplayName !== 'Apple iCloud'
+            ? clientDisplayName
+            : '') ||
+          existing?.displayName ||
+          (verified.email ? verified.email.split('@')[0] : '') ||
+          'Apple Athlete';
+
+        const [clerkSynced, existingBackupRaw] = await Promise.all([
+          syncClerkAccount({
+            clerkUserId: existing?.clerkUserId || undefined,
+            externalId: `apple_${verified.sub}`,
+            email: resolvedEmail,
+            displayName: resolvedDisplayName,
+            provider: 'apple',
+            ironRoutineUserId: resolvedUserId,
+          }),
+          getCloudBackupJson(resolvedUserId),
+        ]);
+
+        const nowIso = new Date().toISOString();
+        let backupSummary = existing?.backupSummary;
+        if (!backupSummary && existingBackupRaw) {
+          try {
+            const parsedBackup = JSON.parse(existingBackupRaw);
+            const prsCount = Object.values(parsedBackup.prRecords || {}).reduce<number>(
+              (acc, arr) => acc + (Array.isArray(arr) ? arr.length : 0),
+              0
+            );
+            backupSummary = {
+              profileName: String(parsedBackup.profile?.name || 'Profil'),
+              plansCount: Array.isArray(parsedBackup.plans) ? parsedBackup.plans.length : 0,
+              prsCount,
+              historyCount: Array.isArray(parsedBackup.history)
+                ? parsedBackup.history.length
+                : 0,
+            };
+          } catch {}
+        }
+
+        const userRecord: CloudUserRecord = existing
+          ? {
+              ...existing,
+              clerkUserId: clerkSynced?.clerkUserId || existing.clerkUserId || null,
+              provider: 'apple',
+              email: resolvedEmail,
+              displayName: resolvedDisplayName,
+              backupSummary: backupSummary || existing.backupSummary,
+              updatedAt: nowIso,
+            }
+          : {
+              userId: resolvedUserId,
+              clerkUserId: clerkSynced?.clerkUserId || null,
+              email: resolvedEmail,
+              provider: 'apple',
+              displayName: resolvedDisplayName,
+              avatarUrl: null,
+              backupSummary,
+              createdAt: nowIso,
+              updatedAt: nowIso,
+            };
+
+        await saveCloudUser(userRecord);
+
+        const token = signCloudToken({
+          userId: userRecord.userId,
+          email: userRecord.email,
+          provider: 'apple',
+        });
+
+        const hasBackup = Boolean(existingBackupRaw || userRecord.backupSummary);
+
+        return jsonResponse({
+          ok: true,
+          isNewAccount: !hasBackup,
+          token,
+          user: {
+            userId: userRecord.userId,
+            clerkUserId: userRecord.clerkUserId || null,
+            email: userRecord.email,
+            provider: userRecord.provider,
+            displayName: userRecord.displayName,
+            nickname: userRecord.nickname || null,
+            nicknameUpdatedAt: userRecord.nicknameUpdatedAt || null,
+            avatarUrl: userRecord.avatarUrl || null,
+            e2eePublicKey: userRecord.e2eePublicKey || null,
+            lastSyncedAt: userRecord.lastSyncedAt || null,
+            backupSummary: userRecord.backupSummary || null,
+          },
+        });
+      }
 
       // 1. Start a Clerk OAuth handoff attempt for mobile Google / Apple sign-in
       if (action === 'create_attempt') {

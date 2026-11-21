@@ -1,6 +1,6 @@
 {
   "name": "iron-routine",
-  "version": "3.1.0",
+  "version": "3.1.1",
   "main": "index.ts",
   "dependencies": {
     "@expo/metro-runtime": "~58.0.17",
@@ -9,6 +9,7 @@
     "@react-native-async-storage/async-storage": "^3.1.1",
     "@react-native-healthkit/core": "^16.2.0",
     "expo": "~58.0.24",
+    "expo-apple-authentication": "~58.0.3",
     "expo-audio": "~58.0.12",
     "expo-build-properties": "~58.0.12",
     "expo-calendar": "~58.0.7",
@@ -22,6 +23,7 @@
     "expo-live-activity": "^0.4.2",
     "expo-notifications": "~58.1.9",
     "expo-status-bar": "~58.0.5",
+    "expo-web-browser": "~58.1.0",
     "react": "19.3.1",
     "react-dom": "19.3.1",
     "react-native": "0.88.1",
