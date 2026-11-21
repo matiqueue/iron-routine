@@ -987,6 +987,10 @@ const PL = {
   restFinishedShort: 'KONIEC PRZERWY!',
   exercisePhotoStart: 'Pozycja 1',
   exercisePhotoPeak: 'Pozycja 2',
+  exercisePhotoOf: 'Pozycja {current} z {total}',
+  pickWorkoutSheetTitle: 'Kolejka treningów',
+  pickWorkoutSheetSub: 'Wybierz dowolny trening z planu lub przesuń kartę w bok',
+  backToWorkoutQueue: 'Wróć do treningu',
   nextExerciseArrowBtn: 'Następne ćwiczenie ➔',
 } as const;
 
@@ -1926,6 +1930,10 @@ const EN: Record<TranslationKey, string> = {
   restFinishedShort: 'REST OVER!',
   exercisePhotoStart: 'Position 1',
   exercisePhotoPeak: 'Position 2',
+  exercisePhotoOf: 'Position {current} of {total}',
+  pickWorkoutSheetTitle: 'Workout queue',
+  pickWorkoutSheetSub: 'Pick any workout from your plan or swipe the hero card',
+  backToWorkoutQueue: 'Back to workout',
   nextExerciseArrowBtn: 'Next exercise ➔',
 };
 
@@ -2863,6 +2871,10 @@ const DE: Record<TranslationKey, string> = {
   restFinishedShort: 'PAUSE VORBEI!',
   exercisePhotoStart: 'Position 1',
   exercisePhotoPeak: 'Position 2',
+  exercisePhotoOf: 'Position {current} von {total}',
+  pickWorkoutSheetTitle: 'Trainingsfolge',
+  pickWorkoutSheetSub: 'Wähle ein Training oder wische die Karte seitlich',
+  backToWorkoutQueue: 'Zurück zum Training',
   nextExerciseArrowBtn: 'Nächste Übung ➔',
 };
 
@@ -3800,6 +3812,10 @@ const FR: Record<TranslationKey, string> = {
   restFinishedShort: 'FIN DU REPOS !',
   exercisePhotoStart: 'Position 1',
   exercisePhotoPeak: 'Position 2',
+  exercisePhotoOf: 'Position {current} sur {total}',
+  pickWorkoutSheetTitle: 'Ordre des séances',
+  pickWorkoutSheetSub: 'Choisis une séance ou glisse la carte sur le côté',
+  backToWorkoutQueue: 'Retour à la séance',
   nextExerciseArrowBtn: 'Exercice suivant ➔',
 };
 
@@ -4737,6 +4753,10 @@ const ES: Record<TranslationKey, string> = {
   restFinishedShort: '¡FIN DEL DESCANSO!',
   exercisePhotoStart: 'Posición 1',
   exercisePhotoPeak: 'Posición 2',
+  exercisePhotoOf: 'Posición {current} de {total}',
+  pickWorkoutSheetTitle: 'Secuencia de entrenos',
+  pickWorkoutSheetSub: 'Elige cualquier sesión o desliza la tarjeta',
+  backToWorkoutQueue: 'Volver al entreno',
   nextExerciseArrowBtn: 'Siguiente ejercicio ➔',
 };
 

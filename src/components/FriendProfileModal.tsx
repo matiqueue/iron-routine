@@ -625,9 +625,10 @@ export const FriendProfileModal: React.FC<FriendProfileModalProps> = ({
   const headlineColor =
     myWins > friendWins ? '#38BDF8' : friendWins > myWins ? rankMeta.color : theme.textSecondary;
 
-  const surfaceTileBg = isDark ? 'rgba(255, 255, 255, 0.042)' : 'rgba(15, 23, 42, 0.035)';
-  const surfaceTileBorder = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(15, 23, 42, 0.08)';
-  const arenaCardBg = isDark ? '#0D1017' : '#F8FAFC';
+  const surfaceTileBg = isDark ? '#0D131F' : '#F3F7FC';
+  const surfaceTileBorder = isDark ? 'rgba(148, 163, 184, 0.15)' : 'rgba(15, 23, 42, 0.08)';
+  const arenaCardBg = isDark ? '#0B111C' : '#F2F6FC';
+  const heroTopFill = isDark ? '#0B1220' : '#EBF4FF';
 
   const handleConfirmRemove = () => {
     triggerNotificationHaptic('warning');
@@ -694,16 +695,13 @@ export const FriendProfileModal: React.FC<FriendProfileModalProps> = ({
           },
         ]}
       >
-        {/* Full-bleed precision atmospheric cover reaching all the way to sheet top edge */}
+        {/* Full-bleed precision atmospheric cover with upward overscroll bleed so dragging down NEVER exposes a black gap */}
         <View style={styles.coverAtmosphere} pointerEvents="none">
-          <Svg width="100%" height="100%" viewBox="0 0 400 245" preserveAspectRatio="xMidYMid slice">
+          <View style={[styles.coverTopOverscrollCap, { backgroundColor: heroTopFill }]} />
+          <Svg width="100%" height={245} viewBox="0 0 400 245" preserveAspectRatio="xMidYMid slice">
             <Defs>
               <LinearGradient id={`cover_base_${uid}`} x1="0" y1="0" x2="1" y2="1">
-                <Stop
-                  offset="0%"
-                  stopColor={isDark ? '#0B1220' : '#EBF4FF'}
-                  stopOpacity={1}
-                />
+                <Stop offset="0%" stopColor={heroTopFill} stopOpacity={1} />
                 <Stop
                   offset="52%"
                   stopColor={isDark ? '#111827' : '#F3F7FC'}
@@ -928,29 +926,33 @@ export const FriendProfileModal: React.FC<FriendProfileModalProps> = ({
         </View>
       </Animated.View>
 
-      {/* 2x2 Bento Telemetry Grid */}
-      <View style={styles.bentoGrid}>
-        {telemetryCards.map((cell) => (
-          <View
-            key={cell.key}
-            style={[
-              styles.bentoTile,
-              {
-                backgroundColor: surfaceTileBg,
-                borderColor: surfaceTileBorder,
-              },
-            ]}
-          >
-            <View style={styles.bentoTileTop}>
-              <Text style={[styles.bentoLabel, { color: theme.textMuted }]} numberOfLines={1}>
+      {/* Compact Single-Row 4-Column Unified Telemetry Bar */}
+      <View
+        style={[
+          styles.telemetryRibbon,
+          {
+            backgroundColor: surfaceTileBg,
+            borderColor: surfaceTileBorder,
+          },
+        ]}
+      >
+        {telemetryCards.map((cell, idx) => (
+          <React.Fragment key={cell.key}>
+            <View style={styles.telemetryRibbonCol}>
+              <View style={styles.telemetryRibbonValRow}>
+                <Ionicons name={cell.icon} size={13} color={cell.color} />
+                <Text style={[styles.telemetryRibbonValue, { color: theme.text }]} numberOfLines={1}>
+                  {cell.value}
+                </Text>
+              </View>
+              <Text style={[styles.telemetryRibbonLabel, { color: theme.textMuted }]} numberOfLines={1}>
                 {cell.label}
               </Text>
-              <View style={[styles.bentoIconChip, { backgroundColor: `${cell.color}1C` }]}>
-                <Ionicons name={cell.icon} size={13} color={cell.color} />
-              </View>
             </View>
-            <Text style={[styles.bentoValue, { color: theme.text }]}>{cell.value}</Text>
-          </View>
+            {idx < telemetryCards.length - 1 && (
+              <View style={[styles.telemetryRibbonDivider, { backgroundColor: theme.hairline }]} />
+            )}
+          </React.Fragment>
         ))}
       </View>
 
@@ -975,7 +977,7 @@ export const FriendProfileModal: React.FC<FriendProfileModalProps> = ({
           </View>
         </View>
 
-        {/* Stat Card #1: Head-to-Head Duel Arena */}
+        {/* Stat Card #1: Head-to-Head Duel Arena (edge-to-edge unclipped architectural backdrop) */}
         <View
           style={[
             styles.vsArenaCard,
@@ -985,20 +987,57 @@ export const FriendProfileModal: React.FC<FriendProfileModalProps> = ({
             },
           ]}
         >
-          <Svg width="100%" height="100%" style={[StyleSheet.absoluteFill, { pointerEvents: 'none' }]}>
-            <Defs>
-              <RadialGradient id={`duel_l_${uid}`} cx="14%" cy="20%" r="55%">
-                <Stop offset="0%" stopColor="#38BDF8" stopOpacity={isDark ? 0.16 : 0.1} />
-                <Stop offset="100%" stopColor="#38BDF8" stopOpacity={0} />
-              </RadialGradient>
-              <RadialGradient id={`duel_r_${uid}`} cx="86%" cy="20%" r="55%">
-                <Stop offset="0%" stopColor={rankMeta.color} stopOpacity={isDark ? 0.18 : 0.1} />
-                <Stop offset="100%" stopColor={rankMeta.color} stopOpacity={0} />
-              </RadialGradient>
-            </Defs>
-            <Rect x="0" y="0" width="100%" height="100%" fill={`url(#duel_l_${uid})`} />
-            <Rect x="0" y="0" width="100%" height="100%" fill={`url(#duel_r_${uid})`} />
-          </Svg>
+          <View style={styles.arenaBgLayer} pointerEvents="none">
+            <Svg width="100%" height="100%" viewBox="0 0 360 220" preserveAspectRatio="none">
+              <Defs>
+                <LinearGradient id={`duel_base_${uid}`} x1="0" y1="0" x2="1" y2="1">
+                  <Stop offset="0%" stopColor={isDark ? '#0B1322' : '#EAF3FE'} stopOpacity={1} />
+                  <Stop offset="50%" stopColor={isDark ? '#0D131F' : '#F5F9FE'} stopOpacity={1} />
+                  <Stop offset="100%" stopColor={isDark ? '#11131D' : '#F3F1FB'} stopOpacity={1} />
+                </LinearGradient>
+                <RadialGradient id={`duel_l_${uid}`} cx="16%" cy="22%" r="58%">
+                  <Stop offset="0%" stopColor="#38BDF8" stopOpacity={isDark ? 0.28 : 0.2} />
+                  <Stop offset="100%" stopColor="#38BDF8" stopOpacity={0} />
+                </RadialGradient>
+                <RadialGradient id={`duel_r_${uid}`} cx="84%" cy="22%" r="58%">
+                  <Stop offset="0%" stopColor={rankMeta.color} stopOpacity={isDark ? 0.28 : 0.18} />
+                  <Stop offset="100%" stopColor={rankMeta.color} stopOpacity={0} />
+                </RadialGradient>
+              </Defs>
+              <Rect x="0" y="0" width="360" height="220" fill={`url(#duel_base_${uid})`} />
+              <Rect x="0" y="0" width="360" height="220" fill={`url(#duel_l_${uid})`} />
+              <Rect x="0" y="0" width="360" height="220" fill={`url(#duel_r_${uid})`} />
+              {/* Architectural precision lines & center duel split */}
+              <Line
+                x1="180"
+                y1="14"
+                x2="180"
+                y2="132"
+                stroke={isDark ? '#FFFFFF' : '#0F172A'}
+                strokeOpacity={isDark ? 0.06 : 0.05}
+                strokeWidth="1"
+                strokeDasharray="3 5"
+              />
+              <Circle
+                cx="180"
+                cy="74"
+                r="52"
+                fill="none"
+                stroke={isDark ? '#FFFFFF' : '#0F172A'}
+                strokeOpacity={isDark ? 0.05 : 0.045}
+                strokeWidth="1"
+              />
+              <Line
+                x1="0"
+                y1="1"
+                x2="360"
+                y2="1"
+                stroke={isDark ? '#FFFFFF' : '#FFFFFF'}
+                strokeOpacity={isDark ? 0.12 : 0.85}
+                strokeWidth="1.5"
+              />
+            </Svg>
+          </View>
 
           <View style={styles.vsCrestsRow}>
             <View style={styles.vsFighterCol}>
@@ -1018,7 +1057,7 @@ export const FriendProfileModal: React.FC<FriendProfileModalProps> = ({
                 styles.vsCenterBadge,
                 {
                   borderColor: surfaceTileBorder,
-                  backgroundColor: isDark ? '#141822' : '#FFFFFF',
+                  backgroundColor: isDark ? '#121927' : '#FFFFFF',
                   transform: [{ scale: vsScale }],
                 },
               ]}
@@ -1048,7 +1087,7 @@ export const FriendProfileModal: React.FC<FriendProfileModalProps> = ({
           />
         </View>
 
-        {/* Stat Card #2: 5-Axis Animated Radar Spider Chart + Breakdown */}
+        {/* Stat Card #2: 5-Axis Animated Radar Spider Chart + Rich Matching Architectural Backdrop */}
         <View
           style={[
             styles.vsArenaCard,
@@ -1059,6 +1098,48 @@ export const FriendProfileModal: React.FC<FriendProfileModalProps> = ({
             },
           ]}
         >
+          <View style={styles.arenaBgLayer} pointerEvents="none">
+            <Svg width="100%" height="100%" viewBox="0 0 360 320" preserveAspectRatio="none">
+              <Defs>
+                <LinearGradient id={`rad_bg_base_${uid}`} x1="0" y1="0" x2="1" y2="1">
+                  <Stop offset="0%" stopColor={isDark ? '#0D1320' : '#F1F6FE'} stopOpacity={1} />
+                  <Stop offset="55%" stopColor={isDark ? '#0B101A' : '#F7FAFE'} stopOpacity={1} />
+                  <Stop offset="100%" stopColor={isDark ? '#101522' : '#EEF4FC'} stopOpacity={1} />
+                </LinearGradient>
+                <RadialGradient id={`rad_glow_c_${uid}`} cx="50%" cy="38%" r="54%">
+                  <Stop offset="0%" stopColor="#38BDF8" stopOpacity={isDark ? 0.16 : 0.12} />
+                  <Stop offset="65%" stopColor={rankMeta.color} stopOpacity={isDark ? 0.08 : 0.06} />
+                  <Stop offset="100%" stopColor="#38BDF8" stopOpacity={0} />
+                </RadialGradient>
+                <RadialGradient id={`rad_glow_br_${uid}`} cx="90%" cy="88%" r="48%">
+                  <Stop offset="0%" stopColor={rankMeta.color} stopOpacity={isDark ? 0.18 : 0.1} />
+                  <Stop offset="100%" stopColor={rankMeta.color} stopOpacity={0} />
+                </RadialGradient>
+              </Defs>
+              <Rect x="0" y="0" width="360" height="320" fill={`url(#rad_bg_base_${uid})`} />
+              <Rect x="0" y="0" width="360" height="320" fill={`url(#rad_glow_c_${uid})`} />
+              <Rect x="0" y="0" width="360" height="320" fill={`url(#rad_glow_br_${uid})`} />
+              <Line
+                x1="0"
+                y1="262"
+                x2="360"
+                y2="48"
+                stroke={isDark ? '#FFFFFF' : '#0F172A'}
+                strokeOpacity={isDark ? 0.035 : 0.035}
+                strokeWidth="1"
+              />
+              <Line
+                x1="0"
+                y1="1"
+                x2="360"
+                y2="1"
+                stroke="#FFFFFF"
+                strokeOpacity={isDark ? 0.11 : 0.85}
+                strokeWidth="1.5"
+              />
+            </Svg>
+          </View>
+
           <AnimatedRadarComparison
             axes={radarAxes}
             myLabel={t('friendsYouLabel')}
@@ -1188,6 +1269,7 @@ export const FriendProfileModal: React.FC<FriendProfileModalProps> = ({
         >
           <ScrollView
             contentContainerStyle={styles.scrollContent}
+            contentInsetAdjustmentBehavior="never"
             showsVerticalScrollIndicator={false}
             bounces={Platform.OS === 'ios'}
             alwaysBounceVertical={Platform.OS === 'ios'}
@@ -1200,7 +1282,7 @@ export const FriendProfileModal: React.FC<FriendProfileModalProps> = ({
               embeddedScrollYRef.current = y;
               if (Platform.OS === 'ios' && embeddedDraggingRef.current && !embeddedClosingRef.current) {
                 if (y < 0) {
-                  overlaySlide.setValue(Math.min(SCREEN_HEIGHT * 0.72, Math.abs(y) * 1.55));
+                  overlaySlide.setValue(Math.min(SCREEN_HEIGHT * 0.72, Math.abs(y) * 1.15));
                 } else {
                   overlaySlide.setValue(0);
                 }
@@ -1280,6 +1362,7 @@ export const FriendProfileModal: React.FC<FriendProfileModalProps> = ({
       <BottomSheetScrollView
         style={{ backgroundColor: theme.bg }}
         contentContainerStyle={styles.scrollContent}
+        contentInsetAdjustmentBehavior="never"
         showsVerticalScrollIndicator={false}
       >
         {profileBody}
@@ -1318,7 +1401,7 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
-    height: 54,
+    height: 155,
     zIndex: 25,
     alignItems: 'center',
   },
@@ -1355,15 +1438,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingTop: 42,
     paddingBottom: 6,
-    marginBottom: 16,
+    marginBottom: 14,
   },
   coverAtmosphere: {
     position: 'absolute',
-    top: 0,
+    top: -360,
     left: -18,
     right: -18,
-    height: 245,
+    height: 605,
     overflow: 'hidden',
+  },
+  coverTopOverscrollCap: {
+    width: '100%',
+    height: 360,
   },
   cheerStreakPill: {
     flexDirection: 'row',
@@ -1460,45 +1547,47 @@ const styles = StyleSheet.create({
     fontSize: 13.5,
     fontWeight: '800',
   },
-  bentoGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 22,
-  },
-  bentoTile: {
-    width: '48.6%',
-    flexGrow: 1,
-    borderRadius: 16,
-    borderWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: 13,
-    paddingVertical: 11,
-    gap: 6,
-  },
-  bentoTileTop: {
+  telemetryRibbon: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 6,
+    borderRadius: 20,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingVertical: 12,
+    paddingHorizontal: 6,
+    marginBottom: 20,
   },
-  bentoIconChip: {
-    width: 24,
-    height: 24,
-    borderRadius: 8,
+  telemetryRibbonCol: {
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 3,
+    paddingHorizontal: 3,
   },
-  bentoLabel: {
-    flex: 1,
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 0.2,
+  telemetryRibbonValRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
   },
-  bentoValue: {
-    fontSize: 21,
+  telemetryRibbonValue: {
+    fontSize: 16.5,
     fontWeight: '900',
-    letterSpacing: -0.5,
+    letterSpacing: -0.4,
     fontVariant: ['tabular-nums'],
+  },
+  telemetryRibbonLabel: {
+    fontSize: 9.5,
+    fontWeight: '700',
+    letterSpacing: 0.15,
+    textAlign: 'center',
+  },
+  telemetryRibbonDivider: {
+    width: StyleSheet.hairlineWidth,
+    height: 28,
+  },
+  arenaBgLayer: {
+    ...StyleSheet.absoluteFill,
+    borderRadius: 20,
+    overflow: 'hidden',
   },
   sectionBlock: {
     marginBottom: 20,
@@ -1523,11 +1612,11 @@ const styles = StyleSheet.create({
   vsArenaCard: {
     position: 'relative',
     overflow: 'hidden',
-    borderRadius: 22,
+    borderRadius: 20,
     borderWidth: StyleSheet.hairlineWidth,
-    paddingVertical: 15,
-    paddingHorizontal: 13,
-    marginBottom: 10,
+    paddingVertical: 16,
+    paddingHorizontal: 14,
+    marginBottom: 12,
   },
   vsCrestsRow: {
     flexDirection: 'row',
@@ -1632,7 +1721,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 12,
     paddingHorizontal: 8,
-    borderRadius: 16,
+    borderRadius: 18,
     borderWidth: StyleSheet.hairlineWidth,
     gap: 5,
   },
@@ -1647,9 +1736,9 @@ const styles = StyleSheet.create({
     fontVariant: ['tabular-nums'],
   },
   prGroupCard: {
-    borderRadius: 18,
+    borderRadius: 20,
     borderWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: 13,
+    paddingHorizontal: 14,
     paddingVertical: 4,
   },
   prRow: {

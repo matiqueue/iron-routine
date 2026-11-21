@@ -295,7 +295,7 @@ export const InteractiveBottomSheet: React.FC<InteractiveBottomSheetProps> = ({
       onOverscrollPull: (offsetY: number) => {
         if (dragLockRef.current || isClosingRef.current) return;
         if (offsetY < 0) {
-          translateY.setValue(Math.min(baseHeight * 0.85, Math.abs(offsetY) * 1.55));
+          translateY.setValue(Math.min(baseHeight * 0.85, Math.abs(offsetY) * 1.15));
         } else {
           translateY.setValue(0);
         }
@@ -529,7 +529,7 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
-    height: 54,
+    height: 155,
     zIndex: 25,
     alignItems: 'center',
   },
