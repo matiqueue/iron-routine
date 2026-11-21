@@ -13,6 +13,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import Svg, { Circle, Defs, LinearGradient, Line, Path, Stop } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -147,13 +148,14 @@ const AnimatedVerticalSpectrumBar: React.FC<{
   delayMs?: number;
 }> = React.memo(({ pct, color, trackColor, isSelected }) => {
   const clamped = Math.max(10, Math.min(100, pct));
-  const barScaleAnim = useRef(new Animated.Value(isSelected ? 1.08 : 1)).current;
+  const barScaleAnim = useRef(new Animated.Value(isSelected ? 1.07 : 1)).current;
 
   useEffect(() => {
-    Animated.spring(barScaleAnim, {
-      toValue: isSelected ? 1.1 : 1,
-      tension: 140,
-      friction: 8,
+    barScaleAnim.stopAnimation();
+    Animated.timing(barScaleAnim, {
+      toValue: isSelected ? 1.07 : 1,
+      duration: 165,
+      easing: Easing.out(Easing.cubic),
       useNativeDriver: true,
     }).start();
   }, [isSelected, barScaleAnim]);
@@ -165,7 +167,7 @@ const AnimatedVerticalSpectrumBar: React.FC<{
         {
           backgroundColor: trackColor,
           borderColor: isSelected ? color : 'transparent',
-          borderWidth: isSelected ? 1.5 : 0,
+          borderWidth: 1.5,
           transform: [{ scaleY: barScaleAnim }],
         },
       ]}
@@ -195,7 +197,7 @@ const RankLadderColumn: React.FC<{
   textColor: string;
   mutedColor: string;
   borderColor: string;
-  onPress: () => void;
+  onSelectTier: (tier: RankTier) => void;
 }> = React.memo(
   ({
     tier,
@@ -208,14 +210,15 @@ const RankLadderColumn: React.FC<{
     textColor,
     mutedColor,
     borderColor,
-    onPress,
+    onSelectTier,
   }) => {
     const badgePopAnim = useRef(new Animated.Value(isSelected ? 1 : 0)).current;
 
     useEffect(() => {
+      badgePopAnim.stopAnimation();
       Animated.timing(badgePopAnim, {
         toValue: isSelected ? 1 : 0,
-        duration: 180,
+        duration: 165,
         easing: Easing.out(Easing.cubic),
         useNativeDriver: true,
       }).start();
@@ -230,15 +233,15 @@ const RankLadderColumn: React.FC<{
       <TouchableOpacity
         style={[
           styles.spectrumColWrap,
-          isSelected && {
-            backgroundColor: `${color}16`,
-            borderColor: `${color}55`,
+          {
             borderWidth: 1,
             borderRadius: 14,
+            backgroundColor: isSelected ? `${color}16` : 'transparent',
+            borderColor: isSelected ? `${color}55` : 'transparent',
           },
           anySelected && !isSelected && { opacity: 0.56 },
         ]}
-        onPress={onPress}
+        onPress={() => onSelectTier(tier)}
         activeOpacity={0.75}
       >
         <Text
@@ -286,7 +289,7 @@ const RankSpotlightDropCard: React.FC<{
   bgColor: string;
   titleColor: string;
   subColor: string;
-}> = ({ tier, color, titleText, subtitleText, bgColor, titleColor, subColor }) => {
+}> = React.memo(({ tier, color, titleText, subtitleText, bgColor, titleColor, subColor }) => {
   const revealAnim = useRef(new Animated.Value(0)).current;
   const barAnim = useRef(new Animated.Value(0)).current;
 
@@ -299,13 +302,13 @@ const RankSpotlightDropCard: React.FC<{
     Animated.parallel([
       Animated.timing(revealAnim, {
         toValue: 1,
-        duration: 210,
+        duration: 185,
         easing: Easing.out(Easing.cubic),
         useNativeDriver: true,
       }),
       Animated.timing(barAnim, {
         toValue: 1,
-        duration: 260,
+        duration: 215,
         easing: Easing.out(Easing.cubic),
         useNativeDriver: true,
       }),
@@ -318,7 +321,7 @@ const RankSpotlightDropCard: React.FC<{
   });
   const textTranslateX = revealAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: [8, 0],
+    outputRange: [6, 0],
   });
 
   return (
@@ -335,7 +338,7 @@ const RankSpotlightDropCard: React.FC<{
         },
       ]}
     >
-      {/* Crisp vertical accent bar reveal (zero SVG scaling -> zero pixelation) */}
+      {/* Crisp vertical accent bar reveal (zero SVG scaling -> zero pixelation, 120fps) */}
       <Animated.View
         style={{
           position: 'absolute',
@@ -349,7 +352,7 @@ const RankSpotlightDropCard: React.FC<{
         }}
       />
       <View style={{ paddingLeft: 4 }}>
-        <RankCrestIcon tier={tier} size={46} isSelected animated />
+        <RankCrestIcon tier={tier} size={46} isSelected />
       </View>
       <Animated.View
         style={{
@@ -366,7 +369,156 @@ const RankSpotlightDropCard: React.FC<{
       </Animated.View>
     </Animated.View>
   );
-};
+});
+
+const OneWaySupplementRow: React.FC<{
+  id: string;
+  name: string;
+  dose?: string | null;
+  isChecked: boolean;
+  isDark: boolean;
+  textColor: string;
+  mutedColor: string;
+  bgColor: string;
+  borderColor: string;
+  onMarkTaken: (id: string) => void;
+}> = React.memo(
+  ({
+    id,
+    name,
+    dose,
+    isChecked,
+    isDark,
+    textColor,
+    mutedColor,
+    bgColor,
+    borderColor,
+    onMarkTaken,
+  }) => {
+    const checkPopAnim = useRef(new Animated.Value(isChecked ? 1 : 0)).current;
+    const rippleAnim = useRef(new Animated.Value(0)).current;
+    const prevCheckedRef = useRef(isChecked);
+
+    useEffect(() => {
+      if (isChecked && !prevCheckedRef.current) {
+        checkPopAnim.setValue(0);
+        rippleAnim.setValue(0);
+        Animated.parallel([
+          Animated.spring(checkPopAnim, {
+            toValue: 1,
+            friction: 5.2,
+            tension: 170,
+            useNativeDriver: true,
+          }),
+          Animated.timing(rippleAnim, {
+            toValue: 1,
+            duration: 380,
+            easing: Easing.out(Easing.cubic),
+            useNativeDriver: true,
+          }),
+        ]).start();
+      } else if (isChecked) {
+        checkPopAnim.setValue(1);
+      } else {
+        checkPopAnim.setValue(0);
+      }
+      prevCheckedRef.current = isChecked;
+    }, [isChecked, checkPopAnim, rippleAnim]);
+
+    const checkScale = checkPopAnim.interpolate({
+      inputRange: [0, 0.55, 1],
+      outputRange: [0.35, 1.18, 1],
+    });
+    const rippleScale = rippleAnim.interpolate({
+      inputRange: [0, 1],
+      outputRange: [0.85, 1.9],
+    });
+    const rippleOpacity = rippleAnim.interpolate({
+      inputRange: [0, 0.35, 1],
+      outputRange: [0, 0.55, 0],
+    });
+
+    return (
+      <TouchableOpacity
+        disabled={isChecked}
+        onPress={() => {
+          if (isChecked) return;
+          onMarkTaken(id);
+        }}
+        activeOpacity={0.76}
+        style={[
+          styles.oneWaySuppRow,
+          {
+            backgroundColor: isChecked
+              ? isDark
+                ? 'rgba(16, 185, 129, 0.12)'
+                : 'rgba(16, 185, 129, 0.09)'
+              : bgColor,
+            borderColor: isChecked
+              ? 'rgba(16, 185, 129, 0.45)'
+              : borderColor,
+          },
+        ]}
+      >
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text
+            style={[
+              styles.oneWaySuppName,
+              {
+                color: isChecked ? (isDark ? '#A7F3D0' : '#065F46') : textColor,
+              },
+            ]}
+            numberOfLines={1}
+          >
+            {name}
+          </Text>
+          {dose ? (
+            <Text style={[styles.oneWaySuppDose, { color: mutedColor }]} numberOfLines={1}>
+              {dose}
+            </Text>
+          ) : null}
+        </View>
+
+        <View style={styles.oneWayCheckWrap}>
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              styles.oneWayCheckRipple,
+              {
+                opacity: rippleOpacity,
+                transform: [{ scale: rippleScale }],
+              },
+            ]}
+          />
+          {isChecked ? (
+            <Animated.View
+              style={[
+                styles.oneWayCheckFilled,
+                {
+                  opacity: checkPopAnim,
+                  transform: [{ scale: checkScale }],
+                },
+              ]}
+            >
+              <Ionicons name="checkmark" size={16} color="#09090B" />
+            </Animated.View>
+          ) : (
+            <View
+              style={[
+                styles.oneWayCheckEmpty,
+                {
+                  borderColor: isDark
+                    ? 'rgba(255,255,255,0.22)'
+                    : 'rgba(15,23,42,0.22)',
+                },
+              ]}
+            />
+          )}
+        </View>
+      </TouchableOpacity>
+    );
+  }
+);
 
 const EMPTY_PLANS: WorkoutPlan[] = [];
 const EMPTY_EXERCISES: Exercise[] = [];
@@ -460,13 +612,16 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
   // Journal sub-view state
   const [weightHistory, setWeightHistory] = useState<WeightEntry[]>([]);
   const [weightChartRange, setWeightChartRange] = useState<ChartRange>('30d');
-  const [newWeightInput, setNewWeightInput] = useState('');
+  const [quickWeighInput, setQuickWeighInput] = useState('');
+  const [skippedWeighDate, setSkippedWeighDate] = useState<string | null>(null);
+  const [showWeightSheet, setShowWeightSheet] = useState(false);
+  const [weightSheetOffsetDays, setWeightSheetOffsetDays] = useState(0);
+  const [weightSheetInput, setWeightSheetInput] = useState('');
   const [workoutHistory, setWorkoutHistory] = useState<WorkoutHistoryEntry[]>([]);
   const [showAllJournalWorkouts, setShowAllJournalWorkouts] = useState(false);
   const [enabledSupplements, setEnabledSupplements] = useState<SupplementItem[]>([]);
   const [todayTakenSuppIds, setTodayTakenSuppIds] = useState<string[]>([]);
   const [suppLog7Days, setSuppLog7Days] = useState<CreatineDayEntry[]>([]);
-  const [bodyWeightUnitLabel] = useState('kg');
 
   const allExercises = useMemo(() => {
     const planExercises: Exercise[] = [];
@@ -511,7 +666,8 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
   const loadAllAnalytics = useCallback(async () => {
     const seq = ++analyticsLoadSeqRef.current;
     const todayKey = getLocalDateKey();
-    const [prs, weights, hist, custom, favs, appSettings, takenToday, supp7] = await Promise.all([
+    const skipKey = `@iron_routine:weighin_skip_${effectiveProfileId}`;
+    const [prs, weights, hist, custom, favs, appSettings, takenToday, supp7, skippedDateRaw] = await Promise.all([
       getAllBestPRs(effectiveProfileId),
       getWeightHistory(effectiveProfileId),
       getWorkoutHistory(effectiveProfileId),
@@ -520,6 +676,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
       getAppSettings(),
       getSupplementDayTakenIds(todayKey, effectiveProfileId),
       getCreatineLog(7, effectiveProfileId),
+      AsyncStorage.getItem(skipKey).catch(() => null),
     ]);
     if (seq !== analyticsLoadSeqRef.current) return;
 
@@ -531,6 +688,12 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
     setEnabledSupplements((appSettings.supplements || []).filter((s) => s.enabled));
     setTodayTakenSuppIds(takenToday);
     setSuppLog7Days(supp7);
+    setSkippedWeighDate(skippedDateRaw || null);
+    if (weights.length > 0) {
+      setQuickWeighInput((prev) => (prev ? prev : String(weights[0].weight)));
+    } else if (activeProfile?.weight) {
+      setQuickWeighInput((prev) => (prev ? prev : String(activeProfile.weight)));
+    }
 
     const catalog = mergeAllExercises(custom, [
       ...EXERCISE_LIBRARY,
@@ -725,13 +888,19 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
     }).start();
   };
 
-  const handleSelectMuscle = (muscleId: MuscleSubGroupId | null) => {
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+  const handleSelectMuscle = useCallback((muscleId: MuscleSubGroupId | null) => {
     setSelectedMuscle(muscleId);
     if (muscleId) {
       setExpandedMuscleId(muscleId);
     }
-  };
+  }, []);
+
+  const handleSelectRankTier = useCallback((tier: RankTier) => {
+    try {
+      Haptics.selectionAsync();
+    } catch {}
+    setSelectedRankTier((prev) => (prev === tier ? null : tier));
+  }, []);
 
   const handleToggleMuscleRow = (muscleId: MuscleSubGroupId) => {
     try {
@@ -784,13 +953,67 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
     await loadAllAnalytics();
   };
 
-  const handleSaveWeight = async () => {
-    const val = parseFloat(newWeightInput.replace(',', '.'));
+  const openWeightSheet = useCallback(
+    (offsetDays = 0, existingWeight?: number) => {
+      try {
+        Haptics.selectionAsync();
+      } catch {}
+      const clampedOffset = Math.min(0, Math.max(-365, offsetDays));
+      const targetKey = getLocalDateKeyOffset(clampedOffset);
+      const match = weightHistory.find((w) => w.date.slice(0, 10) === targetKey);
+      const seed =
+        existingWeight ??
+        match?.weight ??
+        weightHistory[0]?.weight ??
+        activeProfile?.weight ??
+        75;
+      setWeightSheetOffsetDays(clampedOffset);
+      setWeightSheetInput(String(seed));
+      setShowWeightSheet(true);
+    },
+    [weightHistory, activeProfile?.weight]
+  );
+
+  const changeWeightSheetOffset = useCallback(
+    (nextOffset: number) => {
+      const clamped = Math.min(0, Math.max(-365, nextOffset));
+      if (clamped === weightSheetOffsetDays) return;
+      try {
+        Haptics.selectionAsync();
+      } catch {}
+      setWeightSheetOffsetDays(clamped);
+      const targetKey = getLocalDateKeyOffset(clamped);
+      const match = weightHistory.find((w) => w.date.slice(0, 10) === targetKey);
+      if (match) {
+        setWeightSheetInput(String(match.weight));
+      }
+    },
+    [weightHistory, weightSheetOffsetDays]
+  );
+
+  const adjustWeightInput = useCallback(
+    (current: string, delta: number, setter: (v: string) => void) => {
+      try {
+        Haptics.selectionAsync();
+      } catch {}
+      const parsed = parseFloat(current.replace(',', '.'));
+      const base = isNaN(parsed)
+        ? weightHistory[0]?.weight || activeProfile?.weight || 75
+        : parsed;
+      const next = Math.max(25, Math.min(300, Math.round((base + delta) * 10) / 10));
+      setter(next.toFixed(1));
+    },
+    [weightHistory, activeProfile?.weight]
+  );
+
+  const handleSaveQuickTodayWeight = async () => {
+    const val = parseFloat(quickWeighInput.replace(',', '.'));
     if (isNaN(val) || val < 25 || val > 300) {
       Alert.alert(t('invalidWeightTitle'), t('invalidWeightBody'));
       return;
     }
-    await addWeightEntry(val, undefined, undefined, effectiveProfileId);
+    const todayKey = getLocalDateKey();
+    await addWeightEntry(val, todayKey, undefined, effectiveProfileId);
     if (activeProfile) {
       await updateProfileStats(
         effectiveProfileId,
@@ -798,7 +1021,33 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
         val
       ).catch(() => {});
     }
-    setNewWeightInput('');
+    await loadAllAnalytics();
+    try {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch {}
+  };
+
+  const handleSkipWeighToday = async () => {
+    try {
+      Haptics.selectionAsync();
+    } catch {}
+    const todayKey = getLocalDateKey();
+    setSkippedWeighDate(todayKey);
+    await AsyncStorage.setItem(
+      `@iron_routine:weighin_skip_${effectiveProfileId}`,
+      todayKey
+    ).catch(() => {});
+  };
+
+  const handleSaveSheetWeight = async () => {
+    const val = parseFloat(weightSheetInput.replace(',', '.'));
+    if (isNaN(val) || val < 25 || val > 300) {
+      Alert.alert(t('invalidWeightTitle'), t('invalidWeightBody'));
+      return;
+    }
+    const targetDateKey = getLocalDateKeyOffset(weightSheetOffsetDays);
+    await addWeightEntry(val, targetDateKey, undefined, effectiveProfileId);
+    setShowWeightSheet(false);
     await loadAllAnalytics();
     try {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -806,6 +1055,9 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
   };
 
   const handleRemoveWeight = async (id: string) => {
+    try {
+      Haptics.selectionAsync();
+    } catch {}
     await deleteWeightEntry(id, effectiveProfileId);
     await loadAllAnalytics();
   };
@@ -822,43 +1074,34 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
     } catch {}
   };
 
-  const resolveEffectiveTakenIds = (rawIds: string[]): string[] => {
-    if (rawIds.includes('__all__')) {
-      return enabledSupplements.length > 0 ? enabledSupplements.map((s) => s.id) : ['__all__'];
-    }
-    return rawIds;
-  };
+  const resolveEffectiveTakenIds = useCallback(
+    (rawIds: string[]): string[] => {
+      if (rawIds.includes('__all__')) {
+        return enabledSupplements.length > 0 ? enabledSupplements.map((s) => s.id) : ['__all__'];
+      }
+      return rawIds;
+    },
+    [enabledSupplements]
+  );
 
-  const handleToggleSupplementItem = async (suppId: string) => {
-    try {
-      Haptics.selectionAsync();
-    } catch {}
-    const todayKey = getLocalDateKey();
-    const current = resolveEffectiveTakenIds(todayTakenSuppIds);
-    const exists = current.includes(suppId);
-    const next = exists ? current.filter((id) => id !== suppId) : [...current, suppId];
-    setTodayTakenSuppIds(next);
-    await setSupplementDayTakenIds(next, todayKey, effectiveProfileId);
-    const updatedLog = await getCreatineLog(7, effectiveProfileId);
-    setSuppLog7Days(updatedLog);
-    void syncEveningSuppNotifState(next.length > 0);
-  };
-
-  const handleToggleAllSupplementsToday = async () => {
-    try {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    } catch {}
-    const todayKey = getLocalDateKey();
-    const current = resolveEffectiveTakenIds(todayTakenSuppIds);
-    const targetIds = enabledSupplements.length > 0 ? enabledSupplements.map((s) => s.id) : ['__all__'];
-    const allTakenNow = targetIds.every((id) => current.includes(id));
-    const next = allTakenNow ? [] : targetIds;
-    setTodayTakenSuppIds(next);
-    await setSupplementDayTakenIds(next, todayKey, effectiveProfileId);
-    const updatedLog = await getCreatineLog(7, effectiveProfileId);
-    setSuppLog7Days(updatedLog);
-    void syncEveningSuppNotifState(next.length > 0);
-  };
+  // One-way supplement marking: once marked taken for today, cannot be unchecked
+  const handleMarkSupplementTaken = useCallback(
+    async (suppId: string) => {
+      const todayKey = getLocalDateKey();
+      const current = resolveEffectiveTakenIds(todayTakenSuppIds);
+      if (current.includes(suppId)) return;
+      try {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      } catch {}
+      const next = [...current, suppId];
+      setTodayTakenSuppIds(next);
+      await setSupplementDayTakenIds(next, todayKey, effectiveProfileId);
+      const updatedLog = await getCreatineLog(7, effectiveProfileId);
+      setSuppLog7Days(updatedLog);
+      void syncEveningSuppNotifState(next.length > 0);
+    },
+    [effectiveProfileId, resolveEffectiveTakenIds, todayTakenSuppIds]
+  );
 
   // Exercises grouped by muscle for the inline accordion & Exercises tab
   const exercisesByMuscle = useMemo(() => {
@@ -1038,14 +1281,29 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
     return items.filter((i) => i.date.slice(0, 10) >= cutoffKey);
   };
 
+  const chronologicalWeightHistory = useMemo(
+    () => [...weightHistory].sort((a, b) => a.date.localeCompare(b.date)),
+    [weightHistory]
+  );
+
+  const recentWeightHistory = useMemo(
+    () => [...chronologicalWeightHistory].reverse(),
+    [chronologicalWeightHistory]
+  );
+
   const filteredWeightPoints = useMemo(
-    () => filterByRange(weightHistory, weightChartRange),
-    [weightHistory, weightChartRange]
+    () => filterByRange(chronologicalWeightHistory, weightChartRange),
+    [chronologicalWeightHistory, weightChartRange]
+  );
+
+  const chronologicalPRHistory = useMemo(
+    () => [...prHistory].sort((a, b) => a.date.localeCompare(b.date)),
+    [prHistory]
   );
 
   const filteredPRPoints = useMemo(
-    () => filterByRange(prHistory, prChartRange),
-    [prHistory, prChartRange]
+    () => filterByRange(chronologicalPRHistory, prChartRange),
+    [chronologicalPRHistory, prChartRange]
   );
 
   const last28Days = useMemo(() => {
@@ -1068,31 +1326,49 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
   const renderOpenLineChart = (
     points: Array<{ value: number; label: string }>,
     strokeColor: string,
-    unitLabel: string
+    unitLabel: string,
+    chartId = 'main',
+    widthOverride?: number
   ) => {
     if (points.length === 0) {
       return (
-        <View style={styles.emptyChartOpen}>
-          <Text style={[styles.emptyChartText, { color: theme.textMuted }]}>
-            {t('noWeightInRange')}
-          </Text>
+        <View
+          style={[
+            styles.unifiedChartBox,
+            {
+              backgroundColor: isDark ? 'rgba(255,255,255,0.025)' : 'rgba(15,23,42,0.025)',
+              borderColor: theme.hairline,
+            },
+          ]}
+        >
+          <View style={styles.emptyChartOpen}>
+            <Ionicons name="analytics-outline" size={22} color={theme.textMuted} />
+            <Text style={[styles.emptyChartText, { color: theme.textMuted }]}>
+              {t('noWeightInRange')}
+            </Text>
+          </View>
         </View>
       );
     }
 
-    const chartW = SCREEN_WIDTH - 40;
-    const chartH = 150;
-    const padL = 8;
-    const padR = 8;
-    const padT = 18;
-    const padB = 26;
+    const chartW = Math.max(220, widthOverride ?? SCREEN_WIDTH - 68);
+    const chartH = 162;
+    const padL = 12;
+    const padR = 12;
+    const padT = 20;
+    const padB = 20;
     const innerW = chartW - padL - padR;
     const innerH = chartH - padT - padB;
 
     const vals = points.map((p) => p.value);
-    const minVal = Math.min(...vals);
-    const maxVal = Math.max(...vals);
-    const span = Math.max(1, maxVal - minVal);
+    const rawMin = Math.min(...vals);
+    const rawMax = Math.max(...vals);
+    const avgVal = vals.reduce((acc, v) => acc + v, 0) / vals.length;
+    const rawSpan = rawMax - rawMin;
+    const padVal = rawSpan > 0 ? rawSpan * 0.16 : 0.6;
+    const scaleMin = Math.max(0, rawMin - padVal);
+    const scaleMax = rawMax + padVal;
+    const span = Math.max(0.5, scaleMax - scaleMin);
 
     const coords = points.map((p, idx) => {
       const x =
@@ -1102,33 +1378,63 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
       const y =
         points.length === 1
           ? padT + innerH / 2
-          : padT + innerH - ((p.value - minVal) / span) * innerH;
+          : padT + innerH - ((p.value - scaleMin) / span) * innerH;
       return { x, y, ...p };
     });
 
-    const lineD = coords
-      .map((c, idx) => `${idx === 0 ? 'M' : 'L'} ${c.x.toFixed(1)} ${c.y.toFixed(1)}`)
-      .join(' ');
+    // Smooth Catmull-Rom Cubic Bezier spline (clamped safely inside chart vertical bounds)
+    let lineD = '';
+    if (coords.length === 1) {
+      const c = coords[0];
+      lineD = `M ${(c.x - 24).toFixed(1)} ${c.y.toFixed(1)} L ${(c.x + 24).toFixed(1)} ${c.y.toFixed(1)}`;
+    } else {
+      lineD = `M ${coords[0].x.toFixed(1)} ${coords[0].y.toFixed(1)}`;
+      for (let i = 0; i < coords.length - 1; i++) {
+        const p0 = i > 0 ? coords[i - 1] : coords[i];
+        const p1 = coords[i];
+        const p2 = coords[i + 1];
+        const p3 = i < coords.length - 2 ? coords[i + 2] : p2;
+        const clampY = (val: number) => Math.max(padT - 4, Math.min(padT + innerH + 2, val));
+        const cp1x = p1.x + (p2.x - p0.x) / 6;
+        const cp1y = clampY(p1.y + (p2.y - p0.y) / 6);
+        const cp2x = p2.x - (p3.x - p1.x) / 6;
+        const cp2y = clampY(p2.y - (p3.y - p1.y) / 6);
+        lineD += ` C ${cp1x.toFixed(1)} ${cp1y.toFixed(1)}, ${cp2x.toFixed(1)} ${cp2y.toFixed(1)}, ${p2.x.toFixed(1)} ${p2.y.toFixed(1)}`;
+      }
+    }
 
+    const bottomY = padT + innerH;
     const areaD =
-      coords.length > 1
-        ? `${lineD} L ${coords[coords.length - 1].x.toFixed(1)} ${(padT + innerH).toFixed(
-            1
-          )} L ${coords[0].x.toFixed(1)} ${(padT + innerH).toFixed(1)} Z`
-        : '';
+      coords.length === 1
+        ? `M ${(coords[0].x - 24).toFixed(1)} ${bottomY.toFixed(1)} L ${(coords[0].x - 24).toFixed(1)} ${coords[0].y.toFixed(1)} L ${(coords[0].x + 24).toFixed(1)} ${coords[0].y.toFixed(1)} L ${(coords[0].x + 24).toFixed(1)} ${bottomY.toFixed(1)} Z`
+        : `${lineD} L ${coords[coords.length - 1].x.toFixed(1)} ${bottomY.toFixed(1)} L ${coords[0].x.toFixed(1)} ${bottomY.toFixed(1)} Z`;
+
+    const gradId = `unifiedSplineGrad_${chartId}`;
+    const lastPt = coords[coords.length - 1];
+    const firstLabel = points[0]?.label || '';
+    const lastLabel = points[points.length - 1]?.label || '';
 
     return (
-      <View style={styles.openChartWrap}>
+      <View
+        style={[
+          styles.unifiedChartBox,
+          {
+            backgroundColor: isDark ? 'rgba(255,255,255,0.025)' : 'rgba(15,23,42,0.02)',
+            borderColor: theme.hairline,
+          },
+        ]}
+      >
         <Svg width={chartW} height={chartH}>
           <Defs>
-            <LinearGradient id="openChartGrad" x1="0" y1="0" x2="0" y2="1">
-              <Stop offset="0%" stopColor={strokeColor} stopOpacity={0.25} />
+            <LinearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+              <Stop offset="0%" stopColor={strokeColor} stopOpacity={isDark ? 0.3 : 0.22} />
+              <Stop offset="78%" stopColor={strokeColor} stopOpacity={0.04} />
               <Stop offset="100%" stopColor={strokeColor} stopOpacity={0.0} />
             </LinearGradient>
           </Defs>
 
-          {[0, 0.5, 1].map((t, i) => {
-            const y = padT + t * innerH;
+          {[0, 0.5, 1].map((ratio, i) => {
+            const y = padT + ratio * innerH;
             return (
               <Line
                 key={i}
@@ -1136,45 +1442,104 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                 y1={y}
                 x2={chartW - padR}
                 y2={y}
-                stroke={theme.hairline}
+                stroke={isDark ? 'rgba(255,255,255,0.08)' : 'rgba(15,23,42,0.08)'}
                 strokeDasharray="3 4"
                 strokeWidth={1}
               />
             );
           })}
 
-          {areaD ? <Path d={areaD} fill="url(#openChartGrad)" /> : null}
-          {coords.length > 1 ? (
+          {areaD ? <Path d={areaD} fill={`url(#${gradId})`} /> : null}
+          {lineD ? (
             <Path
               d={lineD}
               fill="none"
               stroke={strokeColor}
-              strokeWidth={2.5}
+              strokeWidth={2.75}
               strokeLinecap="round"
               strokeLinejoin="round"
             />
           ) : null}
 
-          {coords.map((c, idx) => (
-            <Circle
-              key={idx}
-              cx={c.x}
-              cy={c.y}
-              r={idx === coords.length - 1 ? 5 : 3.5}
-              fill={idx === coords.length - 1 ? strokeColor : theme.bg}
-              stroke={strokeColor}
-              strokeWidth={2}
-            />
-          ))}
+          {coords.length <= 16 &&
+            coords.slice(0, -1).map((c, idx) => (
+              <Circle
+                key={idx}
+                cx={c.x}
+                cy={c.y}
+                r={3}
+                fill={theme.card}
+                stroke={strokeColor}
+                strokeWidth={1.8}
+              />
+            ))}
+
+          {/* Latest measurement halo beacon */}
+          {lastPt && (
+            <>
+              <Circle
+                cx={lastPt.x}
+                cy={lastPt.y}
+                r={9}
+                fill={strokeColor}
+                fillOpacity={0.18}
+              />
+              <Circle
+                cx={lastPt.x}
+                cy={lastPt.y}
+                r={4.8}
+                fill={strokeColor}
+                stroke={theme.card}
+                strokeWidth={2}
+              />
+            </>
+          )}
         </Svg>
 
-        <View style={styles.chartAxisLabels}>
-          <Text style={[styles.chartAxisText, { color: theme.textMuted }]}>
-            Min: {minVal} {unitLabel}
+        {/* Date endpoints axis */}
+        <View style={styles.unifiedChartDateRow}>
+          <Text style={[styles.unifiedChartDateText, { color: theme.textMuted }]}>
+            {firstLabel}
           </Text>
-          <Text style={[styles.chartAxisText, { color: theme.text }]}>
-            Max: {maxVal} {unitLabel}
+          {points.length > 1 && (
+            <Text style={[styles.unifiedChartDateText, { color: theme.textMuted }]}>
+              {t('journalEntriesCount', { count: points.length })}
+            </Text>
+          )}
+          <Text style={[styles.unifiedChartDateText, { color: theme.textMuted }]}>
+            {lastLabel}
           </Text>
+        </View>
+
+        {/* Unified Min · Avg · Max Telemetry Footer Strip */}
+        <View
+          style={[
+            styles.unifiedChartStatsRow,
+            { borderTopColor: theme.hairline },
+          ]}
+        >
+          <View style={styles.unifiedChartStatCell}>
+            <Text style={[styles.unifiedChartStatLbl, { color: theme.textMuted }]}>MIN</Text>
+            <Text style={[styles.unifiedChartStatVal, { color: theme.text }]}>
+              {rawMin.toFixed(1)} {unitLabel}
+            </Text>
+          </View>
+          <View style={[styles.unifiedChartStatDiv, { backgroundColor: theme.hairline }]} />
+          <View style={styles.unifiedChartStatCell}>
+            <Text style={[styles.unifiedChartStatLbl, { color: theme.textMuted }]}>
+              {t('journalAvgShort')}
+            </Text>
+            <Text style={[styles.unifiedChartStatVal, { color: strokeColor }]}>
+              {avgVal.toFixed(1)} {unitLabel}
+            </Text>
+          </View>
+          <View style={[styles.unifiedChartStatDiv, { backgroundColor: theme.hairline }]} />
+          <View style={styles.unifiedChartStatCell}>
+            <Text style={[styles.unifiedChartStatLbl, { color: theme.textMuted }]}>MAX</Text>
+            <Text style={[styles.unifiedChartStatVal, { color: theme.text }]}>
+              {rawMax.toFixed(1)} {unitLabel}
+            </Text>
+          </View>
         </View>
       </View>
     );
@@ -1380,7 +1745,6 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                           try {
                             Haptics.selectionAsync();
                           } catch {}
-                          LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
                           setSelectedRankTier(null);
                         }}
                         activeOpacity={0.7}
@@ -1415,15 +1779,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                           textColor={theme.text}
                           mutedColor={theme.textMuted}
                           borderColor={theme.border}
-                          onPress={() => {
-                            try {
-                              Haptics.selectionAsync();
-                            } catch {}
-                            LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-                            setSelectedRankTier(
-                              selectedRankTier === tierObj.tier ? null : tierObj.tier
-                            );
-                          }}
+                          onSelectTier={handleSelectRankTier}
                         />
                       );
                     })}
@@ -2028,430 +2384,608 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
           )}
 
           {/* =========================================================
-              SUB-VIEW 3: DZIENNIK (WEIGHT & ACTIVITY LOG)
+              SUB-VIEW 3: DZIENNIK (WEIGHT, SUPPLEMENTS & ACTIVITY LOG)
              ========================================================= */}
-          {subView === 'journal' && (
-            <View style={styles.openPage}>
-              {/* Open Weight Section */}
-              <View style={styles.openSectionNoBorder}>
-                <View style={styles.openSectionHeader}>
-                  <View>
-                    <Text style={[styles.sectionEyebrow, { color: theme.textMuted }]}>
-                      {t('bodyWeightUpper')}
-                    </Text>
-                    <View style={styles.weightHeroRow}>
-                      <Text style={[styles.weightHeroBig, { color: theme.text }]}>
-                        {weightHistory.length > 0
-                          ? `${weightHistory[weightHistory.length - 1].weight} kg`
-                          : activeProfile?.weight
-                          ? `${activeProfile.weight} kg`
-                          : '-- kg'}
-                      </Text>
-                      {weightHistory.length >= 2 && (
-                        <Text
-                          style={[
-                            styles.weightDeltaText,
-                            {
-                              color:
-                                weightHistory[weightHistory.length - 1].weight -
-                                  weightHistory[0].weight <=
-                                0
-                                  ? '#10B981'
-                                  : '#38BDF8',
-                            },
-                          ]}
-                        >
-                          {t('fromStartKg', {
-                            diff: (
-                              weightHistory[weightHistory.length - 1].weight -
-                              weightHistory[0].weight
-                            ).toFixed(1),
-                          })}
-                        </Text>
-                      )}
-                    </View>
-                  </View>
+          {subView === 'journal' && (() => {
+            const todayKey = getLocalDateKey();
+            const hasWeighedToday = chronologicalWeightHistory.some(
+              (w) => w.date.slice(0, 10) === todayKey
+            );
+            const showDailyWeighPrompt = !hasWeighedToday && skippedWeighDate !== todayKey;
+            const latestWeightEntry =
+              chronologicalWeightHistory[chronologicalWeightHistory.length - 1] || null;
+            const firstWeightEntry = chronologicalWeightHistory[0] || null;
+            const currentWeightVal = latestWeightEntry?.weight ?? activeProfile?.weight ?? null;
+            const weightDelta =
+              latestWeightEntry && firstWeightEntry && chronologicalWeightHistory.length >= 2
+                ? latestWeightEntry.weight - firstWeightEntry.weight
+                : null;
+            const bmiVal =
+              currentWeightVal && activeProfile?.height && activeProfile.height > 100
+                ? currentWeightVal / Math.pow(activeProfile.height / 100, 2)
+                : null;
 
-                  <View style={[styles.rangePills, { backgroundColor: theme.bgSecondary }]}>
-                    {(
-                      [
-                        { id: '7d', label: '7D' },
-                        { id: '30d', label: '30D' },
-                        { id: 'all', label: 'MAX' },
-                      ] as const
-                    ).map((r) => {
-                      const active = weightChartRange === r.id;
-                      return (
-                        <TouchableOpacity
-                          key={r.id}
-                          style={[
-                            styles.rangePillBtn,
-                            active && { backgroundColor: theme.text },
-                          ]}
-                          onPress={() => setWeightChartRange(r.id)}
-                        >
-                          <Text
-                            style={[
-                              styles.rangePillText,
-                              { color: active ? theme.bg : theme.textMuted },
-                            ]}
-                          >
-                            {r.label}
-                          </Text>
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
-                </View>
+            const effectiveTaken = resolveEffectiveTakenIds(todayTakenSuppIds);
+            const hasSuppItems = enabledSupplements.length > 0;
+            const totalSuppItems = hasSuppItems ? enabledSupplements.length : 1;
+            const takenSuppCount = hasSuppItems
+              ? enabledSupplements.filter((s) => effectiveTaken.includes(s.id)).length
+              : todayTakenSuppIds.length > 0
+              ? 1
+              : 0;
+            const allSuppDone = takenSuppCount >= totalSuppItems && totalSuppItems > 0;
+            const journalCardBg = isDark ? 'rgba(24, 24, 28, 0.78)' : '#FFFFFF';
+            const journalCardBorder = isDark
+              ? 'rgba(255, 255, 255, 0.08)'
+              : 'rgba(15, 23, 42, 0.08)';
+            const matrixCellW = Math.floor((SCREEN_WIDTH - 40 - 34 - 6 * 7) / 7);
 
-                {renderOpenLineChart(
-                  filteredWeightPoints.map((w) => ({
-                    value: w.weight,
-                    label: w.date.slice(5, 10),
-                  })),
-                  '#38BDF8',
-                  'kg'
-                )}
-
-                <View style={styles.inlineInputRow}>
-                  <TextInput
+            return (
+              <View style={styles.journalPage}>
+                {/* Auto-Appearing Daily Weigh-In Prompt (hidden once weighed or skipped today) */}
+                {showDailyWeighPrompt && (
+                  <View
                     style={[
-                      styles.inlineInput,
+                      styles.dailyWeighCard,
                       {
-                        backgroundColor: theme.bgSecondary,
-                        color: theme.text,
+                        backgroundColor: isDark
+                          ? 'rgba(56, 189, 248, 0.08)'
+                          : 'rgba(14, 165, 233, 0.06)',
+                        borderColor: isDark
+                          ? 'rgba(56, 189, 248, 0.34)'
+                          : 'rgba(14, 165, 233, 0.28)',
                       },
                     ]}
-                    placeholder={t('enterTodayWeightPlaceholder')}
-                    placeholderTextColor={theme.textMuted}
-                    keyboardType="decimal-pad"
-                    value={newWeightInput}
-                    onChangeText={setNewWeightInput}
-                  />
-                  <TouchableOpacity
-                    style={[styles.inlineActionBtn, { backgroundColor: theme.text }]}
-                    onPress={handleSaveWeight}
-                    activeOpacity={0.8}
                   >
-                    <Text style={[styles.inlineActionBtnText, { color: theme.bg }]}>
-                      {t('save')}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-
-                {weightHistory
-                  .slice(-5)
-                  .reverse()
-                  .map((w) => (
-                    <View
-                      key={w.id}
-                      style={[styles.simpleLogRow, { borderBottomColor: theme.hairline }]}
-                    >
-                      <Text style={[styles.simpleLogDate, { color: theme.textMuted }]}>
-                        {parseLocalDateKey(w.date).toLocaleDateString(localeCode, {
-                          day: 'numeric',
-                          month: 'short',
-                          year: 'numeric',
-                        })}
-                      </Text>
-                      <View style={styles.simpleLogRight}>
-                        <Text style={[styles.simpleLogVal, { color: theme.text }]}>
-                          {w.weight} kg
+                    <View style={styles.dailyWeighHeaderRow}>
+                      <View style={styles.dailyWeighIconOrb}>
+                        <Ionicons name="scale-outline" size={18} color="#38BDF8" />
+                      </View>
+                      <View style={{ flex: 1, minWidth: 0 }}>
+                        <Text style={[styles.dailyWeighTitle, { color: theme.text }]}>
+                          {t('journalWeighPromptTitle')}
                         </Text>
-                        <TouchableOpacity onPress={() => handleRemoveWeight(w.id)}>
-                          <Ionicons name="trash-outline" size={14} color={theme.textMuted} />
-                        </TouchableOpacity>
+                        <Text style={[styles.dailyWeighSub, { color: theme.textSecondary }]}>
+                          {t('journalWeighPromptSub')}
+                        </Text>
                       </View>
                     </View>
-                  ))}
-              </View>
 
-              {/* Open Today's Supplements Check-In ("Czy brałeś dziś suple?") */}
-              {(() => {
-                const effectiveTaken = resolveEffectiveTakenIds(todayTakenSuppIds);
-                const hasItems = enabledSupplements.length > 0;
-                const totalItems = hasItems ? enabledSupplements.length : 1;
-                const takenCount = hasItems
-                  ? enabledSupplements.filter((s) => effectiveTaken.includes(s.id)).length
-                  : todayTakenSuppIds.length > 0
-                  ? 1
-                  : 0;
-                const allDone = takenCount >= totalItems && totalItems > 0;
+                    <View style={styles.weightStepperRow}>
+                      <TouchableOpacity
+                        style={[
+                          styles.weightStepBtn,
+                          {
+                            backgroundColor: isDark
+                              ? 'rgba(255,255,255,0.08)'
+                              : 'rgba(15,23,42,0.06)',
+                          },
+                        ]}
+                        onPress={() => adjustWeightInput(quickWeighInput, -0.1, setQuickWeighInput)}
+                        activeOpacity={0.75}
+                      >
+                        <Ionicons name="remove" size={18} color={theme.text} />
+                      </TouchableOpacity>
 
-                return (
-                  <View style={[styles.openSection, { borderTopColor: theme.hairline }]}>
-                    <View style={styles.openSectionHeader}>
-                      <View>
-                        <Text style={[styles.sectionEyebrow, { color: allDone ? '#10B981' : theme.textMuted }]}>
-                          {t('journalSuppEyebrow')}
-                        </Text>
-                        <Text style={[styles.sectionHeading, { color: theme.text }]}>
-                          {t('journalSuppHeading')}
-                        </Text>
-                      </View>
                       <View
                         style={[
-                          styles.suppStatusBadge,
+                          styles.weightStepInputWrap,
                           {
-                            backgroundColor: allDone
-                              ? 'rgba(16, 185, 129, 0.14)'
-                              : theme.bgSecondary,
-                            borderColor: allDone ? '#10B981' : theme.border,
+                            backgroundColor: journalCardBg,
+                            borderColor: journalCardBorder,
                           },
                         ]}
                       >
-                        <Text
-                          style={[
-                            styles.suppStatusBadgeText,
-                            { color: allDone ? '#10B981' : theme.textSecondary },
-                          ]}
-                        >
-                          {allDone
-                            ? t('journalSuppTakenBadge')
-                            : hasItems
-                            ? `${takenCount}/${totalItems}`
-                            : t('journalSuppPendingBadge')}
+                        <TextInput
+                          style={[styles.weightStepInput, { color: theme.text }]}
+                          placeholder="75.0"
+                          placeholderTextColor={theme.textMuted}
+                          keyboardType="decimal-pad"
+                          value={quickWeighInput}
+                          onChangeText={setQuickWeighInput}
+                          textAlign="center"
+                        />
+                        <Text style={[styles.weightStepUnit, { color: theme.textMuted }]}>kg</Text>
+                      </View>
+
+                      <TouchableOpacity
+                        style={[
+                          styles.weightStepBtn,
+                          {
+                            backgroundColor: isDark
+                              ? 'rgba(255,255,255,0.08)'
+                              : 'rgba(15,23,42,0.06)',
+                          },
+                        ]}
+                        onPress={() => adjustWeightInput(quickWeighInput, 0.1, setQuickWeighInput)}
+                        activeOpacity={0.75}
+                      >
+                        <Ionicons name="add" size={18} color={theme.text} />
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={[styles.dailyWeighSaveBtn, { backgroundColor: '#38BDF8' }]}
+                        onPress={handleSaveQuickTodayWeight}
+                        activeOpacity={0.82}
+                      >
+                        <Ionicons name="checkmark" size={16} color="#09090B" />
+                        <Text style={styles.dailyWeighSaveText}>{t('save')}</Text>
+                      </TouchableOpacity>
+                    </View>
+
+                    <TouchableOpacity
+                      style={styles.dailyWeighSkipBtn}
+                      onPress={handleSkipWeighToday}
+                      activeOpacity={0.72}
+                    >
+                      <Text style={[styles.dailyWeighSkipText, { color: theme.textMuted }]}>
+                        {t('journalSkipWeighToday')}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+
+                {/* Unified Body Weight Card (Hero Telemetry + Spline Chart + Past-Day Logging) */}
+                <View
+                  style={[
+                    styles.journalCard,
+                    { backgroundColor: journalCardBg, borderColor: journalCardBorder },
+                  ]}
+                >
+                  <View style={styles.journalCardHeaderRow}>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={[styles.sectionEyebrow, { color: theme.textMuted }]}>
+                        {t('bodyWeightUpper')}
+                      </Text>
+                      <View style={styles.weightHeroRow}>
+                        <Text style={[styles.weightHeroBig, { color: theme.text }]}>
+                          {currentWeightVal !== null ? `${currentWeightVal} kg` : '-- kg'}
                         </Text>
+                        {weightDelta !== null && (
+                          <View
+                            style={[
+                              styles.weightDeltaPill,
+                              {
+                                backgroundColor:
+                                  weightDelta <= 0
+                                    ? 'rgba(16, 185, 129, 0.14)'
+                                    : 'rgba(56, 189, 248, 0.14)',
+                              },
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.weightDeltaPillText,
+                                { color: weightDelta <= 0 ? '#10B981' : '#38BDF8' },
+                              ]}
+                            >
+                              {weightDelta > 0 ? '+' : ''}
+                              {weightDelta.toFixed(1)} kg
+                            </Text>
+                          </View>
+                        )}
+                        {bmiVal !== null && (
+                          <View
+                            style={[
+                              styles.weightBmiPill,
+                              { backgroundColor: theme.bgSecondary },
+                            ]}
+                          >
+                            <Text style={[styles.weightBmiText, { color: theme.textSecondary }]}>
+                              BMI {bmiVal.toFixed(1)}
+                            </Text>
+                          </View>
+                        )}
                       </View>
                     </View>
 
-                    {hasItems && (
-                      <View style={styles.suppChipsWrap}>
-                        {enabledSupplements.map((supp) => {
-                          const isChecked = effectiveTaken.includes(supp.id);
-                          const suppDisplayName = getTranslatedSupplement(
-                            supp.id,
-                            'name',
-                            supp.name,
-                            (localeCode.slice(0, 2) as any) || 'pl'
-                          );
-                          const dose = formatSupplementDose(supp, activeProfile?.weight);
-                          return (
-                            <TouchableOpacity
-                              key={supp.id}
-                              style={[
-                                styles.suppChip,
-                                {
-                                  backgroundColor: isChecked
-                                    ? 'rgba(16, 185, 129, 0.14)'
-                                    : theme.bgSecondary,
-                                  borderColor: isChecked ? '#10B981' : theme.border,
-                                },
-                              ]}
-                              onPress={() => handleToggleSupplementItem(supp.id)}
-                              activeOpacity={0.75}
-                            >
-                              <Ionicons
-                                name={isChecked ? 'checkmark-circle' : 'ellipse-outline'}
-                                size={16}
-                                color={isChecked ? '#10B981' : theme.textMuted}
-                              />
-                              <View style={{ flexShrink: 1 }}>
-                                <Text
-                                  style={[styles.suppChipName, { color: theme.text }]}
-                                  numberOfLines={1}
-                                >
-                                  {suppDisplayName}
-                                </Text>
-                                {dose ? (
-                                  <Text
-                                    style={[styles.suppChipDose, { color: theme.textMuted }]}
-                                    numberOfLines={1}
-                                  >
-                                    {dose}
-                                  </Text>
-                                ) : null}
-                              </View>
-                            </TouchableOpacity>
-                          );
-                        })}
-                      </View>
-                    )}
-
                     <TouchableOpacity
                       style={[
-                        styles.suppMarkAllBtn,
+                        styles.journalAddWeightBtn,
                         {
-                          backgroundColor: allDone ? 'rgba(16, 185, 129, 0.14)' : theme.text,
-                          borderColor: allDone ? '#10B981' : theme.text,
+                          backgroundColor: isDark
+                            ? 'rgba(56, 189, 248, 0.15)'
+                            : 'rgba(14, 165, 233, 0.1)',
+                          borderColor: isDark
+                            ? 'rgba(56, 189, 248, 0.35)'
+                            : 'rgba(14, 165, 233, 0.28)',
                         },
                       ]}
-                      onPress={handleToggleAllSupplementsToday}
-                      activeOpacity={0.8}
+                      onPress={() => openWeightSheet(0)}
+                      activeOpacity={0.78}
                     >
-                      <Ionicons
-                        name={allDone ? 'checkmark-done-circle' : 'sparkles-outline'}
-                        size={17}
-                        color={allDone ? '#10B981' : theme.bg}
-                      />
+                      <Ionicons name="add" size={15} color="#38BDF8" />
                       <Text
                         style={[
-                          styles.suppMarkAllText,
-                          { color: allDone ? '#10B981' : theme.bg },
+                          styles.journalAddWeightText,
+                          { color: isDark ? '#7DD3FC' : '#0284C7' },
                         ]}
                       >
-                        {allDone ? t('journalSuppAllDoneBtn') : t('journalSuppMarkAllBtn')}
+                        {t('journalLogWeightBtn')}
                       </Text>
                     </TouchableOpacity>
+                  </View>
 
-                    {suppLog7Days.length > 0 && (
-                      <View style={styles.suppWeekWrap}>
-                        <Text style={[styles.suppWeekLabel, { color: theme.textMuted }]}>
-                          {t('journalSuppLast7Days')}
-                        </Text>
-                        <View style={styles.suppWeekRow}>
-                          {suppLog7Days.map((entry) => (
-                            <View key={entry.date} style={styles.suppWeekCell}>
-                              <View
-                                style={[
-                                  styles.suppWeekDot,
-                                  {
-                                    backgroundColor: entry.taken ? '#10B981' : theme.bgSecondary,
-                                    borderColor: entry.isToday ? theme.text : 'transparent',
-                                    borderWidth: entry.isToday ? 1.5 : 0,
-                                  },
-                                ]}
-                              >
-                                <Ionicons
-                                  name={entry.taken ? 'checkmark' : 'close'}
-                                  size={12}
-                                  color={entry.taken ? '#09090B' : theme.textMuted}
-                                />
-                              </View>
-                              <Text
-                                style={[
-                                  styles.suppWeekDay,
-                                  { color: entry.isToday ? theme.text : theme.textMuted },
-                                ]}
-                              >
-                                {entry.dayLabel}
+                  <View style={styles.journalChartToolbar}>
+                    <View style={[styles.rangePills, { backgroundColor: theme.bgSecondary }]}>
+                      {(
+                        [
+                          { id: '7d', label: '7D' },
+                          { id: '30d', label: '30D' },
+                          { id: 'all', label: 'MAX' },
+                        ] as const
+                      ).map((r) => {
+                        const active = weightChartRange === r.id;
+                        return (
+                          <TouchableOpacity
+                            key={r.id}
+                            style={[
+                              styles.rangePillBtn,
+                              active && { backgroundColor: theme.text },
+                            ]}
+                            onPress={() => setWeightChartRange(r.id)}
+                          >
+                            <Text
+                              style={[
+                                styles.rangePillText,
+                                { color: active ? theme.bg : theme.textMuted },
+                              ]}
+                            >
+                              {r.label}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  </View>
+
+                  {renderOpenLineChart(
+                    filteredWeightPoints.map((w) => ({
+                      value: w.weight,
+                      label: parseLocalDateKey(w.date).toLocaleDateString(localeCode, {
+                        day: 'numeric',
+                        month: 'short',
+                      }),
+                    })),
+                    '#38BDF8',
+                    'kg',
+                    'weight',
+                    SCREEN_WIDTH - 40 - 32 - 20
+                  )}
+
+                  {recentWeightHistory.length > 0 && (
+                    <View style={[styles.journalWeightLogWrap, { borderTopColor: theme.hairline }]}>
+                      {recentWeightHistory.slice(0, 5).map((w, idx) => {
+                        const prevEntry = recentWeightHistory[idx + 1];
+                        const stepDiff = prevEntry ? w.weight - prevEntry.weight : null;
+                        const entryDate = parseLocalDateKey(w.date);
+                        const todayDate = parseLocalDateKey(todayKey);
+                        const dayDiff = Math.round(
+                          (entryDate.getTime() - todayDate.getTime()) / (24 * 60 * 60 * 1000)
+                        );
+                        return (
+                          <TouchableOpacity
+                            key={w.id}
+                            activeOpacity={0.75}
+                            onPress={() => openWeightSheet(Math.min(0, dayDiff), w.weight)}
+                            style={[
+                              styles.simpleLogRow,
+                              idx === Math.min(recentWeightHistory.length, 5) - 1 && {
+                                borderBottomWidth: 0,
+                                paddingBottom: 2,
+                              },
+                              { borderBottomColor: theme.hairline },
+                            ]}
+                          >
+                            <View style={styles.weightLogLeft}>
+                              <Text style={[styles.simpleLogDate, { color: theme.textSecondary }]}>
+                                {dayDiff === 0
+                                  ? t('journalDateToday')
+                                  : dayDiff === -1
+                                  ? t('journalDateYesterday')
+                                  : entryDate.toLocaleDateString(localeCode, {
+                                      day: 'numeric',
+                                      month: 'short',
+                                      year: 'numeric',
+                                    })}
                               </Text>
                             </View>
-                          ))}
-                        </View>
-                      </View>
-                    )}
-                  </View>
-                );
-              })()}
-
-              {/* Open 28-Day Activity Matrix */}
-              <View style={[styles.openSection, { borderTopColor: theme.hairline }]}>
-                <View style={styles.openSectionHeader}>
-                  <View>
-                    <Text style={[styles.sectionEyebrow, { color: theme.textMuted }]}>
-                      {t('regularityCaps')}
-                    </Text>
-                    <Text style={[styles.sectionHeading, { color: theme.text }]}>
-                      {t('last28DaysHeading')}
-                    </Text>
-                  </View>
-                  <Text style={[styles.sectionRightMeta, { color: theme.textSecondary }]}>
-                    {t('workoutsCountLabel', {
-                      count: last28Days.filter((d) => d.active).length,
-                    })}
-                  </Text>
-                </View>
-
-                <View style={styles.dotsGrid}>
-                  {last28Days.map((day) => (
-                    <View
-                      key={day.key}
-                      style={[
-                        styles.dayDotBox,
-                        {
-                          backgroundColor: day.active
-                            ? '#10B981'
-                            : theme.bgSecondary,
-                          borderColor: day.isToday ? theme.text : 'transparent',
-                          borderWidth: day.isToday ? 1.5 : 0,
-                        },
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.dayDotLabel,
-                          {
-                            color: day.active ? '#09090B' : theme.textMuted,
-                          },
-                        ]}
-                      >
-                        {day.label}
-                      </Text>
+                            <View style={styles.simpleLogRight}>
+                              {stepDiff !== null && Math.abs(stepDiff) >= 0.05 && (
+                                <Text
+                                  style={[
+                                    styles.weightLogStepDiff,
+                                    { color: stepDiff < 0 ? '#10B981' : '#38BDF8' },
+                                  ]}
+                                >
+                                  {stepDiff > 0 ? '+' : ''}
+                                  {stepDiff.toFixed(1)}
+                                </Text>
+                              )}
+                              <Text style={[styles.simpleLogVal, { color: theme.text }]}>
+                                {w.weight} kg
+                              </Text>
+                              <TouchableOpacity
+                                onPress={() => handleRemoveWeight(w.id)}
+                                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                              >
+                                <Ionicons name="trash-outline" size={14} color={theme.textMuted} />
+                              </TouchableOpacity>
+                            </View>
+                          </TouchableOpacity>
+                        );
+                      })}
                     </View>
-                  ))}
-                </View>
-              </View>
-
-              {/* Open Recent Workouts Timeline */}
-              <View style={[styles.openSection, { borderTopColor: theme.hairline }]}>
-                <View style={styles.openSectionHeader}>
-                  <View>
-                    <Text style={[styles.sectionEyebrow, { color: theme.textMuted }]}>
-                      {t('sessionHistoryCaps')}
-                    </Text>
-                    <Text style={[styles.sectionHeading, { color: theme.text }]}>
-                      {t('recentWorkoutsHeading')}
-                    </Text>
-                  </View>
-                  {workoutHistory.length > 4 ? (
-                    <TouchableOpacity
-                      onPress={() => {
-                        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-                        setShowAllJournalWorkouts((v) => !v);
-                      }}
-                    >
-                      <Text style={[styles.sectionRightMeta, { color: theme.text }]}>
-                        {showAllJournalWorkouts
-                          ? t('lessLabel')
-                          : t('allCountLabel', { count: workoutHistory.length })}
-                      </Text>
-                    </TouchableOpacity>
-                  ) : (
-                    <Text style={[styles.sectionRightMeta, { color: theme.textMuted }]}>
-                      {t('totalCountLabel', { count: workoutHistory.length })}
-                    </Text>
                   )}
                 </View>
 
-                {workoutHistory.length === 0 ? (
-                  <Text style={[styles.emptyLineText, { color: theme.textMuted }]}>
-                    {t('noWorkoutsCompleted')}
-                  </Text>
-                ) : (
-                  (showAllJournalWorkouts ? workoutHistory.slice(-15) : workoutHistory.slice(-4))
-                    .slice()
-                    .reverse()
-                    .map((entry, idx) => (
-                      <View
-                        key={`${entry.date}-${idx}`}
-                        style={[styles.workoutLogRow, { borderBottomColor: theme.hairline }]}
+                {/* Unified Supplements Card (NO "Czy brałeś już suple?" heading, NO "Oznacz wszystkie" button, One-Way Animated Check) */}
+                <View
+                  style={[
+                    styles.journalCard,
+                    { backgroundColor: journalCardBg, borderColor: journalCardBorder },
+                  ]}
+                >
+                  <View style={styles.journalCardHeaderRow}>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text
+                        style={[
+                          styles.sectionEyebrow,
+                          { color: allSuppDone ? '#10B981' : theme.textMuted, marginBottom: 0 },
+                        ]}
                       >
-                        <View style={{ flex: 1 }}>
-                          <Text style={[styles.workoutLogTitle, { color: theme.text }]}>
-                            {entry.dayName}
-                          </Text>
-                          <Text style={[styles.workoutLogSub, { color: theme.textMuted }]}>
-                            {parseLocalDateKey(entry.date).toLocaleDateString(localeCode, {
-                              weekday: 'short',
-                              day: 'numeric',
-                              month: 'long',
-                            })}
-                            {entry.durationMinutes ? ` · ${entry.durationMinutes} min` : ''}
-                            {entry.totalVolumeKg
-                              ? ` · ${entry.totalVolumeKg.toLocaleString(localeCode)} kg`
-                              : ''}
-                          </Text>
-                        </View>
-                        <Text style={[styles.workoutLogSets, { color: theme.textSecondary }]}>
-                          {entry.completedSets}/{entry.totalSets} {t('setsWord')}
+                        {t('journalSuppEyebrow')}
+                      </Text>
+                      {!allSuppDone && (
+                        <Text style={[styles.suppOneWayHint, { color: theme.textMuted }]}>
+                          {t('journalSuppTakenOneWayHint')}
+                        </Text>
+                      )}
+                    </View>
+                    <View
+                      style={[
+                        styles.suppStatusBadge,
+                        {
+                          backgroundColor: allSuppDone
+                            ? 'rgba(16, 185, 129, 0.14)'
+                            : theme.bgSecondary,
+                          borderColor: allSuppDone ? '#10B981' : theme.border,
+                        },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.suppStatusBadgeText,
+                          { color: allSuppDone ? '#10B981' : theme.textSecondary },
+                        ]}
+                      >
+                        {allSuppDone
+                          ? t('journalSuppTakenBadge')
+                          : hasSuppItems
+                          ? `${takenSuppCount}/${totalSuppItems}`
+                          : t('journalSuppPendingBadge')}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.oneWaySuppList}>
+                    {hasSuppItems ? (
+                      enabledSupplements.map((supp) => {
+                        const isChecked = effectiveTaken.includes(supp.id);
+                        const suppDisplayName = getTranslatedSupplement(
+                          supp.id,
+                          'name',
+                          supp.name,
+                          (localeCode.slice(0, 2) as any) || 'pl'
+                        );
+                        const dose = formatSupplementDose(supp, activeProfile?.weight);
+                        return (
+                          <OneWaySupplementRow
+                            key={supp.id}
+                            id={supp.id}
+                            name={suppDisplayName}
+                            dose={dose}
+                            isChecked={isChecked}
+                            isDark={isDark}
+                            textColor={theme.text}
+                            mutedColor={theme.textMuted}
+                            bgColor={theme.bgSecondary}
+                            borderColor={theme.border}
+                            onMarkTaken={handleMarkSupplementTaken}
+                          />
+                        );
+                      })
+                    ) : (
+                      <OneWaySupplementRow
+                        id="__all__"
+                        name={t('journalSuppEyebrow')}
+                        isChecked={allSuppDone}
+                        isDark={isDark}
+                        textColor={theme.text}
+                        mutedColor={theme.textMuted}
+                        bgColor={theme.bgSecondary}
+                        borderColor={theme.border}
+                        onMarkTaken={handleMarkSupplementTaken}
+                      />
+                    )}
+                  </View>
+
+                  {suppLog7Days.length > 0 && (
+                    <View style={[styles.suppWeekWrap, { borderTopColor: theme.hairline }]}>
+                      <Text style={[styles.suppWeekLabel, { color: theme.textMuted }]}>
+                        {t('journalSuppLast7Days')}
+                      </Text>
+                      <View style={styles.suppWeekRow}>
+                        {suppLog7Days.map((entry) => (
+                          <View key={entry.date} style={styles.suppWeekCell}>
+                            <View
+                              style={[
+                                styles.suppWeekDot,
+                                {
+                                  backgroundColor: entry.taken ? '#10B981' : theme.bgSecondary,
+                                  borderColor: entry.isToday ? theme.text : 'transparent',
+                                  borderWidth: entry.isToday ? 1.5 : 0,
+                                },
+                              ]}
+                            >
+                              <Ionicons
+                                name={entry.taken ? 'checkmark' : 'remove'}
+                                size={12}
+                                color={entry.taken ? '#09090B' : theme.textMuted}
+                              />
+                            </View>
+                            <Text
+                              style={[
+                                styles.suppWeekDay,
+                                { color: entry.isToday ? theme.text : theme.textMuted },
+                              ]}
+                            >
+                              {entry.dayLabel}
+                            </Text>
+                          </View>
+                        ))}
+                      </View>
+                    </View>
+                  )}
+                </View>
+
+                {/* Unified 28-Day Activity Matrix Card */}
+                <View
+                  style={[
+                    styles.journalCard,
+                    { backgroundColor: journalCardBg, borderColor: journalCardBorder },
+                  ]}
+                >
+                  <View style={styles.journalCardHeaderRow}>
+                    <View>
+                      <Text style={[styles.sectionEyebrow, { color: theme.textMuted }]}>
+                        {t('regularityCaps')}
+                      </Text>
+                      <Text style={[styles.sectionHeading, { color: theme.text }]}>
+                        {t('last28DaysHeading')}
+                      </Text>
+                    </View>
+                    <View
+                      style={[
+                        styles.suppStatusBadge,
+                        { backgroundColor: theme.bgSecondary, borderColor: theme.border },
+                      ]}
+                    >
+                      <Text style={[styles.suppStatusBadgeText, { color: theme.textSecondary }]}>
+                        {t('workoutsCountLabel', {
+                          count: last28Days.filter((d) => d.active).length,
+                        })}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.dotsGrid}>
+                    {last28Days.map((day) => (
+                      <View
+                        key={day.key}
+                        style={[
+                          styles.dayDotBox,
+                          {
+                            width: matrixCellW,
+                            backgroundColor: day.active ? '#10B981' : theme.bgSecondary,
+                            borderColor: day.isToday ? theme.text : 'transparent',
+                            borderWidth: day.isToday ? 1.5 : 0,
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.dayDotLabel,
+                            {
+                              color: day.active ? '#09090B' : theme.textMuted,
+                            },
+                          ]}
+                        >
+                          {day.label}
                         </Text>
                       </View>
-                    ))
-                )}
+                    ))}
+                  </View>
+                </View>
+
+                {/* Unified Recent Workouts Timeline Card */}
+                <View
+                  style={[
+                    styles.journalCard,
+                    { backgroundColor: journalCardBg, borderColor: journalCardBorder },
+                  ]}
+                >
+                  <View style={styles.journalCardHeaderRow}>
+                    <View>
+                      <Text style={[styles.sectionEyebrow, { color: theme.textMuted }]}>
+                        {t('sessionHistoryCaps')}
+                      </Text>
+                      <Text style={[styles.sectionHeading, { color: theme.text }]}>
+                        {t('recentWorkoutsHeading')}
+                      </Text>
+                    </View>
+                    {workoutHistory.length > 4 ? (
+                      <TouchableOpacity
+                        onPress={() => {
+                          setShowAllJournalWorkouts((v) => !v);
+                        }}
+                      >
+                        <Text style={[styles.sectionRightMeta, { color: '#38BDF8' }]}>
+                          {showAllJournalWorkouts
+                            ? t('lessLabel')
+                            : t('allCountLabel', { count: workoutHistory.length })}
+                        </Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <Text style={[styles.sectionRightMeta, { color: theme.textMuted }]}>
+                        {t('totalCountLabel', { count: workoutHistory.length })}
+                      </Text>
+                    )}
+                  </View>
+
+                  {workoutHistory.length === 0 ? (
+                    <Text style={[styles.emptyLineText, { color: theme.textMuted }]}>
+                      {t('noWorkoutsCompleted')}
+                    </Text>
+                  ) : (
+                    (showAllJournalWorkouts ? workoutHistory.slice(-15) : workoutHistory.slice(-4))
+                      .slice()
+                      .reverse()
+                      .map((entry, idx, arr) => (
+                        <View
+                          key={`${entry.date}-${idx}`}
+                          style={[
+                            styles.workoutLogRow,
+                            idx === arr.length - 1 && { borderBottomWidth: 0, paddingBottom: 2 },
+                            { borderBottomColor: theme.hairline },
+                          ]}
+                        >
+                          <View style={{ flex: 1 }}>
+                            <Text style={[styles.workoutLogTitle, { color: theme.text }]}>
+                              {entry.dayName}
+                            </Text>
+                            <Text style={[styles.workoutLogSub, { color: theme.textMuted }]}>
+                              {parseLocalDateKey(entry.date).toLocaleDateString(localeCode, {
+                                weekday: 'short',
+                                day: 'numeric',
+                                month: 'long',
+                              })}
+                              {entry.durationMinutes ? ` · ${entry.durationMinutes} min` : ''}
+                              {entry.totalVolumeKg
+                                ? ` · ${entry.totalVolumeKg.toLocaleString(localeCode)} kg`
+                                : ''}
+                            </Text>
+                          </View>
+                          <Text style={[styles.workoutLogSets, { color: theme.textSecondary }]}>
+                            {entry.completedSets}/{entry.totalSets} {t('setsWord')}
+                          </Text>
+                        </View>
+                      ))
+                  )}
+                </View>
               </View>
-            </View>
-          )}
+            );
+          })()}
         </Animated.View>
       </SmartScrollView>
 
@@ -2564,10 +3098,15 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
               {renderOpenLineChart(
                 filteredPRPoints.map((p) => ({
                   value: p.estimated1RM,
-                  label: p.date.slice(5, 10),
+                  label: parseLocalDateKey(p.date.slice(0, 10)).toLocaleDateString(localeCode, {
+                    day: 'numeric',
+                    month: 'short',
+                  }),
                 })),
                 selectedExerciseRankStat?.rankMeta.color || '#10B981',
-                'kg'
+                'kg',
+                'pr',
+                SCREEN_WIDTH - 40 - 20
               )}
             </View>
 
@@ -2645,6 +3184,186 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
               )}
             </View>
           </BottomSheetScrollView>
+      </InteractiveBottomSheet>
+
+      {/* =========================================================
+          BODY WEIGHT LOGGER SHEET (TODAY OR ANY PAST DAY)
+         ========================================================= */}
+      <InteractiveBottomSheet
+        visible={showWeightSheet}
+        onClose={() => setShowWeightSheet(false)}
+        title={t('journalLogWeightSheetTitle')}
+        subtitle={t('journalLogWeightSheetSub')}
+        initialHeightPercent={0.56}
+      >
+        <BottomSheetScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={styles.weightSheetContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          {/* Quick Date Chips */}
+          <View style={styles.weightQuickDatesRow}>
+            {[
+              { offset: 0, label: t('journalDateToday') },
+              { offset: -1, label: t('journalDateYesterday') },
+              { offset: -2, label: t('journalDateDaysAgo', { count: 2 }) },
+              { offset: -3, label: t('journalDateDaysAgo', { count: 3 }) },
+            ].map((chip) => {
+              const active = weightSheetOffsetDays === chip.offset;
+              return (
+                <TouchableOpacity
+                  key={chip.offset}
+                  onPress={() => changeWeightSheetOffset(chip.offset)}
+                  activeOpacity={0.78}
+                  style={[
+                    styles.weightDateChip,
+                    {
+                      backgroundColor: active
+                        ? '#38BDF8'
+                        : theme.bgSecondary,
+                      borderColor: active ? '#38BDF8' : theme.border,
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.weightDateChipText,
+                      { color: active ? '#09090B' : theme.textSecondary },
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {chip.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          {/* Any-Day Calendar Stepper (step backwards arbitrarily far) */}
+          <View
+            style={[
+              styles.weightDateStepperBox,
+              { backgroundColor: theme.bgSecondary, borderColor: theme.border },
+            ]}
+          >
+            <TouchableOpacity
+              onPress={() => changeWeightSheetOffset(weightSheetOffsetDays - 1)}
+              style={styles.weightDateNavBtn}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="chevron-back" size={18} color={theme.text} />
+            </TouchableOpacity>
+
+            <View style={styles.weightDateCenter}>
+              <Ionicons name="calendar-outline" size={15} color="#38BDF8" />
+              <Text style={[styles.weightDateCenterText, { color: theme.text }]}>
+                {parseLocalDateKey(
+                  getLocalDateKeyOffset(weightSheetOffsetDays)
+                ).toLocaleDateString(localeCode, {
+                  weekday: 'short',
+                  day: 'numeric',
+                  month: 'long',
+                  year: 'numeric',
+                })}
+              </Text>
+            </View>
+
+            <TouchableOpacity
+              disabled={weightSheetOffsetDays >= 0}
+              onPress={() => changeWeightSheetOffset(weightSheetOffsetDays + 1)}
+              style={[
+                styles.weightDateNavBtn,
+                weightSheetOffsetDays >= 0 && { opacity: 0.3 },
+              ]}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="chevron-forward" size={18} color={theme.text} />
+            </TouchableOpacity>
+          </View>
+
+          {/* Weight Value Stepper & Input */}
+          <View style={styles.weightSheetInputRow}>
+            <TouchableOpacity
+              style={[
+                styles.weightSheetStepBtn,
+                { backgroundColor: theme.bgSecondary, borderColor: theme.border },
+              ]}
+              onPress={() =>
+                adjustWeightInput(weightSheetInput, -0.5, setWeightSheetInput)
+              }
+              activeOpacity={0.75}
+            >
+              <Text style={[styles.weightSheetStepLbl, { color: theme.text }]}>-0.5</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.weightSheetStepBtn,
+                { backgroundColor: theme.bgSecondary, borderColor: theme.border },
+              ]}
+              onPress={() =>
+                adjustWeightInput(weightSheetInput, -0.1, setWeightSheetInput)
+              }
+              activeOpacity={0.75}
+            >
+              <Text style={[styles.weightSheetStepLbl, { color: theme.text }]}>-0.1</Text>
+            </TouchableOpacity>
+
+            <View
+              style={[
+                styles.weightSheetCenterInputWrap,
+                { backgroundColor: theme.bgSecondary, borderColor: '#38BDF8' },
+              ]}
+            >
+              <TextInput
+                style={[styles.weightSheetCenterInput, { color: theme.text }]}
+                placeholder="75.0"
+                placeholderTextColor={theme.textMuted}
+                keyboardType="decimal-pad"
+                value={weightSheetInput}
+                onChangeText={setWeightSheetInput}
+                textAlign="center"
+              />
+              <Text style={[styles.weightSheetCenterUnit, { color: theme.textMuted }]}>kg</Text>
+            </View>
+
+            <TouchableOpacity
+              style={[
+                styles.weightSheetStepBtn,
+                { backgroundColor: theme.bgSecondary, borderColor: theme.border },
+              ]}
+              onPress={() =>
+                adjustWeightInput(weightSheetInput, 0.1, setWeightSheetInput)
+              }
+              activeOpacity={0.75}
+            >
+              <Text style={[styles.weightSheetStepLbl, { color: theme.text }]}>+0.1</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.weightSheetStepBtn,
+                { backgroundColor: theme.bgSecondary, borderColor: theme.border },
+              ]}
+              onPress={() =>
+                adjustWeightInput(weightSheetInput, 0.5, setWeightSheetInput)
+              }
+              activeOpacity={0.75}
+            >
+              <Text style={[styles.weightSheetStepLbl, { color: theme.text }]}>+0.5</Text>
+            </TouchableOpacity>
+          </View>
+
+          <TouchableOpacity
+            style={[styles.weightSheetSaveBtn, { backgroundColor: '#38BDF8' }]}
+            onPress={handleSaveSheetWeight}
+            activeOpacity={0.82}
+          >
+            <Ionicons name="checkmark-circle" size={18} color="#09090B" />
+            <Text style={styles.weightSheetSaveBtnText}>{t('save')}</Text>
+          </TouchableOpacity>
+        </BottomSheetScrollView>
       </InteractiveBottomSheet>
     </View>
   );
@@ -3150,8 +3869,9 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   emptyChartOpen: {
-    paddingVertical: 32,
+    paddingVertical: 30,
     alignItems: 'center',
+    gap: 8,
   },
   emptyChartText: {
     fontSize: 13,
@@ -3250,8 +3970,10 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   suppWeekWrap: {
-    marginTop: 12,
-    gap: 6,
+    marginTop: 6,
+    paddingTop: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    gap: 8,
   },
   suppWeekLabel: {
     fontSize: 11,
@@ -3281,7 +4003,7 @@ const styles = StyleSheet.create({
   dotsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
+    gap: 7,
     marginTop: 4,
   },
   dayDotBox: {
@@ -3348,5 +4070,367 @@ const styles = StyleSheet.create({
     marginTop: 18,
     paddingTop: 14,
     borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  // Unified Spline Chart styles (shared by Weight & 1RM charts)
+  unifiedChartBox: {
+    marginTop: 8,
+    marginBottom: 4,
+    borderRadius: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 10,
+    paddingTop: 6,
+    paddingBottom: 10,
+    overflow: 'hidden',
+  },
+  unifiedChartDateRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 6,
+    marginTop: -2,
+    marginBottom: 8,
+  },
+  unifiedChartDateText: {
+    fontSize: 10.5,
+    fontWeight: '700',
+  },
+  unifiedChartStatsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingTop: 9,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  unifiedChartStatCell: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 2,
+  },
+  unifiedChartStatDiv: {
+    width: StyleSheet.hairlineWidth,
+    height: 24,
+  },
+  unifiedChartStatLbl: {
+    fontSize: 9.5,
+    fontWeight: '800',
+    letterSpacing: 0.7,
+  },
+  unifiedChartStatVal: {
+    fontSize: 13,
+    fontWeight: '800',
+    fontVariant: ['tabular-nums'],
+  },
+  // Redesigned Journal Sub-Tab styles
+  journalPage: {
+    gap: 14,
+    paddingTop: 10,
+  },
+  journalCard: {
+    borderRadius: 20,
+    borderWidth: 1,
+    padding: 16,
+    gap: 10,
+  },
+  journalCardHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  dailyWeighCard: {
+    borderRadius: 20,
+    borderWidth: 1,
+    padding: 16,
+    gap: 12,
+  },
+  dailyWeighHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 11,
+  },
+  dailyWeighIconOrb: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: 'rgba(56, 189, 248, 0.16)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dailyWeighTitle: {
+    fontSize: 16,
+    fontWeight: '900',
+    letterSpacing: -0.3,
+  },
+  dailyWeighSub: {
+    fontSize: 12,
+    fontWeight: '500',
+    marginTop: 2,
+  },
+  weightStepperRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  weightStepBtn: {
+    width: 40,
+    height: 44,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  weightStepInputWrap: {
+    flex: 1,
+    height: 44,
+    borderRadius: 12,
+    borderWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 10,
+    gap: 4,
+  },
+  weightStepInput: {
+    fontSize: 18,
+    fontWeight: '900',
+    fontVariant: ['tabular-nums'],
+    minWidth: 54,
+    paddingVertical: 0,
+  },
+  weightStepUnit: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  dailyWeighSaveBtn: {
+    height: 44,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+  },
+  dailyWeighSaveText: {
+    fontSize: 13,
+    fontWeight: '900',
+    color: '#09090B',
+  },
+  dailyWeighSkipBtn: {
+    alignSelf: 'center',
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+  },
+  dailyWeighSkipText: {
+    fontSize: 12.5,
+    fontWeight: '700',
+  },
+  weightDeltaPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+  },
+  weightDeltaPillText: {
+    fontSize: 11.5,
+    fontWeight: '800',
+    fontVariant: ['tabular-nums'],
+  },
+  weightBmiPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+  },
+  weightBmiText: {
+    fontSize: 11,
+    fontWeight: '700',
+    fontVariant: ['tabular-nums'],
+  },
+  journalAddWeightBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 11,
+    paddingVertical: 7,
+    borderRadius: 999,
+    borderWidth: 1,
+    flexShrink: 0,
+  },
+  journalAddWeightText: {
+    fontSize: 11.5,
+    fontWeight: '800',
+  },
+  journalChartToolbar: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+  },
+  journalWeightLogWrap: {
+    marginTop: 4,
+    paddingTop: 4,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  weightLogLeft: {
+    flex: 1,
+    minWidth: 0,
+  },
+  weightLogStepDiff: {
+    fontSize: 11.5,
+    fontWeight: '800',
+    fontVariant: ['tabular-nums'],
+  },
+  // One-way animated supplements checklist
+  suppOneWayHint: {
+    fontSize: 11.5,
+    fontWeight: '500',
+    marginTop: 2,
+  },
+  oneWaySuppList: {
+    gap: 8,
+    marginTop: 2,
+  },
+  oneWaySuppRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  oneWaySuppName: {
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  oneWaySuppDose: {
+    fontSize: 11.5,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  oneWayCheckWrap: {
+    width: 30,
+    height: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  oneWayCheckRipple: {
+    position: 'absolute',
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#10B981',
+  },
+  oneWayCheckFilled: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: '#10B981',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  oneWayCheckEmpty: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    borderWidth: 1.8,
+  },
+  // Past/Today Weight Logger Sheet
+  weightSheetContent: {
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    paddingBottom: 32,
+    gap: 14,
+  },
+  weightQuickDatesRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  weightDateChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  weightDateChipText: {
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  weightDateStepperBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderRadius: 14,
+    borderWidth: 1,
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+  },
+  weightDateNavBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  weightDateCenter: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+  },
+  weightDateCenterText: {
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  weightSheetInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  weightSheetStepBtn: {
+    paddingHorizontal: 10,
+    height: 48,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  weightSheetStepLbl: {
+    fontSize: 12.5,
+    fontWeight: '800',
+    fontVariant: ['tabular-nums'],
+  },
+  weightSheetCenterInputWrap: {
+    flex: 1,
+    height: 48,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+    gap: 3,
+  },
+  weightSheetCenterInput: {
+    fontSize: 20,
+    fontWeight: '900',
+    fontVariant: ['tabular-nums'],
+    minWidth: 58,
+    paddingVertical: 0,
+  },
+  weightSheetCenterUnit: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  weightSheetSaveBtn: {
+    height: 50,
+    borderRadius: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 4,
+  },
+  weightSheetSaveBtnText: {
+    fontSize: 15,
+    fontWeight: '900',
+    color: '#09090B',
   },
 });

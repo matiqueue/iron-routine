@@ -1,13 +1,15 @@
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Animated,
-  Easing,
-  PanResponder,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
   Platform,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -113,9 +115,8 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
   const insets = useSafeAreaInsets();
   const dateLocale = localeCode;
 
+  const { width: screenWidth } = useWindowDimensions();
   const [showQueueSheet, setShowQueueSheet] = useState(false);
-  const heroSlideX = useRef(new Animated.Value(0)).current;
-  const heroFade = useRef(new Animated.Value(1)).current;
 
   const workoutDaysInSequence = useMemo(
     () =>
@@ -137,30 +138,56 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
     [workoutDaysInSequence, currentPlan.id]
   );
 
+  const heroPages = useMemo(
+    () =>
+      workoutDaysInSequence.length > 0 && currentSeqIdx >= 0
+        ? workoutDaysInSequence
+        : [currentPlan],
+    [workoutDaysInSequence, currentSeqIdx, currentPlan]
+  );
+
+  const activeHeroIdx = useMemo(() => {
+    const idx = heroPages.findIndex((d) => d.id === currentPlan.id);
+    return idx >= 0 ? idx : 0;
+  }, [heroPages, currentPlan.id]);
+
+  const heroPagerRef = useRef<React.ComponentRef<typeof ScrollView> | null>(null);
+  const heroScrollX = useRef(new Animated.Value(activeHeroIdx * screenWidth)).current;
+  const lastSwipedDayIdRef = useRef<string | null>(null);
+  const hasMountedPagerRef = useRef(false);
+
+  useEffect(() => {
+    if (heroPages.length <= 1 || screenWidth <= 0) return;
+    if (lastSwipedDayIdRef.current === currentPlan.id) {
+      lastSwipedDayIdRef.current = null;
+      return;
+    }
+    const targetX = activeHeroIdx * screenWidth;
+    const shouldAnimate = hasMountedPagerRef.current;
+    hasMountedPagerRef.current = true;
+    const scrollNode = (heroPagerRef.current as any)?.getNode
+      ? (heroPagerRef.current as any).getNode()
+      : heroPagerRef.current;
+    scrollNode?.scrollTo?.({ x: targetX, y: 0, animated: shouldAnimate });
+    if (!shouldAnimate) {
+      heroScrollX.setValue(targetX);
+    }
+  }, [activeHeroIdx, currentPlan.id, heroPages.length, screenWidth, heroScrollX]);
+
   const animateSwitchWorkout = useCallback(
-    (targetDayId: string, direction: -1 | 0 | 1) => {
+    (targetDayId: string, _direction: -1 | 0 | 1) => {
       if (targetDayId === currentPlan.id) return;
       triggerSelectionHaptic();
+      const targetIdx = heroPages.findIndex((d) => d.id === targetDayId);
+      if (targetIdx >= 0 && heroPages.length > 1) {
+        const scrollNode = (heroPagerRef.current as any)?.getNode
+          ? (heroPagerRef.current as any).getNode()
+          : heroPagerRef.current;
+        scrollNode?.scrollTo?.({ x: targetIdx * screenWidth, y: 0, animated: true });
+      }
       onSelectWorkoutDay(targetDayId);
-      if (direction === 0) return;
-      heroSlideX.setValue(direction * 22);
-      heroFade.setValue(0.35);
-      Animated.parallel([
-        Animated.timing(heroSlideX, {
-          toValue: 0,
-          duration: 200,
-          easing: Easing.out(Easing.cubic),
-          useNativeDriver: true,
-        }),
-        Animated.timing(heroFade, {
-          toValue: 1,
-          duration: 190,
-          easing: Easing.out(Easing.cubic),
-          useNativeDriver: true,
-        }),
-      ]).start();
     },
-    [currentPlan.id, onSelectWorkoutDay, heroSlideX, heroFade]
+    [currentPlan.id, heroPages, screenWidth, onSelectWorkoutDay]
   );
 
   const stepSequence = useCallback(
@@ -174,30 +201,36 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
     [workoutDaysInSequence, currentSeqIdx, animateSwitchWorkout]
   );
 
-  const stepSequenceRef = useRef(stepSequence);
-  stepSequenceRef.current = stepSequence;
-  const hasMultipleWorkoutsRef = useRef(workoutDaysInSequence.length > 1);
-  hasMultipleWorkoutsRef.current = workoutDaysInSequence.length > 1;
+  const handleHeroPagerScroll = useMemo(
+    () =>
+      Animated.event(
+        [{ nativeEvent: { contentOffset: { x: heroScrollX } } }],
+        { useNativeDriver: true }
+      ),
+    [heroScrollX]
+  );
 
-  const heroSwipePanResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => false,
-      onMoveShouldSetPanResponder: (_, g) =>
-        hasMultipleWorkoutsRef.current &&
-        Math.abs(g.dx) > 16 &&
-        Math.abs(g.dx) > Math.abs(g.dy) * 1.4,
-      onPanResponderRelease: (_, g) => {
-        if (g.dx < -34) {
-          stepSequenceRef.current(1);
-        } else if (g.dx > 34) {
-          stepSequenceRef.current(-1);
-        }
-      },
-    })
-  ).current;
+  const commitHeroPageFromOffset = useCallback(
+    (offsetX: number) => {
+      if (heroPages.length <= 1 || screenWidth <= 0) return;
+      const rawIdx = Math.round(offsetX / screenWidth);
+      const clampedIdx = Math.max(0, Math.min(heroPages.length - 1, rawIdx));
+      const targetDay = heroPages[clampedIdx];
+      if (!targetDay || targetDay.id === currentPlan.id) return;
+      lastSwipedDayIdRef.current = targetDay.id;
+      triggerSelectionHaptic();
+      onSelectWorkoutDay(targetDay.id);
+    },
+    [heroPages, screenWidth, currentPlan.id, onSelectWorkoutDay]
+  );
 
-  const bannerTag = resolveDayBannerTag(currentPlan);
-  const tagMeta = getDayBannerTagMeta(bannerTag);
+  const handleHeroMomentumEnd = useCallback(
+    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+      commitHeroPageFromOffset(e.nativeEvent.contentOffset.x);
+    },
+    [commitHeroPageFromOffset]
+  );
+
   const firstName = activeProfile?.name?.trim().split(' ')[0] || t('athleteFallback');
   const skippedIds = dayProgress.sessionConfig?.skippedIds || [];
 
@@ -439,245 +472,348 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
         </>
       ) : (
         <>
-          {/* PRESERVED: Iconic Hero Banner Card — now swipeable with integrated sequence pill & split progress bar */}
-          <View
-            {...heroSwipePanResponder.panHandlers}
-            style={[
-              styles.heroCard,
-              { backgroundColor: theme.card, borderColor: theme.border },
-            ]}
-          >
-            <View style={[StyleSheet.absoluteFill, { pointerEvents: 'none' }]}>
-              <DayBannerArtwork tag={bannerTag} />
-            </View>
-
-            <Animated.View
-              style={[
-                styles.heroInner,
-                {
-                  opacity: heroFade,
-                  transform: [{ translateX: heroSlideX }],
-                },
-              ]}
+          {/* Silky 120fps Finger-Tracked Native Horizontal Pager Hero Cards with Distinct Per-Card Backgrounds */}
+          <View style={styles.heroPagerOuter}>
+            <Animated.ScrollView
+              ref={heroPagerRef as any}
+              horizontal
+              pagingEnabled
+              directionalLockEnabled
+              nestedScrollEnabled
+              decelerationRate="fast"
+              bounces={heroPages.length > 1}
+              showsHorizontalScrollIndicator={false}
+              scrollEnabled={heroPages.length > 1}
+              scrollEventThrottle={16}
+              contentOffset={{ x: activeHeroIdx * screenWidth, y: 0 }}
+              onScroll={handleHeroPagerScroll}
+              onMomentumScrollEnd={handleHeroMomentumEnd}
             >
-              {/* Top Row: Tag + Status on left, Compact Integrated Sequence Stepper on right */}
-              <View style={styles.heroTopHeaderRow}>
-                <View style={styles.heroTagRow}>
-                  <View style={[styles.heroTagPill, { backgroundColor: theme.primary }]}>
-                    <AnimatedIcon
-                      name={tagMeta.icon as any}
-                      preset={
-                        currentPlan.type === 'rest'
-                          ? 'moon'
-                          : currentPlan.type === 'walk'
-                          ? 'footsteps'
-                          : 'barbell'
-                      }
-                      size={12}
-                      color={theme.primaryText}
-                      active
-                    />
-                    <Text style={[styles.heroTagText, { color: theme.primaryText }]}>
-                      {dayTagLabel(bannerTag, tagMeta.label).toUpperCase()}
-                    </Text>
-                  </View>
+              {heroPages.map((pagePlan, pageIdx) => {
+                const pageTag = resolveDayBannerTag(pagePlan);
+                const pageTagMeta = getDayBannerTagMeta(pageTag);
+                const pageProgress =
+                  pagePlan.id === currentPlan.id
+                    ? dayProgress
+                    : weekProgressMap[pagePlan.id];
+                const { ordered: pageOrdered, active: pageActive } =
+                  resolveActiveSessionExercises(
+                    pagePlan.exercises || [],
+                    pageProgress?.sessionConfig
+                  );
+                const pageExCount = pageOrdered.length;
+                const pageSetsCount = pageActive.reduce((acc, e) => acc + e.sets, 0);
+                const pageCompletedSets = countCompletedSetsInProgress(pageProgress);
+                const pageIsDone = Boolean(pageProgress?.finishedAt);
+                const pageIsPaused = !pageIsDone && pageCompletedSets > 0;
+                const pageIsSuggested =
+                  pagePlan.id === suggestedDayId && suggestedReason !== 'rest';
 
+                const inputRange = [
+                  (pageIdx - 1) * screenWidth,
+                  pageIdx * screenWidth,
+                  (pageIdx + 1) * screenWidth,
+                ];
+                const cardScale =
+                  heroPages.length > 1
+                    ? heroScrollX.interpolate({
+                        inputRange,
+                        outputRange: [0.94, 1, 0.94],
+                        extrapolate: 'clamp',
+                      })
+                    : 1;
+                const cardOpacity =
+                  heroPages.length > 1
+                    ? heroScrollX.interpolate({
+                        inputRange,
+                        outputRange: [0.76, 1, 0.76],
+                        extrapolate: 'clamp',
+                      })
+                    : 1;
+
+                return (
                   <View
-                    style={[
-                      styles.heroDayStatusPill,
-                      {
-                        backgroundColor: isCurrentDayPaused
-                          ? 'rgba(245, 158, 11, 0.16)'
-                          : dayProgress.finishedAt
-                          ? 'rgba(16, 185, 129, 0.16)'
-                          : currentPlan.id === suggestedDayId && suggestedReason !== 'rest'
-                          ? 'rgba(56, 189, 248, 0.15)'
-                          : glassSurfaceBg,
-                        borderColor: isCurrentDayPaused
-                          ? 'rgba(245, 158, 11, 0.42)'
-                          : dayProgress.finishedAt
-                          ? 'rgba(16, 185, 129, 0.42)'
-                          : currentPlan.id === suggestedDayId && suggestedReason !== 'rest'
-                          ? 'rgba(56, 189, 248, 0.38)'
-                          : glassSurfaceBorder,
-                      },
-                    ]}
+                    key={pagePlan.id}
+                    style={[styles.heroPagerSlide, { width: screenWidth }]}
                   >
-                    <Text
+                    <Animated.View
                       style={[
-                        styles.heroDayStatusText,
+                        styles.heroCard,
                         {
-                          color: isCurrentDayPaused
-                            ? '#F59E0B'
-                            : dayProgress.finishedAt
-                            ? '#10B981'
-                            : currentPlan.id === suggestedDayId && suggestedReason !== 'rest'
-                            ? '#38BDF8'
-                            : theme.textSecondary,
+                          backgroundColor: theme.card,
+                          borderColor: theme.border,
+                          opacity: cardOpacity,
+                          transform: [{ scale: cardScale }],
                         },
                       ]}
                     >
-                      {dayLabel(currentPlan.id, true).toUpperCase()}
-                      {isCurrentDayPaused
-                        ? ` · ${t('sequencePausedBadge')}`
-                        : dayProgress.finishedAt
-                        ? ` · ${t('sequenceDoneBadge')}`
-                        : currentPlan.id === suggestedDayId && suggestedReason !== 'rest'
-                        ? ` · ${t('sequenceNextBadge')}`
-                        : ''}
-                    </Text>
+                      <View style={[StyleSheet.absoluteFill, { pointerEvents: 'none' }]}>
+                        <DayBannerArtwork tag={pageTag} variantIndex={pageIdx} />
+                      </View>
+
+                      <View style={styles.heroInner}>
+                        {/* Top Row: Tag + Status on left, Compact Integrated Sequence Stepper on right */}
+                        <View style={styles.heroTopHeaderRow}>
+                          <View style={styles.heroTagRow}>
+                            <View
+                              style={[styles.heroTagPill, { backgroundColor: theme.primary }]}
+                            >
+                              <AnimatedIcon
+                                name={pageTagMeta.icon as any}
+                                preset={
+                                  pagePlan.type === 'rest'
+                                    ? 'moon'
+                                    : pagePlan.type === 'walk'
+                                    ? 'footsteps'
+                                    : 'barbell'
+                                }
+                                size={12}
+                                color={theme.primaryText}
+                                active={pagePlan.id === currentPlan.id}
+                              />
+                              <Text
+                                style={[styles.heroTagText, { color: theme.primaryText }]}
+                              >
+                                {dayTagLabel(pageTag, pageTagMeta.label).toUpperCase()}
+                              </Text>
+                            </View>
+
+                            <View
+                              style={[
+                                styles.heroDayStatusPill,
+                                {
+                                  backgroundColor: pageIsPaused
+                                    ? 'rgba(245, 158, 11, 0.16)'
+                                    : pageIsDone
+                                    ? 'rgba(16, 185, 129, 0.16)'
+                                    : pageIsSuggested
+                                    ? 'rgba(56, 189, 248, 0.15)'
+                                    : glassSurfaceBg,
+                                  borderColor: pageIsPaused
+                                    ? 'rgba(245, 158, 11, 0.42)'
+                                    : pageIsDone
+                                    ? 'rgba(16, 185, 129, 0.42)'
+                                    : pageIsSuggested
+                                    ? 'rgba(56, 189, 248, 0.38)'
+                                    : glassSurfaceBorder,
+                                },
+                              ]}
+                            >
+                              <Text
+                                style={[
+                                  styles.heroDayStatusText,
+                                  {
+                                    color: pageIsPaused
+                                      ? '#F59E0B'
+                                      : pageIsDone
+                                      ? '#10B981'
+                                      : pageIsSuggested
+                                      ? '#38BDF8'
+                                      : theme.textSecondary,
+                                  },
+                                ]}
+                              >
+                                {dayLabel(pagePlan.id, true).toUpperCase()}
+                                {pageIsPaused
+                                  ? ` · ${t('sequencePausedBadge')}`
+                                  : pageIsDone
+                                  ? ` · ${t('sequenceDoneBadge')}`
+                                  : pageIsSuggested
+                                  ? ` · ${t('sequenceNextBadge')}`
+                                  : ''}
+                              </Text>
+                            </View>
+                          </View>
+
+                          {workoutDaysInSequence.length > 1 && (
+                            <View
+                              style={[
+                                styles.heroStepperPill,
+                                {
+                                  backgroundColor: glassSurfaceBg,
+                                  borderColor: glassSurfaceBorder,
+                                },
+                              ]}
+                            >
+                              <TouchableOpacity
+                                onPress={() => stepSequence(-1)}
+                                hitSlop={{ top: 10, bottom: 10, left: 10, right: 4 }}
+                                style={styles.heroStepperArrowBtn}
+                                activeOpacity={0.65}
+                              >
+                                <Ionicons
+                                  name="chevron-back"
+                                  size={14}
+                                  color={theme.text}
+                                />
+                              </TouchableOpacity>
+                              <TouchableOpacity
+                                onPress={() => {
+                                  triggerSelectionHaptic();
+                                  setShowQueueSheet(true);
+                                }}
+                                hitSlop={{ top: 8, bottom: 8, left: 2, right: 2 }}
+                                style={styles.heroStepperCenterBtn}
+                                activeOpacity={0.7}
+                              >
+                                <Text
+                                  style={[styles.heroStepperText, { color: theme.text }]}
+                                >
+                                  {pageIdx + 1}/{heroPages.length}
+                                </Text>
+                                <Ionicons
+                                  name="chevron-down"
+                                  size={11}
+                                  color={theme.textMuted}
+                                />
+                              </TouchableOpacity>
+                              <TouchableOpacity
+                                onPress={() => stepSequence(1)}
+                                hitSlop={{ top: 10, bottom: 10, left: 4, right: 10 }}
+                                style={styles.heroStepperArrowBtn}
+                                activeOpacity={0.65}
+                              >
+                                <Ionicons
+                                  name="chevron-forward"
+                                  size={14}
+                                  color={theme.text}
+                                />
+                              </TouchableOpacity>
+                            </View>
+                          )}
+                        </View>
+
+                        <Text style={[styles.heroTitle, { color: theme.text }]}>
+                          {pagePlan.name}
+                        </Text>
+
+                        {pagePlan.subtitle ? (
+                          <Text
+                            style={[
+                              styles.heroSubtitle,
+                              { color: theme.textSecondary },
+                            ]}
+                          >
+                            {pagePlan.subtitle}
+                          </Text>
+                        ) : null}
+
+                        {pageExCount > 0 && (
+                          <View style={styles.heroMetaLine}>
+                            <View
+                              style={[
+                                styles.heroMetaBadge,
+                                {
+                                  backgroundColor: glassSurfaceBg,
+                                  borderColor: glassSurfaceBorder,
+                                },
+                              ]}
+                            >
+                              <Text
+                                style={[styles.heroMetaText, { color: theme.text }]}
+                              >
+                                {t('exercisesCountText', { count: pageExCount })}
+                              </Text>
+                            </View>
+                            <View
+                              style={[
+                                styles.heroMetaBadge,
+                                {
+                                  backgroundColor: glassSurfaceBg,
+                                  borderColor: glassSurfaceBorder,
+                                },
+                              ]}
+                            >
+                              <Text
+                                style={[styles.heroMetaText, { color: theme.text }]}
+                              >
+                                {pageSetsCount} {t('setsWord')}
+                              </Text>
+                            </View>
+                            {pagePlan.time ? (
+                              <View
+                                style={[
+                                  styles.heroMetaBadge,
+                                  {
+                                    backgroundColor: glassSurfaceBg,
+                                    borderColor: glassSurfaceBorder,
+                                    flexDirection: 'row',
+                                    alignItems: 'center',
+                                    gap: 4,
+                                  },
+                                ]}
+                              >
+                                <Ionicons
+                                  name="time-outline"
+                                  size={11}
+                                  color={theme.textSecondary}
+                                />
+                                <Text
+                                  style={[styles.heroMetaText, { color: theme.text }]}
+                                >
+                                  {pagePlan.time}
+                                </Text>
+                              </View>
+                            ) : null}
+                          </View>
+                        )}
+
+                        {/* Ultra-clean segmented split sequence progress bar at bottom edge of Hero Card */}
+                        {workoutDaysInSequence.length > 1 && (
+                          <View style={styles.heroSegmentsRow}>
+                            {workoutDaysInSequence.map((d, segIdx) => {
+                              const isActive = d.id === pagePlan.id;
+                              const prog = weekProgressMap[d.id];
+                              const done = Boolean(prog?.finishedAt);
+                              const paused = Boolean(
+                                prog &&
+                                  !prog.finishedAt &&
+                                  countCompletedSetsInProgress(prog) > 0
+                              );
+                              const barColor = paused
+                                ? '#F59E0B'
+                                : done
+                                ? '#10B981'
+                                : isActive
+                                ? '#38BDF8'
+                                : isDark
+                                ? 'rgba(255,255,255,0.16)'
+                                : 'rgba(15,23,42,0.14)';
+
+                              return (
+                                <TouchableOpacity
+                                  key={d.id}
+                                  style={styles.heroSegmentTouch}
+                                  onPress={() => {
+                                    if (d.id === currentPlan.id) return;
+                                    animateSwitchWorkout(
+                                      d.id,
+                                      segIdx > activeHeroIdx ? 1 : -1
+                                    );
+                                  }}
+                                  activeOpacity={0.75}
+                                >
+                                  <View
+                                    style={[
+                                      styles.heroSegmentBar,
+                                      {
+                                        backgroundColor: barColor,
+                                        height: isActive ? 4 : 3,
+                                        opacity: isActive || done || paused ? 1 : 0.7,
+                                      },
+                                    ]}
+                                  />
+                                </TouchableOpacity>
+                              );
+                            })}
+                          </View>
+                        )}
+                      </View>
+                    </Animated.View>
                   </View>
-                </View>
-
-                {workoutDaysInSequence.length > 1 && (
-                  <View
-                    style={[
-                      styles.heroStepperPill,
-                      {
-                        backgroundColor: glassSurfaceBg,
-                        borderColor: glassSurfaceBorder,
-                      },
-                    ]}
-                  >
-                    <TouchableOpacity
-                      onPress={() => stepSequence(-1)}
-                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 4 }}
-                      style={styles.heroStepperArrowBtn}
-                      activeOpacity={0.65}
-                    >
-                      <Ionicons name="chevron-back" size={14} color={theme.text} />
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      onPress={() => {
-                        triggerSelectionHaptic();
-                        setShowQueueSheet(true);
-                      }}
-                      hitSlop={{ top: 8, bottom: 8, left: 2, right: 2 }}
-                      style={styles.heroStepperCenterBtn}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={[styles.heroStepperText, { color: theme.text }]}>
-                        {(currentSeqIdx >= 0 ? currentSeqIdx : 0) + 1}/{workoutDaysInSequence.length}
-                      </Text>
-                      <Ionicons name="chevron-down" size={11} color={theme.textMuted} />
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      onPress={() => stepSequence(1)}
-                      hitSlop={{ top: 10, bottom: 10, left: 4, right: 10 }}
-                      style={styles.heroStepperArrowBtn}
-                      activeOpacity={0.65}
-                    >
-                      <Ionicons name="chevron-forward" size={14} color={theme.text} />
-                    </TouchableOpacity>
-                  </View>
-                )}
-              </View>
-
-              <Text style={[styles.heroTitle, { color: theme.text }]}>{currentPlan.name}</Text>
-
-              {currentPlan.subtitle ? (
-                <Text style={[styles.heroSubtitle, { color: theme.textSecondary }]}>
-                  {currentPlan.subtitle}
-                </Text>
-              ) : null}
-
-              {totalExercises > 0 && (
-                <View style={styles.heroMetaLine}>
-                  <View
-                    style={[
-                      styles.heroMetaBadge,
-                      {
-                        backgroundColor: glassSurfaceBg,
-                        borderColor: glassSurfaceBorder,
-                      },
-                    ]}
-                  >
-                    <Text style={[styles.heroMetaText, { color: theme.text }]}>
-                      {t('exercisesCountText', { count: totalExercises })}
-                    </Text>
-                  </View>
-                  <View
-                    style={[
-                      styles.heroMetaBadge,
-                      {
-                        backgroundColor: glassSurfaceBg,
-                        borderColor: glassSurfaceBorder,
-                      },
-                    ]}
-                  >
-                    <Text style={[styles.heroMetaText, { color: theme.text }]}>
-                      {totalSets} {t('setsWord')}
-                    </Text>
-                  </View>
-                  {currentPlan.time ? (
-                    <View
-                      style={[
-                        styles.heroMetaBadge,
-                        {
-                          backgroundColor: glassSurfaceBg,
-                          borderColor: glassSurfaceBorder,
-                          flexDirection: 'row',
-                          alignItems: 'center',
-                          gap: 4,
-                        },
-                      ]}
-                    >
-                      <Ionicons name="time-outline" size={11} color={theme.textSecondary} />
-                      <Text style={[styles.heroMetaText, { color: theme.text }]}>
-                        {currentPlan.time}
-                      </Text>
-                    </View>
-                  ) : null}
-                </View>
-              )}
-
-              {/* Ultra-clean segmented split sequence progress bar at bottom edge of Hero Card */}
-              {workoutDaysInSequence.length > 1 && (
-                <View style={styles.heroSegmentsRow}>
-                  {workoutDaysInSequence.map((d, segIdx) => {
-                    const isActive = d.id === currentPlan.id;
-                    const prog = weekProgressMap[d.id];
-                    const done = Boolean(prog?.finishedAt);
-                    const paused = Boolean(prog && !prog.finishedAt && countCompletedSetsInProgress(prog) > 0);
-                    const barColor = paused
-                      ? '#F59E0B'
-                      : done
-                      ? '#10B981'
-                      : isActive
-                      ? '#38BDF8'
-                      : isDark
-                      ? 'rgba(255,255,255,0.16)'
-                      : 'rgba(15,23,42,0.14)';
-
-                    return (
-                      <TouchableOpacity
-                        key={d.id}
-                        style={styles.heroSegmentTouch}
-                        onPress={() => {
-                          if (isActive) return;
-                          animateSwitchWorkout(
-                            d.id,
-                            segIdx > (currentSeqIdx >= 0 ? currentSeqIdx : 0) ? 1 : -1
-                          );
-                        }}
-                        activeOpacity={0.75}
-                      >
-                        <View
-                          style={[
-                            styles.heroSegmentBar,
-                            {
-                              backgroundColor: barColor,
-                              height: isActive ? 4 : 3,
-                              opacity: isActive || done || paused ? 1 : 0.7,
-                            },
-                          ]}
-                        />
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              )}
-            </Animated.View>
+                );
+              })}
+            </Animated.ScrollView>
           </View>
 
           {/* Open Editorial Warmup Accent Strip (No Heavy Box) */}
@@ -1463,11 +1599,17 @@ const styles = StyleSheet.create({
     width: StyleSheet.hairlineWidth,
     height: 26,
   },
+  heroPagerOuter: {
+    marginHorizontal: -18,
+    marginBottom: 14,
+  },
+  heroPagerSlide: {
+    paddingHorizontal: 18,
+  },
   heroCard: {
     borderRadius: 22,
     borderWidth: 1,
     overflow: 'hidden',
-    marginBottom: 14,
     minHeight: 168,
     justifyContent: 'flex-end',
   },

@@ -31,6 +31,124 @@ import {
 
 const SOCIAL_API_URL = 'https://iron-routine-app.vercel.app/api/social';
 const SOCIAL_CACHE_KEY_PREFIX = '@iron_routine:social_hub_v2_';
+const CHAT_CACHE_KEY_PREFIX = '@iron_routine:chat_cache_v1_';
+const CHAT_CACHE_MAX_PERSISTED_MESSAGES = 60;
+
+export interface CachedChatSnapshot {
+  messages: ChatMessage[];
+  theme?: SharedChatTheme;
+  friendLastReadAt?: string | null;
+  updatedAt: number;
+}
+
+const chatCacheMemory = new Map<string, CachedChatSnapshot>();
+
+function getChatCacheMapKey(myUserId: string, friendId: string): string {
+  return `${myUserId}:${friendId}`;
+}
+
+function trimMessageForStorage(msg: ChatMessage): ChatMessage {
+  // Strip redundant encrypted wire payload from decrypted messages before AsyncStorage persistence
+  if (!msg.decryptFailed) {
+    const {
+      ciphertext: _c,
+      nonce: _n,
+      senderPublicKey: _sp,
+      recipientPublicKey: _rp,
+      alg: _a,
+      ...clean
+    } = msg;
+    return clean;
+  }
+  return msg;
+}
+
+export function getCachedChatSync(
+  myUserId: string | null | undefined,
+  friendId: string | null | undefined
+): CachedChatSnapshot | null {
+  if (!myUserId || !friendId) return null;
+  return chatCacheMemory.get(getChatCacheMapKey(myUserId, friendId)) || null;
+}
+
+export async function loadCachedChat(
+  myUserId: string | null | undefined,
+  friendId: string | null | undefined
+): Promise<CachedChatSnapshot | null> {
+  if (!myUserId || !friendId) return null;
+  const memKey = getChatCacheMapKey(myUserId, friendId);
+  const existing = chatCacheMemory.get(memKey);
+  if (existing) return existing;
+  try {
+    const raw = await AsyncStorage.getItem(`${CHAT_CACHE_KEY_PREFIX}${myUserId}_${friendId}`);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as CachedChatSnapshot;
+    if (parsed && Array.isArray(parsed.messages)) {
+      chatCacheMemory.set(memKey, parsed);
+      return parsed;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+export function saveCachedChat(
+  myUserId: string | null | undefined,
+  friendId: string | null | undefined,
+  snapshot: {
+    messages: ChatMessage[];
+    theme?: SharedChatTheme;
+    friendLastReadAt?: string | null;
+  }
+): void {
+  if (!myUserId || !friendId) return;
+  const memKey = getChatCacheMapKey(myUserId, friendId);
+  const prev = chatCacheMemory.get(memKey);
+  // Never store unsent local optimistic placeholders in persistent cache
+  const realMessages = snapshot.messages.filter((m) => !m.id.startsWith('local_'));
+  const nextSnap: CachedChatSnapshot = {
+    messages: realMessages,
+    theme: snapshot.theme !== undefined ? snapshot.theme : prev?.theme,
+    friendLastReadAt:
+      snapshot.friendLastReadAt !== undefined
+        ? snapshot.friendLastReadAt
+        : prev?.friendLastReadAt,
+    updatedAt: Date.now(),
+  };
+  chatCacheMemory.set(memKey, nextSnap);
+
+  const persistedSnap: CachedChatSnapshot = {
+    ...nextSnap,
+    messages: realMessages
+      .slice(-CHAT_CACHE_MAX_PERSISTED_MESSAGES)
+      .map(trimMessageForStorage),
+  };
+  AsyncStorage.setItem(
+    `${CHAT_CACHE_KEY_PREFIX}${myUserId}_${friendId}`,
+    JSON.stringify(persistedSnap)
+  ).catch(() => {});
+}
+
+export async function prefetchRecentChats(
+  myUserId: string,
+  friends: Array<{ userId: string; unreadCount?: number }>
+): Promise<void> {
+  if (!myUserId || !friends.length) return;
+  // 1. Warm all local AsyncStorage chat snapshots into memory (0 network, zero read-receipt impact)
+  await Promise.all(
+    friends.slice(0, 12).map((f) => loadCachedChat(myUserId, f.userId).catch(() => null))
+  );
+  // 2. Silently refresh top 3 friends that have 0 unread messages in background so opening is instant & fresh
+  const safeTargets = friends
+    .filter((f) => (f.unreadCount || 0) === 0)
+    .slice(0, 3);
+  for (const target of safeTargets) {
+    const cached = getCachedChatSync(myUserId, target.userId);
+    if (cached && Date.now() - cached.updatedAt < 45000) continue;
+    await fetchChatMessages(target.userId, { markRead: false }).catch(() => null);
+  }
+}
 
 export interface SocialSearchResult {
   profile: FriendProfileSummary;
@@ -518,7 +636,10 @@ export async function sendSocialCheer(
   }
 }
 
-export async function fetchChatMessages(friendId: string): Promise<{
+export async function fetchChatMessages(
+  friendId: string,
+  options?: { markRead?: boolean }
+): Promise<{
   ok: boolean;
   messages: ChatMessage[];
   theme?: SharedChatTheme;
@@ -530,12 +651,16 @@ export async function fetchChatMessages(friendId: string): Promise<{
     return { ok: false, messages: [], error: getFriendlySocialError('UNAUTHORIZED') };
   }
   try {
+    const markReadParam = options?.markRead === false ? '&markRead=0' : '';
     const [keyPair, res] = await Promise.all([
       getOrCreateE2eeKeyPair(session.userId),
-      fetch(`${SOCIAL_API_URL}?action=messages&friendId=${encodeURIComponent(friendId)}`, {
-        method: 'GET',
-        headers: { Authorization: `Bearer ${session.token}` },
-      }),
+      fetch(
+        `${SOCIAL_API_URL}?action=messages&friendId=${encodeURIComponent(friendId)}${markReadParam}`,
+        {
+          method: 'GET',
+          headers: { Authorization: `Bearer ${session.token}` },
+        }
+      ),
     ]);
     const data = await res.json().catch(() => null);
     if (!res.ok || !data?.ok) {
@@ -544,11 +669,18 @@ export async function fetchChatMessages(friendId: string): Promise<{
     const decrypted = (data.messages || []).map((m: any) =>
       decryptWireChatMessage(m, session.userId, keyPair)
     );
+    const parsedTheme = data.theme as SharedChatTheme | undefined;
+    const parsedReadAt = data.friendLastReadAt ? String(data.friendLastReadAt) : null;
+    saveCachedChat(session.userId, friendId, {
+      messages: decrypted,
+      theme: parsedTheme,
+      friendLastReadAt: parsedReadAt,
+    });
     return {
       ok: true,
       messages: decrypted,
-      theme: data.theme as SharedChatTheme | undefined,
-      friendLastReadAt: data.friendLastReadAt ? String(data.friendLastReadAt) : null,
+      theme: parsedTheme,
+      friendLastReadAt: parsedReadAt,
     };
   } catch {
     return {

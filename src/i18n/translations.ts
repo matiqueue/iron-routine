@@ -992,6 +992,18 @@ const PL = {
   pickWorkoutSheetSub: 'Wybierz dowolny trening z planu lub przesuń kartę w bok',
   backToWorkoutQueue: 'Wróć do treningu',
   nextExerciseArrowBtn: 'Następne ćwiczenie ➔',
+  journalWeighPromptTitle: 'Ile dzisiaj ważysz?',
+  journalWeighPromptSub: 'Szybki pomiar codziennie buduje dokładny trend wagi',
+  journalSkipWeighToday: 'Pomiń mierzenie na dziś',
+  journalLogWeightBtn: 'Dodaj pomiar',
+  journalLogWeightSheetTitle: 'Dodaj masę ciała',
+  journalLogWeightSheetSub: 'Wpisz wynik za dziś lub uzupełnij dni wstecz',
+  journalDateToday: 'Dziś',
+  journalDateYesterday: 'Wczoraj',
+  journalDateDaysAgo: '{days} dni temu',
+  journalSuppTakenOneWayHint: 'Dotknij, aby potwierdzić przyjęcie na dziś',
+  journalAvgShort: 'Śr.',
+  journalEntriesCount: '{count} wpisów',
 } as const;
 
 export type TranslationKey = keyof typeof PL;
@@ -1935,6 +1947,18 @@ const EN: Record<TranslationKey, string> = {
   pickWorkoutSheetSub: 'Pick any workout from your plan or swipe the hero card',
   backToWorkoutQueue: 'Back to workout',
   nextExerciseArrowBtn: 'Next exercise ➔',
+  journalWeighPromptTitle: 'What do you weigh today?',
+  journalWeighPromptSub: 'A quick daily check-in keeps your weight trend accurate',
+  journalSkipWeighToday: 'Skip weigh-in for today',
+  journalLogWeightBtn: 'Log weight',
+  journalLogWeightSheetTitle: 'Log body weight',
+  journalLogWeightSheetSub: 'Record today or backfill past days',
+  journalDateToday: 'Today',
+  journalDateYesterday: 'Yesterday',
+  journalDateDaysAgo: '{days}d ago',
+  journalSuppTakenOneWayHint: 'Tap to confirm intake for today',
+  journalAvgShort: 'Avg',
+  journalEntriesCount: '{count} entries',
 };
 
 const DE: Record<TranslationKey, string> = {
@@ -2876,6 +2900,18 @@ const DE: Record<TranslationKey, string> = {
   pickWorkoutSheetSub: 'Wähle ein Training oder wische die Karte seitlich',
   backToWorkoutQueue: 'Zurück zum Training',
   nextExerciseArrowBtn: 'Nächste Übung ➔',
+  journalWeighPromptTitle: 'Wie viel wiegst du heute?',
+  journalWeighPromptSub: 'Ein kurzer Check-in hält deinen Gewichtstrend präzise',
+  journalSkipWeighToday: 'Wiegen heute überspringen',
+  journalLogWeightBtn: 'Eintrag hinzufügen',
+  journalLogWeightSheetTitle: 'Körpergewicht eintragen',
+  journalLogWeightSheetSub: 'Heute messen oder vergangene Tage nachtragen',
+  journalDateToday: 'Heute',
+  journalDateYesterday: 'Gestern',
+  journalDateDaysAgo: 'Vor {days} T.',
+  journalSuppTakenOneWayHint: 'Tippe zum Bestätigen für heute',
+  journalAvgShort: 'Ø',
+  journalEntriesCount: '{count} Einträge',
 };
 
 const FR: Record<TranslationKey, string> = {
@@ -3817,6 +3853,18 @@ const FR: Record<TranslationKey, string> = {
   pickWorkoutSheetSub: 'Choisis une séance ou glisse la carte sur le côté',
   backToWorkoutQueue: 'Retour à la séance',
   nextExerciseArrowBtn: 'Exercice suivant ➔',
+  journalWeighPromptTitle: 'Combien pèses-tu aujourd’hui ?',
+  journalWeighPromptSub: 'Un relevé rapide garde ta courbe de poids précise',
+  journalSkipWeighToday: 'Passer la pesée aujourd’hui',
+  journalLogWeightBtn: 'Ajouter',
+  journalLogWeightSheetTitle: 'Enregistrer le poids',
+  journalLogWeightSheetSub: 'Ajoute aujourd’hui ou complète des jours passés',
+  journalDateToday: 'Aujourd’hui',
+  journalDateYesterday: 'Hier',
+  journalDateDaysAgo: 'Il y a {days}j',
+  journalSuppTakenOneWayHint: 'Touche pour confirmer aujourd’hui',
+  journalAvgShort: 'Moy.',
+  journalEntriesCount: '{count} mesures',
 };
 
 const ES: Record<TranslationKey, string> = {
@@ -4758,6 +4806,18 @@ const ES: Record<TranslationKey, string> = {
   pickWorkoutSheetSub: 'Elige cualquier sesión o desliza la tarjeta',
   backToWorkoutQueue: 'Volver al entreno',
   nextExerciseArrowBtn: 'Siguiente ejercicio ➔',
+  journalWeighPromptTitle: '¿Cuánto pesas hoy?',
+  journalWeighPromptSub: 'Un registro rápido mantiene tu tendencia de peso al día',
+  journalSkipWeighToday: 'Omitir pesaje por hoy',
+  journalLogWeightBtn: 'Añadir peso',
+  journalLogWeightSheetTitle: 'Registrar peso corporal',
+  journalLogWeightSheetSub: 'Registra hoy o completa días anteriores',
+  journalDateToday: 'Hoy',
+  journalDateYesterday: 'Ayer',
+  journalDateDaysAgo: 'Hace {days}d',
+  journalSuppTakenOneWayHint: 'Toca para confirmar la toma de hoy',
+  journalAvgShort: 'Prom.',
+  journalEntriesCount: '{count} registros',
 };
 
 export const TRANSLATIONS: Record<AppLanguage, Record<TranslationKey, string>> = {

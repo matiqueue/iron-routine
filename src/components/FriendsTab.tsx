@@ -34,6 +34,7 @@ import {
   claimNicknameInCloud,
   fetchSocialHub,
   getCachedSocialHub,
+  prefetchRecentChats,
   removeFriend,
   respondToFriendRequest,
   searchUsersByNickname,
@@ -260,6 +261,12 @@ export const FriendsTab: React.FC<FriendsTabProps> = ({
         hasLoadedHubRef.current = true;
         setHub(cached);
         onUnreadRef.current?.(cached.totalUnread || 0);
+        if (cached.friends && cached.friends.length > 0) {
+          void prefetchRecentChats(
+            session.userId,
+            cached.friends.map((f) => ({ userId: f.friend.userId, unreadCount: f.unreadCount }))
+          );
+        }
       }
 
       if (withPublish) {
@@ -273,6 +280,12 @@ export const FriendsTab: React.FC<FriendsTabProps> = ({
         onUnreadRef.current?.(res.hub.totalUnread || 0);
         if (res.hub.pendingCheerBursts && res.hub.pendingCheerBursts.length > 0) {
           onCheerBurstsRef.current?.(res.hub.pendingCheerBursts);
+        }
+        if (res.hub.friends && res.hub.friends.length > 0) {
+          void prefetchRecentChats(
+            session.userId,
+            res.hub.friends.map((f) => ({ userId: f.friend.userId, unreadCount: f.unreadCount }))
+          );
         }
       }
     },
