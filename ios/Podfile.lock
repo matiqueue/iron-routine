@@ -55,6 +55,8 @@ PODS:
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
     - Yoga
+  - ExpoAppleAuthentication (58.0.3):
+    - ExpoModulesCore
   - ExpoApplication (58.1.2):
     - ExpoModulesCore
   - ExpoAsset (58.0.21):
@@ -119,6 +121,8 @@ PODS:
   - ExpoNotifications (58.1.9):
     - ExpoModulesCore
   - ExpoStatusBar (58.0.5):
+    - ExpoModulesCore
+  - ExpoWebBrowser (58.1.0):
     - ExpoModulesCore
   - fast_float (8.0.0):
     - ReactNativeDependencies
@@ -2063,6 +2067,7 @@ DEPENDENCIES:
   - DoubleConversion (from `build/rndeps-facades/DoubleConversion`)
   - EXConstants (from `../node_modules/expo-constants/ios`)
   - Expo (from `../node_modules/expo`)
+  - ExpoAppleAuthentication (from `../node_modules/expo-apple-authentication/ios`)
   - ExpoApplication (from `../node_modules/expo-application/ios`)
   - ExpoAsset (from `../node_modules/expo-asset/ios`)
   - ExpoAudio (from `../node_modules/expo-audio/ios`)
@@ -2083,6 +2088,7 @@ DEPENDENCIES:
   - ExpoModulesWorklets (from `../node_modules/expo-modules-core/ExpoModulesWorklets.podspec`)
   - ExpoNotifications (from `../node_modules/expo-notifications/ios`)
   - ExpoStatusBar (from `../node_modules/expo-status-bar/ios`)
+  - ExpoWebBrowser (from `../node_modules/expo-web-browser/ios`)
   - fast_float (from `build/rndeps-facades/fast_float`)
   - FBLazyVector (from `build/rncore-facades/FBLazyVector`)
   - fmt (from `build/rndeps-facades/fmt`)
@@ -2185,6 +2191,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/expo-constants/ios"
   Expo:
     :path: "../node_modules/expo"
+  ExpoAppleAuthentication:
+    :path: "../node_modules/expo-apple-authentication/ios"
   ExpoApplication:
     :path: "../node_modules/expo-application/ios"
   ExpoAsset:
@@ -2225,6 +2233,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/expo-notifications/ios"
   ExpoStatusBar:
     :path: "../node_modules/expo-status-bar/ios"
+  ExpoWebBrowser:
+    :path: "../node_modules/expo-web-browser/ios"
   fast_float:
     :path: build/rndeps-facades/fast_float
   FBLazyVector:
@@ -2411,6 +2421,7 @@ SPEC CHECKSUMS:
   DoubleConversion: 501a575c40c0b50c89685762dd3e415e6bb26fb0
   EXConstants: aeda76f4be923fc719522ae162dd0b8c6483f9cc
   Expo: c9c0816dfb08ecb3f0a23fc3ff548708e899ccdc
+  ExpoAppleAuthentication: 54c1576b431d3b3f8646ecf08a49ed33fee43b73
   ExpoApplication: c83355b2f69f996b5d26b64fef39228e7f1e1208
   ExpoAsset: eda9e4844b55b78d4e71a0e2de767a038f3a0806
   ExpoAudio: 04b22b00783fe443c15121138f827b808fdf8c71
@@ -2431,6 +2442,7 @@ SPEC CHECKSUMS:
   ExpoModulesWorklets: 03d171c0296cdffc054e9570e9393a7655ef360d
   ExpoNotifications: fa890b1d743fd72ca15c52ac9f9f23c76860e228
   ExpoStatusBar: 38eff05a54229c9a388cb56cef29117b8dc77eb1
+  ExpoWebBrowser: f70b404ac8e3a522e0757cb2b64b175e01cc47c5
   fast_float: 7c925d1cebf8328d4018d061f49377e9f887e3b4
   FBLazyVector: 07cb4c5b92110c132f2bb73b908e87f35cbe0a19
   fmt: ba0886e864ebb21d14c98b2e12e164b8002f5b93

@@ -3,7 +3,7 @@
     "name": "Iron Routine",
     "slug": "iron-routine",
     "scheme": "ironroutine",
-    "version": "3.1.0",
+    "version": "3.1.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -15,7 +15,8 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.matique.ironroutine",
-      "buildNumber": "4",
+      "buildNumber": "5",
+      "usesAppleSignIn": true,
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSSupportsLiveActivities": true,
@@ -62,7 +63,7 @@
       [
         "expo-notifications",
         {
-          "enableRemoteNotifications": false,
+          "enableRemoteNotifications": true,
           "sounds": [
             "./assets/sounds/rest_alarm.wav"
           ]
@@ -86,11 +87,13 @@
             "minSdkVersion": 26
           }
         }
-      ]
+      ],
+      "expo-apple-authentication",
+      "expo-web-browser"
     ],
     "android": {
       "package": "com.matique.ironroutine",
-      "versionCode": 5,
+      "versionCode": 6,
       "edgeToEdgeEnabled": true,
       "permissions": [
         "android.permission.health.READ_STEPS",

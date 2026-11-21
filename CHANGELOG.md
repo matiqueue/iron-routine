@@ -9,6 +9,14 @@ Use `npm run version:patch`, `npm run version:minor`, or `npm run version:major`
 
 ---
 
+## [3.1.1] - 2026-11-22
+
+### Native Authentication & Apple Developer Release Prep
+- Added **native Sign in with Apple** on iOS (`expo-apple-authentication` with Face ID / Touch ID + cryptographic server-side Apple JWKS `identityToken` verification in `/api/cloud/auth`), complying with Apple App Store Review Guideline 4.8.
+- Upgraded **Google Sign-In** on iOS & Android to native in-app **`ASWebAuthenticationSession` / Chrome Custom Tabs** (`expo-web-browser` `openAuthSessionAsync`) with graceful cancellation handling, complying with App Store Review Guideline 4.0.
+- Updated Sign in with Apple button branding (`Apple` / `Continue with Apple`) across all 5 languages to match Apple Human Interface Guidelines.
+- Enabled paid Apple Developer Program capabilities (`com.apple.developer.applesignin` and remote push notifications `aps-environment`) for Team `3X24W8AX3N`.
+
 ## [3.1.0] - 2026-11-21
 
 ### Security & App Store Readiness

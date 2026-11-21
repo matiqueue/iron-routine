@@ -328,7 +328,9 @@ export const FriendsTab: React.FC<FriendsTabProps> = ({
           ? await signInWithAppleCloud(activeProfile.name)
           : await signInWithGoogleCloud(activeProfile.name);
       if (!res.ok || !res.session) {
-        Alert.alert(t('cloudAuthTitle'), res.error || t('cloudConnectFailed'));
+        if (!res.canceled) {
+          Alert.alert(t('cloudAuthTitle'), res.error || t('cloudConnectFailed'));
+        }
         return;
       }
       const session = res.session;
@@ -768,7 +770,7 @@ export const FriendsTab: React.FC<FriendsTabProps> = ({
                 ) : (
                   <>
                     <Ionicons name="logo-apple" size={18} color={theme.bg} />
-                    <Text style={[styles.cloudBtnPrimaryText, { color: theme.bg }]}>iCloud</Text>
+                    <Text style={[styles.cloudBtnPrimaryText, { color: theme.bg }]}>Apple</Text>
                   </>
                 )}
               </TouchableOpacity>
