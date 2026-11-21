@@ -71,7 +71,9 @@ import {
   updateProfile,
 } from '../services/storage';
 import {
+  clearStoredCloudSession,
   CloudSession,
+  deleteCloudAccountData,
   getStoredCloudSession,
   pullProfileFromCloud,
   pushProfileToCloud,
@@ -81,9 +83,11 @@ import {
 import {
   buildAndPublishSocialProfile,
   claimNicknameInCloud,
+  clearChatMemoryCaches,
   ensureE2eeKeyRegistered,
 } from '../services/social';
 import {
+  clearE2eeMemoryCaches,
   formatPublicKeyFingerprint,
   getOrCreateE2eeKeyPair,
 } from '../utils/e2ee';
@@ -700,6 +704,82 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
     }
   };
 
+  const handleSignOutCloud = () => {
+    triggerSelectionHaptic();
+    Alert.alert(
+      t('cloudSignOutBtn'),
+      t('cloudSignOutConfirmBody'),
+      [
+        { text: t('cancel'), style: 'cancel' },
+        {
+          text: t('cloudSignOutBtn'),
+          style: 'destructive',
+          onPress: async () => {
+            await clearStoredCloudSession();
+            clearChatMemoryCaches();
+            clearE2eeMemoryCaches();
+            setCloudSession(null);
+            const updated = await updateProfile(
+              activeProfile.id,
+              {
+                cloudUserId: undefined,
+                cloudProvider: undefined,
+                cloudEmail: undefined,
+                lastCloudSyncAt: undefined,
+              },
+              { skipCloudSync: true }
+            ).catch(() => null);
+            if (updated) onProfileUpdated(updated);
+            await loadMeta().catch(() => {});
+          },
+        },
+      ]
+    );
+  };
+
+  const handleConfirmDeleteCloudAccount = () => {
+    triggerNotificationHaptic('warning');
+    Alert.alert(
+      t('deleteCloudAccountTitle'),
+      t('deleteCloudAccountBody'),
+      [
+        { text: t('cancel'), style: 'cancel' },
+        {
+          text: t('deleteCloudAccountConfirm'),
+          style: 'destructive',
+          onPress: async () => {
+            setIsBusyIO(true);
+            try {
+              const ok = await deleteCloudAccountData();
+              clearChatMemoryCaches();
+              clearE2eeMemoryCaches();
+              setCloudSession(null);
+              const updated = await updateProfile(
+                activeProfile.id,
+                {
+                  cloudUserId: undefined,
+                  cloudProvider: undefined,
+                  cloudEmail: undefined,
+                  lastCloudSyncAt: undefined,
+                },
+                { skipCloudSync: true }
+              ).catch(() => null);
+              if (updated) onProfileUpdated(updated);
+              await loadMeta().catch(() => {});
+              triggerNotificationHaptic(ok ? 'success' : 'warning');
+              Alert.alert(
+                t('savedTitle'),
+                ok ? t('deleteCloudAccountSuccess') : t('cloudConnectNetworkError')
+              );
+            } finally {
+              setIsBusyIO(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const handleConfirmResetApp = () => {
     Alert.alert(
       t('resetAppTitle'),
@@ -710,6 +790,8 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           text: t('resetAllBtn'),
           style: 'destructive',
           onPress: async () => {
+            clearChatMemoryCaches();
+            clearE2eeMemoryCaches();
             await resetAllAppData();
             onAppReset();
           },
@@ -1986,7 +2068,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             </View>
             <View style={[styles.statusBadge, { backgroundColor: 'rgba(16, 185, 129, 0.14)' }]}>
               <Ionicons name="lock-closed" size={12} color="#10B981" />
-              <Text style={[styles.statusBadgeText, { color: '#10B981' }]}>AES / NaCl</Text>
+              <Text style={[styles.statusBadgeText, { color: '#10B981' }]}>Curve25519 / NaCl</Text>
             </View>
           </View>
 
@@ -2079,8 +2161,96 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                   </Text>
                 </TouchableOpacity>
               </View>
+
+              <View style={[styles.ioButtonsRow, { marginTop: 10 }]}>
+                <TouchableOpacity
+                  style={[styles.cloudActionSecondary, { backgroundColor: theme.bgSecondary }]}
+                  onPress={handleSignOutCloud}
+                  disabled={isBusyIO}
+                  activeOpacity={0.75}
+                >
+                  <Ionicons name="log-out-outline" size={16} color={theme.textSecondary} />
+                  <Text style={[styles.cloudActionSecondaryText, { color: theme.text }]}>
+                    {t('cloudSignOutBtn')}
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[
+                    styles.cloudActionSecondary,
+                    {
+                      backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                      borderWidth: StyleSheet.hairlineWidth,
+                      borderColor: 'rgba(239, 68, 68, 0.35)',
+                    },
+                  ]}
+                  onPress={handleConfirmDeleteCloudAccount}
+                  disabled={isBusyIO}
+                  activeOpacity={0.75}
+                >
+                  <Ionicons name="trash-outline" size={16} color="#EF4444" />
+                  <Text style={[styles.cloudActionSecondaryText, { color: '#EF4444' }]}>
+                    {t('deleteCloudAccountBtn')}
+                  </Text>
+                </TouchableOpacity>
+              </View>
             </View>
           )}
+        </View>
+
+        {/* =========================================================
+            SECTION 6B: PRIVACY, TERMS & SUPPORT (APP STORE REQUIRED)
+           ========================================================= */}
+        <View style={[styles.openSection, { borderBottomColor: theme.hairline }]}>
+          <View style={styles.sectionHeaderRow}>
+            <View>
+              <Text style={[styles.sectionEyebrow, { color: theme.textMuted }]}>
+                {t('legalSectionEyebrow')}
+              </Text>
+              <Text style={[styles.sectionHeading, { color: theme.text }]}>
+                {t('legalSectionHeading')}
+              </Text>
+            </View>
+          </View>
+
+          {[
+            {
+              label: t('privacyPolicyLink'),
+              icon: 'shield-checkmark-outline' as const,
+              url: 'https://iron-routine-app.vercel.app/privacy',
+            },
+            {
+              label: t('termsOfServiceLink'),
+              icon: 'document-text-outline' as const,
+              url: 'https://iron-routine-app.vercel.app/terms',
+            },
+            {
+              label: t('supportCenterLink'),
+              icon: 'help-buoy-outline' as const,
+              url: 'https://iron-routine-app.vercel.app/support',
+            },
+          ].map((doc, idx, arr) => (
+            <TouchableOpacity
+              key={doc.url}
+              style={[
+                styles.openActionLine,
+                idx < arr.length - 1
+                  ? { borderBottomColor: theme.hairline }
+                  : { borderBottomWidth: 0 },
+              ]}
+              onPress={() => {
+                triggerSelectionHaptic();
+                Linking.openURL(doc.url).catch(() => {});
+              }}
+              activeOpacity={0.75}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
+                <Ionicons name={doc.icon} size={17} color="#38BDF8" />
+                <Text style={[styles.rowTitle, { color: theme.text }]}>{doc.label}</Text>
+              </View>
+              <Ionicons name="open-outline" size={15} color={theme.textMuted} />
+            </TouchableOpacity>
+          ))}
         </View>
 
         {/* =========================================================
@@ -2118,25 +2288,28 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             </View>
           </TouchableOpacity>
 
-          <TouchableOpacity
-            style={[
-              styles.coffeeBtn,
-              {
-                backgroundColor: isDark ? '#2B1B14' : '#292524',
-                borderWidth: 1,
-                borderColor: 'rgba(251, 146, 60, 0.45)',
-              },
-            ]}
-            onPress={() => {
-              triggerImpactHaptic('medium');
-              Linking.openURL('https://matiqueue-portfolio.vercel.app').catch(() => {});
-            }}
-            activeOpacity={0.85}
-          >
-            <Ionicons name="cafe-outline" size={18} color="#FDBA74" />
-            <Text style={[styles.coffeeBtnText, { color: '#FFF7ED' }]}>{t('coffeeNote')}</Text>
-            <Ionicons name="open-outline" size={15} color="#FDBA74" />
-          </TouchableOpacity>
+          {/* External tip/donation links hidden on iOS per App Store Review Guideline 3.1.1 */}
+          {Platform.OS !== 'ios' && (
+            <TouchableOpacity
+              style={[
+                styles.coffeeBtn,
+                {
+                  backgroundColor: isDark ? '#2B1B14' : '#292524',
+                  borderWidth: 1,
+                  borderColor: 'rgba(251, 146, 60, 0.45)',
+                },
+              ]}
+              onPress={() => {
+                triggerImpactHaptic('medium');
+                Linking.openURL('https://matiqueue-portfolio.vercel.app').catch(() => {});
+              }}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="cafe-outline" size={18} color="#FDBA74" />
+              <Text style={[styles.coffeeBtnText, { color: '#FFF7ED' }]}>{t('coffeeNote')}</Text>
+              <Ionicons name="open-outline" size={15} color="#FDBA74" />
+            </TouchableOpacity>
+          )}
 
           <TouchableOpacity
             style={styles.resetDangerWrap}

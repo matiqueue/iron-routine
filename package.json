@@ -1,6 +1,6 @@
 {
   "name": "iron-routine",
-  "version": "3.0.0",
+  "version": "3.1.0",
   "main": "index.ts",
   "dependencies": {
     "@expo/metro-runtime": "~58.0.17",
@@ -44,7 +44,10 @@
     "deploy": "bash scripts/deploy.sh",
     "ios:release": "expo run:ios --configuration Release",
     "prebuild:ios": "expo prebuild --platform ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "version:patch": "node scripts/bump-version.mjs patch",
+    "version:minor": "node scripts/bump-version.mjs minor",
+    "version:major": "node scripts/bump-version.mjs major"
   },
   "private": true
 }

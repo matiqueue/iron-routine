@@ -3,7 +3,7 @@
     "name": "Iron Routine",
     "slug": "iron-routine",
     "scheme": "ironroutine",
-    "version": "3.0.0",
+    "version": "3.1.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -15,7 +15,7 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.matique.ironroutine",
-      "buildNumber": "3",
+      "buildNumber": "4",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSSupportsLiveActivities": true,
@@ -27,7 +27,7 @@
         "NSRemindersUsageDescription": "Iron Routine dodaje przypomnienia o treningach w Apple Reminders.",
         "NSRemindersFullAccessUsageDescription": "Iron Routine tworzy i aktualizuje przypomnienia treningowe w aplikacji Przypomnienia.",
         "NSMicrophoneUsageDescription": "Iron Routine nagrywa zaszyfrowane wiadomości głosowe dla znajomych.",
-        "NSPhotoLibraryUsageDescription": "Iron Routine pozwala wybrać zdjęcie profilowe widoczne wyłącznie dla Twoich znajomych.",
+        "NSPhotoLibraryUsageDescription": "Iron Routine pozwala wybrać zdjęcie profilowe, wysyłać zaszyfrowane zdjęcia na czacie oraz ustawić tło rozmowy.",
         "NSUserActivityTypes": [
           "INStartWorkoutIntent",
           "com.matique.ironroutine.startWorkout",
@@ -48,7 +48,7 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Iron Routine pozwala wybrać zdjęcie profilowe widoczne dla Twoich znajomych.",
+          "photosPermission": "Iron Routine pozwala wybrać zdjęcie profilowe, wysyłać zaszyfrowane zdjęcia na czacie oraz ustawić tło rozmowy.",
           "cameraPermission": false
         }
       ],
@@ -86,12 +86,11 @@
             "minSdkVersion": 26
           }
         }
-      ],
-      "expo-audio"
+      ]
     ],
     "android": {
       "package": "com.matique.ironroutine",
-      "versionCode": 4,
+      "versionCode": 5,
       "edgeToEdgeEnabled": true,
       "permissions": [
         "android.permission.health.READ_STEPS",

@@ -4,11 +4,18 @@ export const BUY_ME_COFFEE_URL = 'https://matiqueue-portfolio.vercel.app';
 export const APK_DOWNLOAD_URL =
   'https://github.com/matiqueue/iron-routine/releases/latest/download/IronRoutine.apk';
 export const RELEASES_URL = 'https://github.com/matiqueue/iron-routine/releases';
-export const APP_VERSION = 'v3.0.0';
+export const APP_VERSION = 'v3.1.0';
 export const EXPO_VERSION_LABEL = 'Expo SDK 58';
 export const RN_VERSION_LABEL = 'React Native 0.88';
 
-export type AppRoute = '/' | '/funkcje' | '/analityka' | '/instalacja';
+export type AppRoute =
+  | '/'
+  | '/funkcje'
+  | '/analityka'
+  | '/instalacja'
+  | '/privacy'
+  | '/terms'
+  | '/support';
 export type PlatformTab = 'android' | 'ios';
 export type ShowcaseScreen = 'workout' | 'plans' | 'health';
 export type ChartTimeframe = '7d' | '30d' | 'all';
@@ -21,7 +28,7 @@ export interface NavItem {
 }
 
 export const NAV_ITEMS: readonly NavItem[] = [
-  { path: '/', label: 'Przegląd', pageTitle: 'Iron Routine v3.0.0 | Monochromatyczny Dziennik Treningowy' },
+  { path: '/', label: 'Przegląd', pageTitle: 'Iron Routine v3.1.0 | Monochromatyczny Dziennik Treningowy' },
   { path: '/funkcje', label: 'Funkcje i UI', pageTitle: 'Funkcje i Interfejs | Iron Routine' },
   { path: '/analityka', label: 'Analityka 1RM', pageTitle: 'Analityka 1RM i Zdrowie | Iron Routine' },
   { path: '/instalacja', label: 'Instalacja', pageTitle: 'Instalacja iOS i Android | Iron Routine' },

@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   AuthenticateWithRedirectCallback,
   ClerkProvider,
+  useAuth,
   useClerk,
   useUser,
 } from '@clerk/react';
@@ -14,6 +15,7 @@ const CLERK_PUBLISHABLE_KEY =
 
 function MobileAuthContent() {
   const { isLoaded: userLoaded, isSignedIn, user } = useUser();
+  const { getToken } = useAuth();
   const { isLoaded: signInLoaded, signIn, setActive } = useSignIn();
   const { isLoaded: signUpLoaded, signUp } = useSignUp();
   const { signOut } = useClerk();
@@ -70,6 +72,12 @@ function MobileAuthContent() {
       setStatusText('Zapisywanie sesji Clerk i łączenie z bazą PostgreSQL...');
 
       try {
+        const clerkSessionToken = await getToken().catch(() => null);
+        if (!clerkSessionToken) {
+          completedRef.current = false;
+          setErrorMsg('Brak aktywnej sesji Clerk. Zaloguj się ponownie.');
+          return;
+        }
         const res = await fetch('/api/cloud/auth', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -77,10 +85,8 @@ function MobileAuthContent() {
             action: 'complete_clerk_attempt',
             attemptId,
             provider: params.overrideProvider || provider,
-            clerkUserId: params.clerkUserId || '',
-            email: params.email,
+            clerkSessionToken,
             displayName: params.displayName,
-            avatarUrl: params.avatarUrl || null,
           }),
         });
         const data = await res.json();
@@ -102,7 +108,7 @@ function MobileAuthContent() {
         setErrorMsg('Błąd połączenia z serwerem autoryzacji Iron Routine.');
       }
     },
-    [attemptId, provider]
+    [attemptId, getToken, provider]
   );
 
   // 1. Complete handoff when Clerk user is signed in (for Google OAuth or Apple OAuth)
@@ -242,12 +248,13 @@ function MobileAuthContent() {
         return;
       }
 
-      // Otherwise authenticate via Clerk Sign-In Token (ticket strategy)
+      // Otherwise authenticate via Clerk Sign-In Token (ticket strategy) bound to active attemptId
       const res = await fetch('/api/cloud/auth', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'mint_clerk_ticket',
+          attemptId,
           provider: 'apple',
           deviceIdentityId: deviceId,
           displayName: initialName || 'Apple iCloud',

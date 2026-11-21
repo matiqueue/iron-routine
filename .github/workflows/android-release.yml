@@ -4,18 +4,16 @@ on:
   workflow_dispatch:
     inputs:
       tag_name:
-        description: 'Wersja wydania (np. v1.0.0)'
+        description: 'Wersja SemVer wydania (np. v3.1.0)'
         required: true
-        default: 'v1.0.0'
+        default: 'v3.1.0'
       release_title:
         description: 'Tytuł wydania'
         required: false
-        default: 'Iron Routine v1.0.0'
+        default: ''
   push:
-    branches:
-      - main
     tags:
-      - 'v*'
+      - 'v[0-9]+.[0-9]+.[0-9]+'
 
 permissions:
   contents: write

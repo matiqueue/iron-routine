@@ -470,10 +470,12 @@ const ActiveVoiceNotePlayer: React.FC<{
     if (status.playing) {
       player.pause();
     } else {
-      if (totalSec > 0 && status.currentTime >= totalSec - 0.15) {
-        await player.seekTo(0);
-      }
-      player.play();
+      try {
+        if (totalSec > 0 && status.currentTime >= totalSec - 0.15) {
+          await player.seekTo(0);
+        }
+        player.play();
+      } catch {}
     }
   };
 
@@ -481,14 +483,16 @@ const ActiveVoiceNotePlayer: React.FC<{
     if (totalSec <= 0) return;
     triggerSelectionHaptic();
     const ratio = (barIdx + 0.5) / bars.length;
-    await player.seekTo(ratio * totalSec);
-    if (!status.playing) {
-      await setAudioModeAsync({
-        playsInSilentMode: true,
-        allowsRecording: false,
-      }).catch(() => {});
-      player.play();
-    }
+    try {
+      await player.seekTo(ratio * totalSec);
+      if (!status.playing) {
+        await setAudioModeAsync({
+          playsInSilentMode: true,
+          allowsRecording: false,
+        }).catch(() => {});
+        player.play();
+      }
+    } catch {}
   };
 
   return (
@@ -954,6 +958,9 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
       .catch(() => {});
   }, [visible]);
 
+  const activeFriendIdRef = useRef<string | null>(friend?.userId || null);
+  activeFriendIdRef.current = visible && friend ? friend.userId : null;
+
   const loadMessages = useCallback(
     async (silent = false) => {
       if (!friend) return;
@@ -968,6 +975,10 @@ export const FriendChatModal: React.FC<FriendChatModalProps> = ({
         setIsLoading(true);
       }
       const res = await fetchChatMessages(targetFriendId);
+      // Guard against stale response if user switched to another chat or closed modal while request was in flight
+      if (activeFriendIdRef.current !== targetFriendId) {
+        return;
+      }
       if (res.ok) {
         // Discard stale background poll if a local send/edit/react/delete happened while GET was in flight
         if (!isInitialForFriend && (startEpoch !== mutationEpochRef.current || isSendingRef.current)) {

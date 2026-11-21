@@ -7,7 +7,21 @@ interface RouterContextValue {
   navigate: (to: AppRoute, options?: { platform?: PlatformTab }) => void;
 }
 
-const VALID_ROUTES = new Set<AppRoute>(['/', '/funkcje', '/analityka', '/instalacja']);
+const VALID_ROUTES = new Set<AppRoute>([
+  '/',
+  '/funkcje',
+  '/analityka',
+  '/instalacja',
+  '/privacy',
+  '/terms',
+  '/support',
+]);
+
+const EXTRA_PAGE_TITLES: Partial<Record<AppRoute, string>> = {
+  '/privacy': 'Polityka Prywatności | Iron Routine',
+  '/terms': 'Regulamin | Iron Routine',
+  '/support': 'Wsparcie i Kontakt | Iron Routine',
+};
 
 function normalizePathname(pathname: string): AppRoute {
   const clean = pathname.replace(/\/+$/, '') || '/';
@@ -41,6 +55,8 @@ export function RouterProvider({ children }: { children: React.ReactNode }) {
     const matched = NAV_ITEMS.find((item) => item.path === route);
     if (matched) {
       document.title = matched.pageTitle;
+    } else if (EXTRA_PAGE_TITLES[route]) {
+      document.title = EXTRA_PAGE_TITLES[route]!;
     }
   }, [route]);
 

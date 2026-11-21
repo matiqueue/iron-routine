@@ -39,6 +39,7 @@ import { HighFiveSpamButton } from './HighFiveSpamButton';
 import { VsComparisonArc } from './CrewCustomComponents';
 import { InteractiveBottomSheet, BottomSheetScrollView } from './InteractiveBottomSheet';
 import { triggerNotificationHaptic, triggerSelectionHaptic } from '../services/haptics';
+import { blockSocialUser, reportSocialUser } from '../services/social';
 
 interface FriendProfileModalProps {
   visible: boolean;
@@ -649,6 +650,67 @@ export const FriendProfileModal: React.FC<FriendProfileModalProps> = ({
     );
   };
 
+  const handleReportOrBlock = () => {
+    triggerSelectionHaptic();
+    Alert.alert(
+      t('reportOrBlockTitle'),
+      `@${friend.nickname}`,
+      [
+        {
+          text: t('reportUserReasonSpam'),
+          onPress: async () => {
+            await reportSocialUser(friend.userId, 'spam');
+            triggerNotificationHaptic('success');
+            Alert.alert(t('savedTitle'), t('userReportedDone'));
+          },
+        },
+        {
+          text: t('reportUserReasonHarassment'),
+          onPress: async () => {
+            await reportSocialUser(friend.userId, 'harassment');
+            triggerNotificationHaptic('success');
+            Alert.alert(t('savedTitle'), t('userReportedDone'));
+          },
+        },
+        {
+          text: t('reportUserReasonInappropriate'),
+          onPress: async () => {
+            await reportSocialUser(friend.userId, 'inappropriate');
+            triggerNotificationHaptic('success');
+            Alert.alert(t('savedTitle'), t('userReportedDone'));
+          },
+        },
+        {
+          text: t('blockUserBtn'),
+          style: 'destructive',
+          onPress: () => {
+            Alert.alert(
+              t('blockUserConfirmTitle', { nick: friend.nickname }),
+              t('blockUserConfirmBody'),
+              [
+                { text: t('cancel'), style: 'cancel' },
+                {
+                  text: t('blockUserBtn'),
+                  style: 'destructive',
+                  onPress: async () => {
+                    const ok = await blockSocialUser(friend.userId);
+                    if (ok) {
+                      await onRemoveFriend(friend);
+                      triggerNotificationHaptic('success');
+                      onClose();
+                      Alert.alert(t('savedTitle'), t('userBlockedDone'));
+                    }
+                  },
+                },
+              ]
+            );
+          },
+        },
+        { text: t('cancel'), style: 'cancel' },
+      ]
+    );
+  };
+
   const vsScale = vsPulse.interpolate({ inputRange: [0, 1], outputRange: [0.95, 1.08] });
   const heroTranslateY = entranceAnim.interpolate({ inputRange: [0, 1], outputRange: [12, 0] });
 
@@ -1236,17 +1298,30 @@ export const FriendProfileModal: React.FC<FriendProfileModalProps> = ({
         </View>
       </View>
 
-      {/* Subtle Destructive Footer Action */}
-      <TouchableOpacity
-        style={styles.removeFooterBtn}
-        onPress={handleConfirmRemove}
-        activeOpacity={0.75}
-      >
-        <Ionicons name="person-remove-outline" size={15} color={theme.danger} />
-        <Text style={[styles.removeFooterText, { color: theme.danger }]}>
-          {t('friendsRemoveBtn')}
-        </Text>
-      </TouchableOpacity>
+      {/* Subtle Destructive & Safety Footer Actions */}
+      <View style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 18 }}>
+        <TouchableOpacity
+          style={styles.removeFooterBtn}
+          onPress={handleReportOrBlock}
+          activeOpacity={0.75}
+        >
+          <Ionicons name="shield-outline" size={15} color={theme.textMuted} />
+          <Text style={[styles.removeFooterText, { color: theme.textMuted }]}>
+            {t('reportOrBlockBtn')}
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.removeFooterBtn}
+          onPress={handleConfirmRemove}
+          activeOpacity={0.75}
+        >
+          <Ionicons name="person-remove-outline" size={15} color={theme.danger} />
+          <Text style={[styles.removeFooterText, { color: theme.danger }]}>
+            {t('friendsRemoveBtn')}
+          </Text>
+        </TouchableOpacity>
+      </View>
     </>
   );
 
