@@ -155,6 +155,26 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
   const heroScrollX = useRef(new Animated.Value(activeHeroIdx * screenWidth)).current;
   const lastSwipedDayIdRef = useRef<string | null>(null);
   const hasMountedPagerRef = useRef(false);
+  const heroBodyHeightsRef = useRef<Record<string, number>>({});
+  const [maxHeroBodyHeight, setMaxHeroBodyHeight] = useState(0);
+
+  const heroPagesSig = useMemo(
+    () => heroPages.map((d) => `${d.id}:${d.name}:${d.subtitle || ''}`).join('|'),
+    [heroPages]
+  );
+
+  useEffect(() => {
+    heroBodyHeightsRef.current = {};
+    setMaxHeroBodyHeight(0);
+  }, [heroPagesSig, screenWidth]);
+
+  const handleHeroBodyMeasure = useCallback((dayId: string, measuredHeight: number) => {
+    const h = Math.ceil(measuredHeight);
+    if (h <= 0 || heroBodyHeightsRef.current[dayId] === h) return;
+    heroBodyHeightsRef.current[dayId] = h;
+    const tallest = Math.max(0, ...Object.values(heroBodyHeightsRef.current));
+    setMaxHeroBodyHeight((prev) => (prev === tallest ? prev : tallest));
+  }, []);
 
   useEffect(() => {
     if (heroPages.length <= 1 || screenWidth <= 0) return;
@@ -552,211 +572,169 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
                       </View>
 
                       <View style={styles.heroInner}>
-                        {/* Top Row: Tag + Status on left, Compact Integrated Sequence Stepper on right */}
-                        <View style={styles.heroTopHeaderRow}>
-                          <View style={styles.heroTagRow}>
-                            <View
-                              style={[styles.heroTagPill, { backgroundColor: theme.primary }]}
-                            >
-                              <AnimatedIcon
-                                name={pageTagMeta.icon as any}
-                                preset={
-                                  pagePlan.type === 'rest'
-                                    ? 'moon'
-                                    : pagePlan.type === 'walk'
-                                    ? 'footsteps'
-                                    : 'barbell'
-                                }
-                                size={12}
-                                color={theme.primaryText}
-                                active={pagePlan.id === currentPlan.id}
-                              />
-                              <Text
-                                style={[styles.heroTagText, { color: theme.primaryText }]}
-                              >
-                                {dayTagLabel(pageTag, pageTagMeta.label).toUpperCase()}
-                              </Text>
-                            </View>
-
-                            <View
-                              style={[
-                                styles.heroDayStatusPill,
-                                {
-                                  backgroundColor: pageIsPaused
-                                    ? 'rgba(245, 158, 11, 0.16)'
-                                    : pageIsDone
-                                    ? 'rgba(16, 185, 129, 0.16)'
-                                    : pageIsSuggested
-                                    ? 'rgba(56, 189, 248, 0.15)'
-                                    : glassSurfaceBg,
-                                  borderColor: pageIsPaused
-                                    ? 'rgba(245, 158, 11, 0.42)'
-                                    : pageIsDone
-                                    ? 'rgba(16, 185, 129, 0.42)'
-                                    : pageIsSuggested
-                                    ? 'rgba(56, 189, 248, 0.38)'
-                                    : glassSurfaceBorder,
-                                },
-                              ]}
-                            >
-                              <Text
-                                style={[
-                                  styles.heroDayStatusText,
-                                  {
-                                    color: pageIsPaused
-                                      ? '#F59E0B'
-                                      : pageIsDone
-                                      ? '#10B981'
-                                      : pageIsSuggested
-                                      ? '#38BDF8'
-                                      : theme.textSecondary,
-                                  },
-                                ]}
-                              >
-                                {dayLabel(pagePlan.id, true).toUpperCase()}
-                                {pageIsPaused
-                                  ? ` · ${t('sequencePausedBadge')}`
-                                  : pageIsDone
-                                  ? ` · ${t('sequenceDoneBadge')}`
-                                  : pageIsSuggested
-                                  ? ` · ${t('sequenceNextBadge')}`
-                                  : ''}
-                              </Text>
-                            </View>
-                          </View>
-
-                          {workoutDaysInSequence.length > 1 && (
-                            <View
-                              style={[
-                                styles.heroStepperPill,
-                                {
-                                  backgroundColor: glassSurfaceBg,
-                                  borderColor: glassSurfaceBorder,
-                                },
-                              ]}
-                            >
-                              <TouchableOpacity
-                                onPress={() => stepSequence(-1)}
-                                hitSlop={{ top: 10, bottom: 10, left: 10, right: 4 }}
-                                style={styles.heroStepperArrowBtn}
-                                activeOpacity={0.65}
-                              >
-                                <Ionicons
-                                  name="chevron-back"
-                                  size={14}
-                                  color={theme.text}
-                                />
-                              </TouchableOpacity>
-                              <TouchableOpacity
-                                onPress={() => {
-                                  triggerSelectionHaptic();
-                                  setShowQueueSheet(true);
-                                }}
-                                hitSlop={{ top: 8, bottom: 8, left: 2, right: 2 }}
-                                style={styles.heroStepperCenterBtn}
-                                activeOpacity={0.7}
-                              >
-                                <Text
-                                  style={[styles.heroStepperText, { color: theme.text }]}
-                                >
-                                  {pageIdx + 1}/{heroPages.length}
-                                </Text>
-                                <Ionicons
-                                  name="chevron-down"
-                                  size={11}
-                                  color={theme.textMuted}
-                                />
-                              </TouchableOpacity>
-                              <TouchableOpacity
-                                onPress={() => stepSequence(1)}
-                                hitSlop={{ top: 10, bottom: 10, left: 4, right: 10 }}
-                                style={styles.heroStepperArrowBtn}
-                                activeOpacity={0.65}
-                              >
-                                <Ionicons
-                                  name="chevron-forward"
-                                  size={14}
-                                  color={theme.text}
-                                />
-                              </TouchableOpacity>
-                            </View>
-                          )}
-                        </View>
-
-                        <Text style={[styles.heroTitle, { color: theme.text }]}>
-                          {pagePlan.name}
-                        </Text>
-
-                        {pagePlan.subtitle ? (
-                          <Text
-                            style={[
-                              styles.heroSubtitle,
-                              { color: theme.textSecondary },
-                            ]}
+                        {/* Equalized-height body wrapper so every Hero card matches the tallest card */}
+                        <View
+                          style={
+                            maxHeroBodyHeight > 0
+                              ? { minHeight: maxHeroBodyHeight }
+                              : undefined
+                          }
+                        >
+                          <View
+                            onLayout={(e) =>
+                              handleHeroBodyMeasure(pagePlan.id, e.nativeEvent.layout.height)
+                            }
                           >
-                            {pagePlan.subtitle}
-                          </Text>
-                        ) : null}
+                            {/* Top Row: Tag + Day/Sequence Status (no redundant x/x stepper pill) */}
+                            <View style={styles.heroTopHeaderRow}>
+                              <View style={styles.heroTagRow}>
+                                <View
+                                  style={[styles.heroTagPill, { backgroundColor: theme.primary }]}
+                                >
+                                  <AnimatedIcon
+                                    name={pageTagMeta.icon as any}
+                                    preset={
+                                      pagePlan.type === 'rest'
+                                        ? 'moon'
+                                        : pagePlan.type === 'walk'
+                                        ? 'footsteps'
+                                        : 'barbell'
+                                    }
+                                    size={12}
+                                    color={theme.primaryText}
+                                    active={pagePlan.id === currentPlan.id}
+                                  />
+                                  <Text
+                                    style={[styles.heroTagText, { color: theme.primaryText }]}
+                                  >
+                                    {dayTagLabel(pageTag, pageTagMeta.label).toUpperCase()}
+                                  </Text>
+                                </View>
 
-                        {pageExCount > 0 && (
-                          <View style={styles.heroMetaLine}>
-                            <View
-                              style={[
-                                styles.heroMetaBadge,
-                                {
-                                  backgroundColor: glassSurfaceBg,
-                                  borderColor: glassSurfaceBorder,
-                                },
-                              ]}
-                            >
-                              <Text
-                                style={[styles.heroMetaText, { color: theme.text }]}
-                              >
-                                {t('exercisesCountText', { count: pageExCount })}
-                              </Text>
+                                <View
+                                  style={[
+                                    styles.heroDayStatusPill,
+                                    {
+                                      backgroundColor: pageIsPaused
+                                        ? 'rgba(245, 158, 11, 0.16)'
+                                        : pageIsDone
+                                        ? 'rgba(16, 185, 129, 0.16)'
+                                        : pageIsSuggested
+                                        ? 'rgba(56, 189, 248, 0.15)'
+                                        : glassSurfaceBg,
+                                      borderColor: pageIsPaused
+                                        ? 'rgba(245, 158, 11, 0.42)'
+                                        : pageIsDone
+                                        ? 'rgba(16, 185, 129, 0.42)'
+                                        : pageIsSuggested
+                                        ? 'rgba(56, 189, 248, 0.38)'
+                                        : glassSurfaceBorder,
+                                    },
+                                  ]}
+                                >
+                                  <Text
+                                    style={[
+                                      styles.heroDayStatusText,
+                                      {
+                                        color: pageIsPaused
+                                          ? '#F59E0B'
+                                          : pageIsDone
+                                          ? '#10B981'
+                                          : pageIsSuggested
+                                          ? '#38BDF8'
+                                          : theme.textSecondary,
+                                      },
+                                    ]}
+                                  >
+                                    {dayLabel(pagePlan.id, true).toUpperCase()}
+                                    {pageIsPaused
+                                      ? ` · ${t('sequencePausedBadge')}`
+                                      : pageIsDone
+                                      ? ` · ${t('sequenceDoneBadge')}`
+                                      : pageIsSuggested
+                                      ? ` · ${t('sequenceNextBadge')}`
+                                      : ''}
+                                  </Text>
+                                </View>
+                              </View>
                             </View>
-                            <View
-                              style={[
-                                styles.heroMetaBadge,
-                                {
-                                  backgroundColor: glassSurfaceBg,
-                                  borderColor: glassSurfaceBorder,
-                                },
-                              ]}
-                            >
+
+                            <Text style={[styles.heroTitle, { color: theme.text }]}>
+                              {pagePlan.name}
+                            </Text>
+
+                            {pagePlan.subtitle ? (
                               <Text
-                                style={[styles.heroMetaText, { color: theme.text }]}
-                              >
-                                {pageSetsCount} {t('setsWord')}
-                              </Text>
-                            </View>
-                            {pagePlan.time ? (
-                              <View
                                 style={[
-                                  styles.heroMetaBadge,
-                                  {
-                                    backgroundColor: glassSurfaceBg,
-                                    borderColor: glassSurfaceBorder,
-                                    flexDirection: 'row',
-                                    alignItems: 'center',
-                                    gap: 4,
-                                  },
+                                  styles.heroSubtitle,
+                                  { color: theme.textSecondary },
                                 ]}
                               >
-                                <Ionicons
-                                  name="time-outline"
-                                  size={11}
-                                  color={theme.textSecondary}
-                                />
-                                <Text
-                                  style={[styles.heroMetaText, { color: theme.text }]}
-                                >
-                                  {pagePlan.time}
-                                </Text>
-                              </View>
+                                {pagePlan.subtitle}
+                              </Text>
                             ) : null}
+
+                            {pageExCount > 0 && (
+                              <View style={styles.heroMetaLine}>
+                                <View
+                                  style={[
+                                    styles.heroMetaBadge,
+                                    {
+                                      backgroundColor: glassSurfaceBg,
+                                      borderColor: glassSurfaceBorder,
+                                    },
+                                  ]}
+                                >
+                                  <Text
+                                    style={[styles.heroMetaText, { color: theme.text }]}
+                                  >
+                                    {t('exercisesCountText', { count: pageExCount })}
+                                  </Text>
+                                </View>
+                                <View
+                                  style={[
+                                    styles.heroMetaBadge,
+                                    {
+                                      backgroundColor: glassSurfaceBg,
+                                      borderColor: glassSurfaceBorder,
+                                    },
+                                  ]}
+                                >
+                                  <Text
+                                    style={[styles.heroMetaText, { color: theme.text }]}
+                                  >
+                                    {pageSetsCount} {t('setsWord')}
+                                  </Text>
+                                </View>
+                                {pagePlan.time ? (
+                                  <View
+                                    style={[
+                                      styles.heroMetaBadge,
+                                      {
+                                        backgroundColor: glassSurfaceBg,
+                                        borderColor: glassSurfaceBorder,
+                                        flexDirection: 'row',
+                                        alignItems: 'center',
+                                        gap: 4,
+                                      },
+                                    ]}
+                                  >
+                                    <Ionicons
+                                      name="time-outline"
+                                      size={11}
+                                      color={theme.textSecondary}
+                                    />
+                                    <Text
+                                      style={[styles.heroMetaText, { color: theme.text }]}
+                                    >
+                                      {pagePlan.time}
+                                    </Text>
+                                  </View>
+                                ) : null}
+                              </View>
+                            )}
                           </View>
-                        )}
+                        </View>
 
                         {/* Ultra-clean segmented split sequence progress bar at bottom edge of Hero Card */}
                         {workoutDaysInSequence.length > 1 && (

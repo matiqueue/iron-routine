@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   View,
@@ -8,10 +8,12 @@ import {
   TouchableOpacity,
   Animated,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAppTheme } from '../context/ThemeContext';
 import { useLanguage } from '../context/LanguageContext';
+import { getLocalDateKey } from '../utils/localDate';
 import { DAYS_OF_WEEK, WORKOUT_PLAN } from '../data/planData';
 import { getDayBannerTagMeta, resolveDayBannerTag } from '../data/dayTags';
 import { Exercise, DayPlan, PRRecord, WorkoutPlan } from '../types/workout';
@@ -44,6 +46,196 @@ interface PlanTabProps {
 const EMPTY_EXERCISES: Exercise[] = [];
 const EMPTY_PRS: { [exerciseId: string]: PRRecord } = {};
 
+const DAILY_PLAN_HINTS: Record<string, Array<{ title: string; body: string }>> = {
+  pl: [
+    {
+      title: 'Rozgrzewka z głową',
+      body: 'Zrób 2–3 serie wstępne z narastającym ciężarem (50% → 75%) zanim wejdziesz na pierwszą serię roboczą.',
+    },
+    {
+      title: 'Kontrola fazy ekscentrycznej',
+      body: 'Opuszczaj ciężar przez 2–3 sekundy zamiast go zrzucać — zyskasz większy bodziec mięśniowy przy bezpieczniejszych stawach.',
+    },
+    {
+      title: 'Progresja nie tylko ciężarem',
+      body: 'Nie musisz dziś dokładać kilogramów — 1 dodatkowe powtórzenie w tej samej technice to pełnoprawny progres.',
+    },
+    {
+      title: 'Przerwy między seriami',
+      body: 'W ciężkich bojach złożonych odpoczywaj 2–3 minuty, a w ćwiczeniach izolowanych 60–90 sekund dla pełnej mocy.',
+    },
+    {
+      title: 'Zapas powtórzeń (RIR 1–2)',
+      body: 'Większość serii roboczych kończ 1–2 powtórzenia przed załamaniem — budujesz tyle samo mięśni przy znacznie mniejszym zmęczeniu układu nerwowego.',
+    },
+    {
+      title: 'Nawodnienie i elektrolity',
+      body: 'Spadek nawodnienia o 2% potrafi obniżyć siłę o kilka procent. Wypij szklankę wody ze szczyptą soli przed treningiem.',
+    },
+    {
+      title: 'Stabilny tułów (bracing)',
+      body: 'Przed każdym ciężkim powtórzeniem weź głęboki wdech do brzucha i zepnij core — kręgosłup podziękuje, a ciężar pójdzie płynniej.',
+    },
+    {
+      title: 'Pełny zakres ruchu',
+      body: 'Mocne rozciągnięcie mięśnia w dolnej fazie ruchu (np. skos hantli, RDL, ściąganie drążka) daje największy sygnał do hipertrofii.',
+    },
+    {
+      title: 'Kolejność ma znaczenie',
+      body: 'Najpierw wykonuj ćwiczenia wymagające najwięcej energii i stabilizacji, a izolacje zostaw na końcówkę sesji.',
+    },
+    {
+      title: 'Sen to darmowy steryd',
+      body: '7–9 godzin snu przyspiesza regenerację mięśni i stabilizuje kortyzol bardziej niż jakikolwiek suplement.',
+    },
+    {
+      title: 'Białko po treningu',
+      body: 'Zadbaj o 25–40 g pełnowartościowego białka w posiłku po sesji, aby zmaksymalizować syntezę białek mięśniowych.',
+    },
+    {
+      title: 'Zapisuj każdy detal',
+      body: 'Notowanie ciężaru i powtórzeń w każdej serii eliminuje zgadywanie i daje jasny cel do pobicia na kolejnej sesji.',
+    },
+  ],
+  en: [
+    {
+      title: 'Smart Warm-Up Ramp',
+      body: 'Hit 2–3 ascending warm-up sets (50% → 75%) before your first working set to prime joints and CNS.',
+    },
+    {
+      title: 'Own the Eccentric',
+      body: 'Lower weights with a controlled 2–3 second tempo for superior muscle tension and safer joints.',
+    },
+    {
+      title: 'Progress Beyond Weight',
+      body: 'Adding even 1 clean rep at the same load is real progressive overload — chase quality first.',
+    },
+    {
+      title: 'Rest for Output',
+      body: 'Take 2–3 min rest on heavy compounds and 60–90 sec on isolations so every working set counts.',
+    },
+    {
+      title: 'Train Near Failure (1–2 RIR)',
+      body: 'Leaving 1–2 reps in reserve on most sets maximizes hypertrophy while keeping systemic fatigue in check.',
+    },
+    {
+      title: 'Hydration & Electrolytes',
+      body: 'Even mild dehydration drops strength output. Drink water with a pinch of electrolytes before training.',
+    },
+    {
+      title: 'Brace Your Core',
+      body: 'Take a deep diaphragmatic breath and brace 360° before every heavy rep for rock-solid force transfer.',
+    },
+    {
+      title: 'Embrace the Stretch',
+      body: 'Control the fully lengthened position of every movement — deep stretch drives major muscle growth.',
+    },
+    {
+      title: 'Prioritize Heavy First',
+      body: 'Tackle your most demanding compound lifts while fresh, then finish with focused isolation work.',
+    },
+    {
+      title: 'Sleep Fuels Gains',
+      body: '7–9 hours of quality sleep accelerates recovery and strength adaptation more than any supplement.',
+    },
+    {
+      title: 'Post-Session Protein',
+      body: 'Aim for 25–40g of high-quality protein after training to kick-start muscle protein synthesis.',
+    },
+    {
+      title: 'Track Every Working Set',
+      body: 'Logging exact reps and loads removes guesswork and gives you a clear target to beat next session.',
+    },
+  ],
+  de: [
+    {
+      title: 'Gezieltes Aufwärmen',
+      body: 'Starte mit 2–3 Aufwärmsätzen mit steigendem Gewicht (50% → 75%), bevor der erste Arbeitssatz beginnt.',
+    },
+    {
+      title: 'Kontrollierte Exzentrik',
+      body: 'Senke das Gewicht kontrolliert über 2–3 Sekunden ab — mehr Muskelreiz bei geschonten Gelenken.',
+    },
+    {
+      title: 'Progression ist vielfältig',
+      body: 'Schon 1 saubere Wiederholung mehr bei gleichem Gewicht ist echter Fortschritt.',
+    },
+    {
+      title: 'Pausen bewusst nutzen',
+      body: '2–3 Minuten Pause bei Grundübungen und 60–90 Sekunden bei Isolationen sichern maximale Leistung.',
+    },
+    {
+      title: '1–2 Wiederholungen im Tank',
+      body: 'Die meisten Arbeitssätze mit 1–2 RIR liefern Top-Hypertrophie bei deutlich geringerer Ermüdung.',
+    },
+    {
+      title: 'Flüssigkeit & Elektrolyte',
+      body: 'Trinke vor dem Training ausreichend Wasser mit Elektrolyten — Dehydrierung kostet sofort Kraft.',
+    },
+  ],
+  fr: [
+    {
+      title: 'Échauffement progressif',
+      body: 'Fais 2 à 3 séries de montée en charge (50% → 75%) avant d’attaquer ta première série effective.',
+    },
+    {
+      title: 'Maîtrise la phase excentrique',
+      body: 'Retiens la descente pendant 2 à 3 secondes pour plus de tension musculaire et des articulations protégées.',
+    },
+    {
+      title: 'Progresser autrement',
+      body: 'Une seule répétition propre en plus à charge égale est déjà une vraie surcharge progressive.',
+    },
+    {
+      title: 'Repos optimal',
+      body: 'Prends 2 à 3 min sur les mouvements polyarticulaires et 60 à 90 s sur les isolations.',
+    },
+    {
+      title: 'Proche de l’échec (1–2 RIR)',
+      body: 'Garder 1 à 2 répétitions en réserve maximise l’hypertrophie tout en limitant la fatigue nerveuse.',
+    },
+    {
+      title: 'Hydratation & électrolytes',
+      body: 'Une légère déshydratation réduit la force : bois de l’eau avec des électrolytes avant ta séance.',
+    },
+  ],
+  es: [
+    {
+      title: 'Calentamiento progresivo',
+      body: 'Haz 2–3 series de aproximación (50% → 75%) antes de entrar a tu primera serie efectiva.',
+    },
+    {
+      title: 'Controla la fase excéntrica',
+      body: 'Baja el peso en 2–3 segundos con control para mayor estímulo muscular y articulaciones sanas.',
+    },
+    {
+      title: 'Progresa más allá del peso',
+      body: 'Sumar 1 repetición limpia con la misma carga ya es sobrecarga progresiva real.',
+    },
+    {
+      title: 'Descansa para rendir',
+      body: 'Descansa 2–3 min en básicos pesados y 60–90 s en ejercicios de aislamiento.',
+    },
+    {
+      title: 'Cerca del fallo (1–2 RIR)',
+      body: 'Dejar 1–2 repeticiones en recámara maximiza la hipertrofia sin agotar el sistema nervioso.',
+    },
+    {
+      title: 'Hidratación y electrolitos',
+      body: 'Incluso una ligera deshidratación reduce tu fuerza; hidrátate bien antes de entrenar.',
+    },
+  ],
+};
+
+function getDailyPlanHint(dateKey: string, localeCode: string): { title: string; body: string } {
+  const lang = localeCode.slice(0, 2).toLowerCase();
+  const pool = DAILY_PLAN_HINTS[lang] || DAILY_PLAN_HINTS.en;
+  // Deterministic hash from YYYY-MM-DD so every new calendar day rotates cleanly to a fresh hint
+  const [y, m, d] = dateKey.split('-').map((n) => parseInt(n, 10) || 0);
+  const dayOrdinal = y * 366 + m * 31 + d;
+  return pool[Math.abs(dayOrdinal) % pool.length];
+}
+
 export const PlanTab: React.FC<PlanTabProps> = ({
   profileId,
   activePlan,
@@ -56,13 +248,51 @@ export const PlanTab: React.FC<PlanTabProps> = ({
   onSelectExerciseForPR,
   onStartWorkoutForDay,
 }) => {
-  const { theme } = useAppTheme();
-  const { t, dayLabel } = useLanguage();
+  const { theme, isDark } = useAppTheme();
+  const { t, dayLabel, localeCode } = useLanguage();
   const insets = useSafeAreaInsets();
   const [selectedDayId, setSelectedDayId] = useState<string>('mon');
   const [modalExercise, setModalExercise] = useState<Exercise | null>(null);
   const [editingDay, setEditingDay] = useState(false);
   const [showLibrary, setShowLibrary] = useState(false);
+  const [hintDismissedDate, setHintDismissedDate] = useState<string | null>(null);
+  const [hintReady, setHintReady] = useState(false);
+  const hintFadeAnim = useRef(new Animated.Value(1)).current;
+
+  const todayKey = getLocalDateKey();
+  const hintStorageKey = `@iron_routine:plan_hint_dismissed_${profileId || 'default'}`;
+  const dailyHint = useMemo(() => getDailyPlanHint(todayKey, localeCode), [todayKey, localeCode]);
+  const isHintVisible = hintReady && hintDismissedDate !== todayKey;
+
+  useEffect(() => {
+    let active = true;
+    hintFadeAnim.setValue(1);
+    AsyncStorage.getItem(hintStorageKey)
+      .then((val) => {
+        if (!active) return;
+        setHintDismissedDate(val || null);
+        setHintReady(true);
+      })
+      .catch(() => {
+        if (!active) return;
+        setHintReady(true);
+      });
+    return () => {
+      active = false;
+    };
+  }, [hintStorageKey, hintFadeAnim]);
+
+  const handleDismissDailyHint = () => {
+    triggerSelectionHaptic();
+    Animated.timing(hintFadeAnim, {
+      toValue: 0,
+      duration: 165,
+      useNativeDriver: true,
+    }).start(() => {
+      setHintDismissedDate(todayKey);
+      AsyncStorage.setItem(hintStorageKey, todayKey).catch(() => {});
+    });
+  };
 
   const planDays: DayPlan[] = activePlan?.days?.length ? activePlan.days : WORKOUT_PLAN;
 
@@ -354,17 +584,54 @@ export const PlanTab: React.FC<PlanTabProps> = ({
             </TouchableOpacity>
           )}
 
-        {/* Warmup advice (placed below Start Workout button) */}
-        {currentPlan.warmup ? (
-          <View style={[styles.warmupNotice, { backgroundColor: theme.bgSecondary, borderColor: theme.border }]}>
-            <Ionicons name="information-circle-outline" size={20} color={theme.text} style={{ marginTop: 1 }} />
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.warmupTitle, { color: theme.text }]}>{t('warmupTipTitle')}</Text>
+        {/* Daily Rotating Training Hint Card (dismissible for today via top-right X, returns tomorrow with a new tip) */}
+        {isHintVisible ? (
+          <Animated.View
+            style={[
+              styles.warmupNotice,
+              {
+                backgroundColor: theme.bgSecondary,
+                borderColor: theme.border,
+                opacity: hintFadeAnim,
+                transform: [
+                  {
+                    scale: hintFadeAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0.96, 1],
+                    }),
+                  },
+                ],
+              },
+            ]}
+          >
+            <View style={styles.hintIconBadge}>
+              <Ionicons name="bulb-outline" size={18} color="#38BDF8" />
+            </View>
+            <View style={{ flex: 1, paddingRight: 28 }}>
+              <Text style={[styles.warmupTitle, { color: theme.text }]}>{dailyHint.title}</Text>
               <Text style={[styles.warmupDesc, { color: theme.textSecondary }]}>
-                {currentPlan.warmup}
+                {dailyHint.body}
               </Text>
             </View>
-          </View>
+            <TouchableOpacity
+              onPress={handleDismissDailyHint}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              activeOpacity={0.72}
+              style={[
+                styles.hintCloseBtn,
+                {
+                  backgroundColor: isDark
+                    ? 'rgba(255, 255, 255, 0.12)'
+                    : 'rgba(15, 23, 42, 0.08)',
+                  borderColor: isDark
+                    ? 'rgba(255, 255, 255, 0.18)'
+                    : 'rgba(15, 23, 42, 0.12)',
+                },
+              ]}
+            >
+              <Ionicons name="close" size={15} color={theme.text} />
+            </TouchableOpacity>
+          </Animated.View>
         ) : null}
 
         {/* Empty workout day prompt */}
@@ -558,22 +825,43 @@ const styles = StyleSheet.create({
     color: 'rgba(255, 255, 255, 0.6)',
   },
   warmupNotice: {
+    position: 'relative',
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 12,
-    padding: 18,
+    padding: 16,
     borderRadius: 16,
     borderWidth: 1,
     marginBottom: 20,
   },
+  hintIconBadge: {
+    width: 34,
+    height: 34,
+    borderRadius: 11,
+    backgroundColor: 'rgba(56, 189, 248, 0.14)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 1,
+  },
+  hintCloseBtn: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    borderWidth: StyleSheet.hairlineWidth,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   warmupTitle: {
-    fontSize: 16,
+    fontSize: 15.5,
     fontWeight: '800',
     marginBottom: 4,
   },
   warmupDesc: {
-    fontSize: 14,
-    lineHeight: 21,
+    fontSize: 13.5,
+    lineHeight: 20,
   },
   startWorkoutBtn: {
     flexDirection: 'row',
