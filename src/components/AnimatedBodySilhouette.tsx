@@ -286,15 +286,18 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = Rea
   const flipOpacity = useRef(new Animated.Value(1)).current;
   const floatAnim = useRef(new Animated.Value(0)).current;
 
-  // Fullscreen zoom-to-muscle, card slide, and modal open/shrink animations
+  // Fullscreen zoom-to-muscle, card slide, modal open/shrink, and compact focus transition animations
   const isScreenActive = useIsScreenActive();
   const fsZoomScale = useRef(new Animated.Value(1)).current;
   const fsZoomX = useRef(new Animated.Value(0)).current;
   const fsZoomY = useRef(new Animated.Value(0)).current;
   const fsCardAnim = useRef(new Animated.Value(0)).current;
   const fsModalAnim = useRef(new Animated.Value(0)).current;
+  const compactCardAnim = useRef(new Animated.Value(0)).current;
+  const compactStagePulse = useRef(new Animated.Value(1)).current;
   const isClosingFsRef = useRef(false);
   const prevFsMuscleRef = useRef<MuscleSubGroupId | null>(null);
+  const prevCompactMuscleRef = useRef<MuscleSubGroupId | null>(null);
   const isFlipLockedRef = useRef(false);
   isFlipLockedRef.current = isFullscreen && Boolean(selectedMuscle);
 
@@ -617,6 +620,48 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = Rea
   const fsSvgW = Math.min(screenWidth - 36, 300);
   const fsSvgH = Math.min(fsStageH - 24, Math.round(fsSvgW * (415 / 240)));
 
+  // Smooth transition when changing selected muscle in normal (compact) mode
+  useEffect(() => {
+    if (isFullscreen) return;
+    if (selectedMuscle) {
+      const isSame = prevCompactMuscleRef.current === selectedMuscle;
+      prevCompactMuscleRef.current = selectedMuscle;
+      if (isSame) return;
+
+      compactCardAnim.stopAnimation();
+      compactStagePulse.stopAnimation();
+      compactCardAnim.setValue(0);
+      compactStagePulse.setValue(1);
+
+      Animated.parallel([
+        Animated.timing(compactCardAnim, {
+          toValue: 1,
+          duration: 210,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.sequence([
+          Animated.timing(compactStagePulse, {
+            toValue: 1.024,
+            duration: 95,
+            easing: Easing.out(Easing.quad),
+            useNativeDriver: true,
+          }),
+          Animated.timing(compactStagePulse, {
+            toValue: 1,
+            duration: 145,
+            easing: Easing.out(Easing.cubic),
+            useNativeDriver: true,
+          }),
+        ]),
+      ]).start();
+    } else {
+      prevCompactMuscleRef.current = null;
+      compactCardAnim.setValue(0);
+      compactStagePulse.setValue(1);
+    }
+  }, [selectedMuscle, isFullscreen, compactCardAnim, compactStagePulse]);
+
   useEffect(() => {
     if (!isFullscreen) {
       prevFsMuscleRef.current = null;
@@ -640,25 +685,41 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = Rea
       if (isSameMuscle) return;
 
       const anchor = MUSCLE_FOCUS_ANCHORS[selectedMuscle] || { fx: 0, fy: -0.08 };
-      // Pulled-back, comfortable framing next to the detail card
+      // Pulled-back, balanced framing next to the slimmer detail card
       const z = 1.38;
       const dx = anchor.fx * fsSvgW;
       const dy = anchor.fy * fsSvgH;
-      const targetPanX = -screenWidth * 0.21 - dx * z * 0.72;
+      const targetPanX = -screenWidth * 0.19 - dx * z * 0.72;
       const rawPanY = -fsStageH * 0.02 - dy * z * 0.72;
       const targetPanY = Math.max(-fsStageH * 0.26, Math.min(fsStageH * 0.26, rawPanY));
 
       fsZoomScale.stopAnimation();
       fsZoomX.stopAnimation();
       fsZoomY.stopAnimation();
+      fsCardAnim.stopAnimation();
 
       const anims: Animated.CompositeAnimation[] = [
-        Animated.timing(fsZoomScale, {
-          toValue: z,
-          duration: 280,
-          easing: Easing.out(Easing.cubic),
-          useNativeDriver: true,
-        }),
+        wasFocused
+          ? Animated.sequence([
+              Animated.timing(fsZoomScale, {
+                toValue: z * 0.96,
+                duration: 85,
+                easing: Easing.out(Easing.quad),
+                useNativeDriver: true,
+              }),
+              Animated.timing(fsZoomScale, {
+                toValue: z,
+                duration: 195,
+                easing: Easing.out(Easing.cubic),
+                useNativeDriver: true,
+              }),
+            ])
+          : Animated.timing(fsZoomScale, {
+              toValue: z,
+              duration: 280,
+              easing: Easing.out(Easing.cubic),
+              useNativeDriver: true,
+            }),
         Animated.timing(fsZoomX, {
           toValue: targetPanX,
           duration: 280,
@@ -673,21 +734,16 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = Rea
         }),
       ];
 
-      // Only slide the detail card in when opening from unfocused state
-      if (!wasFocused) {
-        fsCardAnim.stopAnimation();
-        fsCardAnim.setValue(0);
-        anims.push(
-          Animated.timing(fsCardAnim, {
-            toValue: 1,
-            duration: 240,
-            easing: Easing.out(Easing.cubic),
-            useNativeDriver: true,
-          })
-        );
-      } else {
-        fsCardAnim.setValue(1);
-      }
+      // Smooth full entrance from unfocused, or tactile quick crossfade when switching to a DIFFERENT muscle
+      fsCardAnim.setValue(wasFocused ? 0.35 : 0);
+      anims.push(
+        Animated.timing(fsCardAnim, {
+          toValue: 1,
+          duration: wasFocused ? 190 : 240,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        })
+      );
 
       Animated.parallel(anims).start();
     } else {
@@ -990,6 +1046,7 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = Rea
             {
               opacity: flipOpacity,
               transform: [
+                { scale: compactStagePulse },
                 { scaleX: flipScaleX },
                 { scaleY: flipScaleY },
                 { translateY },
@@ -1018,12 +1075,27 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = Rea
         ))}
       </View>
 
-      {/* Open Selected Muscle Focus Strip */}
+      {/* Open Selected Muscle Focus Strip (smooth entrance/switch animation) */}
       {selectedStat ? (
-        <View
+        <Animated.View
           style={[
             styles.focusStrip,
             {
+              opacity: compactCardAnim,
+              transform: [
+                {
+                  translateY: compactCardAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [8, 0],
+                  }),
+                },
+                {
+                  scale: compactCardAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0.97, 1],
+                  }),
+                },
+              ],
               borderLeftColor:
                 selectedStat.effectiveSetsTotal === 0
                   ? isDark
@@ -1125,7 +1197,7 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = Rea
               ))}
             </View>
           )}
-        </View>
+        </Animated.View>
       ) : (
         <Text style={[styles.tapHint, { color: theme.textMuted }]}>
           {t('tapMuscleHint')}
@@ -1322,15 +1394,15 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = Rea
                 {renderBodySvg(fsSvgW, fsSvgH)}
               </Animated.View>
 
-              {/* Sleek Floating Muscle Detail Card beside the zoomed anatomy */}
+              {/* Compact Floating Muscle Detail Card beside the zoomed anatomy */}
               {selectedStat && (
                 <Animated.View
                   style={[
                     styles.fsDetailCard,
                     {
-                      width: Math.min(218, Math.round(screenWidth * 0.54)),
-                      maxHeight: Math.round(fsStageH * 0.74),
-                      top: Math.max(16, Math.round(fsStageH * 0.14)),
+                      width: Math.min(186, Math.round(screenWidth * 0.46)),
+                      maxHeight: Math.round(fsStageH * 0.65),
+                      top: Math.max(16, Math.round(fsStageH * 0.16)),
                       backgroundColor: isDark
                         ? 'rgba(17, 17, 22, 0.94)'
                         : 'rgba(255, 255, 255, 0.96)',
@@ -1340,7 +1412,7 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = Rea
                         {
                           translateX: fsCardAnim.interpolate({
                             inputRange: [0, 1],
-                            outputRange: [28, 0],
+                            outputRange: [22, 0],
                           }),
                         },
                         {
@@ -1364,7 +1436,7 @@ export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = Rea
                     <View style={styles.fsCardHeaderRow}>
                       <RankCrestIcon
                         tier={selectedStat.rank}
-                        size={44}
+                        size={36}
                         progressPct={selectedStat.progressPct}
                       />
                       <View style={{ flex: 1, minWidth: 0 }}>
@@ -1787,39 +1859,39 @@ const styles = StyleSheet.create({
   },
   fsDetailCard: {
     position: 'absolute',
-    right: 12,
-    borderRadius: 22,
+    right: 10,
+    borderRadius: 18,
     borderWidth: 1.2,
     overflow: 'hidden',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.3,
-    shadowRadius: 24,
-    elevation: 14,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.28,
+    shadowRadius: 20,
+    elevation: 12,
   },
   fsCardAccentBar: {
-    height: 3.5,
+    height: 3,
     width: '100%',
   },
   fsCardScrollContent: {
-    padding: 13,
-    gap: 10,
+    padding: 10,
+    gap: 8,
   },
   fsCardHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 8,
   },
   fsCardMuscleName: {
-    fontSize: 14.5,
+    fontSize: 13,
     fontWeight: '900',
     letterSpacing: -0.3,
-    lineHeight: 18,
+    lineHeight: 16,
   },
   fsCardRankTitle: {
-    fontSize: 11,
+    fontSize: 10.5,
     fontWeight: '800',
-    marginTop: 2,
+    marginTop: 1,
   },
   fsStatusPill: {
     flexDirection: 'row',
