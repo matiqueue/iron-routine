@@ -1,8 +1,10 @@
-import React, { useMemo } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Animated,
+  Easing,
+  PanResponder,
   Platform,
-  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -32,6 +34,7 @@ import { AnimatedIcon } from '../components/AnimatedIcon';
 import { DayBannerArtwork } from '../components/DayBannerArtwork';
 import { DayExercisePreviewList } from '../components/DayExercisePreviewList';
 import { HoldToStartButton } from '../components/HoldToStartButton';
+import { BottomSheetScrollView, InteractiveBottomSheet } from '../components/InteractiveBottomSheet';
 import { MinimalistBackdrop } from '../components/MinimalistBackdrop';
 import { RestDayView } from '../components/RestDayView';
 
@@ -110,6 +113,10 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
   const insets = useSafeAreaInsets();
   const dateLocale = localeCode;
 
+  const [showQueueSheet, setShowQueueSheet] = useState(false);
+  const heroSlideX = useRef(new Animated.Value(0)).current;
+  const heroFade = useRef(new Animated.Value(1)).current;
+
   const workoutDaysInSequence = useMemo(
     () =>
       planDays.filter(
@@ -124,6 +131,70 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
   );
   const isTodayScheduledRest =
     todayPlanMeta && (todayPlanMeta.type === 'rest' || todayPlanMeta.type === 'walk');
+
+  const currentSeqIdx = useMemo(
+    () => workoutDaysInSequence.findIndex((d) => d.id === currentPlan.id),
+    [workoutDaysInSequence, currentPlan.id]
+  );
+
+  const animateSwitchWorkout = useCallback(
+    (targetDayId: string, direction: -1 | 0 | 1) => {
+      if (targetDayId === currentPlan.id) return;
+      triggerSelectionHaptic();
+      onSelectWorkoutDay(targetDayId);
+      if (direction === 0) return;
+      heroSlideX.setValue(direction * 22);
+      heroFade.setValue(0.35);
+      Animated.parallel([
+        Animated.timing(heroSlideX, {
+          toValue: 0,
+          duration: 200,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.timing(heroFade, {
+          toValue: 1,
+          duration: 190,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+      ]).start();
+    },
+    [currentPlan.id, onSelectWorkoutDay, heroSlideX, heroFade]
+  );
+
+  const stepSequence = useCallback(
+    (delta: -1 | 1) => {
+      const len = workoutDaysInSequence.length;
+      if (len <= 1) return;
+      const baseIdx = currentSeqIdx >= 0 ? currentSeqIdx : 0;
+      const nextIdx = (baseIdx + delta + len) % len;
+      animateSwitchWorkout(workoutDaysInSequence[nextIdx].id, delta);
+    },
+    [workoutDaysInSequence, currentSeqIdx, animateSwitchWorkout]
+  );
+
+  const stepSequenceRef = useRef(stepSequence);
+  stepSequenceRef.current = stepSequence;
+  const hasMultipleWorkoutsRef = useRef(workoutDaysInSequence.length > 1);
+  hasMultipleWorkoutsRef.current = workoutDaysInSequence.length > 1;
+
+  const heroSwipePanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_, g) =>
+        hasMultipleWorkoutsRef.current &&
+        Math.abs(g.dx) > 16 &&
+        Math.abs(g.dx) > Math.abs(g.dy) * 1.4,
+      onPanResponderRelease: (_, g) => {
+        if (g.dx < -34) {
+          stepSequenceRef.current(1);
+        } else if (g.dx > 34) {
+          stepSequenceRef.current(-1);
+        }
+      },
+    })
+  ).current;
 
   const bannerTag = resolveDayBannerTag(currentPlan);
   const tagMeta = getDayBannerTagMeta(bannerTag);
@@ -326,181 +397,35 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
         </View>
       </View>
 
-      {/* Sequence-First Workout Queue Switcher (de-coupled from strict weekday lock!) */}
-      {workoutDaysInSequence.length > 0 && (
-        <View style={styles.sequenceBlock}>
-          <View style={styles.sequenceHeaderRow}>
-            <Text style={[styles.sequenceEyebrow, { color: theme.textMuted }]}>
-              {t('sequenceQueueTitle')}
-            </Text>
-            {isTodayScheduledRest && todayPlanMeta && (
-              <TouchableOpacity
-                onPress={() => {
-                  triggerSelectionHaptic();
-                  onSelectWorkoutDay(todayPlanMeta.id);
-                }}
-                activeOpacity={0.75}
-                style={[
-                  styles.restQuickPill,
-                  {
-                    backgroundColor:
-                      currentPlan.id === todayPlanMeta.id
-                        ? 'rgba(16, 185, 129, 0.16)'
-                        : glassSurfaceBg,
-                    borderColor:
-                      currentPlan.id === todayPlanMeta.id
-                        ? '#10B981'
-                        : glassSurfaceBorder,
-                  },
-                ]}
-              >
-                <Ionicons
-                  name="moon-outline"
-                  size={11}
-                  color={currentPlan.id === todayPlanMeta.id ? '#10B981' : theme.textSecondary}
-                />
-                <Text
-                  style={[
-                    styles.restQuickPillText,
-                    {
-                      color:
-                        currentPlan.id === todayPlanMeta.id ? '#10B981' : theme.textSecondary,
-                    },
-                  ]}
-                >
-                  {t('sequenceRestChip')}
-                </Text>
-              </TouchableOpacity>
-            )}
-          </View>
-
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            directionalLockEnabled
-            bounces={false}
-            alwaysBounceVertical={false}
-            overScrollMode="never"
-            contentContainerStyle={styles.sequenceRowContent}
-          >
-            {workoutDaysInSequence.map((d, seqIdx) => {
-              const isSelected = currentPlan.id === d.id;
-              const prog = weekProgressMap[d.id];
-              const doneSets = countCompletedSetsInProgress(prog);
-              const isPaused = Boolean(prog && !prog.finishedAt && doneSets > 0);
-              const isDoneThisWeek = Boolean(prog?.finishedAt);
-              const isSuggested = d.id === suggestedDayId;
-
-              return (
-                <TouchableOpacity
-                  key={d.id}
-                  onPress={() => {
-                    if (isSelected) return;
-                    triggerSelectionHaptic();
-                    onSelectWorkoutDay(d.id);
-                  }}
-                  activeOpacity={0.8}
-                  style={[
-                    styles.seqCard,
-                    {
-                      backgroundColor: isSelected
-                        ? theme.primary
-                        : glassSurfaceBg,
-                      borderColor: isSelected
-                        ? theme.primary
-                        : isPaused
-                        ? 'rgba(245, 158, 11, 0.55)'
-                        : isSuggested
-                        ? 'rgba(56, 189, 248, 0.5)'
-                        : glassSurfaceBorder,
-                    },
-                  ]}
-                >
-                  <View style={styles.seqCardTop}>
-                    <Text
-                      style={[
-                        styles.seqOrderTag,
-                        {
-                          color: isSelected
-                            ? theme.primaryText
-                            : theme.textMuted,
-                          opacity: isSelected ? 0.78 : 1,
-                        },
-                      ]}
-                    >
-                      #{seqIdx + 1} · {dayLabel(d.id, true).toUpperCase()}
-                    </Text>
-
-                    {isPaused ? (
-                      <View
-                        style={[
-                          styles.seqStatusBadge,
-                          {
-                            backgroundColor: isSelected
-                              ? 'rgba(245, 158, 11, 0.28)'
-                              : 'rgba(245, 158, 11, 0.16)',
-                          },
-                        ]}
-                      >
-                        <View style={[styles.seqStatusDot, { backgroundColor: '#F59E0B' }]} />
-                        <Text
-                          style={[
-                            styles.seqStatusText,
-                            { color: isSelected ? theme.primaryText : '#F59E0B' },
-                          ]}
-                        >
-                          {t('sequencePausedBadge')}
-                        </Text>
-                      </View>
-                    ) : isDoneThisWeek ? (
-                      <Ionicons
-                        name="checkmark-circle"
-                        size={14}
-                        color={isSelected ? theme.primaryText : '#10B981'}
-                      />
-                    ) : isSuggested && suggestedReason !== 'rest' ? (
-                      <View
-                        style={[
-                          styles.seqStatusBadge,
-                          {
-                            backgroundColor: isSelected
-                              ? 'rgba(56, 189, 248, 0.28)'
-                              : 'rgba(56, 189, 248, 0.16)',
-                          },
-                        ]}
-                      >
-                        <Text
-                          style={[
-                            styles.seqStatusText,
-                            { color: isSelected ? theme.primaryText : '#38BDF8' },
-                          ]}
-                        >
-                          {t('sequenceNextBadge')}
-                        </Text>
-                      </View>
-                    ) : null}
-                  </View>
-
-                  <Text
-                    style={[
-                      styles.seqCardName,
-                      { color: isSelected ? theme.primaryText : theme.text },
-                    ]}
-                    numberOfLines={1}
-                  >
-                    {d.name}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-        </View>
-      )}
-
-      {/* Rest / Active Recovery Day View or Workout Day */}
+      {/* Rest / Active Recovery Day View or Workout Day (Clean Original Layout + Integrated Hero Sequence Control) */}
       {isRestOrWalk ? (
         <>
           <RestDayView dayPlan={currentPlan} />
+          {workoutDaysInSequence.length > 0 && (
+            <TouchableOpacity
+              onPress={() => {
+                const targetId =
+                  workoutDaysInSequence.some((d) => d.id === suggestedDayId)
+                    ? suggestedDayId
+                    : workoutDaysInSequence[0].id;
+                animateSwitchWorkout(targetId, 1);
+              }}
+              activeOpacity={0.82}
+              style={[
+                styles.backToQueueBtn,
+                {
+                  backgroundColor: glassSurfaceBg,
+                  borderColor: glassSurfaceBorder,
+                },
+              ]}
+            >
+              <Ionicons name="barbell-outline" size={16} color="#38BDF8" />
+              <Text style={[styles.backToQueueText, { color: theme.text }]}>
+                {t('backToWorkoutQueue')}
+              </Text>
+              <Ionicons name="arrow-forward" size={14} color={theme.textSecondary} />
+            </TouchableOpacity>
+          )}
           <OpenBiometricsAndRecoverySection
             weight={activeProfile?.weight}
             height={activeProfile?.height}
@@ -514,8 +439,9 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
         </>
       ) : (
         <>
-          {/* PRESERVED: Universal SVG Artwork Hero Banner (Day Card) */}
+          {/* PRESERVED: Iconic Hero Banner Card — now swipeable with integrated sequence pill & split progress bar */}
           <View
+            {...heroSwipePanResponder.panHandlers}
             style={[
               styles.heroCard,
               { backgroundColor: theme.card, borderColor: theme.border },
@@ -525,43 +451,126 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
               <DayBannerArtwork tag={bannerTag} />
             </View>
 
-            <View style={styles.heroInner}>
-              <View style={styles.heroTagRow}>
-                <View style={[styles.heroTagPill, { backgroundColor: theme.primary }]}>
-                  <AnimatedIcon
-                    name={tagMeta.icon as any}
-                    preset={
-                      currentPlan.type === 'rest'
-                        ? 'moon'
-                        : currentPlan.type === 'walk'
-                        ? 'footsteps'
-                        : 'barbell'
-                    }
-                    size={12}
-                    color={theme.primaryText}
-                    active
-                  />
-                  <Text style={[styles.heroTagText, { color: theme.primaryText }]}>
-                    {dayTagLabel(bannerTag, tagMeta.label).toUpperCase()}
-                  </Text>
-                </View>
+            <Animated.View
+              style={[
+                styles.heroInner,
+                {
+                  opacity: heroFade,
+                  transform: [{ translateX: heroSlideX }],
+                },
+              ]}
+            >
+              {/* Top Row: Tag + Status on left, Compact Integrated Sequence Stepper on right */}
+              <View style={styles.heroTopHeaderRow}>
+                <View style={styles.heroTagRow}>
+                  <View style={[styles.heroTagPill, { backgroundColor: theme.primary }]}>
+                    <AnimatedIcon
+                      name={tagMeta.icon as any}
+                      preset={
+                        currentPlan.type === 'rest'
+                          ? 'moon'
+                          : currentPlan.type === 'walk'
+                          ? 'footsteps'
+                          : 'barbell'
+                      }
+                      size={12}
+                      color={theme.primaryText}
+                      active
+                    />
+                    <Text style={[styles.heroTagText, { color: theme.primaryText }]}>
+                      {dayTagLabel(bannerTag, tagMeta.label).toUpperCase()}
+                    </Text>
+                  </View>
 
-                {currentPlan.time ? (
                   <View
                     style={[
-                      styles.heroTimePill,
+                      styles.heroDayStatusPill,
+                      {
+                        backgroundColor: isCurrentDayPaused
+                          ? 'rgba(245, 158, 11, 0.16)'
+                          : dayProgress.finishedAt
+                          ? 'rgba(16, 185, 129, 0.16)'
+                          : currentPlan.id === suggestedDayId && suggestedReason !== 'rest'
+                          ? 'rgba(56, 189, 248, 0.15)'
+                          : glassSurfaceBg,
+                        borderColor: isCurrentDayPaused
+                          ? 'rgba(245, 158, 11, 0.42)'
+                          : dayProgress.finishedAt
+                          ? 'rgba(16, 185, 129, 0.42)'
+                          : currentPlan.id === suggestedDayId && suggestedReason !== 'rest'
+                          ? 'rgba(56, 189, 248, 0.38)'
+                          : glassSurfaceBorder,
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.heroDayStatusText,
+                        {
+                          color: isCurrentDayPaused
+                            ? '#F59E0B'
+                            : dayProgress.finishedAt
+                            ? '#10B981'
+                            : currentPlan.id === suggestedDayId && suggestedReason !== 'rest'
+                            ? '#38BDF8'
+                            : theme.textSecondary,
+                        },
+                      ]}
+                    >
+                      {dayLabel(currentPlan.id, true).toUpperCase()}
+                      {isCurrentDayPaused
+                        ? ` · ${t('sequencePausedBadge')}`
+                        : dayProgress.finishedAt
+                        ? ` · ${t('sequenceDoneBadge')}`
+                        : currentPlan.id === suggestedDayId && suggestedReason !== 'rest'
+                        ? ` · ${t('sequenceNextBadge')}`
+                        : ''}
+                    </Text>
+                  </View>
+                </View>
+
+                {workoutDaysInSequence.length > 1 && (
+                  <View
+                    style={[
+                      styles.heroStepperPill,
                       {
                         backgroundColor: glassSurfaceBg,
                         borderColor: glassSurfaceBorder,
                       },
                     ]}
                   >
-                    <Ionicons name="time-outline" size={12} color={theme.text} />
-                    <Text style={[styles.heroTimeText, { color: theme.text }]}>
-                      {currentPlan.time}
-                    </Text>
+                    <TouchableOpacity
+                      onPress={() => stepSequence(-1)}
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 4 }}
+                      style={styles.heroStepperArrowBtn}
+                      activeOpacity={0.65}
+                    >
+                      <Ionicons name="chevron-back" size={14} color={theme.text} />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => {
+                        triggerSelectionHaptic();
+                        setShowQueueSheet(true);
+                      }}
+                      hitSlop={{ top: 8, bottom: 8, left: 2, right: 2 }}
+                      style={styles.heroStepperCenterBtn}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.heroStepperText, { color: theme.text }]}>
+                        {(currentSeqIdx >= 0 ? currentSeqIdx : 0) + 1}/{workoutDaysInSequence.length}
+                      </Text>
+                      <Ionicons name="chevron-down" size={11} color={theme.textMuted} />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => stepSequence(1)}
+                      hitSlop={{ top: 10, bottom: 10, left: 4, right: 10 }}
+                      style={styles.heroStepperArrowBtn}
+                      activeOpacity={0.65}
+                    >
+                      <Ionicons name="chevron-forward" size={14} color={theme.text} />
+                    </TouchableOpacity>
                   </View>
-                ) : null}
+                )}
               </View>
 
               <Text style={[styles.heroTitle, { color: theme.text }]}>{currentPlan.name}</Text>
@@ -600,9 +609,75 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
                       {totalSets} {t('setsWord')}
                     </Text>
                   </View>
+                  {currentPlan.time ? (
+                    <View
+                      style={[
+                        styles.heroMetaBadge,
+                        {
+                          backgroundColor: glassSurfaceBg,
+                          borderColor: glassSurfaceBorder,
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          gap: 4,
+                        },
+                      ]}
+                    >
+                      <Ionicons name="time-outline" size={11} color={theme.textSecondary} />
+                      <Text style={[styles.heroMetaText, { color: theme.text }]}>
+                        {currentPlan.time}
+                      </Text>
+                    </View>
+                  ) : null}
                 </View>
               )}
-            </View>
+
+              {/* Ultra-clean segmented split sequence progress bar at bottom edge of Hero Card */}
+              {workoutDaysInSequence.length > 1 && (
+                <View style={styles.heroSegmentsRow}>
+                  {workoutDaysInSequence.map((d, segIdx) => {
+                    const isActive = d.id === currentPlan.id;
+                    const prog = weekProgressMap[d.id];
+                    const done = Boolean(prog?.finishedAt);
+                    const paused = Boolean(prog && !prog.finishedAt && countCompletedSetsInProgress(prog) > 0);
+                    const barColor = paused
+                      ? '#F59E0B'
+                      : done
+                      ? '#10B981'
+                      : isActive
+                      ? '#38BDF8'
+                      : isDark
+                      ? 'rgba(255,255,255,0.16)'
+                      : 'rgba(15,23,42,0.14)';
+
+                    return (
+                      <TouchableOpacity
+                        key={d.id}
+                        style={styles.heroSegmentTouch}
+                        onPress={() => {
+                          if (isActive) return;
+                          animateSwitchWorkout(
+                            d.id,
+                            segIdx > (currentSeqIdx >= 0 ? currentSeqIdx : 0) ? 1 : -1
+                          );
+                        }}
+                        activeOpacity={0.75}
+                      >
+                        <View
+                          style={[
+                            styles.heroSegmentBar,
+                            {
+                              backgroundColor: barColor,
+                              height: isActive ? 4 : 3,
+                              opacity: isActive || done || paused ? 1 : 0.7,
+                            },
+                          ]}
+                        />
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              )}
+            </Animated.View>
           </View>
 
           {/* Open Editorial Warmup Accent Strip (No Heavy Box) */}
@@ -720,6 +795,167 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
         </>
       )}
       </SmartScrollView>
+
+      {/* Clean On-Demand Workout Queue Sheet (opened by tapping 2/4 ▾ inside Hero Card) */}
+      {showQueueSheet && (
+        <InteractiveBottomSheet
+          visible={true}
+          onClose={() => setShowQueueSheet(false)}
+          title={t('pickWorkoutSheetTitle')}
+          subtitle={t('pickWorkoutSheetSub')}
+          initialHeightPercent={0.62}
+        >
+          <BottomSheetScrollView
+            contentContainerStyle={styles.queueSheetContent}
+            showsVerticalScrollIndicator={false}
+          >
+            {workoutDaysInSequence.map((d, idx) => {
+              const isSelected = currentPlan.id === d.id;
+              const prog = weekProgressMap[d.id];
+              const doneSets = countCompletedSetsInProgress(prog);
+              const isPaused = Boolean(prog && !prog.finishedAt && doneSets > 0);
+              const isDone = Boolean(prog?.finishedAt);
+              const isSuggested = d.id === suggestedDayId;
+              const exCount = d.exercises?.length || 0;
+              const setSum = (d.exercises || []).reduce((acc, e) => acc + e.sets, 0);
+
+              return (
+                <TouchableOpacity
+                  key={d.id}
+                  onPress={() => {
+                    setShowQueueSheet(false);
+                    animateSwitchWorkout(
+                      d.id,
+                      idx > (currentSeqIdx >= 0 ? currentSeqIdx : 0)
+                        ? 1
+                        : idx < (currentSeqIdx >= 0 ? currentSeqIdx : 0)
+                        ? -1
+                        : 0
+                    );
+                  }}
+                  activeOpacity={0.78}
+                  style={[
+                    styles.queueSheetRow,
+                    {
+                      backgroundColor: isSelected
+                        ? isDark
+                          ? 'rgba(56, 189, 248, 0.12)'
+                          : 'rgba(56, 189, 248, 0.09)'
+                        : theme.bgSecondary,
+                      borderColor: isSelected
+                        ? '#38BDF8'
+                        : isPaused
+                        ? 'rgba(245, 158, 11, 0.45)'
+                        : theme.border,
+                    },
+                  ]}
+                >
+                  <View
+                    style={[
+                      styles.queueIndexBadge,
+                      {
+                        backgroundColor: isDone
+                          ? '#10B981'
+                          : isPaused
+                          ? '#F59E0B'
+                          : isSelected
+                          ? '#38BDF8'
+                          : theme.card,
+                        borderColor: isDone || isPaused || isSelected ? 'transparent' : theme.border,
+                      },
+                    ]}
+                  >
+                    {isDone ? (
+                      <Ionicons name="checkmark" size={16} color="#09090B" />
+                    ) : (
+                      <Text
+                        style={[
+                          styles.queueIndexText,
+                          {
+                            color: isPaused || isSelected ? '#09090B' : theme.text,
+                          },
+                        ]}
+                      >
+                        {idx + 1}
+                      </Text>
+                    )}
+                  </View>
+
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <View style={styles.queueTitleLine}>
+                      <Text style={[styles.queueRowTitle, { color: theme.text }]} numberOfLines={1}>
+                        {d.name}
+                      </Text>
+                      <Text style={[styles.queueDayChip, { color: theme.textMuted }]}>
+                        {dayLabel(d.id, true).toUpperCase()}
+                      </Text>
+                    </View>
+                    <Text style={[styles.queueRowSub, { color: theme.textSecondary }]} numberOfLines={1}>
+                      {t('exercisesCountText', { count: exCount })} · {setSum} {t('setsWord')}
+                    </Text>
+                  </View>
+
+                  {isPaused ? (
+                    <View style={[styles.queueBadge, { backgroundColor: 'rgba(245, 158, 11, 0.16)' }]}>
+                      <Text style={[styles.queueBadgeText, { color: '#F59E0B' }]}>
+                        {t('sequencePausedBadge')}
+                      </Text>
+                    </View>
+                  ) : isDone ? (
+                    <View style={[styles.queueBadge, { backgroundColor: 'rgba(16, 185, 129, 0.16)' }]}>
+                      <Text style={[styles.queueBadgeText, { color: '#10B981' }]}>
+                        {t('sequenceDoneBadge')}
+                      </Text>
+                    </View>
+                  ) : isSuggested && suggestedReason !== 'rest' ? (
+                    <View style={[styles.queueBadge, { backgroundColor: 'rgba(56, 189, 248, 0.16)' }]}>
+                      <Text style={[styles.queueBadgeText, { color: '#38BDF8' }]}>
+                        {t('sequenceNextBadge')}
+                      </Text>
+                    </View>
+                  ) : null}
+                </TouchableOpacity>
+              );
+            })}
+
+            {isTodayScheduledRest && todayPlanMeta && (
+              <TouchableOpacity
+                onPress={() => {
+                  setShowQueueSheet(false);
+                  animateSwitchWorkout(todayPlanMeta.id, 0);
+                }}
+                activeOpacity={0.78}
+                style={[
+                  styles.queueSheetRow,
+                  {
+                    backgroundColor: theme.bgSecondary,
+                    borderColor: theme.border,
+                    marginTop: 6,
+                  },
+                ]}
+              >
+                <View
+                  style={[
+                    styles.queueIndexBadge,
+                    { backgroundColor: 'rgba(16, 185, 129, 0.14)', borderColor: 'transparent' },
+                  ]}
+                >
+                  <Ionicons name="moon-outline" size={16} color="#10B981" />
+                </View>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={[styles.queueRowTitle, { color: theme.text }]} numberOfLines={1}>
+                    {t('sequenceRestChip')}
+                  </Text>
+                  <Text style={[styles.queueRowSub, { color: theme.textSecondary }]} numberOfLines={1}>
+                    {todayPlanMeta.name}
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={16} color={theme.textMuted} />
+              </TouchableOpacity>
+            )}
+          </BottomSheetScrollView>
+        </InteractiveBottomSheet>
+      )}
     </View>
   );
 };
@@ -1026,85 +1262,144 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingVertical: 12,
-    marginBottom: 12,
+    marginBottom: 16,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderBottomWidth: StyleSheet.hairlineWidth,
     gap: 10,
   },
-  sequenceBlock: {
-    marginBottom: 14,
-  },
-  sequenceHeaderRow: {
+  heroTopHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 8,
     gap: 8,
+    marginBottom: 12,
   },
-  sequenceEyebrow: {
-    fontSize: 9.5,
-    fontWeight: '800',
-    letterSpacing: 1.2,
-  },
-  restQuickPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
+  heroDayStatusPill: {
     paddingHorizontal: 9,
-    paddingVertical: 4,
+    paddingVertical: 4.5,
     borderRadius: 999,
     borderWidth: StyleSheet.hairlineWidth,
   },
-  restQuickPillText: {
-    fontSize: 10.5,
-    fontWeight: '800',
+  heroDayStatusText: {
+    fontSize: 9.5,
+    fontWeight: '900',
+    letterSpacing: 0.6,
   },
-  sequenceRowContent: {
-    gap: 8,
-    paddingRight: 6,
-  },
-  seqCard: {
-    minWidth: 132,
-    maxWidth: 174,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 15,
-    borderWidth: 1,
-    gap: 5,
-  },
-  seqCardTop: {
+  heroStepperPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 6,
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 3,
+    paddingVertical: 3,
+    gap: 1,
+    flexShrink: 0,
   },
-  seqOrderTag: {
-    fontSize: 9.5,
+  heroStepperArrowBtn: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heroStepperCenterBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 5,
+    height: 24,
+  },
+  heroStepperText: {
+    fontSize: 11.5,
+    fontWeight: '900',
+    fontVariant: ['tabular-nums'],
+  },
+  heroSegmentsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 16,
+  },
+  heroSegmentTouch: {
+    flex: 1,
+    paddingVertical: 5,
+  },
+  heroSegmentBar: {
+    width: '100%',
+    borderRadius: 999,
+  },
+  backToQueueBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    marginTop: 12,
+    marginBottom: 8,
+  },
+  backToQueueText: {
+    fontSize: 13.5,
+    fontWeight: '800',
+  },
+  queueSheetContent: {
+    paddingHorizontal: 18,
+    paddingTop: 10,
+    paddingBottom: 34,
+    gap: 8,
+  },
+  queueSheetRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 13,
+    paddingVertical: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+  },
+  queueIndexBadge: {
+    width: 34,
+    height: 34,
+    borderRadius: 11,
+    borderWidth: StyleSheet.hairlineWidth,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  queueIndexText: {
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  queueTitleLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+  },
+  queueRowTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    flexShrink: 1,
+  },
+  queueDayChip: {
+    fontSize: 10,
     fontWeight: '800',
     letterSpacing: 0.6,
   },
-  seqStatusBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
+  queueRowSub: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  queueBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3.5,
     borderRadius: 999,
   },
-  seqStatusDot: {
-    width: 5,
-    height: 5,
-    borderRadius: 2.5,
-  },
-  seqStatusText: {
-    fontSize: 8.5,
+  queueBadgeText: {
+    fontSize: 9,
     fontWeight: '900',
     letterSpacing: 0.5,
-  },
-  seqCardName: {
-    fontSize: 13.5,
-    fontWeight: '900',
-    letterSpacing: -0.2,
   },
   streakLeftBlock: {
     flexDirection: 'row',
@@ -1180,12 +1475,12 @@ const styles = StyleSheet.create({
     padding: 18,
   },
   heroTagRow: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 10,
+    gap: 6,
+    minWidth: 0,
   },
   heroTagPill: {
     flexDirection: 'row',

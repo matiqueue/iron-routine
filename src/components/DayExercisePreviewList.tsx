@@ -7,7 +7,6 @@ import { Exercise, PRRecord, SetEntry } from '../types/workout';
 import { resolveCanonicalExerciseId } from '../data/exerciseLibrary';
 import { resolveExerciseMuscles } from '../data/muscleMap';
 import { triggerSelectionHaptic } from '../services/haptics';
-import { ExercisePreviewImage } from './ExercisePreviewImage';
 
 interface DayExercisePreviewListProps {
   exercises: Exercise[];
@@ -147,14 +146,6 @@ export const DayExercisePreviewList: React.FC<DayExercisePreviewListProps> = ({
                 )}
               </View>
             )}
-
-            {/* Visual Exercise Thumbnail */}
-            <ExercisePreviewImage
-              exercise={ex}
-              variant="thumb"
-              size={compact ? 38 : 44}
-              borderRadius={10}
-            />
 
             {/* Middle Open Content */}
             <View style={styles.content}>

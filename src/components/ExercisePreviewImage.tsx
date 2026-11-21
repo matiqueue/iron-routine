@@ -1,7 +1,11 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
+  LayoutChangeEvent,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -28,9 +32,9 @@ export const ExercisePreviewImage: React.FC<ExercisePreviewImageProps> = React.m
   ({
     exercise,
     variant = 'hero',
-    height = 216,
+    height = 224,
     size = 52,
-    borderRadius = 12,
+    borderRadius = 14,
     interactive = true,
   }) => {
     const { theme, isDark } = useAppTheme();
@@ -46,20 +50,54 @@ export const ExercisePreviewImage: React.FC<ExercisePreviewImageProps> = React.m
       [exercise, canonicalId]
     );
 
-    const [frameIdx, setFrameIdx] = useState<0 | 1>(0);
-    const [loading, setLoading] = useState<boolean>(urls.length > 0);
-    const [hasError, setHasError] = useState<boolean>(false);
+    const scrollRef = useRef<React.ComponentRef<typeof ScrollView>>(null);
+    const [containerWidth, setContainerWidth] = useState(0);
+    const [activeIdx, setActiveIdx] = useState(0);
+    const activeIdxRef = useRef(0);
+    const [loadedMap, setLoadedMap] = useState<Record<number, boolean>>({});
+    const [errorMap, setErrorMap] = useState<Record<number, boolean>>({});
 
     useEffect(() => {
-      setFrameIdx(0);
-      setHasError(false);
-      setLoading(urls.length > 0);
-    }, [canonicalId, exercise.imageUrl, urls.length]);
+      activeIdxRef.current = 0;
+      setActiveIdx(0);
+      setLoadedMap({});
+      setErrorMap({});
+      scrollRef.current?.scrollTo({ x: 0, animated: false });
+    }, [canonicalId, exercise.imageUrl]);
 
-    const activeUrl = urls[frameIdx] || urls[0] || '';
-    const hasTwoFrames = urls.length >= 2 && !hasError;
+    const handleLayout = (e: LayoutChangeEvent) => {
+      const w = Math.round(e.nativeEvent.layout.width);
+      if (w > 0 && w !== containerWidth) {
+        setContainerWidth(w);
+      }
+    };
+
+    const handleScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+      if (containerWidth <= 0) return;
+      const page = Math.max(
+        0,
+        Math.min(urls.length - 1, Math.round(e.nativeEvent.contentOffset.x / containerWidth))
+      );
+      if (page !== activeIdxRef.current) {
+        activeIdxRef.current = page;
+        setActiveIdx(page);
+        triggerSelectionHaptic();
+      }
+    };
+
+    const handleStepNext = () => {
+      if (!interactive || urls.length < 2 || containerWidth <= 0) return;
+      const next = (activeIdxRef.current + 1) % urls.length;
+      activeIdxRef.current = next;
+      setActiveIdx(next);
+      triggerSelectionHaptic();
+      scrollRef.current?.scrollTo({ x: next * containerWidth, animated: true });
+    };
+
+    const allFailed = urls.length === 0 || urls.every((_, idx) => errorMap[idx]);
 
     if (variant === 'thumb') {
+      const firstUrl = urls[0] || '';
       return (
         <View
           style={[
@@ -73,12 +111,12 @@ export const ExercisePreviewImage: React.FC<ExercisePreviewImageProps> = React.m
             },
           ]}
         >
-          {activeUrl && !hasError ? (
+          {firstUrl && !errorMap[0] ? (
             <Image
-              source={{ uri: activeUrl }}
+              source={{ uri: firstUrl }}
               style={StyleSheet.absoluteFill}
               resizeMode="cover"
-              onError={() => setHasError(true)}
+              onError={() => setErrorMap((prev) => ({ ...prev, 0: true }))}
             />
           ) : (
             <Ionicons name="barbell-outline" size={Math.round(size * 0.42)} color={theme.textMuted} />
@@ -87,14 +125,9 @@ export const ExercisePreviewImage: React.FC<ExercisePreviewImageProps> = React.m
       );
     }
 
-    const toggleFrame = () => {
-      if (!hasTwoFrames || !interactive) return;
-      triggerSelectionHaptic();
-      setFrameIdx((prev) => (prev === 0 ? 1 : 0));
-    };
-
     return (
       <View
+        onLayout={handleLayout}
         style={[
           styles.heroWrap,
           {
@@ -105,31 +138,56 @@ export const ExercisePreviewImage: React.FC<ExercisePreviewImageProps> = React.m
           },
         ]}
       >
-        {activeUrl && !hasError ? (
-          <TouchableOpacity
-            activeOpacity={hasTwoFrames && interactive ? 0.92 : 1}
-            onPress={toggleFrame}
-            disabled={!hasTwoFrames || !interactive}
-            style={StyleSheet.absoluteFill}
+        {!allFailed && containerWidth > 0 ? (
+          <ScrollView
+            ref={scrollRef}
+            horizontal
+            pagingEnabled
+            scrollEnabled={interactive && urls.length > 1}
+            directionalLockEnabled
+            nestedScrollEnabled
+            bounces={false}
+            showsHorizontalScrollIndicator={false}
+            decelerationRate="fast"
+            scrollEventThrottle={32}
+            onScroll={handleScroll}
+            onMomentumScrollEnd={handleScroll}
+            style={{ width: containerWidth, height }}
           >
-            <Image
-              source={{ uri: activeUrl }}
-              style={StyleSheet.absoluteFill}
-              resizeMode="cover"
-              onLoadStart={() => setLoading(true)}
-              onLoadEnd={() => setLoading(false)}
-              onError={() => {
-                setLoading(false);
-                setHasError(true);
-              }}
-            />
-            {loading && (
-              <View style={styles.loaderOverlay}>
-                <ActivityIndicator size="small" color={theme.text} />
-              </View>
-            )}
-          </TouchableOpacity>
-        ) : (
+            {urls.map((uri, idx) => {
+              const failed = Boolean(errorMap[idx]);
+              const loaded = Boolean(loadedMap[idx]);
+              return (
+                <View key={`${canonicalId}_${idx}`} style={{ width: containerWidth, height }}>
+                  {!failed ? (
+                    <>
+                      <Image
+                        source={{ uri }}
+                        style={StyleSheet.absoluteFill}
+                        resizeMode="cover"
+                        onLoadEnd={() =>
+                          setLoadedMap((prev) => (prev[idx] ? prev : { ...prev, [idx]: true }))
+                        }
+                        onError={() =>
+                          setErrorMap((prev) => (prev[idx] ? prev : { ...prev, [idx]: true }))
+                        }
+                      />
+                      {!loaded && (
+                        <View style={styles.loaderOverlay}>
+                          <ActivityIndicator size="small" color={theme.text} />
+                        </View>
+                      )}
+                    </>
+                  ) : (
+                    <View style={styles.placeholder}>
+                      <Ionicons name="barbell-outline" size={32} color={theme.textMuted} />
+                    </View>
+                  )}
+                </View>
+              );
+            })}
+          </ScrollView>
+        ) : allFailed ? (
           <View style={styles.placeholder}>
             <Ionicons name="barbell-outline" size={32} color={theme.textMuted} />
             <Text style={[styles.placeholderText, { color: theme.textMuted }]}>
@@ -138,73 +196,35 @@ export const ExercisePreviewImage: React.FC<ExercisePreviewImageProps> = React.m
                 : t('techniquePreview')}
             </Text>
           </View>
+        ) : (
+          <View style={styles.loaderOverlay}>
+            <ActivityIndicator size="small" color={theme.text} />
+          </View>
         )}
 
-        {hasTwoFrames && interactive && (
-          <View style={styles.frameToggleRow}>
-            <TouchableOpacity
-              onPress={() => {
-                if (frameIdx !== 0) {
-                  triggerSelectionHaptic();
-                  setFrameIdx(0);
-                }
-              }}
-              activeOpacity={0.85}
-              style={[
-                styles.framePill,
-                {
-                  backgroundColor:
-                    frameIdx === 0
-                      ? 'rgba(15, 23, 42, 0.86)'
-                      : 'rgba(15, 23, 42, 0.45)',
-                  borderColor:
-                    frameIdx === 0
-                      ? 'rgba(56, 189, 248, 0.7)'
-                      : 'rgba(255, 255, 255, 0.16)',
-                },
-              ]}
-            >
-              <Text
-                style={[
-                  styles.framePillText,
-                  { color: frameIdx === 0 ? '#FFFFFF' : 'rgba(255,255,255,0.72)' },
-                ]}
-              >
-                {t('exercisePhotoStart')}
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => {
-                if (frameIdx !== 1) {
-                  triggerSelectionHaptic();
-                  setFrameIdx(1);
-                }
-              }}
-              activeOpacity={0.85}
-              style={[
-                styles.framePill,
-                {
-                  backgroundColor:
-                    frameIdx === 1
-                      ? 'rgba(15, 23, 42, 0.86)'
-                      : 'rgba(15, 23, 42, 0.45)',
-                  borderColor:
-                    frameIdx === 1
-                      ? 'rgba(56, 189, 248, 0.7)'
-                      : 'rgba(255, 255, 255, 0.16)',
-                },
-              ]}
-            >
-              <Text
-                style={[
-                  styles.framePillText,
-                  { color: frameIdx === 1 ? '#FFFFFF' : 'rgba(255,255,255,0.72)' },
-                ]}
-              >
-                {t('exercisePhotoPeak')}
-              </Text>
-            </TouchableOpacity>
-          </View>
+        {/* Swipe indicator pill ("Pozycja 1 z 2") + subtle dots */}
+        {!allFailed && urls.length > 1 && (
+          <TouchableOpacity
+            onPress={handleStepNext}
+            activeOpacity={0.82}
+            style={styles.positionIndicatorPill}
+          >
+            <View style={styles.dotsRow}>
+              {urls.map((_, idx) => (
+                <View
+                  key={idx}
+                  style={[
+                    styles.dot,
+                    idx === activeIdx ? styles.dotActive : styles.dotIdle,
+                  ]}
+                />
+              ))}
+            </View>
+            <Text style={styles.positionIndicatorText}>
+              {t('exercisePhotoOf', { current: activeIdx + 1, total: urls.length })}
+            </Text>
+            <Ionicons name="swap-horizontal" size={11} color="rgba(255,255,255,0.78)" />
+          </TouchableOpacity>
         )}
       </View>
     );
@@ -241,22 +261,41 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
   },
-  frameToggleRow: {
+  positionIndicatorPill: {
     position: 'absolute',
-    bottom: 10,
-    right: 10,
+    bottom: 12,
+    right: 12,
     flexDirection: 'row',
-    gap: 5,
-  },
-  framePill: {
-    paddingHorizontal: 9,
-    paddingVertical: 4.5,
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
     borderRadius: 999,
-    borderWidth: 1,
+    backgroundColor: 'rgba(12, 16, 24, 0.74)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255, 255, 255, 0.18)',
   },
-  framePillText: {
+  dotsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3.5,
+  },
+  dot: {
+    height: 5,
+    borderRadius: 2.5,
+  },
+  dotActive: {
+    width: 12,
+    backgroundColor: '#38BDF8',
+  },
+  dotIdle: {
+    width: 5,
+    backgroundColor: 'rgba(255, 255, 255, 0.42)',
+  },
+  positionIndicatorText: {
     fontSize: 10.5,
     fontWeight: '800',
+    color: '#FFFFFF',
     letterSpacing: 0.2,
   },
 });

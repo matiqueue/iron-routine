@@ -213,21 +213,17 @@ const RankLadderColumn: React.FC<{
     const badgePopAnim = useRef(new Animated.Value(isSelected ? 1 : 0)).current;
 
     useEffect(() => {
-      Animated.spring(badgePopAnim, {
+      Animated.timing(badgePopAnim, {
         toValue: isSelected ? 1 : 0,
-        tension: 150,
-        friction: 9,
+        duration: 180,
+        easing: Easing.out(Easing.cubic),
         useNativeDriver: true,
       }).start();
     }, [isSelected, badgePopAnim]);
 
     const badgeTranslateY = badgePopAnim.interpolate({
       inputRange: [0, 1],
-      outputRange: [0, -5],
-    });
-    const badgeScale = badgePopAnim.interpolate({
-      inputRange: [0, 1],
-      outputRange: [1, 1.14],
+      outputRange: [0, -3],
     });
 
     return (
@@ -264,9 +260,10 @@ const RankLadderColumn: React.FC<{
           isSelected={isSelected}
         />
 
+        {/* Keep RankCrestIcon at exact 1:1 scale so iOS vector rendering is ALWAYS razor-sharp */}
         <Animated.View
           style={{
-            transform: [{ translateY: badgeTranslateY }, { scale: badgeScale }],
+            transform: [{ translateY: badgeTranslateY }],
           }}
         >
           <RankCrestIcon
@@ -290,65 +287,38 @@ const RankSpotlightDropCard: React.FC<{
   titleColor: string;
   subColor: string;
 }> = ({ tier, color, titleText, subtitleText, bgColor, titleColor, subColor }) => {
-  const dropAnim = useRef(new Animated.Value(0)).current;
-  const crestAnim = useRef(new Animated.Value(0)).current;
-  const sheenAnim = useRef(new Animated.Value(-1)).current;
+  const revealAnim = useRef(new Animated.Value(0)).current;
+  const barAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    dropAnim.stopAnimation();
-    crestAnim.stopAnimation();
-    sheenAnim.stopAnimation();
-
-    dropAnim.setValue(0);
-    crestAnim.setValue(0);
-    sheenAnim.setValue(-1);
+    revealAnim.stopAnimation();
+    barAnim.stopAnimation();
+    revealAnim.setValue(0);
+    barAnim.setValue(0);
 
     Animated.parallel([
-      Animated.spring(dropAnim, {
+      Animated.timing(revealAnim, {
         toValue: 1,
-        tension: 120,
-        friction: 8,
+        duration: 210,
+        easing: Easing.out(Easing.cubic),
         useNativeDriver: true,
       }),
-      Animated.spring(crestAnim, {
+      Animated.timing(barAnim, {
         toValue: 1,
-        tension: 105,
-        friction: 6.5,
-        useNativeDriver: true,
-      }),
-      Animated.timing(sheenAnim, {
-        toValue: 1.35,
-        duration: 620,
-        delay: 70,
+        duration: 260,
         easing: Easing.out(Easing.cubic),
         useNativeDriver: true,
       }),
     ]).start();
-  }, [tier, dropAnim, crestAnim, sheenAnim]);
+  }, [tier, revealAnim, barAnim]);
 
-  const cardTranslateY = dropAnim.interpolate({
+  const cardTranslateY = revealAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: [-22, 0],
+    outputRange: [6, 0],
   });
-  const cardScale = dropAnim.interpolate({
+  const textTranslateX = revealAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: [0.92, 1],
-  });
-  const crestTranslateY = crestAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [-14, 0],
-  });
-  const crestScale = crestAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0.55, 1],
-  });
-  const crestRotate = crestAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['-14deg', '0deg'],
-  });
-  const sheenTranslateX = sheenAnim.interpolate({
-    inputRange: [-1, 1.35],
-    outputRange: [-220, 420],
+    outputRange: [8, 0],
   });
 
   return (
@@ -356,44 +326,44 @@ const RankSpotlightDropCard: React.FC<{
       style={[
         styles.tierSpotlightRow,
         {
-          borderLeftColor: color,
-          borderColor: `${color}38`,
+          borderLeftColor: 'transparent',
+          borderLeftWidth: 0,
+          borderColor: `${color}3A`,
           backgroundColor: bgColor,
-          opacity: dropAnim,
-          transform: [{ translateY: cardTranslateY }, { scale: cardScale }],
+          opacity: revealAnim,
+          transform: [{ translateY: cardTranslateY }],
         },
       ]}
     >
-      {/* Sweeping metallic highlight streak */}
-      <Animated.View
-        style={[
-          styles.tierSpotlightSheen,
-          {
-            pointerEvents: 'none',
-            backgroundColor: `${color}1C`,
-            transform: [{ translateX: sheenTranslateX }, { skewX: '-22deg' }],
-          },
-        ]}
-      />
+      {/* Crisp vertical accent bar reveal (zero SVG scaling -> zero pixelation) */}
       <Animated.View
         style={{
-          transform: [
-            { translateY: crestTranslateY },
-            { scale: crestScale },
-            { rotate: crestRotate },
-          ],
+          position: 'absolute',
+          left: 0,
+          top: 8,
+          bottom: 8,
+          width: 3,
+          borderRadius: 2,
+          backgroundColor: color,
+          transform: [{ scaleY: barAnim }],
+        }}
+      />
+      <View style={{ paddingLeft: 4 }}>
+        <RankCrestIcon tier={tier} size={46} isSelected animated />
+      </View>
+      <Animated.View
+        style={{
+          flex: 1,
+          transform: [{ translateX: textTranslateX }],
         }}
       >
-        <RankCrestIcon tier={tier} size={50} isSelected animated />
-      </Animated.View>
-      <View style={{ flex: 1 }}>
         <Text style={[styles.tierSpotlightTitle, { color: titleColor }]}>
           {titleText}
         </Text>
         <Text style={[styles.tierSpotlightSub, { color: subColor }]}>
           {subtitleText}
         </Text>
-      </View>
+      </Animated.View>
     </Animated.View>
   );
 };

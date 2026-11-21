@@ -825,49 +825,41 @@ export const ExerciseLibraryContent: React.FC<ExerciseLibraryContentProps> = ({
                     </View>
                   </View>
 
-                  {/* Visual Thumbnail + Title + Secondary Muscles + Stats */}
-                  <View style={styles.exBodyRow}>
-                    <ExercisePreviewImage
-                      exercise={ex}
-                      variant="thumb"
-                      size={56}
-                      borderRadius={12}
-                    />
-                    <View style={{ flex: 1, minWidth: 0 }}>
-                      <Text style={[styles.exName, { color: theme.text }]}>
-                        {exerciseName(ex.id, ex.name)}
+                  {/* Title */}
+                  <Text style={[styles.exName, { color: theme.text }]}>
+                    {exerciseName(ex.id, ex.name)}
+                  </Text>
+
+                  {/* Secondary Muscles Worked Strip */}
+                  {secondaryLabels.length > 0 && (
+                    <Text style={[styles.secondaryMusclesLine, { color: theme.textSecondary }]}>
+                      + {secondaryLabels.join(' · ')}
+                    </Text>
+                  )}
+
+                  {/* Structured Stats Bar */}
+                  <View style={styles.exStatsStrip}>
+                    <View
+                      style={[
+                        styles.exStatChip,
+                        { backgroundColor: theme.card, borderColor: theme.border },
+                      ]}
+                    >
+                      <Ionicons name="repeat-outline" size={12} color={theme.textMuted} />
+                      <Text style={[styles.exStatText, { color: theme.textSecondary }]}>
+                        {ex.sets} × {ex.reps} {t('reps')}
                       </Text>
-
-                      {secondaryLabels.length > 0 && (
-                        <Text style={[styles.secondaryMusclesLine, { color: theme.textSecondary }]}>
-                          + {secondaryLabels.join(' · ')}
-                        </Text>
-                      )}
-
-                      <View style={styles.exStatsStrip}>
-                        <View
-                          style={[
-                            styles.exStatChip,
-                            { backgroundColor: theme.card, borderColor: theme.border },
-                          ]}
-                        >
-                          <Ionicons name="repeat-outline" size={12} color={theme.textMuted} />
-                          <Text style={[styles.exStatText, { color: theme.textSecondary }]}>
-                            {ex.sets} × {ex.reps} {t('reps')}
-                          </Text>
-                        </View>
-                        <View
-                          style={[
-                            styles.exStatChip,
-                            { backgroundColor: theme.card, borderColor: theme.border },
-                          ]}
-                        >
-                          <Ionicons name="timer-outline" size={12} color={theme.textMuted} />
-                          <Text style={[styles.exStatText, { color: theme.textSecondary }]}>
-                            {t('rest')} {ex.rest}s
-                          </Text>
-                        </View>
-                      </View>
+                    </View>
+                    <View
+                      style={[
+                        styles.exStatChip,
+                        { backgroundColor: theme.card, borderColor: theme.border },
+                      ]}
+                    >
+                      <Ionicons name="timer-outline" size={12} color={theme.textMuted} />
+                      <Text style={[styles.exStatText, { color: theme.textSecondary }]}>
+                        {t('rest')} {ex.rest}s
+                      </Text>
                     </View>
                   </View>
                 </TouchableOpacity>
