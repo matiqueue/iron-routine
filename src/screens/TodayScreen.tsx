@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import {
   ActivityIndicator,
   Platform,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -22,7 +23,10 @@ import {
   WorkoutPlan,
 } from '../types/workout';
 import { getDayBannerTagMeta, resolveDayBannerTag } from '../data/dayTags';
-import { resolveActiveSessionExercises } from '../utils/sessionExercises';
+import {
+  countCompletedSetsInProgress,
+  resolveActiveSessionExercises,
+} from '../utils/sessionExercises';
 import { triggerSelectionHaptic } from '../services/haptics';
 import { AnimatedIcon } from '../components/AnimatedIcon';
 import { DayBannerArtwork } from '../components/DayBannerArtwork';
@@ -34,8 +38,13 @@ import { RestDayView } from '../components/RestDayView';
 interface TodayScreenProps {
   activeProfile: UserProfile;
   activePlan: WorkoutPlan | null;
+  planDays: DayPlan[];
+  todayDayId: string;
+  suggestedDayId: string;
+  suggestedReason: 'paused' | 'next_in_sequence' | 'scheduled_today' | 'first_workout' | 'rest';
   currentPlan: DayPlan;
   dayProgress: DayProgress;
+  weekProgressMap: Record<string, DayProgress>;
   streak: number;
   bestPRs: { [exerciseId: string]: PRRecord };
   healthSummary: HealthDailySummary | null;
@@ -45,6 +54,7 @@ interface TodayScreenProps {
   onConfigureSession?: () => void;
   onOpenPlanManager: () => void;
   onOpenBodyStats: () => void;
+  onSelectWorkoutDay: (dayId: string) => void;
   onStartWorkout: (dayId?: string) => void;
   onOpenExerciseDetail: (ex: Exercise) => void;
   onSwitchToPlanTab: () => void;
@@ -75,8 +85,13 @@ const AnimatedMiniBar: React.FC<{
 export const TodayScreen: React.FC<TodayScreenProps> = ({
   activeProfile,
   activePlan,
+  planDays,
+  todayDayId,
+  suggestedDayId,
+  suggestedReason,
   currentPlan,
   dayProgress,
+  weekProgressMap,
   streak,
   bestPRs,
   healthSummary,
@@ -85,14 +100,30 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
   onConnectHealth,
   onOpenPlanManager,
   onOpenBodyStats,
+  onSelectWorkoutDay,
   onStartWorkout,
   onOpenExerciseDetail,
   onSwitchToPlanTab,
 }) => {
   const { theme, isDark, toggleTheme } = useAppTheme();
-  const { t, language, dayTagLabel, localeCode } = useLanguage();
+  const { t, dayLabel, dayTagLabel, localeCode } = useLanguage();
   const insets = useSafeAreaInsets();
   const dateLocale = localeCode;
+
+  const workoutDaysInSequence = useMemo(
+    () =>
+      planDays.filter(
+        (d) => d.type !== 'rest' && d.type !== 'walk' && (d.exercises?.length || 0) > 0
+      ),
+    [planDays]
+  );
+
+  const todayPlanMeta = useMemo(
+    () => planDays.find((d) => d.id === todayDayId),
+    [planDays, todayDayId]
+  );
+  const isTodayScheduledRest =
+    todayPlanMeta && (todayPlanMeta.type === 'rest' || todayPlanMeta.type === 'walk');
 
   const bannerTag = resolveDayBannerTag(currentPlan);
   const tagMeta = getDayBannerTagMeta(bannerTag);
@@ -121,6 +152,8 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
   }, [activePreviewList, dayProgress.sets]);
 
   const isRestOrWalk = currentPlan.type === 'rest' || currentPlan.type === 'walk';
+  const isCurrentDayPaused =
+    !isRestOrWalk && !dayProgress.finishedAt && completedSetsToday > 0;
 
   const glassSurfaceBg = isDark
     ? 'rgba(39, 39, 42, 0.62)'
@@ -293,6 +326,177 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
         </View>
       </View>
 
+      {/* Sequence-First Workout Queue Switcher (de-coupled from strict weekday lock!) */}
+      {workoutDaysInSequence.length > 0 && (
+        <View style={styles.sequenceBlock}>
+          <View style={styles.sequenceHeaderRow}>
+            <Text style={[styles.sequenceEyebrow, { color: theme.textMuted }]}>
+              {t('sequenceQueueTitle')}
+            </Text>
+            {isTodayScheduledRest && todayPlanMeta && (
+              <TouchableOpacity
+                onPress={() => {
+                  triggerSelectionHaptic();
+                  onSelectWorkoutDay(todayPlanMeta.id);
+                }}
+                activeOpacity={0.75}
+                style={[
+                  styles.restQuickPill,
+                  {
+                    backgroundColor:
+                      currentPlan.id === todayPlanMeta.id
+                        ? 'rgba(16, 185, 129, 0.16)'
+                        : glassSurfaceBg,
+                    borderColor:
+                      currentPlan.id === todayPlanMeta.id
+                        ? '#10B981'
+                        : glassSurfaceBorder,
+                  },
+                ]}
+              >
+                <Ionicons
+                  name="moon-outline"
+                  size={11}
+                  color={currentPlan.id === todayPlanMeta.id ? '#10B981' : theme.textSecondary}
+                />
+                <Text
+                  style={[
+                    styles.restQuickPillText,
+                    {
+                      color:
+                        currentPlan.id === todayPlanMeta.id ? '#10B981' : theme.textSecondary,
+                    },
+                  ]}
+                >
+                  {t('sequenceRestChip')}
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            directionalLockEnabled
+            bounces={false}
+            alwaysBounceVertical={false}
+            overScrollMode="never"
+            contentContainerStyle={styles.sequenceRowContent}
+          >
+            {workoutDaysInSequence.map((d, seqIdx) => {
+              const isSelected = currentPlan.id === d.id;
+              const prog = weekProgressMap[d.id];
+              const doneSets = countCompletedSetsInProgress(prog);
+              const isPaused = Boolean(prog && !prog.finishedAt && doneSets > 0);
+              const isDoneThisWeek = Boolean(prog?.finishedAt);
+              const isSuggested = d.id === suggestedDayId;
+
+              return (
+                <TouchableOpacity
+                  key={d.id}
+                  onPress={() => {
+                    if (isSelected) return;
+                    triggerSelectionHaptic();
+                    onSelectWorkoutDay(d.id);
+                  }}
+                  activeOpacity={0.8}
+                  style={[
+                    styles.seqCard,
+                    {
+                      backgroundColor: isSelected
+                        ? theme.primary
+                        : glassSurfaceBg,
+                      borderColor: isSelected
+                        ? theme.primary
+                        : isPaused
+                        ? 'rgba(245, 158, 11, 0.55)'
+                        : isSuggested
+                        ? 'rgba(56, 189, 248, 0.5)'
+                        : glassSurfaceBorder,
+                    },
+                  ]}
+                >
+                  <View style={styles.seqCardTop}>
+                    <Text
+                      style={[
+                        styles.seqOrderTag,
+                        {
+                          color: isSelected
+                            ? theme.primaryText
+                            : theme.textMuted,
+                          opacity: isSelected ? 0.78 : 1,
+                        },
+                      ]}
+                    >
+                      #{seqIdx + 1} · {dayLabel(d.id, true).toUpperCase()}
+                    </Text>
+
+                    {isPaused ? (
+                      <View
+                        style={[
+                          styles.seqStatusBadge,
+                          {
+                            backgroundColor: isSelected
+                              ? 'rgba(245, 158, 11, 0.28)'
+                              : 'rgba(245, 158, 11, 0.16)',
+                          },
+                        ]}
+                      >
+                        <View style={[styles.seqStatusDot, { backgroundColor: '#F59E0B' }]} />
+                        <Text
+                          style={[
+                            styles.seqStatusText,
+                            { color: isSelected ? theme.primaryText : '#F59E0B' },
+                          ]}
+                        >
+                          {t('sequencePausedBadge')}
+                        </Text>
+                      </View>
+                    ) : isDoneThisWeek ? (
+                      <Ionicons
+                        name="checkmark-circle"
+                        size={14}
+                        color={isSelected ? theme.primaryText : '#10B981'}
+                      />
+                    ) : isSuggested && suggestedReason !== 'rest' ? (
+                      <View
+                        style={[
+                          styles.seqStatusBadge,
+                          {
+                            backgroundColor: isSelected
+                              ? 'rgba(56, 189, 248, 0.28)'
+                              : 'rgba(56, 189, 248, 0.16)',
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.seqStatusText,
+                            { color: isSelected ? theme.primaryText : '#38BDF8' },
+                          ]}
+                        >
+                          {t('sequenceNextBadge')}
+                        </Text>
+                      </View>
+                    ) : null}
+                  </View>
+
+                  <Text
+                    style={[
+                      styles.seqCardName,
+                      { color: isSelected ? theme.primaryText : theme.text },
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {d.name}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </View>
+      )}
+
       {/* Rest / Active Recovery Day View or Workout Day */}
       {isRestOrWalk ? (
         <>
@@ -431,9 +635,15 @@ export const TodayScreen: React.FC<TodayScreenProps> = ({
             <View style={styles.startStack}>
               <HoldToStartButton
                 onComplete={() => onStartWorkout(currentPlan.id)}
-                title={t('todayStartWorkout').toUpperCase()}
+                title={
+                  isCurrentDayPaused
+                    ? t('todayResumeWorkout').toUpperCase()
+                    : t('todayStartWorkout').toUpperCase()
+                }
                 subtitle={
-                  dayProgress.sessionConfig
+                  isCurrentDayPaused
+                    ? `${completedSetsToday}/${totalSets} ${t('sets').toLowerCase()}`
+                    : dayProgress.sessionConfig
                     ? `${activeExercisesCount} · ${totalSets} ${t('sets').toLowerCase()}`
                     : t('todayEditSession')
                 }
@@ -816,10 +1026,85 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingVertical: 12,
-    marginBottom: 16,
+    marginBottom: 12,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderBottomWidth: StyleSheet.hairlineWidth,
     gap: 10,
+  },
+  sequenceBlock: {
+    marginBottom: 14,
+  },
+  sequenceHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+    gap: 8,
+  },
+  sequenceEyebrow: {
+    fontSize: 9.5,
+    fontWeight: '800',
+    letterSpacing: 1.2,
+  },
+  restQuickPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  restQuickPillText: {
+    fontSize: 10.5,
+    fontWeight: '800',
+  },
+  sequenceRowContent: {
+    gap: 8,
+    paddingRight: 6,
+  },
+  seqCard: {
+    minWidth: 132,
+    maxWidth: 174,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 15,
+    borderWidth: 1,
+    gap: 5,
+  },
+  seqCardTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 6,
+  },
+  seqOrderTag: {
+    fontSize: 9.5,
+    fontWeight: '800',
+    letterSpacing: 0.6,
+  },
+  seqStatusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 999,
+  },
+  seqStatusDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+  },
+  seqStatusText: {
+    fontSize: 8.5,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  seqCardName: {
+    fontSize: 13.5,
+    fontWeight: '900',
+    letterSpacing: -0.2,
   },
   streakLeftBlock: {
     flexDirection: 'row',

@@ -18,9 +18,10 @@ interface HighFiveSpamButtonProps {
   initialCount: number;
   cheeredByMe?: boolean;
   label?: string;
+  hideCount?: boolean;
   compact?: boolean;
   fullWidth?: boolean;
-  onServerSynced?: (newCount: number) => void;
+  onServerSynced?: (newCount: number, cheerStreakDays?: number) => void;
 }
 
 interface BurstParticle {
@@ -40,6 +41,7 @@ export const HighFiveSpamButton: React.FC<HighFiveSpamButtonProps> = ({
   initialCount,
   cheeredByMe = false,
   label,
+  hideCount = true,
   compact = false,
   fullWidth = false,
   onServerSynced,
@@ -84,7 +86,7 @@ export const HighFiveSpamButton: React.FC<HighFiveSpamButtonProps> = ({
 
     const res = await sendSocialCheer(targetUserId, activityId, batch);
     if (res.ok && typeof res.cheersCount === 'number') {
-      onServerSynced?.(res.cheersCount);
+      onServerSynced?.(res.cheersCount, res.cheerStreakDays);
     }
   }, [targetUserId, activityId, onServerSynced]);
 
@@ -275,14 +277,25 @@ export const HighFiveSpamButton: React.FC<HighFiveSpamButtonProps> = ({
             size={compact ? 14 : 16}
             color={isHolding ? '#F59E0B' : active ? '#10B981' : '#F59E0B'}
           />
-          <Text
-            style={[
-              compact ? styles.textCompact : styles.textFull,
-              { color: theme.text },
-            ]}
-          >
-            {label ? `${label} (${displayCount})` : displayCount}
-          </Text>
+          {label ? (
+            <Text
+              style={[
+                compact ? styles.textCompact : styles.textFull,
+                { color: theme.text },
+              ]}
+            >
+              {hideCount ? label : `${label} (${displayCount})`}
+            </Text>
+          ) : !hideCount ? (
+            <Text
+              style={[
+                compact ? styles.textCompact : styles.textFull,
+                { color: theme.text },
+              ]}
+            >
+              {displayCount}
+            </Text>
+          ) : null}
         </TouchableOpacity>
       </Animated.View>
     </View>

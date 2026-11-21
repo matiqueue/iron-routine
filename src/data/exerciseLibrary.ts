@@ -14,6 +14,7 @@ import {
   getInvolvedMuscleCategories,
   MUSCLE_SUBGROUP_MAP,
 } from './exerciseAnatomyMap';
+import { getExerciseImageUrl } from './exerciseImages';
 
 export const DEFAULT_DAYS_OF_WEEK: DayMetaInfo[] = [
   { id: 'mon', label: 'Poniedziałek', short: 'Pn' },
@@ -117,7 +118,7 @@ function ex(
     rest,
     description,
     note,
-    imageUrl: '',
+    imageUrl: getExerciseImageUrl(id, 0),
     ab,
   };
 }
@@ -1723,11 +1724,12 @@ const NAME_TO_CANONICAL_ID: Record<string, string> = {
 
 export function resolveCanonicalExerciseId(exerciseId: string, exerciseName?: string): string {
   if (!exerciseId) return exerciseId;
-  const directAlias = EXERCISE_ID_ALIASES[exerciseId];
+  const cleanedId = exerciseId.replace(/_(swap|session)_\d+$/, '');
+  const directAlias = EXERCISE_ID_ALIASES[cleanedId] || EXERCISE_ID_ALIASES[exerciseId];
   if (directAlias) return directAlias;
 
-  if (EXERCISE_LIBRARY.some((item) => item.id === exerciseId)) {
-    return exerciseId;
+  if (EXERCISE_LIBRARY.some((item) => item.id === cleanedId)) {
+    return cleanedId;
   }
 
   if (exerciseName) {
@@ -1741,7 +1743,7 @@ export function resolveCanonicalExerciseId(exerciseId: string, exerciseName?: st
     }
   }
 
-  return exerciseId;
+  return cleanedId;
 }
 
 export function normalizeExercise(exercise: Exercise): Exercise {
@@ -1758,6 +1760,7 @@ export function normalizeExercise(exercise: Exercise): Exercise {
         : libMatch?.secondaryMuscles || mapped?.secondary,
     equipment: exercise.equipment || libMatch?.equipment || 'Inne',
     description: exercise.description || libMatch?.description || '',
+    imageUrl: exercise.imageUrl || libMatch?.imageUrl || getExerciseImageUrl(canonicalId, 0),
   };
 }
 

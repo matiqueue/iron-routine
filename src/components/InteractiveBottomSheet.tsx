@@ -104,6 +104,8 @@ interface InteractiveBottomSheetProps {
   subtitle?: string;
   initialHeightPercent?: number;
   headerRight?: React.ReactNode;
+  /** When true, content renders full-bleed from top:0 with floating transparent grabber + close button */
+  fullBleed?: boolean;
   children: React.ReactNode;
 }
 
@@ -114,6 +116,7 @@ export const InteractiveBottomSheet: React.FC<InteractiveBottomSheetProps> = ({
   subtitle,
   initialHeightPercent = 0.84,
   headerRight,
+  fullBleed = false,
   children,
 }) => {
   const { theme } = useAppTheme();
@@ -349,51 +352,101 @@ export const InteractiveBottomSheet: React.FC<InteractiveBottomSheetProps> = ({
             },
           ]}
         >
-          {/* Dedicated Grabber + Header Drag Zone */}
-          <View {...headerPanResponder.panHandlers}>
-            <View style={styles.grabArea}>
-              <View style={[styles.grabHandle, { backgroundColor: theme.borderDark }]} />
-            </View>
-
-            {(title || subtitle || headerRight) && (
-              <View style={[styles.header, { borderBottomColor: theme.hairline }]}>
-                <View style={styles.headerTextCol}>
-                  {title ? (
-                    <Text style={[styles.title, { color: theme.text }]} numberOfLines={1}>
-                      {title}
-                    </Text>
-                  ) : null}
-                  {subtitle ? (
-                    <Text style={[styles.subtitle, { color: theme.textMuted }]} numberOfLines={2}>
-                      {subtitle}
-                    </Text>
-                  ) : null}
-                </View>
-
-                <View style={styles.headerActions}>
-                  {headerRight}
-                  <TouchableOpacity
+          {fullBleed ? (
+            <>
+              <BottomSheetContext.Provider value={sheetCtxValue}>
+                <View style={styles.body}>{children}</View>
+              </BottomSheetContext.Provider>
+              {/* Transparent floating grabber drag zone & close button directly over hero cover */}
+              <View
+                {...headerPanResponder.panHandlers}
+                style={styles.fullBleedTopOverlay}
+                pointerEvents="box-none"
+              >
+                <View style={styles.fullBleedGrabArea}>
+                  <View
                     style={[
-                      styles.headerIconBtn,
-                      { backgroundColor: theme.bgSecondary, borderColor: theme.border },
+                      styles.grabHandle,
+                      {
+                        backgroundColor: theme.isDark
+                          ? 'rgba(255,255,255,0.28)'
+                          : 'rgba(15,23,42,0.22)',
+                      },
                     ]}
-                    onPress={() => {
-                      triggerSelectionHaptic();
-                      animateClose();
-                    }}
-                    activeOpacity={0.75}
-                    accessibilityLabel="Zamknij okno"
-                  >
-                    <Ionicons name="close" size={17} color={theme.text} />
-                  </TouchableOpacity>
+                  />
                 </View>
+                <TouchableOpacity
+                  style={[
+                    styles.fullBleedCloseBtn,
+                    {
+                      backgroundColor: theme.isDark
+                        ? 'rgba(15, 23, 42, 0.56)'
+                        : 'rgba(255, 255, 255, 0.78)',
+                      borderColor: theme.isDark
+                        ? 'rgba(255, 255, 255, 0.16)'
+                        : 'rgba(15, 23, 42, 0.12)',
+                    },
+                  ]}
+                  onPress={() => {
+                    triggerSelectionHaptic();
+                    animateClose();
+                  }}
+                  activeOpacity={0.75}
+                  accessibilityLabel="Zamknij okno"
+                >
+                  <Ionicons name="close" size={18} color={theme.text} />
+                </TouchableOpacity>
               </View>
-            )}
-          </View>
+            </>
+          ) : (
+            <>
+              {/* Dedicated Grabber + Header Drag Zone */}
+              <View {...headerPanResponder.panHandlers}>
+                <View style={styles.grabArea}>
+                  <View style={[styles.grabHandle, { backgroundColor: theme.borderDark }]} />
+                </View>
 
-          <BottomSheetContext.Provider value={sheetCtxValue}>
-            <View style={styles.body}>{children}</View>
-          </BottomSheetContext.Provider>
+                {(title || subtitle || headerRight) && (
+                  <View style={[styles.header, { borderBottomColor: theme.hairline }]}>
+                    <View style={styles.headerTextCol}>
+                      {title ? (
+                        <Text style={[styles.title, { color: theme.text }]} numberOfLines={1}>
+                          {title}
+                        </Text>
+                      ) : null}
+                      {subtitle ? (
+                        <Text style={[styles.subtitle, { color: theme.textMuted }]} numberOfLines={2}>
+                          {subtitle}
+                        </Text>
+                      ) : null}
+                    </View>
+
+                    <View style={styles.headerActions}>
+                      {headerRight}
+                      <TouchableOpacity
+                        style={[
+                          styles.headerIconBtn,
+                          { backgroundColor: theme.bgSecondary, borderColor: theme.border },
+                        ]}
+                        onPress={() => {
+                          triggerSelectionHaptic();
+                          animateClose();
+                        }}
+                        activeOpacity={0.75}
+                        accessibilityLabel="Zamknij okno"
+                      >
+                        <Ionicons name="close" size={17} color={theme.text} />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                )}
+              </View>
+
+              <BottomSheetContext.Provider value={sheetCtxValue}>
+                <View style={styles.body}>{children}</View>
+              </BottomSheetContext.Provider>
+            </>
+          )}
         </Animated.View>
       </View>
     </Modal>
@@ -470,5 +523,33 @@ const styles = StyleSheet.create({
   },
   body: {
     flex: 1,
+  },
+  fullBleedTopOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 54,
+    zIndex: 25,
+    alignItems: 'center',
+  },
+  fullBleedGrabArea: {
+    paddingTop: 11,
+    paddingBottom: 12,
+    paddingHorizontal: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  fullBleedCloseBtn: {
+    position: 'absolute',
+    top: 14,
+    right: 16,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    borderWidth: StyleSheet.hairlineWidth,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 30,
   },
 });

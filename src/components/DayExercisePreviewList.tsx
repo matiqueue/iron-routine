@@ -7,6 +7,7 @@ import { Exercise, PRRecord, SetEntry } from '../types/workout';
 import { resolveCanonicalExerciseId } from '../data/exerciseLibrary';
 import { resolveExerciseMuscles } from '../data/muscleMap';
 import { triggerSelectionHaptic } from '../services/haptics';
+import { ExercisePreviewImage } from './ExercisePreviewImage';
 
 interface DayExercisePreviewListProps {
   exercises: Exercise[];
@@ -28,6 +29,13 @@ const formatRestShort = (seconds: number): string => {
 };
 
 const CATEGORY_ACCENT_COLOR: Record<string, string> = {
+  klatka: '#38BDF8',
+  plecy: '#10B981',
+  nogi: '#F59E0B',
+  barki: '#A855F7',
+  ramiona: '#EC4899',
+  brzuch: '#14B8A6',
+  ogolne: '#F97316',
   chest: '#38BDF8',
   back: '#10B981',
   legs: '#F59E0B',
@@ -38,15 +46,19 @@ const CATEGORY_ACCENT_COLOR: Record<string, string> = {
   other: '#71717A',
 };
 
+const EMPTY_DAY_SETS: { [exId: string]: { [setIdx: number]: SetEntry } } = {};
+const EMPTY_PRS: { [exId: string]: PRRecord } = {};
+const EMPTY_SKIPPED: string[] = [];
+
 /**
  * Open, fluid editorial exercise timeline used in Today's block preview and Plan tab.
  * Free of heavy card boxes, using glassmorphic index badges, hairline dividers, and category accents.
  */
 export const DayExercisePreviewList: React.FC<DayExercisePreviewListProps> = ({
   exercises,
-  daySets = {},
-  bestPRs = {},
-  skippedIds = [],
+  daySets = EMPTY_DAY_SETS,
+  bestPRs = EMPTY_PRS,
+  skippedIds = EMPTY_SKIPPED,
   onPressExercise,
   showIndex = true,
   compact = false,
@@ -135,6 +147,14 @@ export const DayExercisePreviewList: React.FC<DayExercisePreviewListProps> = ({
                 )}
               </View>
             )}
+
+            {/* Visual Exercise Thumbnail */}
+            <ExercisePreviewImage
+              exercise={ex}
+              variant="thumb"
+              size={compact ? 38 : 44}
+              borderRadius={10}
+            />
 
             {/* Middle Open Content */}
             <View style={styles.content}>

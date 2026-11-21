@@ -36,6 +36,7 @@ import {
   toggleFavoriteExercise,
 } from '../services/storage';
 import { BottomSheetScrollView } from './InteractiveBottomSheet';
+import { ExercisePreviewImage } from './ExercisePreviewImage';
 
 export type LibraryCategoryFilter = MuscleCategory | 'wszystkie' | 'polubione' | 'wlasne';
 
@@ -48,10 +49,13 @@ interface ExerciseLibraryContentProps {
   onLibraryChanged?: () => void;
 }
 
+const EMPTY_STRING_IDS: string[] = [];
+const EMPTY_EXERCISES: Exercise[] = [];
+
 export const ExerciseLibraryContent: React.FC<ExerciseLibraryContentProps> = ({
   mode = 'pick',
-  alreadyInDayIds = [],
-  extraExercises = [],
+  alreadyInDayIds = EMPTY_STRING_IDS,
+  extraExercises = EMPTY_EXERCISES,
   similarToExercise = null,
   onSelectExercise,
   onLibraryChanged,
@@ -821,41 +825,49 @@ export const ExerciseLibraryContent: React.FC<ExerciseLibraryContentProps> = ({
                     </View>
                   </View>
 
-                  {/* Title */}
-                  <Text style={[styles.exName, { color: theme.text }]}>
-                    {exerciseName(ex.id, ex.name)}
-                  </Text>
-
-                  {/* Secondary Muscles Worked Strip */}
-                  {secondaryLabels.length > 0 && (
-                    <Text style={[styles.secondaryMusclesLine, { color: theme.textSecondary }]}>
-                      + {secondaryLabels.join(' · ')}
-                    </Text>
-                  )}
-
-                  {/* Structured Stats Bar */}
-                  <View style={styles.exStatsStrip}>
-                    <View
-                      style={[
-                        styles.exStatChip,
-                        { backgroundColor: theme.card, borderColor: theme.border },
-                      ]}
-                    >
-                      <Ionicons name="repeat-outline" size={12} color={theme.textMuted} />
-                      <Text style={[styles.exStatText, { color: theme.textSecondary }]}>
-                        {ex.sets} × {ex.reps} {t('reps')}
+                  {/* Visual Thumbnail + Title + Secondary Muscles + Stats */}
+                  <View style={styles.exBodyRow}>
+                    <ExercisePreviewImage
+                      exercise={ex}
+                      variant="thumb"
+                      size={56}
+                      borderRadius={12}
+                    />
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={[styles.exName, { color: theme.text }]}>
+                        {exerciseName(ex.id, ex.name)}
                       </Text>
-                    </View>
-                    <View
-                      style={[
-                        styles.exStatChip,
-                        { backgroundColor: theme.card, borderColor: theme.border },
-                      ]}
-                    >
-                      <Ionicons name="timer-outline" size={12} color={theme.textMuted} />
-                      <Text style={[styles.exStatText, { color: theme.textSecondary }]}>
-                        {t('rest')} {ex.rest}s
-                      </Text>
+
+                      {secondaryLabels.length > 0 && (
+                        <Text style={[styles.secondaryMusclesLine, { color: theme.textSecondary }]}>
+                          + {secondaryLabels.join(' · ')}
+                        </Text>
+                      )}
+
+                      <View style={styles.exStatsStrip}>
+                        <View
+                          style={[
+                            styles.exStatChip,
+                            { backgroundColor: theme.card, borderColor: theme.border },
+                          ]}
+                        >
+                          <Ionicons name="repeat-outline" size={12} color={theme.textMuted} />
+                          <Text style={[styles.exStatText, { color: theme.textSecondary }]}>
+                            {ex.sets} × {ex.reps} {t('reps')}
+                          </Text>
+                        </View>
+                        <View
+                          style={[
+                            styles.exStatChip,
+                            { backgroundColor: theme.card, borderColor: theme.border },
+                          ]}
+                        >
+                          <Ionicons name="timer-outline" size={12} color={theme.textMuted} />
+                          <Text style={[styles.exStatText, { color: theme.textSecondary }]}>
+                            {t('rest')} {ex.rest}s
+                          </Text>
+                        </View>
+                      </View>
                     </View>
                   </View>
                 </TouchableOpacity>
@@ -867,6 +879,14 @@ export const ExerciseLibraryContent: React.FC<ExerciseLibraryContentProps> = ({
                       { backgroundColor: theme.card, borderColor: theme.border },
                     ]}
                   >
+                    <View style={{ marginBottom: 10 }}>
+                      <ExercisePreviewImage
+                        exercise={ex}
+                        variant="hero"
+                        height={186}
+                        borderRadius={12}
+                      />
+                    </View>
                     <Text style={[styles.expandedLabel, { color: theme.textMuted }]}>
                       {t('technique').toUpperCase()}
                     </Text>
@@ -1061,6 +1081,11 @@ const styles = StyleSheet.create({
   exCardMain: {
     padding: 13,
     gap: 8,
+  },
+  exBodyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 11,
   },
   exCardTopRow: {
     flexDirection: 'row',

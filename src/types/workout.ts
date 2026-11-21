@@ -163,6 +163,7 @@ export interface SetEntry {
 
 export interface DayProgress {
   sets: { [exerciseId: string]: { [setIndex: number]: SetEntry } };
+  startedAt?: string; // ISO string when current active session began
   finishedAt?: string; // ISO string
   sessionConfig?: SessionExerciseConfig;
 }
@@ -226,6 +227,8 @@ export interface FriendProfileSummary {
   showActivityToFriends?: boolean;
   cheersCount?: number;
   cheeredByMe?: boolean;
+  cheerStreakDays?: number;
+  cheeredTodayWithMe?: boolean;
 }
 
 export interface FriendRequestRecord {

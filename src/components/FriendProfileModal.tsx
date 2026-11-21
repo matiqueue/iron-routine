@@ -1,10 +1,11 @@
-import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Animated,
   Dimensions,
   Easing,
-  Image,
+  PanResponder,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -47,6 +48,7 @@ interface FriendProfileModalProps {
   onClose: () => void;
   onOpenChat: (friend: FriendProfileSummary) => void;
   onSendKudos: (friend: FriendProfileSummary) => Promise<void> | void;
+  onCheerStreakUpdated?: (friendUserId: string, streakDays: number) => void;
   onRemoveFriend: (friend: FriendProfileSummary) => Promise<void> | void;
 }
 
@@ -378,6 +380,7 @@ export const FriendProfileModal: React.FC<FriendProfileModalProps> = ({
   embeddedOverlay = false,
   onClose,
   onOpenChat,
+  onCheerStreakUpdated,
   onRemoveFriend,
 }) => {
   const { theme, isDark } = useAppTheme();
@@ -386,10 +389,106 @@ export const FriendProfileModal: React.FC<FriendProfileModalProps> = ({
   const insets = useSafeAreaInsets();
   const uid = useId().replace(/:/g, '_');
 
+  const [liveCheerStreak, setLiveCheerStreak] = useState<number>(friend?.cheerStreakDays || 0);
+  const [liveCheeredToday, setLiveCheeredToday] = useState<boolean>(
+    Boolean(friend?.cheeredTodayWithMe)
+  );
+
+  useEffect(() => {
+    setLiveCheerStreak(friend?.cheerStreakDays || 0);
+    setLiveCheeredToday(Boolean(friend?.cheeredTodayWithMe));
+  }, [friend?.userId, friend?.cheerStreakDays, friend?.cheeredTodayWithMe]);
+
   const vsPulse = useRef(new Animated.Value(0)).current;
   const overlaySlide = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
   const overlayFade = useRef(new Animated.Value(0)).current;
   const entranceAnim = useRef(new Animated.Value(0)).current;
+
+  // Embedded overlay swipe-down-to-dismiss state (matches InteractiveBottomSheet physics)
+  const embeddedScrollYRef = useRef(0);
+  const embeddedDraggingRef = useRef(false);
+  const embeddedClosingRef = useRef(false);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
+  const snapEmbeddedBack = useCallback(() => {
+    Animated.spring(overlaySlide, {
+      toValue: 0,
+      damping: 26,
+      stiffness: 300,
+      useNativeDriver: true,
+    }).start();
+  }, [overlaySlide]);
+
+  const closeEmbeddedAnimated = useCallback(() => {
+    if (embeddedClosingRef.current) return;
+    embeddedClosingRef.current = true;
+    Animated.parallel([
+      Animated.timing(overlaySlide, {
+        toValue: SCREEN_HEIGHT,
+        duration: 210,
+        useNativeDriver: true,
+      }),
+      Animated.timing(overlayFade, {
+        toValue: 0,
+        duration: 190,
+        useNativeDriver: true,
+      }),
+    ]).start(() => {
+      embeddedClosingRef.current = false;
+      onCloseRef.current();
+    });
+  }, [overlaySlide, overlayFade]);
+
+  const embeddedTopPanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => !embeddedClosingRef.current,
+      onStartShouldSetPanResponderCapture: () => false,
+      onMoveShouldSetPanResponder: (_, g) =>
+        !embeddedClosingRef.current && g.dy > 4 && Math.abs(g.dy) > Math.abs(g.dx),
+      onMoveShouldSetPanResponderCapture: (_, g) =>
+        !embeddedClosingRef.current && g.dy > 6 && Math.abs(g.dy) > Math.abs(g.dx) * 1.1,
+      onPanResponderMove: (_, g) => {
+        overlaySlide.setValue(Math.max(0, g.dy));
+      },
+      onPanResponderTerminationRequest: () => false,
+      onPanResponderRelease: (_, g) => {
+        if (g.dy > 65 || g.vy > 0.35) {
+          triggerSelectionHaptic();
+          closeEmbeddedAnimated();
+          return;
+        }
+        snapEmbeddedBack();
+      },
+      onPanResponderTerminate: snapEmbeddedBack,
+    })
+  ).current;
+
+  const embeddedBodyPanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onStartShouldSetPanResponderCapture: () => false,
+      onMoveShouldSetPanResponder: (_, g) =>
+        !embeddedClosingRef.current &&
+        embeddedScrollYRef.current <= 1 &&
+        g.dy > 6 &&
+        Math.abs(g.dy) > Math.abs(g.dx) * 1.15,
+      onMoveShouldSetPanResponderCapture: () => false,
+      onPanResponderMove: (_, g) => {
+        overlaySlide.setValue(Math.max(0, g.dy));
+      },
+      onPanResponderTerminationRequest: () => false,
+      onPanResponderRelease: (_, g) => {
+        if (g.dy > 65 || g.vy > 0.35) {
+          triggerSelectionHaptic();
+          closeEmbeddedAnimated();
+          return;
+        }
+        snapEmbeddedBack();
+      },
+      onPanResponderTerminate: snapEmbeddedBack,
+    })
+  ).current;
 
   useEffect(() => {
     if (!visible) return;
@@ -585,7 +684,7 @@ export const FriendProfileModal: React.FC<FriendProfileModalProps> = ({
 
   const profileBody = (
     <>
-      {/* Seamless Open Editorial Athlete Profile Header */}
+      {/* Seamless Full-Bleed Architectural Athlete Profile Header */}
       <Animated.View
         style={[
           styles.heroShell,
@@ -595,47 +694,102 @@ export const FriendProfileModal: React.FC<FriendProfileModalProps> = ({
           },
         ]}
       >
-        {/* Soft fading top cover bleed (no hard box, blends seamlessly into sheet background) */}
+        {/* Full-bleed precision atmospheric cover reaching all the way to sheet top edge */}
         <View style={styles.coverAtmosphere} pointerEvents="none">
-          {friend.avatarUrl ? (
-            <Image
-              source={{ uri: friend.avatarUrl }}
-              blurRadius={56}
-              style={[
-                StyleSheet.absoluteFill,
-                { opacity: isDark ? 0.34 : 0.2, transform: [{ scale: 1.35 }] },
-              ]}
-              resizeMode="cover"
-            />
-          ) : null}
-          <Svg width="100%" height="100%" style={StyleSheet.absoluteFill}>
+          <Svg width="100%" height="100%" viewBox="0 0 400 245" preserveAspectRatio="xMidYMid slice">
             <Defs>
-              <RadialGradient id={`top_bloom_${uid}`} cx="50%" cy="22%" r="65%">
-                <Stop offset="0%" stopColor={rankMeta.color} stopOpacity={isDark ? 0.28 : 0.16} />
-                <Stop offset="55%" stopColor="#38BDF8" stopOpacity={isDark ? 0.08 : 0.05} />
+              <LinearGradient id={`cover_base_${uid}`} x1="0" y1="0" x2="1" y2="1">
+                <Stop
+                  offset="0%"
+                  stopColor={isDark ? '#0B1220' : '#EBF4FF'}
+                  stopOpacity={1}
+                />
+                <Stop
+                  offset="52%"
+                  stopColor={isDark ? '#111827' : '#F3F7FC'}
+                  stopOpacity={1}
+                />
+                <Stop offset="100%" stopColor={theme.bg} stopOpacity={1} />
+              </LinearGradient>
+              <RadialGradient id={`top_bloom_${uid}`} cx="50%" cy="28%" r="64%">
+                <Stop offset="0%" stopColor={rankMeta.color} stopOpacity={isDark ? 0.34 : 0.22} />
+                <Stop offset="52%" stopColor="#38BDF8" stopOpacity={isDark ? 0.14 : 0.1} />
                 <Stop offset="100%" stopColor={theme.bg} stopOpacity={0} />
               </RadialGradient>
+              <RadialGradient id={`side_bloom_${uid}`} cx="85%" cy="14%" r="48%">
+                <Stop offset="0%" stopColor="#38BDF8" stopOpacity={isDark ? 0.22 : 0.16} />
+                <Stop offset="100%" stopColor="#38BDF8" stopOpacity={0} />
+              </RadialGradient>
               <LinearGradient id={`top_fade_${uid}`} x1="0" y1="0" x2="0" y2="1">
-                <Stop offset="0%" stopColor={theme.bg} stopOpacity={0.18} />
-                <Stop offset="62%" stopColor={theme.bg} stopOpacity={0.72} />
+                <Stop offset="0%" stopColor={theme.bg} stopOpacity={0} />
+                <Stop offset="66%" stopColor={theme.bg} stopOpacity={0.55} />
                 <Stop offset="100%" stopColor={theme.bg} stopOpacity={1} />
               </LinearGradient>
             </Defs>
-            <Rect x="0" y="0" width="100%" height="100%" fill={`url(#top_bloom_${uid})`} />
-            <Rect x="0" y="0" width="100%" height="100%" fill={`url(#top_fade_${uid})`} />
+            <Rect x="0" y="0" width="400" height="245" fill={`url(#cover_base_${uid})`} />
+            <Rect x="0" y="0" width="400" height="245" fill={`url(#top_bloom_${uid})`} />
+            <Rect x="0" y="0" width="400" height="245" fill={`url(#side_bloom_${uid})`} />
+            {/* Precision architectural orbital arcs & subtle diagonal sheen */}
+            <Circle
+              cx="200"
+              cy="92"
+              r="76"
+              fill="none"
+              stroke={isDark ? '#FFFFFF' : '#0F172A'}
+              strokeOpacity={isDark ? 0.06 : 0.05}
+              strokeWidth="1"
+            />
+            <Circle
+              cx="200"
+              cy="92"
+              r="116"
+              fill="none"
+              stroke={rankMeta.color}
+              strokeOpacity={isDark ? 0.14 : 0.12}
+              strokeWidth="1"
+              strokeDasharray="4 6"
+            />
+            <Circle
+              cx="200"
+              cy="92"
+              r="158"
+              fill="none"
+              stroke="#38BDF8"
+              strokeOpacity={isDark ? 0.08 : 0.07}
+              strokeWidth="1"
+            />
+            <Line
+              x1="0"
+              y1="205"
+              x2="400"
+              y2="55"
+              stroke={isDark ? '#FFFFFF' : '#0F172A'}
+              strokeOpacity={isDark ? 0.045 : 0.04}
+              strokeWidth="1"
+            />
+            <Line
+              x1="0"
+              y1="145"
+              x2="400"
+              y2="145"
+              stroke={isDark ? '#FFFFFF' : '#0F172A'}
+              strokeOpacity={isDark ? 0.03 : 0.03}
+              strokeWidth="1"
+            />
+            <Rect x="0" y="0" width="400" height="245" fill={`url(#top_fade_${uid})`} />
           </Svg>
         </View>
 
         {/* Centered Avatar Stage */}
         <View style={styles.emblemStage}>
-          <AvatarPrecisionRing color={rankMeta.color} size={108} active={visible} />
+          <AvatarPrecisionRing color={rankMeta.color} size={112} active={visible} />
           <UserAvatarBadge
             avatarUrl={friend.avatarUrl}
             displayName={friend.displayName}
             avatarColor={friend.avatarColor}
             rank={friend.overallRank || 'F'}
-            size={84}
-            ringColor={isDark ? 'rgba(255,255,255,0.14)' : 'rgba(15,23,42,0.1)'}
+            size={86}
+            ringColor={isDark ? 'rgba(255,255,255,0.18)' : 'rgba(15,23,42,0.12)'}
             showRankDot
           />
         </View>
@@ -674,6 +828,46 @@ export const FriendProfileModal: React.FC<FriendProfileModalProps> = ({
               {friend.overallRank} · {rankTitle(friend.overallRank || 'F')}
             </Text>
           </View>
+        </View>
+
+        {/* Daily High-Five Streak Pill between you and this friend */}
+        <View
+          style={[
+            styles.cheerStreakPill,
+            {
+              backgroundColor:
+                liveCheerStreak > 0
+                  ? isDark
+                    ? 'rgba(245, 158, 11, 0.14)'
+                    : 'rgba(245, 158, 11, 0.12)'
+                  : surfaceTileBg,
+              borderColor:
+                liveCheerStreak > 0
+                  ? 'rgba(245, 158, 11, 0.4)'
+                  : surfaceTileBorder,
+            },
+          ]}
+        >
+          <Ionicons
+            name={liveCheerStreak > 0 ? 'flame' : 'hand-left-outline'}
+            size={13}
+            color={liveCheerStreak > 0 ? '#F59E0B' : theme.textMuted}
+          />
+          <Text
+            style={[
+              styles.cheerStreakText,
+              { color: liveCheerStreak > 0 ? '#F59E0B' : theme.textMuted },
+            ]}
+          >
+            {liveCheerStreak === 1
+              ? t('highFiveStreakOne')
+              : liveCheerStreak > 1
+              ? t('highFiveStreakMany', { count: liveCheerStreak })
+              : t('highFiveStreakStart')}
+          </Text>
+          {liveCheerStreak > 0 && liveCheeredToday ? (
+            <Ionicons name="checkmark-circle" size={13} color="#10B981" />
+          ) : null}
         </View>
 
         {friend.statusNote ? (
@@ -717,7 +911,19 @@ export const FriendProfileModal: React.FC<FriendProfileModalProps> = ({
             initialCount={friend.cheersCount || 0}
             cheeredByMe={friend.cheeredByMe}
             label={t('friendsKudosBtn')}
+            hideCount
             fullWidth
+            onServerSynced={(_count, streakDays) => {
+              if (typeof streakDays === 'number') {
+                setLiveCheerStreak(streakDays);
+                setLiveCheeredToday(true);
+                onCheerStreakUpdated?.(friend.userId, streakDays);
+              } else if (liveCheerStreak === 0) {
+                setLiveCheerStreak(1);
+                setLiveCheeredToday(true);
+                onCheerStreakUpdated?.(friend.userId, 1);
+              }
+            }}
           />
         </View>
       </Animated.View>
@@ -966,8 +1172,9 @@ export const FriendProfileModal: React.FC<FriendProfileModalProps> = ({
   if (embeddedOverlay) {
     return (
       <Animated.View style={[styles.overlayRoot, { opacity: overlayFade }]}>
-        <Pressable style={styles.overlayBackdrop} onPress={onClose} />
+        <Pressable style={styles.overlayBackdrop} onPress={closeEmbeddedAnimated} />
         <Animated.View
+          {...embeddedBodyPanResponder.panHandlers}
           style={[
             styles.overlaySheet,
             {
@@ -979,27 +1186,85 @@ export const FriendProfileModal: React.FC<FriendProfileModalProps> = ({
             },
           ]}
         >
-          <View style={styles.overlayHandleRow}>
-            <View style={[styles.overlayHandle, { backgroundColor: theme.border }]} />
-          </View>
-          <TouchableOpacity
-            onPress={onClose}
-            style={[
-              styles.overlayFloatingClose,
-              {
-                backgroundColor: isDark ? 'rgba(255,255,255,0.09)' : 'rgba(15,23,42,0.07)',
-              },
-            ]}
-            activeOpacity={0.75}
-          >
-            <Ionicons name="close" size={18} color={theme.text} />
-          </TouchableOpacity>
           <ScrollView
             contentContainerStyle={styles.scrollContent}
             showsVerticalScrollIndicator={false}
+            bounces={Platform.OS === 'ios'}
+            alwaysBounceVertical={Platform.OS === 'ios'}
+            scrollEventThrottle={16}
+            onScrollBeginDrag={() => {
+              embeddedDraggingRef.current = true;
+            }}
+            onScroll={(e) => {
+              const y = e.nativeEvent.contentOffset.y;
+              embeddedScrollYRef.current = y;
+              if (Platform.OS === 'ios' && embeddedDraggingRef.current && !embeddedClosingRef.current) {
+                if (y < 0) {
+                  overlaySlide.setValue(Math.min(SCREEN_HEIGHT * 0.72, Math.abs(y) * 1.55));
+                } else {
+                  overlaySlide.setValue(0);
+                }
+              }
+            }}
+            onScrollEndDrag={(e) => {
+              const wasDragging = embeddedDraggingRef.current;
+              embeddedDraggingRef.current = false;
+              if (Platform.OS === 'ios' && wasDragging && !embeddedClosingRef.current) {
+                const y = e.nativeEvent.contentOffset.y;
+                const vy = e.nativeEvent.velocity?.y ?? 0;
+                if (y <= -38 || (y <= -8 && vy <= -0.35)) {
+                  triggerSelectionHaptic();
+                  closeEmbeddedAnimated();
+                  return;
+                }
+                if (y < 0) {
+                  snapEmbeddedBack();
+                }
+              }
+            }}
           >
             {profileBody}
           </ScrollView>
+
+          {/* Transparent floating drag handle + close button directly inside hero cover */}
+          <View
+            {...embeddedTopPanResponder.panHandlers}
+            style={styles.overlayFloatingTopBar}
+            pointerEvents="box-none"
+          >
+            <View style={styles.overlayHandleTapZone}>
+              <View
+                style={[
+                  styles.overlayHandle,
+                  {
+                    backgroundColor: isDark
+                      ? 'rgba(255,255,255,0.28)'
+                      : 'rgba(15,23,42,0.22)',
+                  },
+                ]}
+              />
+            </View>
+            <TouchableOpacity
+              onPress={() => {
+                triggerSelectionHaptic();
+                closeEmbeddedAnimated();
+              }}
+              style={[
+                styles.overlayFloatingClose,
+                {
+                  backgroundColor: isDark
+                    ? 'rgba(15, 23, 42, 0.56)'
+                    : 'rgba(255, 255, 255, 0.78)',
+                  borderColor: isDark
+                    ? 'rgba(255, 255, 255, 0.16)'
+                    : 'rgba(15, 23, 42, 0.12)',
+                },
+              ]}
+              activeOpacity={0.75}
+            >
+              <Ionicons name="close" size={18} color={theme.text} />
+            </TouchableOpacity>
+          </View>
         </Animated.View>
       </Animated.View>
     );
@@ -1009,10 +1274,11 @@ export const FriendProfileModal: React.FC<FriendProfileModalProps> = ({
     <InteractiveBottomSheet
       visible={visible}
       onClose={onClose}
-      title={`@${friend.nickname}`}
+      fullBleed
       initialHeightPercent={0.89}
     >
       <BottomSheetScrollView
+        style={{ backgroundColor: theme.bg }}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
@@ -1047,46 +1313,72 @@ const styles = StyleSheet.create({
     borderTopWidth: StyleSheet.hairlineWidth,
     overflow: 'hidden',
   },
-  overlayHandleRow: {
+  overlayFloatingTopBar: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 54,
+    zIndex: 25,
     alignItems: 'center',
-    paddingTop: 10,
-    paddingBottom: 6,
+  },
+  overlayHandleTapZone: {
+    paddingTop: 11,
+    paddingBottom: 12,
+    paddingHorizontal: 36,
+    alignItems: 'center',
   },
   overlayHandle: {
-    width: 38,
-    height: 4,
-    borderRadius: 2,
+    width: 44,
+    height: 4.5,
+    borderRadius: 3,
   },
   overlayFloatingClose: {
     position: 'absolute',
     top: 14,
     right: 16,
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    borderWidth: StyleSheet.hairlineWidth,
     alignItems: 'center',
     justifyContent: 'center',
-    zIndex: 10,
+    zIndex: 30,
   },
   scrollContent: {
     paddingHorizontal: 18,
-    paddingTop: 4,
+    paddingTop: 0,
     paddingBottom: 38,
   },
   heroShell: {
     position: 'relative',
     alignItems: 'center',
-    paddingTop: 16,
+    paddingTop: 42,
     paddingBottom: 6,
     marginBottom: 16,
   },
   coverAtmosphere: {
     position: 'absolute',
-    top: -18,
+    top: 0,
     left: -18,
     right: -18,
-    height: 210,
+    height: 245,
     overflow: 'hidden',
+  },
+  cheerStreakPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 5.5,
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  cheerStreakText: {
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: -0.1,
   },
   emblemStage: {
     position: 'relative',

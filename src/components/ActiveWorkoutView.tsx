@@ -11,6 +11,8 @@ import {
   Animated,
   PanResponder,
   AppState,
+  BackHandler,
+  Keyboard,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -111,45 +113,48 @@ const FloatingRestTimeText: React.FC<{
   pausedSeconds: number;
   isFinished: boolean;
   finishedLabel: string;
+  pausedPrefix: string;
   color: string;
-}> = React.memo(({ endTimeMs, isPaused, pausedSeconds, isFinished, finishedLabel, color }) => {
-  const [secsLeft, setSecsLeft] = useState(() =>
-    isPaused ? pausedSeconds : Math.max(0, Math.ceil((endTimeMs - Date.now()) / 1000))
-  );
+}> = React.memo(
+  ({ endTimeMs, isPaused, pausedSeconds, isFinished, finishedLabel, pausedPrefix, color }) => {
+    const [secsLeft, setSecsLeft] = useState(() =>
+      isPaused ? pausedSeconds : Math.max(0, Math.ceil((endTimeMs - Date.now()) / 1000))
+    );
 
-  useEffect(() => {
-    if (isFinished || isPaused || endTimeMs <= 0) {
-      setSecsLeft(pausedSeconds);
-      return;
-    }
+    useEffect(() => {
+      if (isFinished || isPaused || endTimeMs <= 0) {
+        setSecsLeft(pausedSeconds);
+        return;
+      }
 
-    const update = () => {
-      setSecsLeft(Math.max(0, Math.ceil((endTimeMs - Date.now()) / 1000)));
-    };
-    update();
-    const interval = setInterval(() => {
-      if (AppState.currentState !== 'active') return;
+      const update = () => {
+        setSecsLeft(Math.max(0, Math.ceil((endTimeMs - Date.now()) / 1000)));
+      };
       update();
-    }, 500);
-    const sub = AppState.addEventListener('change', (next) => {
-      if (next === 'active') update();
-    });
-    return () => {
-      clearInterval(interval);
-      sub.remove();
-    };
-  }, [endTimeMs, isPaused, pausedSeconds, isFinished]);
+      const interval = setInterval(() => {
+        if (AppState.currentState !== 'active') return;
+        update();
+      }, 500);
+      const sub = AppState.addEventListener('change', (next) => {
+        if (next === 'active') update();
+      });
+      return () => {
+        clearInterval(interval);
+        sub.remove();
+      };
+    }, [endTimeMs, isPaused, pausedSeconds, isFinished]);
 
-  return (
-    <Text style={[styles.floatingTimerTime, { color }]} numberOfLines={1}>
-      {isFinished
-        ? finishedLabel
-        : isPaused
-        ? `PAUZA • ${formatDurationClock(pausedSeconds)}`
-        : formatDurationClock(secsLeft)}
-    </Text>
-  );
-});
+    return (
+      <Text style={[styles.floatingTimerTime, { color }]} numberOfLines={1}>
+        {isFinished
+          ? finishedLabel
+          : isPaused
+          ? `${pausedPrefix} ${formatDurationClock(pausedSeconds)}`
+          : formatDurationClock(secsLeft)}
+      </Text>
+    );
+  }
+);
 
 export interface ActiveWorkoutFinishSummary {
   durationMinutes: number;
@@ -171,10 +176,34 @@ interface ActiveWorkoutViewProps {
     data: Partial<SetEntry>,
     restSeconds: number
   ) => void;
+  onBatchUpdateSets?: (
+    updates: Array<{ exerciseId: string; setIndex: number; entry: Partial<SetEntry> }>
+  ) => void;
+  onDeleteSetEntry?: (exerciseId: string, setIndex: number) => void;
   onSaveSessionConfig?: (config: SessionExerciseConfig) => void;
   onFinishWorkout: (summary?: ActiveWorkoutFinishSummary) => void;
   onExitWorkout: () => void;
+  onDiscardWorkout?: () => void;
 }
+
+const EMPTY_LIBRARY_EXERCISES: Exercise[] = [];
+
+const parseDefaultRepsNumber = (rawReps?: string): string => {
+  const match = String(rawReps || '').match(/\d+/);
+  return match ? match[0] : '10';
+};
+
+const resolveInitialStartTimeMs = (startedAt?: string): number => {
+  if (!startedAt) return Date.now();
+  const ms = new Date(startedAt).getTime();
+  if (isNaN(ms)) return Date.now();
+  const ageMs = Date.now() - ms;
+  // Preserve persisted elapsed time across pause/resume within a 6-hour session window
+  if (ageMs >= 0 && ageMs <= 6 * 60 * 60 * 1000) {
+    return ms;
+  }
+  return Date.now();
+};
 
 const getSetRows = (totalSets: number): number[][] => {
   if (totalSets <= 3) {
@@ -204,13 +233,16 @@ const getSetRows = (totalSets: number): number[][] => {
 export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
   dayPlan,
   profileId,
-  extraLibraryExercises = [],
+  extraLibraryExercises = EMPTY_LIBRARY_EXERCISES,
   dayProgress,
   autoOpenSessionPicker = false,
   onUpdateSet,
+  onBatchUpdateSets,
+  onDeleteSetEntry,
   onSaveSessionConfig,
   onFinishWorkout,
   onExitWorkout,
+  onDiscardWorkout,
 }) => {
   const { theme, isDark } = useAppTheme();
   const { t, categoryLabel, exerciseName } = useLanguage();
@@ -266,6 +298,13 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
     );
     lastSavedActiveExIdRef.current = dayProgress.sessionConfig?.activeExerciseId;
     lastSyncedSetExerciseIdRef.current = undefined;
+    workoutStartTimeRef.current = resolveInitialStartTimeMs(dayProgress.startedAt);
+    cancelRestFinishedNotification();
+    restEndTimeRef.current = 0;
+    setIsResting(false);
+    setIsRestPaused(false);
+    setIsRestFinished(false);
+    setIsRestModalVisible(false);
     setAllSessionExercises(ordered);
     setSkippedIds(nextSkipped);
     setExtraSetsMap({});
@@ -293,10 +332,13 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
   const [restModalTargetMs, setRestModalTargetMs] = useState<number | undefined>(undefined);
   const [timerLabel, setTimerLabel] = useState('');
   const [timerNextInfo, setTimerNextInfo] = useState('');
+  const [timerNextExerciseName, setTimerNextExerciseName] = useState<string | undefined>(undefined);
   const restEndTimeRef = useRef<number>(0);
   const restFinishNotifiedRef = useRef(false);
+  const isClosingWorkoutRef = useRef(false);
+  const isFinishingRef = useRef(false);
 
-  // Background-persistent finish check (single timeout + foreground resume check)
+  // Background-persistent finish check (single timeout + foreground haptic alert)
   useEffect(() => {
     if (!isResting || isRestPaused) return;
 
@@ -310,6 +352,8 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
           restFinishNotifiedRef.current = true;
           if (AppState.currentState === 'active') {
             cancelRestFinishedNotification();
+            triggerNotificationHaptic('success');
+            setTimeout(() => triggerImpactHaptic('medium'), 260);
           }
         }
         return true;
@@ -341,7 +385,7 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
     };
   }, [isResting, isRestPaused, restModalTargetMs]);
 
-  const workoutStartTimeRef = useRef<number>(Date.now());
+  const workoutStartTimeRef = useRef<number>(resolveInitialStartTimeMs(dayProgress.startedAt));
 
   // Animations: directional slide & crossfade for exercise changes
   const exerciseSlideAnim = useRef(new Animated.Value(0)).current;
@@ -364,6 +408,7 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
       return;
     }
 
+    Keyboard.dismiss();
     triggerImpactHaptic('light');
 
     const direction = targetIndex > currentExerciseIndex ? 1 : -1;
@@ -410,6 +455,7 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
   // Series change animation
   const handleChangeSetIndex = (newSetIdx: number) => {
     if (newSetIdx === currentSetIndex) return;
+    Keyboard.dismiss();
     triggerSelectionHaptic();
 
     cardScaleAnim.setValue(0.96);
@@ -473,20 +519,38 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
     currentExerciseRef.current = currentExercise;
   }, [dayProgress, extraSetsMap, currentExercise]);
 
-  // Smart auto-fill from previous workouts
-  const [lastMetrics, setLastMetrics] = useState<{ weight?: string; reps?: string } | null>(null);
+  // Smart auto-fill from previous workouts (scoped by exerciseId so metrics NEVER leak across exercises)
+  const [lastMetricsState, setLastMetricsState] = useState<{
+    exerciseId: string;
+    weight?: string;
+    reps?: string;
+  } | null>(null);
 
   useEffect(() => {
     let isMounted = true;
-    if (currentExerciseId) {
-      getLastExerciseMetrics(currentExerciseId, profileId).then((metrics) => {
-        if (isMounted) setLastMetrics(metrics);
+    const exId = currentExerciseId;
+    const exName = currentExercise?.name;
+    setLastMetricsState(null);
+    if (exId) {
+      getLastExerciseMetrics(exId, profileId, exName).then((metrics) => {
+        if (isMounted) {
+          setLastMetricsState(
+            metrics && (metrics.weight || metrics.reps)
+              ? { exerciseId: exId, ...metrics }
+              : null
+          );
+        }
       });
     }
     return () => {
       isMounted = false;
     };
-  }, [currentExerciseId, profileId]);
+  }, [currentExerciseId, currentExercise?.name, profileId]);
+
+  const lastMetrics =
+    lastMetricsState && lastMetricsState.exerciseId === currentExerciseId
+      ? lastMetricsState
+      : null;
 
   const getEffectiveSets = useCallback(
     (ex: Exercise): number => {
@@ -556,7 +620,7 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
 
   // Synchronize Live Activity on Lock Screen and Dynamic Island
   useEffect(() => {
-    if (!currentExerciseId || !currentExerciseName) return;
+    if (isClosingWorkoutRef.current || !currentExerciseId || !currentExerciseName) return;
 
     if (isRestPaused && isResting) {
       updateWorkoutLiveActivity({
@@ -571,7 +635,7 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
         isRestFinished: false,
         pausedRestSeconds: restModalSeedSecs,
         restSeconds: restModalSeedSecs,
-        nextExerciseName: timerNextInfo,
+        nextExerciseName: timerNextExerciseName,
       });
     } else if (isResting && !isRestPaused && restEndTimeRef.current > Date.now()) {
       const secsRemaining = Math.max(1, Math.ceil((restEndTimeRef.current - Date.now()) / 1000));
@@ -586,7 +650,7 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
         isRestPaused: false,
         isRestFinished: false,
         restSeconds: secsRemaining,
-        nextExerciseName: timerNextInfo,
+        nextExerciseName: timerNextExerciseName,
       });
     } else if (isRestFinished) {
       updateWorkoutLiveActivity({
@@ -600,7 +664,7 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
         isRestPaused: false,
         isRestFinished: true,
         restSeconds: 0,
-        nextExerciseName: timerNextInfo,
+        nextExerciseName: timerNextExerciseName,
       });
     } else {
       updateWorkoutLiveActivity({
@@ -628,7 +692,7 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
     restModalTargetMs,
     restModalSeedSecs,
     dayPlan.name,
-    timerNextInfo,
+    timerNextExerciseName,
   ]);
 
   const currentExerciseSets = useMemo(
@@ -686,6 +750,17 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
     return calculate1RM(w, r);
   }, [weightDraft, repsDraft]);
 
+  const promptExitRef = useRef<() => void>(() => {});
+
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      promptExitRef.current();
+      return true;
+    });
+    return () => sub.remove();
+  }, []);
+
   if (!currentExercise) return null;
 
   const handleUpdateActiveWeight = (val: string) => {
@@ -700,8 +775,10 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
     onUpdateSet(currentExercise.id, currentSetIndex, { reps: val }, 0);
   };
 
+  const isBodyweightEx = currentExercise.equipment === 'Masa ciała';
+
   const handleAdjustWeight = (delta: number) => {
-    const baseStr = weightDraft !== '' ? weightDraft : lastMetrics?.weight || '60';
+    const baseStr = weightDraft !== '' ? weightDraft : lastMetrics?.weight || '0';
     const curVal = parseFloat(baseStr.replace(',', '.')) || 0;
     const nextVal = Math.max(0, Math.round((curVal + delta) * 10) / 10);
     handleUpdateActiveWeight(String(nextVal));
@@ -709,7 +786,10 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
   };
 
   const handleAdjustReps = (delta: number) => {
-    const baseStr = repsDraft !== '' ? repsDraft : lastMetrics?.reps || '10';
+    const baseStr =
+      repsDraft !== ''
+        ? repsDraft
+        : lastMetrics?.reps || parseDefaultRepsNumber(currentExercise.reps);
     const curVal = parseInt(baseStr, 10) || 0;
     const nextVal = Math.max(1, curVal + delta);
     handleUpdateActiveReps(String(nextVal));
@@ -723,8 +803,9 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
     if (lastMetrics.reps) handleUpdateActiveReps(lastMetrics.reps);
   };
 
-  // Complete current set and auto-advance to currentSetIndex + 1
+  // Complete current set and auto-advance to next uncompleted set
   const handleCompleteActiveSet = () => {
+    Keyboard.dismiss();
     triggerNotificationHaptic('success');
 
     // Tactile button punch animation
@@ -742,56 +823,115 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
       }),
     ]).start();
 
-    const weightToSave = weightDraft !== '' ? weightDraft : lastMetrics?.weight || '60';
-    const repsToSave = repsDraft !== '' ? repsDraft : lastMetrics?.reps || String(currentExercise.reps);
+    const weightToSave =
+      weightDraft.trim() !== ''
+        ? weightDraft.trim()
+        : lastMetrics?.weight || (isBodyweightEx ? '0' : '');
+    const repsToSave =
+      repsDraft.trim() !== ''
+        ? repsDraft.trim()
+        : lastMetrics?.reps || parseDefaultRepsNumber(currentExercise.reps);
 
-    // Save set as completed
-    onUpdateSet(
-      currentExercise.id,
-      currentSetIndex,
+    // Sync local draft immediately if user left input blank & we committed defaults
+    if (weightDraft.trim() === '' && weightToSave !== '') {
+      hasEditedWeightRef.current = false;
+      setWeightDraft(weightToSave);
+    }
+    if (repsDraft.trim() === '' && repsToSave !== '') {
+      hasEditedRepsRef.current = false;
+      setRepsDraft(repsToSave);
+    }
+
+    // Batch set completion + non-destructive pre-fill for future empty/uncompleted sets
+    const batchUpdates: Array<{
+      exerciseId: string;
+      setIndex: number;
+      entry: Partial<SetEntry>;
+    }> = [
       {
-        completed: true,
-        weight: weightToSave,
-        reps: repsToSave,
+        exerciseId: currentExercise.id,
+        setIndex: currentSetIndex,
+        entry: {
+          completed: true,
+          weight: weightToSave,
+          reps: repsToSave,
+        },
       },
-      currentExercise.rest
-    );
+    ];
 
-    // Propagate forward to next empty sets so user has easy defaults
     for (let i = currentSetIndex + 1; i < currentTotalSets; i++) {
       const nextS = currentExerciseSets[i];
-      if (!nextS?.weight) {
-        onUpdateSet(currentExercise.id, i, { weight: weightToSave, reps: repsToSave }, 0);
+      if (nextS?.completed) continue;
+      const patch: Partial<SetEntry> = {};
+      if (!nextS?.weight && weightToSave !== '') patch.weight = weightToSave;
+      if (!nextS?.reps && repsToSave !== '') patch.reps = repsToSave;
+      if (Object.keys(patch).length > 0) {
+        batchUpdates.push({
+          exerciseId: currentExercise.id,
+          setIndex: i,
+          entry: patch,
+        });
       }
     }
 
-    const nextSetIdx = currentSetIndex + 1;
-    const isExerciseFinished = nextSetIdx >= currentTotalSets;
+    if (onBatchUpdateSets) {
+      onBatchUpdateSets(batchUpdates);
+    } else {
+      for (const u of batchUpdates) {
+        onUpdateSet(u.exerciseId, u.setIndex, u.entry, u.setIndex === currentSetIndex ? currentExercise.rest : 0);
+      }
+    }
 
-    // Trigger animated rest countdown + local notification
-    const restDur = currentExercise.rest;
-    const targetEndMs = Date.now() + restDur * 1000;
-    restEndTimeRef.current = targetEndMs;
-    restFinishNotifiedRef.current = false;
-    setIsRestPaused(false);
-    setIsRestFinished(false);
-    setRestModalSeedSecs(restDur);
-    setRestModalTargetMs(targetEndMs);
-    const currentDisplay = exerciseName(currentExercise.id, currentExercise.name);
-    setTimerLabel(currentDisplay);
-    const nextInfoStr = !isExerciseFinished
-      ? t('beforeSetBanner', { set: nextSetIdx + 1, total: currentTotalSets })
-      : nextExercise
-      ? t('nextExerciseBanner', { name: exerciseName(nextExercise.id, nextExercise.name) })
-      : t('allExercisesDone');
-    setTimerNextInfo(nextInfoStr);
-    setIsResting(true);
-    setIsRestModalVisible(true);
-    scheduleRestFinishedNotification(restDur, currentDisplay, nextInfoStr);
+    // Find next uncompleted set across the whole exercise (handles out-of-order set completion!)
+    let nextIncompleteIdx = -1;
+    for (let i = currentSetIndex + 1; i < currentTotalSets; i++) {
+      if (!currentExerciseSets[i]?.completed) {
+        nextIncompleteIdx = i;
+        break;
+      }
+    }
+    if (nextIncompleteIdx === -1) {
+      for (let i = 0; i < currentSetIndex; i++) {
+        if (!currentExerciseSets[i]?.completed) {
+          nextIncompleteIdx = i;
+          break;
+        }
+      }
+    }
+    const isExerciseFinished = nextIncompleteIdx === -1;
 
-    // Auto-advance to next set with spring animation
+    // Trigger animated rest countdown + local notification (skip modal if rest <= 0)
+    const restDur = Math.max(0, Math.round(currentExercise.rest || 0));
+    if (restDur > 0) {
+      const targetEndMs = Date.now() + restDur * 1000;
+      restEndTimeRef.current = targetEndMs;
+      restFinishNotifiedRef.current = false;
+      setIsRestPaused(false);
+      setIsRestFinished(false);
+      setRestModalSeedSecs(restDur);
+      setRestModalTargetMs(targetEndMs);
+      const currentDisplay = exerciseName(currentExercise.id, currentExercise.name);
+      setTimerLabel(currentDisplay);
+      const nextInfoStr = !isExerciseFinished
+        ? t('beforeSetBanner', { set: nextIncompleteIdx + 1, total: currentTotalSets })
+        : nextExercise
+        ? t('nextExerciseBanner', { name: exerciseName(nextExercise.id, nextExercise.name) })
+        : t('allExercisesDone');
+      setTimerNextInfo(nextInfoStr);
+      // Only pass raw nextExerciseName when transitioning to the next exercise (avoids Live Activity double prefix)
+      setTimerNextExerciseName(
+        isExerciseFinished && nextExercise
+          ? exerciseName(nextExercise.id, nextExercise.name)
+          : undefined
+      );
+      setIsResting(true);
+      setIsRestModalVisible(true);
+      scheduleRestFinishedNotification(restDur, currentDisplay, nextInfoStr);
+    }
+
+    // Auto-advance to next uncompleted set with spring animation
     if (!isExerciseFinished) {
-      handleChangeSetIndex(nextSetIdx);
+      handleChangeSetIndex(nextIncompleteIdx);
     }
   };
 
@@ -803,7 +943,9 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
     setIsRestPaused(false);
     setIsResting(false);
     setIsRestFinished(false);
+    setRestModalSeedSecs(0);
     setRestModalTargetMs(undefined);
+    setTimerNextExerciseName(undefined);
     setIsRestModalVisible(false);
   };
 
@@ -814,7 +956,9 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
     setIsRestPaused(false);
     setIsResting(false);
     setIsRestFinished(false);
+    setRestModalSeedSecs(0);
     setRestModalTargetMs(undefined);
+    setTimerNextExerciseName(undefined);
   };
 
   const handlePauseRest = (remainingSeconds: number) => {
@@ -881,19 +1025,38 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
   };
 
   const handleToggleCompleteManually = () => {
+    Keyboard.dismiss();
     const willBeCompleted = !isCurrentSetDone;
     if (willBeCompleted) {
       triggerNotificationHaptic('success');
+      const weightToSave =
+        weightDraft.trim() !== ''
+          ? weightDraft.trim()
+          : lastMetrics?.weight || (isBodyweightEx ? '0' : '');
+      const repsToSave =
+        repsDraft.trim() !== ''
+          ? repsDraft.trim()
+          : lastMetrics?.reps || parseDefaultRepsNumber(currentExercise.reps);
+      onUpdateSet(
+        currentExercise.id,
+        currentSetIndex,
+        {
+          completed: true,
+          weight: weightToSave,
+          reps: repsToSave,
+        },
+        currentExercise.rest
+      );
     } else {
       triggerSelectionHaptic();
+      handleStopRestSyncImmediate();
+      onUpdateSet(
+        currentExercise.id,
+        currentSetIndex,
+        { completed: false },
+        0
+      );
     }
-
-    onUpdateSet(
-      currentExercise.id,
-      currentSetIndex,
-      { completed: willBeCompleted },
-      currentExercise.rest
-    );
   };
 
   const handleAddBonusSet = () => {
@@ -906,17 +1069,31 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
     handleChangeSetIndex(nextTarget - 1);
   };
 
+  const canRemoveBonusSet =
+    currentTotalSets > currentExercise.sets &&
+    !currentExerciseSets[currentTotalSets - 1]?.completed;
+
   const handleRemoveBonusSet = () => {
-    if (currentTotalSets <= currentExercise.sets) return;
+    if (!canRemoveBonusSet) return;
     triggerSelectionHaptic();
-    const nextExtra = Math.max(0, (extraSetsMap[currentExercise.id] || 0) - 1);
-    setExtraSetsMap((prev) => ({ ...prev, [currentExercise.id]: nextExtra }));
-    if (currentSetIndex >= currentExercise.sets + nextExtra) {
-      setCurrentSetIndex(Math.max(0, currentExercise.sets + nextExtra - 1));
+    const lastIdx = currentTotalSets - 1;
+    // Delete any uncompleted prefilled draft on the removed bonus set so maxLogged drops cleanly
+    onDeleteSetEntry?.(currentExercise.id, lastIdx);
+    const nextTarget = Math.max(currentExercise.sets, lastIdx);
+    setExtraSetsMap((prev) => ({
+      ...prev,
+      [currentExercise.id]: Math.max(0, nextTarget - currentExercise.sets),
+    }));
+    if (currentSetIndex >= nextTarget) {
+      setCurrentSetIndex(Math.max(0, nextTarget - 1));
     }
   };
 
-  const handleTriggerFinish = () => {
+  const commitFinishWorkout = () => {
+    if (isFinishingRef.current) return;
+    isFinishingRef.current = true;
+    isClosingWorkoutRef.current = true;
+    Keyboard.dismiss();
     handleStopRestSyncImmediate();
     let totalVolumeKg = 0;
     for (const ex of exercises) {
@@ -939,6 +1116,22 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
       completedSets: completedSetsCount,
       totalSets,
     });
+  };
+
+  const handleTriggerFinish = () => {
+    if (isFinishingRef.current) return;
+    if (completedSetsCount === 0) {
+      Alert.alert(t('finishZeroSetsTitle'), t('finishZeroSetsBody'), [
+        { text: t('continueBtn'), style: 'cancel' },
+        {
+          text: t('finishAnywayBtn'),
+          style: 'destructive',
+          onPress: commitFinishWorkout,
+        },
+      ]);
+      return;
+    }
+    commitFinishWorkout();
   };
 
   const handleApplySessionConfig = (config: SessionExerciseConfig) => {
@@ -985,9 +1178,11 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
   };
 
   const handlePickSessionExercise = (picked: Exercise) => {
+    Keyboard.dismiss();
     triggerNotificationHaptic('success');
     const fresh = cloneExercise(picked);
     let nextAllList: Exercise[];
+    let nextSkippedIds = skippedIds;
 
     if (swapExerciseIdx !== null) {
       const targetEx = exercises[swapExerciseIdx];
@@ -1002,10 +1197,31 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
             reps: targetEx.reps,
           }
         : fresh;
-      nextAllList = allSessionExercises.map((item) =>
-        targetEx && item.id === targetEx.id ? replacement : item
+      const isBaselineEx = Boolean(
+        targetEx && (dayPlan.exercises || []).some((base) => base.id === targetEx.id)
       );
+      if (targetEx && isBaselineEx && replacement.id !== targetEx.id) {
+        // Keep replaced baseline exercise in skippedIds so it NEVER resurrects on resume/TodayScreen!
+        if (!nextSkippedIds.includes(targetEx.id)) {
+          nextSkippedIds = [...nextSkippedIds, targetEx.id];
+        }
+        nextAllList = [];
+        for (const item of allSessionExercises) {
+          if (item.id === targetEx.id) {
+            nextAllList.push(replacement);
+            nextAllList.push(targetEx);
+          } else {
+            nextAllList.push(item);
+          }
+        }
+      } else {
+        nextAllList = allSessionExercises.map((item) =>
+          targetEx && item.id === targetEx.id ? replacement : item
+        );
+      }
+      setSkippedIds(nextSkippedIds);
       setAllSessionExercises(nextAllList);
+      lastSyncedSetExerciseIdRef.current = undefined;
       setCurrentExerciseIndex(swapExerciseIdx);
       setCurrentSetIndex(0);
     } else {
@@ -1015,8 +1231,9 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
         : fresh;
       nextAllList = [...allSessionExercises, nextItem];
       setAllSessionExercises(nextAllList);
-      const skippedSet = new Set(skippedIds);
+      const skippedSet = new Set(nextSkippedIds);
       const nextActiveCount = nextAllList.filter((e) => !skippedSet.has(e.id)).length;
+      lastSyncedSetExerciseIdRef.current = undefined;
       setCurrentExerciseIndex(Math.max(0, nextActiveCount - 1));
       setCurrentSetIndex(0);
     }
@@ -1024,7 +1241,7 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
     const persistedAdded = nextAllList.filter(
       (ex) => !(dayPlan.exercises || []).some((b) => b.id === ex.id)
     );
-    const skippedSet = new Set(skippedIds);
+    const skippedSet = new Set(nextSkippedIds);
     const nextActiveOnly = nextAllList.filter((e) => !skippedSet.has(e.id));
     const nextActiveList = nextActiveOnly.length > 0 ? nextActiveOnly : nextAllList;
     const nextIdx =
@@ -1033,7 +1250,7 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
     lastSavedActiveExIdRef.current = nextActiveId;
     onSaveSessionConfig?.({
       orderedIds: nextAllList.map((e) => e.id),
-      skippedIds,
+      skippedIds: nextSkippedIds,
       addedExercises: persistedAdded.length > 0 ? persistedAdded : undefined,
       activeExerciseId: nextActiveId,
     });
@@ -1044,22 +1261,36 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
   };
 
   const handlePromptExit = () => {
-    Alert.alert(
-      t('abortWorkoutTitle'),
-      t('abortWorkoutBody'),
-      [
-        { text: t('continueBtn'), style: 'cancel' },
-        {
-          text: t('exitBtn'),
-          style: 'destructive',
-          onPress: () => {
-            handleStopRestSyncImmediate();
-            onExitWorkout();
-          },
+    Keyboard.dismiss();
+    const buttons: Array<{
+      text: string;
+      style?: 'default' | 'cancel' | 'destructive';
+      onPress?: () => void;
+    }> = [
+      { text: t('continueBtn'), style: 'cancel' },
+      {
+        text: t('pauseWorkoutBtn'),
+        onPress: () => {
+          isClosingWorkoutRef.current = true;
+          handleStopRestSyncImmediate();
+          onExitWorkout();
         },
-      ]
-    );
+      },
+    ];
+    if (onDiscardWorkout) {
+      buttons.push({
+        text: t('discardWorkoutBtn'),
+        style: 'destructive',
+        onPress: () => {
+          isClosingWorkoutRef.current = true;
+          handleStopRestSyncImmediate();
+          onDiscardWorkout();
+        },
+      });
+    }
+    Alert.alert(t('abortWorkoutTitle'), t('abortWorkoutChoiceBody'), buttons);
   };
+  promptExitRef.current = handlePromptExit;
 
   return (
     <View style={[styles.container, { backgroundColor: theme.bg }]}>
@@ -1130,6 +1361,12 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
 
       <SmartScrollView
         style={styles.scrollArea}
+        contentContainerStyle={{
+          paddingBottom:
+            (isResting || isRestFinished) && !isRestModalVisible
+              ? Math.max(insets.bottom + 102, 118)
+              : Math.max(insets.bottom + 24, 34),
+        }}
         showsVerticalScrollIndicator={false}
         lockWhenFits={false}
         liftForKeyboard={true}
@@ -1224,7 +1461,7 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
                         ]}
                         numberOfLines={1}
                       >
-                        Seria {idx + 1}
+                        {t('setLabel')} {idx + 1}
                       </Text>
                       {sEntry?.weight ? (
                         <Text
@@ -1275,7 +1512,7 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
               <Text style={[styles.bonusSetText, { color: theme.text }]}>{t('swapSimilarBtn')}</Text>
             </TouchableOpacity>
 
-            {(extraSetsMap[currentExercise.id] || 0) > 0 && (
+            {canRemoveBonusSet && (
               <TouchableOpacity
                 style={[styles.bonusSetPill, { borderColor: theme.border, backgroundColor: theme.bgSecondary }]}
                 onPress={handleRemoveBonusSet}
@@ -1474,7 +1711,27 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
                     {t('setLabel')} {currentSetIndex + 2} ➔
                   </Text>
                 </TouchableOpacity>
-              ) : null}
+              ) : currentExerciseIndex < exercises.length - 1 ? (
+                <TouchableOpacity
+                  style={[styles.nextSetBtn, { backgroundColor: theme.primary }]}
+                  onPress={() => handleTransitionExercise(currentExerciseIndex + 1)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[styles.nextSetBtnText, { color: theme.primaryText }]}>
+                    {t('nextExerciseArrowBtn')}
+                  </Text>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  style={[styles.nextSetBtn, { backgroundColor: theme.primary }]}
+                  onPress={handleTriggerFinish}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[styles.nextSetBtnText, { color: theme.primaryText }]}>
+                    {t('finishWorkoutBtn')}
+                  </Text>
+                </TouchableOpacity>
+              )}
             </View>
           )}
         </Animated.View>
@@ -1525,7 +1782,12 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
 
       {/* Floating Minimized Rest / Rest-Finished Alert Banner */}
       {(isResting || isRestFinished) && !isRestModalVisible && (
-        <View style={styles.floatingRestContainer}>
+        <View
+          style={[
+            styles.floatingRestContainer,
+            { bottom: Math.max(insets.bottom + 10, 18) },
+          ]}
+        >
           <TouchableOpacity
             style={[
               styles.floatingRestBar,
@@ -1584,7 +1846,8 @@ export const ActiveWorkoutView: React.FC<ActiveWorkoutViewProps> = ({
                     isPaused={isRestPaused}
                     pausedSeconds={restModalSeedSecs}
                     isFinished={isRestFinished}
-                    finishedLabel="KONIEC PRZERWY!"
+                    finishedLabel={t('restFinishedShort')}
+                    pausedPrefix={t('restPausedPrefix')}
                     color={
                       isRestFinished
                         ? theme.primaryText

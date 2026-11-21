@@ -38,12 +38,14 @@ const DAY_TYPE_KEYS: { id: DayType; labelKey: 'workoutTagShort' | 'cardioWalkTyp
   { id: 'rest', labelKey: 'restType', icon: 'bed-outline' },
 ];
 
+const EMPTY_EXERCISES: Exercise[] = [];
+
 export const PlanDayEditorModal: React.FC<PlanDayEditorModalProps> = ({
   visible,
   onClose,
   dayPlan,
   dayLabel,
-  extraExercises = [],
+  extraExercises = EMPTY_EXERCISES,
   onSaveDay,
   onLibraryChanged,
 }) => {

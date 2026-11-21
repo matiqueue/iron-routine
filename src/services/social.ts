@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getLocalDateKeyOffset } from '../utils/localDate';
+import { getLocalDateKey, getLocalDateKeyOffset } from '../utils/localDate';
 import {
   ChatMessage,
   ChatMessagePayload,
@@ -324,9 +324,10 @@ export async function fetchSocialHub(): Promise<{
   }
   const run = (async () => {
     try {
+      const todayLocal = getLocalDateKey();
       const [keyPair, res] = await Promise.all([
         getOrCreateE2eeKeyPair(session.userId),
-        fetch(`${SOCIAL_API_URL}?action=hub`, {
+        fetch(`${SOCIAL_API_URL}?action=hub&localDate=${encodeURIComponent(todayLocal)}`, {
           method: 'GET',
           headers: { Authorization: `Bearer ${session.token}` },
         }),
@@ -480,7 +481,12 @@ export async function sendSocialCheer(
   targetUserId: string,
   activityId?: string,
   count = 1
-): Promise<{ ok: boolean; cheersCount?: number }> {
+): Promise<{
+  ok: boolean;
+  cheersCount?: number;
+  cheerStreakDays?: number;
+  cheeredTodayWithMe?: boolean;
+}> {
   const session = await getStoredCloudSession();
   if (!session?.token) return { ok: false };
   try {
@@ -495,11 +501,18 @@ export async function sendSocialCheer(
         targetUserId,
         activityId,
         count: Math.max(1, Math.min(200, Math.round(count || 1))),
+        localDate: getLocalDateKey(),
       }),
     });
     const data = await res.json().catch(() => null);
     if (!res.ok || !data?.ok) return { ok: false };
-    return { ok: true, cheersCount: data.cheersCount };
+    return {
+      ok: true,
+      cheersCount: data.cheersCount,
+      cheerStreakDays: typeof data.cheerStreakDays === 'number' ? data.cheerStreakDays : undefined,
+      cheeredTodayWithMe:
+        typeof data.cheeredTodayWithMe === 'boolean' ? data.cheeredTodayWithMe : undefined,
+    };
   } catch {
     return { ok: false };
   }

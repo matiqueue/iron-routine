@@ -4,8 +4,6 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  Image,
-  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAppTheme } from '../context/ThemeContext';
@@ -15,6 +13,7 @@ import { resolveExerciseMuscles } from '../data/muscleMap';
 import { resolveCanonicalExerciseId } from '../data/exerciseLibrary';
 import { getFavoriteExerciseIds, toggleFavoriteExercise } from '../services/storage';
 import { BottomSheetScrollView, InteractiveBottomSheet } from './InteractiveBottomSheet';
+import { ExercisePreviewImage } from './ExercisePreviewImage';
 
 interface ExerciseDetailModalProps {
   visible: boolean;
@@ -31,8 +30,6 @@ export const ExerciseDetailModal: React.FC<ExerciseDetailModalProps> = ({
 }) => {
   const { theme } = useAppTheme();
   const { t, muscleLabel, categoryLabel, exerciseName, equipmentLabel } = useLanguage();
-  const [imageLoading, setImageLoading] = useState(true);
-  const [imageError, setImageError] = useState(false);
   const [favoriteIds, setFavoriteIds] = useState<string[]>([]);
 
   useEffect(() => {
@@ -65,43 +62,14 @@ export const ExerciseDetailModal: React.FC<ExerciseDetailModalProps> = ({
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 40 }}
       >
-        {/* Exercise Image / Minimal Header */}
-        <View
-          style={[
-            styles.imageContainer,
-            !exercise.imageUrl && { height: 112, borderRadius: 14, borderWidth: 1, borderColor: theme.border, marginBottom: 4 },
-            { backgroundColor: theme.bgSecondary },
-          ]}
-        >
-          {exercise.imageUrl && !imageError ? (
-            <>
-              <Image
-                source={{ uri: exercise.imageUrl }}
-                style={styles.image}
-                resizeMode="cover"
-                onLoadStart={() => setImageLoading(true)}
-                onLoadEnd={() => setImageLoading(false)}
-                onError={() => {
-                  setImageLoading(false);
-                  setImageError(true);
-                }}
-              />
-              {imageLoading && (
-                <View style={styles.imageLoader}>
-                  <ActivityIndicator size="small" color={theme.text} />
-                </View>
-              )}
-            </>
-          ) : (
-            <View style={styles.imagePlaceholder}>
-              <Ionicons name="barbell-outline" size={32} color={theme.textMuted} />
-              <Text style={[styles.imagePlaceholderText, { color: theme.textMuted }]}>
-                {exercise.equipment
-                  ? t('equipmentLabelText', { equipment: equipmentLabel(exercise.equipment) })
-                  : t('techniquePreview')}
-              </Text>
-            </View>
-          )}
+        {/* Exercise Visual Reference Photo (Position 1 / Position 2 toggle) */}
+        <View style={[styles.imageContainer, { backgroundColor: theme.bgSecondary }]}>
+          <ExercisePreviewImage
+            exercise={exercise}
+            variant="hero"
+            height={224}
+            borderRadius={14}
+          />
 
           <View
             style={[

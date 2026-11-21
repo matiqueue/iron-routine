@@ -259,12 +259,14 @@ function getMuscleFillStyle(
   };
 }
 
+const EMPTY_SILHOUETTE_EXERCISES: EnrichedExerciseRankStat[] = [];
+
 export const AnimatedBodySilhouette: React.FC<AnimatedBodySilhouetteProps> = React.memo(({
   gender = 'male',
   muscleStatsMap,
   selectedMuscle,
   onSelectMuscle,
-  selectedMuscleExercises = [],
+  selectedMuscleExercises = EMPTY_SILHOUETTE_EXERCISES,
   exercisesByMuscle,
   isTabActive = true,
   onPressExercise,
