@@ -14,7 +14,18 @@ import {
   View,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import Svg, { Circle, Defs, LinearGradient, Line, Path, Stop } from 'react-native-svg';
+import Svg, {
+  Circle,
+  Defs,
+  G,
+  LinearGradient,
+  Line,
+  Path,
+  RadialGradient,
+  Rect,
+  Stop,
+  Text as SvgText,
+} from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
@@ -619,6 +630,12 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
   const [weightSheetInput, setWeightSheetInput] = useState('');
   const [workoutHistory, setWorkoutHistory] = useState<WorkoutHistoryEntry[]>([]);
   const [showAllJournalWorkouts, setShowAllJournalWorkouts] = useState(false);
+  const [showAllWeightLogs, setShowAllWeightLogs] = useState(false);
+  const [weeklyChartMode, setWeeklyChartMode] = useState<'volume' | 'sets'>('volume');
+  const [selectedChartPoint, setSelectedChartPoint] = useState<{
+    chartId: string;
+    index: number;
+  } | null>(null);
   const [enabledSupplements, setEnabledSupplements] = useState<SupplementItem[]>([]);
   const [todayTakenSuppIds, setTodayTakenSuppIds] = useState<string[]>([]);
   const [suppLog7Days, setSuppLog7Days] = useState<CreatineDayEntry[]>([]);
@@ -1323,6 +1340,146 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
     return out;
   }, [workoutHistory]);
 
+  // Real 30-day & weekly training telemetry for the redesigned Statystyki dashboard
+  const statsAnalytics = useMemo(() => {
+    const now = new Date();
+    const todayKey = getLocalDateKey(now);
+    const cutoff30 = getLocalDateKeyOffset(-29, now);
+
+    // Compute Monday of current week (ISO Mon=0 .. Sun=6)
+    const todayDow = (now.getDay() + 6) % 7; // Mon=0 .. Sun=6
+    const thisWeekMondayKey = getLocalDateKeyOffset(-todayDow, now);
+
+    let workouts30d = 0;
+    let sets30d = 0;
+    let volume30dKg = 0;
+    let durationSum = 0;
+    let durationCount = 0;
+    let thisWeekWorkouts = 0;
+
+    // Aggregate per-day intensity map for calendar-aligned heatmap
+    const dayStatsMap: Record<string, { sets: number; volume: number; count: number }> = {};
+
+    for (const h of workoutHistory) {
+      const dk = h.date.slice(0, 10);
+      const prev = dayStatsMap[dk] || { sets: 0, volume: 0, count: 0 };
+      dayStatsMap[dk] = {
+        sets: prev.sets + (h.completedSets || 0),
+        volume: prev.volume + (h.totalVolumeKg || 0),
+        count: prev.count + 1,
+      };
+
+      if (dk >= cutoff30 && dk <= todayKey) {
+        workouts30d += 1;
+        sets30d += h.completedSets || 0;
+        volume30dKg += h.totalVolumeKg || 0;
+        if (h.durationMinutes && h.durationMinutes > 0) {
+          durationSum += h.durationMinutes;
+          durationCount += 1;
+        }
+      }
+      if (dk >= thisWeekMondayKey && dk <= todayKey) {
+        thisWeekWorkouts += 1;
+      }
+    }
+
+    const avgDurationMin = durationCount > 0 ? Math.round(durationSum / durationCount) : 0;
+
+    // 7-week rolling Monday–Sunday load series (6 past weeks + current week)
+    const weeklySeries: Array<{
+      key: string;
+      label: string;
+      volumeKg: number;
+      sets: number;
+      sessions: number;
+      isCurrent: boolean;
+    }> = [];
+
+    for (let w = 6; w >= 0; w--) {
+      const startOffset = -(todayDow + w * 7);
+      const endOffset = startOffset + 6;
+      const startKey = getLocalDateKeyOffset(startOffset, now);
+      const endKey = getLocalDateKeyOffset(endOffset, now);
+      let vol = 0;
+      let sets = 0;
+      let sessions = 0;
+      for (const h of workoutHistory) {
+        const dk = h.date.slice(0, 10);
+        if (dk >= startKey && dk <= endKey) {
+          vol += h.totalVolumeKg || 0;
+          sets += h.completedSets || 0;
+          sessions += 1;
+        }
+      }
+      const startDate = parseLocalDateKey(startKey);
+      const shortDateLabel = `${startDate.getDate()}.${String(startDate.getMonth() + 1).padStart(2, '0')}`;
+      weeklySeries.push({
+        key: startKey,
+        label: w === 0 ? t('journalDateToday') : shortDateLabel,
+        volumeKg: Math.round(vol),
+        sets,
+        sessions,
+        isCurrent: w === 0,
+      });
+    }
+
+    // 4-week calendar-aligned Mon–Sun heatmap (28 cells ending on current week's Sunday)
+    const heatmapCells: Array<{
+      key: string;
+      dayNum: string;
+      intensity: 0 | 1 | 2 | 3;
+      isToday: boolean;
+      isFuture: boolean;
+      sets: number;
+    }> = [];
+    for (let w = 3; w >= 0; w--) {
+      for (let d = 0; d < 7; d++) {
+        const offset = -(todayDow + w * 7) + d;
+        const iso = getLocalDateKeyOffset(offset, now);
+        const dt = parseLocalDateKey(iso);
+        const isFuture = offset > 0;
+        const rec = dayStatsMap[iso];
+        let intensity: 0 | 1 | 2 | 3 = 0;
+        if (rec && rec.count > 0) {
+          if (rec.sets >= 18 || rec.volume >= 7000) intensity = 3;
+          else if (rec.sets >= 10 || rec.volume >= 3000) intensity = 2;
+          else intensity = 1;
+        }
+        heatmapCells.push({
+          key: iso,
+          dayNum: String(dt.getDate()),
+          intensity,
+          isToday: offset === 0,
+          isFuture,
+          sets: rec?.sets || 0,
+        });
+      }
+    }
+
+    // Localized Monday..Sunday 2-letter headers
+    const weekdayHeaders: string[] = [];
+    const baseMon = parseLocalDateKey(thisWeekMondayKey);
+    for (let d = 0; d < 7; d++) {
+      const dd = new Date(baseMon.getTime() + d * 24 * 60 * 60 * 1000);
+      const raw = dd.toLocaleDateString(localeCode, { weekday: 'short' }).replace('.', '');
+      weekdayHeaders.push(raw.slice(0, 2).toUpperCase());
+    }
+
+    const active28Count = last28Days.filter((d) => d.active).length;
+
+    return {
+      workouts30d,
+      sets30d,
+      volume30dKg: Math.round(volume30dKg),
+      avgDurationMin,
+      thisWeekWorkouts,
+      active28Count,
+      weeklySeries,
+      heatmapCells,
+      weekdayHeaders,
+    };
+  }, [workoutHistory, last28Days, localeCode, t]);
+
   const renderOpenLineChart = (
     points: Array<{ value: number; label: string }>,
     strokeColor: string,
@@ -1332,31 +1489,21 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
   ) => {
     if (points.length === 0) {
       return (
-        <View
-          style={[
-            styles.unifiedChartBox,
-            {
-              backgroundColor: isDark ? 'rgba(255,255,255,0.025)' : 'rgba(15,23,42,0.025)',
-              borderColor: theme.hairline,
-            },
-          ]}
-        >
-          <View style={styles.emptyChartOpen}>
-            <Ionicons name="analytics-outline" size={22} color={theme.textMuted} />
-            <Text style={[styles.emptyChartText, { color: theme.textMuted }]}>
-              {t('noWeightInRange')}
-            </Text>
-          </View>
+        <View style={[styles.emptyChartOpen, { borderTopColor: theme.hairline }]}>
+          <Ionicons name="analytics-outline" size={22} color={theme.textMuted} />
+          <Text style={[styles.emptyChartText, { color: theme.textMuted }]}>
+            {t('noWeightInRange')}
+          </Text>
         </View>
       );
     }
 
-    const chartW = Math.max(220, widthOverride ?? SCREEN_WIDTH - 68);
-    const chartH = 162;
-    const padL = 12;
-    const padR = 12;
-    const padT = 20;
-    const padB = 20;
+    const chartW = Math.max(240, widthOverride ?? SCREEN_WIDTH - 40);
+    const chartH = 166;
+    const padL = 10;
+    const padR = 10;
+    const padT = 24;
+    const padB = 18;
     const innerW = chartW - padL - padR;
     const innerH = chartH - padT - padB;
 
@@ -1365,7 +1512,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
     const rawMax = Math.max(...vals);
     const avgVal = vals.reduce((acc, v) => acc + v, 0) / vals.length;
     const rawSpan = rawMax - rawMin;
-    const padVal = rawSpan > 0 ? rawSpan * 0.16 : 0.6;
+    const padVal = rawSpan > 0 ? rawSpan * 0.18 : 0.6;
     const scaleMin = Math.max(0, rawMin - padVal);
     const scaleMax = rawMax + padVal;
     const span = Math.max(0.5, scaleMax - scaleMin);
@@ -1382,11 +1529,11 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
       return { x, y, ...p };
     });
 
-    // Smooth Catmull-Rom Cubic Bezier spline (clamped safely inside chart vertical bounds)
+    // Smooth Catmull-Rom Cubic Bezier spline (clamped safely inside vertical bounds)
     let lineD = '';
     if (coords.length === 1) {
       const c = coords[0];
-      lineD = `M ${(c.x - 24).toFixed(1)} ${c.y.toFixed(1)} L ${(c.x + 24).toFixed(1)} ${c.y.toFixed(1)}`;
+      lineD = `M ${(c.x - 28).toFixed(1)} ${c.y.toFixed(1)} L ${(c.x + 28).toFixed(1)} ${c.y.toFixed(1)}`;
     } else {
       lineD = `M ${coords[0].x.toFixed(1)} ${coords[0].y.toFixed(1)}`;
       for (let i = 0; i < coords.length - 1; i++) {
@@ -1406,97 +1553,161 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
     const bottomY = padT + innerH;
     const areaD =
       coords.length === 1
-        ? `M ${(coords[0].x - 24).toFixed(1)} ${bottomY.toFixed(1)} L ${(coords[0].x - 24).toFixed(1)} ${coords[0].y.toFixed(1)} L ${(coords[0].x + 24).toFixed(1)} ${coords[0].y.toFixed(1)} L ${(coords[0].x + 24).toFixed(1)} ${bottomY.toFixed(1)} Z`
+        ? `M ${(coords[0].x - 28).toFixed(1)} ${bottomY.toFixed(1)} L ${(coords[0].x - 28).toFixed(1)} ${coords[0].y.toFixed(1)} L ${(coords[0].x + 28).toFixed(1)} ${coords[0].y.toFixed(1)} L ${(coords[0].x + 28).toFixed(1)} ${bottomY.toFixed(1)} Z`
         : `${lineD} L ${coords[coords.length - 1].x.toFixed(1)} ${bottomY.toFixed(1)} L ${coords[0].x.toFixed(1)} ${bottomY.toFixed(1)} Z`;
 
     const gradId = `unifiedSplineGrad_${chartId}`;
-    const lastPt = coords[coords.length - 1];
+    const activeIdx =
+      selectedChartPoint &&
+      selectedChartPoint.chartId === chartId &&
+      selectedChartPoint.index < coords.length
+        ? selectedChartPoint.index
+        : null;
+    const highlightPt = activeIdx !== null ? coords[activeIdx] : coords[coords.length - 1];
     const firstLabel = points[0]?.label || '';
     const lastLabel = points[points.length - 1]?.label || '';
 
     return (
-      <View
-        style={[
-          styles.unifiedChartBox,
-          {
-            backgroundColor: isDark ? 'rgba(255,255,255,0.025)' : 'rgba(15,23,42,0.02)',
-            borderColor: theme.hairline,
-          },
-        ]}
-      >
-        <Svg width={chartW} height={chartH}>
-          <Defs>
-            <LinearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
-              <Stop offset="0%" stopColor={strokeColor} stopOpacity={isDark ? 0.3 : 0.22} />
-              <Stop offset="78%" stopColor={strokeColor} stopOpacity={0.04} />
-              <Stop offset="100%" stopColor={strokeColor} stopOpacity={0.0} />
-            </LinearGradient>
-          </Defs>
+      <View style={styles.openSplineWrap}>
+        {/* Floating inspected point badge when user taps any point on the spline */}
+        {activeIdx !== null && highlightPt && (
+          <View
+            style={[
+              styles.splineTooltipPill,
+              {
+                backgroundColor: isDark ? 'rgba(15, 23, 42, 0.92)' : '#FFFFFF',
+                borderColor: `${strokeColor}66`,
+              },
+            ]}
+          >
+            <View style={[styles.splineTooltipDot, { backgroundColor: strokeColor }]} />
+            <Text style={[styles.splineTooltipDate, { color: theme.textSecondary }]}>
+              {highlightPt.label}
+            </Text>
+            <Text style={[styles.splineTooltipVal, { color: theme.text }]}>
+              {highlightPt.value.toFixed(1)} {unitLabel}
+            </Text>
+          </View>
+        )}
 
-          {[0, 0.5, 1].map((ratio, i) => {
-            const y = padT + ratio * innerH;
-            return (
-              <Line
-                key={i}
-                x1={padL}
-                y1={y}
-                x2={chartW - padR}
-                y2={y}
-                stroke={isDark ? 'rgba(255,255,255,0.08)' : 'rgba(15,23,42,0.08)'}
-                strokeDasharray="3 4"
-                strokeWidth={1}
-              />
-            );
-          })}
+        <View style={{ position: 'relative', width: chartW, height: chartH }}>
+          <Svg width={chartW} height={chartH}>
+            <Defs>
+              <LinearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+                <Stop offset="0%" stopColor={strokeColor} stopOpacity={isDark ? 0.34 : 0.24} />
+                <Stop offset="70%" stopColor={strokeColor} stopOpacity={isDark ? 0.06 : 0.04} />
+                <Stop offset="100%" stopColor={strokeColor} stopOpacity={0.0} />
+              </LinearGradient>
+            </Defs>
 
-          {areaD ? <Path d={areaD} fill={`url(#${gradId})`} /> : null}
-          {lineD ? (
-            <Path
-              d={lineD}
-              fill="none"
-              stroke={strokeColor}
-              strokeWidth={2.75}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          ) : null}
+            {[0, 0.5, 1].map((ratio, i) => {
+              const y = padT + ratio * innerH;
+              return (
+                <Line
+                  key={i}
+                  x1={padL}
+                  y1={y}
+                  x2={chartW - padR}
+                  y2={y}
+                  stroke={isDark ? 'rgba(255,255,255,0.075)' : 'rgba(15,23,42,0.075)'}
+                  strokeDasharray="3 5"
+                  strokeWidth={1}
+                />
+              );
+            })}
 
-          {coords.length <= 16 &&
-            coords.slice(0, -1).map((c, idx) => (
-              <Circle
-                key={idx}
-                cx={c.x}
-                cy={c.y}
-                r={3}
-                fill={theme.card}
+            {areaD ? <Path d={areaD} fill={`url(#${gradId})`} /> : null}
+            {lineD ? (
+              <Path
+                d={lineD}
+                fill="none"
                 stroke={strokeColor}
-                strokeWidth={1.8}
+                strokeWidth={2.8}
+                strokeLinecap="round"
+                strokeLinejoin="round"
               />
-            ))}
+            ) : null}
 
-          {/* Latest measurement halo beacon */}
-          {lastPt && (
-            <>
-              <Circle
-                cx={lastPt.x}
-                cy={lastPt.y}
-                r={9}
-                fill={strokeColor}
-                fillOpacity={0.18}
+            {/* Active vertical guide beam when inspecting a point */}
+            {activeIdx !== null && highlightPt && (
+              <Line
+                x1={highlightPt.x}
+                y1={padT - 4}
+                x2={highlightPt.x}
+                y2={bottomY}
+                stroke={strokeColor}
+                strokeOpacity={0.45}
+                strokeDasharray="3 3"
+                strokeWidth={1.2}
               />
-              <Circle
-                cx={lastPt.x}
-                cy={lastPt.y}
-                r={4.8}
-                fill={strokeColor}
-                stroke={theme.card}
-                strokeWidth={2}
-              />
-            </>
+            )}
+
+            {coords.length <= 18 &&
+              coords.map((c, idx) => {
+                const isHighlighted =
+                  activeIdx !== null ? idx === activeIdx : idx === coords.length - 1;
+                if (isHighlighted) return null;
+                return (
+                  <Circle
+                    key={idx}
+                    cx={c.x}
+                    cy={c.y}
+                    r={2.8}
+                    fill={theme.bg}
+                    stroke={strokeColor}
+                    strokeOpacity={0.8}
+                    strokeWidth={1.6}
+                  />
+                );
+              })}
+
+            {/* Highlighted / Latest glowing double-ring beacon */}
+            {highlightPt && (
+              <G>
+                <Circle
+                  cx={highlightPt.x}
+                  cy={highlightPt.y}
+                  r={11}
+                  fill={strokeColor}
+                  fillOpacity={0.18}
+                />
+                <Circle
+                  cx={highlightPt.x}
+                  cy={highlightPt.y}
+                  r={5.2}
+                  fill={strokeColor}
+                  stroke={theme.bg}
+                  strokeWidth={2.2}
+                />
+              </G>
+            )}
+          </Svg>
+
+          {/* Interactive tap columns for effortless point inspection */}
+          {coords.length > 1 && (
+            <View style={styles.splineTouchLayer}>
+              {coords.map((_, idx) => (
+                <TouchableOpacity
+                  key={idx}
+                  style={styles.splineTouchSlice}
+                  activeOpacity={1}
+                  onPress={() => {
+                    try {
+                      Haptics.selectionAsync();
+                    } catch {}
+                    setSelectedChartPoint((prev) =>
+                      prev && prev.chartId === chartId && prev.index === idx
+                        ? null
+                        : { chartId, index: idx }
+                    );
+                  }}
+                />
+              ))}
+            </View>
           )}
-        </Svg>
+        </View>
 
-        {/* Date endpoints axis */}
+        {/* Clean Axis Endpoints */}
         <View style={styles.unifiedChartDateRow}>
           <Text style={[styles.unifiedChartDateText, { color: theme.textMuted }]}>
             {firstLabel}
@@ -1511,11 +1722,14 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
           </Text>
         </View>
 
-        {/* Unified Min · Avg · Max Telemetry Footer Strip */}
+        {/* Open Hairline Min · Avg · Max Telemetry Strip */}
         <View
           style={[
-            styles.unifiedChartStatsRow,
-            { borderTopColor: theme.hairline },
+            styles.openSplineStatsRow,
+            {
+              borderTopColor: theme.hairline,
+              borderBottomColor: theme.hairline,
+            },
           ]}
         >
           <View style={styles.unifiedChartStatCell}>
@@ -2384,7 +2598,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
           )}
 
           {/* =========================================================
-              SUB-VIEW 3: DZIENNIK (WEIGHT, SUPPLEMENTS & ACTIVITY LOG)
+              SUB-VIEW 3: STATYSTYKI (ATMOSPHERIC TELEMETRY & BIOMETRICS)
              ========================================================= */}
           {subView === 'journal' && (() => {
             const todayKey = getLocalDateKey();
@@ -2404,6 +2618,18 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
               currentWeightVal && activeProfile?.height && activeProfile.height > 100
                 ? currentWeightVal / Math.pow(activeProfile.height / 100, 2)
                 : null;
+            const bmiStatus =
+              bmiVal === null
+                ? null
+                : bmiVal < 18.5
+                ? { label: t('statsBmiUnder'), color: '#38BDF8' }
+                : bmiVal < 25
+                ? { label: t('statsBmiNormal'), color: '#10B981' }
+                : { label: t('statsBmiOver'), color: '#F59E0B' };
+            const bmiNeedlePct =
+              bmiVal === null
+                ? 50
+                : Math.max(4, Math.min(96, ((bmiVal - 15) / (33 - 15)) * 100));
 
             const effectiveTaken = resolveEffectiveTakenIds(todayTakenSuppIds);
             const hasSuppItems = enabledSupplements.length > 0;
@@ -2414,41 +2640,298 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
               ? 1
               : 0;
             const allSuppDone = takenSuppCount >= totalSuppItems && totalSuppItems > 0;
-            const journalCardBg = isDark ? 'rgba(24, 24, 28, 0.78)' : '#FFFFFF';
-            const journalCardBorder = isDark
-              ? 'rgba(255, 255, 255, 0.08)'
-              : 'rgba(15, 23, 42, 0.08)';
-            const matrixCellW = Math.floor((SCREEN_WIDTH - 40 - 34 - 6 * 7) / 7);
+            const suppTaken7d = suppLog7Days.filter((e) => e.taken).length;
+
+            // Hero Circular Ring Geometry (86x86, r=35)
+            const ringSize = 86;
+            const ringR = 35;
+            const ringCirc = 2 * Math.PI * ringR;
+            const ringRatio = Math.min(1, statsAnalytics.active28Count / 16);
+            const ringDashOffset =
+              statsAnalytics.active28Count === 0
+                ? ringCirc
+                : ringCirc * (1 - Math.max(0.08, ringRatio));
+
+            const heroHasVolume = statsAnalytics.volume30dKg > 0;
+            const heroPrimaryValue = heroHasVolume
+              ? statsAnalytics.volume30dKg >= 1000
+                ? `${(statsAnalytics.volume30dKg / 1000).toFixed(1)} t`
+                : `${statsAnalytics.volume30dKg.toLocaleString(localeCode)} kg`
+              : `${statsAnalytics.sets30d}`;
+            const heroPrimarySub = heroHasVolume
+              ? t('statsHeroVolumeTitle')
+              : t('statsHeroSetsTitle');
+
+            // 7-week pillar chart geometry
+            const barChartW = SCREEN_WIDTH - 40;
+            const barChartH = 132;
+            const barTopPad = 24;
+            const barBottomPad = 24;
+            const barPlotH = barChartH - barTopPad - barBottomPad;
+            const weeklyValues = statsAnalytics.weeklySeries.map((w) =>
+              weeklyChartMode === 'volume' ? w.volumeKg : w.sets
+            );
+            const weeklyMax = Math.max(1, ...weeklyValues);
+            const peakWeekIdx = weeklyValues.reduce(
+              (best, val, i) => (val > weeklyValues[best] ? i : best),
+              0
+            );
+
+            // Heatmap cell sizing (7 exact Mon-Sun columns)
+            const heatmapCellW = Math.floor((SCREEN_WIDTH - 40 - 6 * 7) / 7);
+            const visibleWeightRows = showAllWeightLogs
+              ? recentWeightHistory.slice(0, 12)
+              : recentWeightHistory.slice(0, 3);
 
             return (
-              <View style={styles.journalPage}>
-                {/* Auto-Appearing Daily Weigh-In Prompt (hidden once weighed or skipped today) */}
+              <View style={styles.openPage}>
+                {/* 1. ATMOSPHERIC TELEMETRY HERO STAGE */}
+                <View
+                  style={[
+                    styles.statsHeroStage,
+                    {
+                      backgroundColor: isDark ? '#0B111C' : '#F1F6FD',
+                      borderColor: isDark
+                        ? 'rgba(56, 189, 248, 0.2)'
+                        : 'rgba(14, 165, 233, 0.18)',
+                    },
+                  ]}
+                >
+                  {/* Atmospheric Radial Glow & Precision Orbital Arcs */}
+                  <View style={StyleSheet.absoluteFill} pointerEvents="none">
+                    <Svg
+                      width="100%"
+                      height="100%"
+                      viewBox="0 0 360 190"
+                      preserveAspectRatio="xMidYMid slice"
+                    >
+                      <Defs>
+                        <RadialGradient id="statsHeroCyanBloom" cx="16%" cy="22%" r="64%">
+                          <Stop
+                            offset="0%"
+                            stopColor="#38BDF8"
+                            stopOpacity={isDark ? 0.24 : 0.16}
+                          />
+                          <Stop
+                            offset="62%"
+                            stopColor="#38BDF8"
+                            stopOpacity={isDark ? 0.05 : 0.03}
+                          />
+                          <Stop offset="100%" stopColor="#38BDF8" stopOpacity={0} />
+                        </RadialGradient>
+                        <RadialGradient id="statsHeroEmeraldBloom" cx="92%" cy="82%" r="54%">
+                          <Stop
+                            offset="0%"
+                            stopColor="#10B981"
+                            stopOpacity={isDark ? 0.2 : 0.14}
+                          />
+                          <Stop offset="100%" stopColor="#10B981" stopOpacity={0} />
+                        </RadialGradient>
+                      </Defs>
+                      <Rect x="0" y="0" width="360" height="190" fill="url(#statsHeroCyanBloom)" />
+                      <Rect
+                        x="0"
+                        y="0"
+                        width="360"
+                        height="190"
+                        fill="url(#statsHeroEmeraldBloom)"
+                      />
+                      <Circle
+                        cx="324"
+                        cy="26"
+                        r="78"
+                        fill="none"
+                        stroke="#38BDF8"
+                        strokeOpacity={isDark ? 0.11 : 0.12}
+                        strokeWidth={1}
+                        strokeDasharray="4 6"
+                      />
+                      <Circle
+                        cx="324"
+                        cy="26"
+                        r="118"
+                        fill="none"
+                        stroke={isDark ? '#FFFFFF' : '#0F172A'}
+                        strokeOpacity={isDark ? 0.045 : 0.04}
+                        strokeWidth={1}
+                      />
+                    </Svg>
+                  </View>
+
+                  {/* Hero Main Row: Precision Activity Ring + 30d Tonnage / Sets */}
+                  <View style={styles.statsHeroTopRow}>
+                    <View style={styles.statsRingWrap}>
+                      <Svg width={ringSize} height={ringSize}>
+                        <Defs>
+                          <LinearGradient id="statsRingGrad" x1="0" y1="0" x2="1" y2="1">
+                            <Stop offset="0%" stopColor="#38BDF8" />
+                            <Stop offset="100%" stopColor="#10B981" />
+                          </LinearGradient>
+                        </Defs>
+                        <Circle
+                          cx={ringSize / 2}
+                          cy={ringSize / 2}
+                          r={ringR}
+                          fill="none"
+                          stroke={
+                            isDark ? 'rgba(255,255,255,0.09)' : 'rgba(15,23,42,0.09)'
+                          }
+                          strokeWidth={7}
+                        />
+                        <Circle
+                          cx={ringSize / 2}
+                          cy={ringSize / 2}
+                          r={ringR}
+                          fill="none"
+                          stroke="url(#statsRingGrad)"
+                          strokeWidth={7}
+                          strokeLinecap="round"
+                          strokeDasharray={`${ringCirc} ${ringCirc}`}
+                          strokeDashoffset={ringDashOffset}
+                          rotation={-90}
+                          origin={`${ringSize / 2}, ${ringSize / 2}`}
+                        />
+                      </Svg>
+                      <View style={styles.statsRingCenter}>
+                        <Text style={[styles.statsRingVal, { color: theme.text }]}>
+                          {statsAnalytics.active28Count}
+                        </Text>
+                        <Text style={[styles.statsRingLbl, { color: theme.textMuted }]}>
+                          {t('statsConsistencyLabel')}
+                        </Text>
+                      </View>
+                    </View>
+
+                    <View style={styles.statsHeroCopyCol}>
+                      <Text style={styles.statsHeroEyebrow}>
+                        {t('statsHeroEyebrow30d')}
+                      </Text>
+                      <Text
+                        style={[styles.statsHeroBigVal, { color: theme.text }]}
+                        numberOfLines={1}
+                        adjustsFontSizeToFit
+                      >
+                        {heroPrimaryValue}
+                      </Text>
+                      <View style={styles.statsHeroSubRow}>
+                        <Text style={[styles.statsHeroSubLabel, { color: theme.textSecondary }]}>
+                          {heroPrimarySub}
+                        </Text>
+                        {statsAnalytics.thisWeekWorkouts > 0 && (
+                          <View style={styles.statsHeroWeekPill}>
+                            <Ionicons name="flash" size={11} color="#10B981" />
+                            <Text style={styles.statsHeroWeekPillText}>
+                              {statsAnalytics.thisWeekWorkouts} / 7d
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+                    </View>
+                  </View>
+
+                  {/* Compact 4-Column Telemetry Strip inside Hero */}
+                  <View
+                    style={[
+                      styles.statsHeroKpiStrip,
+                      {
+                        borderTopColor: isDark
+                          ? 'rgba(255,255,255,0.08)'
+                          : 'rgba(15,23,42,0.08)',
+                      },
+                    ]}
+                  >
+                    {[
+                      {
+                        label: t('statsMetricWorkouts'),
+                        val: String(statsAnalytics.workouts30d),
+                        dot: '#38BDF8',
+                      },
+                      {
+                        label: t('statsMetricSets'),
+                        val: String(statsAnalytics.sets30d),
+                        dot: '#A855F7',
+                      },
+                      {
+                        label: t('statsMetricAvgTime'),
+                        val: statsAnalytics.avgDurationMin
+                          ? `${statsAnalytics.avgDurationMin}m`
+                          : '—',
+                        dot: '#F59E0B',
+                      },
+                      {
+                        label: t('statsMetricSupps7d'),
+                        val: `${suppTaken7d}/7`,
+                        dot: '#10B981',
+                      },
+                    ].map((kpi, idx) => (
+                      <React.Fragment key={kpi.label}>
+                        {idx > 0 && (
+                          <View
+                            style={[
+                              styles.statsHeroKpiDiv,
+                              {
+                                backgroundColor: isDark
+                                  ? 'rgba(255,255,255,0.08)'
+                                  : 'rgba(15,23,42,0.08)',
+                              },
+                            ]}
+                          />
+                        )}
+                        <View style={styles.statsHeroKpiCell}>
+                          <Text style={[styles.statsHeroKpiVal, { color: theme.text }]}>
+                            {kpi.val}
+                          </Text>
+                          <View style={styles.statsHeroKpiLblRow}>
+                            <View
+                              style={[styles.statsHeroKpiDot, { backgroundColor: kpi.dot }]}
+                            />
+                            <Text
+                              style={[styles.statsHeroKpiLbl, { color: theme.textMuted }]}
+                              numberOfLines={1}
+                            >
+                              {kpi.label}
+                            </Text>
+                          </View>
+                        </View>
+                      </React.Fragment>
+                    ))}
+                  </View>
+                </View>
+
+                {/* 2. SLIM CONTEXTUAL DAILY WEIGH-IN STRIP (auto-hides once weighed or skipped today) */}
                 {showDailyWeighPrompt && (
                   <View
                     style={[
-                      styles.dailyWeighCard,
+                      styles.slimWeighStrip,
                       {
                         backgroundColor: isDark
                           ? 'rgba(56, 189, 248, 0.08)'
                           : 'rgba(14, 165, 233, 0.06)',
                         borderColor: isDark
-                          ? 'rgba(56, 189, 248, 0.34)'
-                          : 'rgba(14, 165, 233, 0.28)',
+                          ? 'rgba(56, 189, 248, 0.32)'
+                          : 'rgba(14, 165, 233, 0.26)',
                       },
                     ]}
                   >
-                    <View style={styles.dailyWeighHeaderRow}>
-                      <View style={styles.dailyWeighIconOrb}>
-                        <Ionicons name="scale-outline" size={18} color="#38BDF8" />
-                      </View>
-                      <View style={{ flex: 1, minWidth: 0 }}>
-                        <Text style={[styles.dailyWeighTitle, { color: theme.text }]}>
+                    <View style={styles.slimWeighTopRow}>
+                      <View style={styles.slimWeighTitleRow}>
+                        <Ionicons name="scale-outline" size={16} color="#38BDF8" />
+                        <Text
+                          style={[styles.slimWeighTitle, { color: theme.text }]}
+                          numberOfLines={1}
+                        >
                           {t('journalWeighPromptTitle')}
                         </Text>
-                        <Text style={[styles.dailyWeighSub, { color: theme.textSecondary }]}>
-                          {t('journalWeighPromptSub')}
-                        </Text>
                       </View>
+                      <TouchableOpacity
+                        onPress={handleSkipWeighToday}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={[styles.slimWeighSkipText, { color: theme.textMuted }]}>
+                          {t('journalSkipWeighToday')}
+                        </Text>
+                      </TouchableOpacity>
                     </View>
 
                     <View style={styles.weightStepperRow}>
@@ -2461,18 +2944,22 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                               : 'rgba(15,23,42,0.06)',
                           },
                         ]}
-                        onPress={() => adjustWeightInput(quickWeighInput, -0.1, setQuickWeighInput)}
+                        onPress={() =>
+                          adjustWeightInput(quickWeighInput, -0.1, setQuickWeighInput)
+                        }
                         activeOpacity={0.75}
                       >
-                        <Ionicons name="remove" size={18} color={theme.text} />
+                        <Ionicons name="remove" size={17} color={theme.text} />
                       </TouchableOpacity>
 
                       <View
                         style={[
                           styles.weightStepInputWrap,
                           {
-                            backgroundColor: journalCardBg,
-                            borderColor: journalCardBorder,
+                            backgroundColor: isDark ? 'rgba(9,9,11,0.55)' : '#FFFFFF',
+                            borderColor: isDark
+                              ? 'rgba(255,255,255,0.1)'
+                              : 'rgba(15,23,42,0.1)',
                           },
                         ]}
                       >
@@ -2485,7 +2972,9 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                           onChangeText={setQuickWeighInput}
                           textAlign="center"
                         />
-                        <Text style={[styles.weightStepUnit, { color: theme.textMuted }]}>kg</Text>
+                        <Text style={[styles.weightStepUnit, { color: theme.textMuted }]}>
+                          kg
+                        </Text>
                       </View>
 
                       <TouchableOpacity
@@ -2497,10 +2986,12 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                               : 'rgba(15,23,42,0.06)',
                           },
                         ]}
-                        onPress={() => adjustWeightInput(quickWeighInput, 0.1, setQuickWeighInput)}
+                        onPress={() =>
+                          adjustWeightInput(quickWeighInput, 0.1, setQuickWeighInput)
+                        }
                         activeOpacity={0.75}
                       >
-                        <Ionicons name="add" size={18} color={theme.text} />
+                        <Ionicons name="add" size={17} color={theme.text} />
                       </TouchableOpacity>
 
                       <TouchableOpacity
@@ -2512,34 +3003,22 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                         <Text style={styles.dailyWeighSaveText}>{t('save')}</Text>
                       </TouchableOpacity>
                     </View>
-
-                    <TouchableOpacity
-                      style={styles.dailyWeighSkipBtn}
-                      onPress={handleSkipWeighToday}
-                      activeOpacity={0.72}
-                    >
-                      <Text style={[styles.dailyWeighSkipText, { color: theme.textMuted }]}>
-                        {t('journalSkipWeighToday')}
-                      </Text>
-                    </TouchableOpacity>
                   </View>
                 )}
 
-                {/* Unified Body Weight Card (Hero Telemetry + Spline Chart + Past-Day Logging) */}
-                <View
-                  style={[
-                    styles.journalCard,
-                    { backgroundColor: journalCardBg, borderColor: journalCardBorder },
-                  ]}
-                >
-                  <View style={styles.journalCardHeaderRow}>
+                {/* 3. OPEN EDITORIAL SECTION: MASA CIAŁA & TREND */}
+                <View style={styles.openSectionNoBorder}>
+                  <View style={styles.statsWeightHeaderRow}>
                     <View style={{ flex: 1, minWidth: 0 }}>
                       <Text style={[styles.sectionEyebrow, { color: theme.textMuted }]}>
                         {t('bodyWeightUpper')}
                       </Text>
-                      <View style={styles.weightHeroRow}>
-                        <Text style={[styles.weightHeroBig, { color: theme.text }]}>
-                          {currentWeightVal !== null ? `${currentWeightVal} kg` : '-- kg'}
+                      <View style={styles.statsSculptedWeightRow}>
+                        <Text style={[styles.statsSculptedWeightVal, { color: theme.text }]}>
+                          {currentWeightVal !== null ? currentWeightVal.toFixed(1) : '--'}
+                        </Text>
+                        <Text style={[styles.statsSculptedWeightUnit, { color: theme.textMuted }]}>
+                          kg
                         </Text>
                         {weightDelta !== null && (
                           <View
@@ -2553,6 +3032,11 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                               },
                             ]}
                           >
+                            <Ionicons
+                              name={weightDelta <= 0 ? 'trending-down' : 'trending-up'}
+                              size={12}
+                              color={weightDelta <= 0 ? '#10B981' : '#38BDF8'}
+                            />
                             <Text
                               style={[
                                 styles.weightDeltaPillText,
@@ -2561,18 +3045,6 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                             >
                               {weightDelta > 0 ? '+' : ''}
                               {weightDelta.toFixed(1)} kg
-                            </Text>
-                          </View>
-                        )}
-                        {bmiVal !== null && (
-                          <View
-                            style={[
-                              styles.weightBmiPill,
-                              { backgroundColor: theme.bgSecondary },
-                            ]}
-                          >
-                            <Text style={[styles.weightBmiText, { color: theme.textSecondary }]}>
-                              BMI {bmiVal.toFixed(1)}
                             </Text>
                           </View>
                         )}
@@ -2606,7 +3078,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                     </TouchableOpacity>
                   </View>
 
-                  <View style={styles.journalChartToolbar}>
+                  <View style={styles.statsWeightToolbar}>
                     <View style={[styles.rangePills, { backgroundColor: theme.bgSecondary }]}>
                       {(
                         [
@@ -2623,7 +3095,10 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                               styles.rangePillBtn,
                               active && { backgroundColor: theme.text },
                             ]}
-                            onPress={() => setWeightChartRange(r.id)}
+                            onPress={() => {
+                              setSelectedChartPoint(null);
+                              setWeightChartRange(r.id);
+                            }}
                           >
                             <Text
                               style={[
@@ -2650,12 +3125,70 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                     '#38BDF8',
                     'kg',
                     'weight',
-                    SCREEN_WIDTH - 40 - 32 - 20
+                    SCREEN_WIDTH - 40
                   )}
 
-                  {recentWeightHistory.length > 0 && (
-                    <View style={[styles.journalWeightLogWrap, { borderTopColor: theme.hairline }]}>
-                      {recentWeightHistory.slice(0, 5).map((w, idx) => {
+                  {/* Precision Visual BMI Spectrum Needle Bar */}
+                  {bmiVal !== null && bmiStatus && (
+                    <View style={styles.bmiSpectrumWrap}>
+                      <View style={styles.bmiSpectrumTopRow}>
+                        <Text style={[styles.bmiSpectrumTitle, { color: theme.textSecondary }]}>
+                          BMI{' '}
+                          <Text style={{ color: theme.text, fontWeight: '900' }}>
+                            {bmiVal.toFixed(1)}
+                          </Text>
+                        </Text>
+                        <View
+                          style={[
+                            styles.bmiStatusPill,
+                            { backgroundColor: `${bmiStatus.color}1C` },
+                          ]}
+                        >
+                          <View
+                            style={[styles.bmiStatusDot, { backgroundColor: bmiStatus.color }]}
+                          />
+                          <Text style={[styles.bmiStatusText, { color: bmiStatus.color }]}>
+                            {bmiStatus.label}
+                          </Text>
+                        </View>
+                      </View>
+                      <View style={styles.bmiBarTrack}>
+                        <View
+                          style={[
+                            styles.bmiBarSeg,
+                            { flex: 1.9, backgroundColor: 'rgba(56, 189, 248, 0.55)' },
+                          ]}
+                        />
+                        <View
+                          style={[
+                            styles.bmiBarSeg,
+                            { flex: 3.6, backgroundColor: 'rgba(16, 185, 129, 0.78)' },
+                          ]}
+                        />
+                        <View
+                          style={[
+                            styles.bmiBarSeg,
+                            { flex: 4.5, backgroundColor: 'rgba(245, 158, 11, 0.6)' },
+                          ]}
+                        />
+                        <View
+                          style={[
+                            styles.bmiNeedle,
+                            {
+                              left: `${bmiNeedlePct}%`,
+                              backgroundColor: theme.text,
+                              borderColor: theme.bg,
+                            },
+                          ]}
+                        />
+                      </View>
+                    </View>
+                  )}
+
+                  {/* Compact Collapsible Weight Log Rows (tap any row to edit past date/weight) */}
+                  {visibleWeightRows.length > 0 && (
+                    <View style={styles.openWeightLogWrap}>
+                      {visibleWeightRows.map((w, idx) => {
                         const prevEntry = recentWeightHistory[idx + 1];
                         const stepDiff = prevEntry ? w.weight - prevEntry.weight : null;
                         const entryDate = parseLocalDateKey(w.date);
@@ -2666,14 +3199,10 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                         return (
                           <TouchableOpacity
                             key={w.id}
-                            activeOpacity={0.75}
+                            activeOpacity={0.72}
                             onPress={() => openWeightSheet(Math.min(0, dayDiff), w.weight)}
                             style={[
                               styles.simpleLogRow,
-                              idx === Math.min(recentWeightHistory.length, 5) - 1 && {
-                                borderBottomWidth: 0,
-                                paddingBottom: 2,
-                              },
                               { borderBottomColor: theme.hairline },
                             ]}
                           >
@@ -2715,18 +3244,32 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                           </TouchableOpacity>
                         );
                       })}
+
+                      {recentWeightHistory.length > 3 && (
+                        <TouchableOpacity
+                          style={styles.expandInlineLink}
+                          onPress={() => setShowAllWeightLogs((v) => !v)}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={[styles.expandInlineLinkText, { color: '#38BDF8' }]}>
+                            {showAllWeightLogs
+                              ? t('lessLabel')
+                              : t('allCountLabel', { count: recentWeightHistory.length })}
+                          </Text>
+                          <Ionicons
+                            name={showAllWeightLogs ? 'chevron-up' : 'chevron-down'}
+                            size={13}
+                            color="#38BDF8"
+                          />
+                        </TouchableOpacity>
+                      )}
                     </View>
                   )}
                 </View>
 
-                {/* Unified Supplements Card (NO "Czy brałeś już suple?" heading, NO "Oznacz wszystkie" button, One-Way Animated Check) */}
-                <View
-                  style={[
-                    styles.journalCard,
-                    { backgroundColor: journalCardBg, borderColor: journalCardBorder },
-                  ]}
-                >
-                  <View style={styles.journalCardHeaderRow}>
+                {/* 4. OPEN EDITORIAL SECTION: SUPLEMENTACJA (One-Way Animated Check, ZERO heading/mark-all clutter) */}
+                <View style={[styles.openSection, { borderTopColor: theme.hairline }]}>
+                  <View style={styles.openSectionHeader}>
                     <View style={{ flex: 1, minWidth: 0 }}>
                       <Text
                         style={[
@@ -2789,8 +3332,10 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                             isDark={isDark}
                             textColor={theme.text}
                             mutedColor={theme.textMuted}
-                            bgColor={theme.bgSecondary}
-                            borderColor={theme.border}
+                            bgColor={
+                              isDark ? 'rgba(255,255,255,0.035)' : 'rgba(15,23,42,0.03)'
+                            }
+                            borderColor={theme.hairline}
                             onMarkTaken={handleMarkSupplementTaken}
                           />
                         );
@@ -2803,119 +3348,293 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                         isDark={isDark}
                         textColor={theme.text}
                         mutedColor={theme.textMuted}
-                        bgColor={theme.bgSecondary}
-                        borderColor={theme.border}
+                        bgColor={isDark ? 'rgba(255,255,255,0.035)' : 'rgba(15,23,42,0.03)'}
+                        borderColor={theme.hairline}
                         onMarkTaken={handleMarkSupplementTaken}
                       />
                     )}
                   </View>
 
                   {suppLog7Days.length > 0 && (
-                    <View style={[styles.suppWeekWrap, { borderTopColor: theme.hairline }]}>
-                      <Text style={[styles.suppWeekLabel, { color: theme.textMuted }]}>
-                        {t('journalSuppLast7Days')}
-                      </Text>
-                      <View style={styles.suppWeekRow}>
-                        {suppLog7Days.map((entry) => (
-                          <View key={entry.date} style={styles.suppWeekCell}>
-                            <View
-                              style={[
-                                styles.suppWeekDot,
-                                {
-                                  backgroundColor: entry.taken ? '#10B981' : theme.bgSecondary,
-                                  borderColor: entry.isToday ? theme.text : 'transparent',
-                                  borderWidth: entry.isToday ? 1.5 : 0,
-                                },
-                              ]}
-                            >
-                              <Ionicons
-                                name={entry.taken ? 'checkmark' : 'remove'}
-                                size={12}
-                                color={entry.taken ? '#09090B' : theme.textMuted}
-                              />
-                            </View>
-                            <Text
-                              style={[
-                                styles.suppWeekDay,
-                                { color: entry.isToday ? theme.text : theme.textMuted },
-                              ]}
-                            >
-                              {entry.dayLabel}
-                            </Text>
+                    <View style={styles.openSupp7dRow}>
+                      {suppLog7Days.map((entry) => (
+                        <View key={entry.date} style={styles.suppWeekCell}>
+                          <View
+                            style={[
+                              styles.suppWeekPillBar,
+                              {
+                                backgroundColor: entry.taken
+                                  ? '#10B981'
+                                  : isDark
+                                  ? 'rgba(255,255,255,0.06)'
+                                  : 'rgba(15,23,42,0.06)',
+                                borderColor: entry.isToday ? theme.text : 'transparent',
+                                borderWidth: entry.isToday ? 1.4 : 0,
+                              },
+                            ]}
+                          >
+                            <Ionicons
+                              name={entry.taken ? 'checkmark' : 'remove'}
+                              size={12}
+                              color={entry.taken ? '#09090B' : theme.textMuted}
+                            />
                           </View>
-                        ))}
-                      </View>
+                          <Text
+                            style={[
+                              styles.suppWeekDay,
+                              { color: entry.isToday ? theme.text : theme.textMuted },
+                            ]}
+                          >
+                            {entry.dayLabel}
+                          </Text>
+                        </View>
+                      ))}
                     </View>
                   )}
                 </View>
 
-                {/* Unified 28-Day Activity Matrix Card */}
-                <View
-                  style={[
-                    styles.journalCard,
-                    { backgroundColor: journalCardBg, borderColor: journalCardBorder },
-                  ]}
-                >
-                  <View style={styles.journalCardHeaderRow}>
-                    <View>
-                      <Text style={[styles.sectionEyebrow, { color: theme.textMuted }]}>
-                        {t('regularityCaps')}
+                {/* 5. OPEN EDITORIAL SECTION: 7-WEEK TRAINING LOAD & WEEKDAY-ALIGNED HEATMAP */}
+                <View style={[styles.openSection, { borderTopColor: theme.hairline }]}>
+                  <View style={styles.openSectionHeader}>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={[styles.sectionEyebrow, { color: '#38BDF8' }]}>
+                        {t('statsWeeklyRhythmEyebrow')}
                       </Text>
                       <Text style={[styles.sectionHeading, { color: theme.text }]}>
-                        {t('last28DaysHeading')}
+                        {t('statsWeeklyLoadHeading')}
                       </Text>
                     </View>
-                    <View
-                      style={[
-                        styles.suppStatusBadge,
-                        { backgroundColor: theme.bgSecondary, borderColor: theme.border },
-                      ]}
-                    >
-                      <Text style={[styles.suppStatusBadgeText, { color: theme.textSecondary }]}>
-                        {t('workoutsCountLabel', {
-                          count: last28Days.filter((d) => d.active).length,
-                        })}
-                      </Text>
+                    <View style={[styles.rangePills, { backgroundColor: theme.bgSecondary }]}>
+                      {(
+                        [
+                          { id: 'volume', label: t('statsToggleVolume') },
+                          { id: 'sets', label: t('statsToggleSets') },
+                        ] as const
+                      ).map((m) => {
+                        const active = weeklyChartMode === m.id;
+                        return (
+                          <TouchableOpacity
+                            key={m.id}
+                            style={[
+                              styles.rangePillBtn,
+                              active && { backgroundColor: theme.text },
+                            ]}
+                            onPress={() => {
+                              try {
+                                Haptics.selectionAsync();
+                              } catch {}
+                              setWeeklyChartMode(m.id);
+                            }}
+                          >
+                            <Text
+                              style={[
+                                styles.rangePillText,
+                                { color: active ? theme.bg : theme.textMuted },
+                              ]}
+                            >
+                              {m.label}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
                     </View>
                   </View>
 
-                  <View style={styles.dotsGrid}>
-                    {last28Days.map((day) => (
-                      <View
-                        key={day.key}
-                        style={[
-                          styles.dayDotBox,
-                          {
-                            width: matrixCellW,
-                            backgroundColor: day.active ? '#10B981' : theme.bgSecondary,
-                            borderColor: day.isToday ? theme.text : 'transparent',
-                            borderWidth: day.isToday ? 1.5 : 0,
-                          },
-                        ]}
-                      >
+                  {/* 7-Week Gradient Pillar Bar Chart */}
+                  <View style={styles.weeklyBarsWrap}>
+                    <Svg width={barChartW} height={barChartH}>
+                      <Defs>
+                        <LinearGradient id="weeklyBarActiveGrad" x1="0" y1="0" x2="0" y2="1">
+                          <Stop offset="0%" stopColor="#38BDF8" stopOpacity={1} />
+                          <Stop offset="100%" stopColor="#0284C7" stopOpacity={0.72} />
+                        </LinearGradient>
+                        <LinearGradient id="weeklyBarHistGrad" x1="0" y1="0" x2="0" y2="1">
+                          <Stop offset="0%" stopColor="#10B981" stopOpacity={0.85} />
+                          <Stop offset="100%" stopColor="#10B981" stopOpacity={0.28} />
+                        </LinearGradient>
+                      </Defs>
+
+                      {[0, 0.5, 1].map((r, i) => {
+                        const y = barTopPad + r * barPlotH;
+                        return (
+                          <Line
+                            key={i}
+                            x1={0}
+                            y1={y}
+                            x2={barChartW}
+                            y2={y}
+                            stroke={
+                              isDark ? 'rgba(255,255,255,0.065)' : 'rgba(15,23,42,0.07)'
+                            }
+                            strokeDasharray="3 5"
+                            strokeWidth={1}
+                          />
+                        );
+                      })}
+
+                      {statsAnalytics.weeklySeries.map((wk, idx) => {
+                        const val = weeklyChartMode === 'volume' ? wk.volumeKg : wk.sets;
+                        const slotW = barChartW / statsAnalytics.weeklySeries.length;
+                        const pillW = Math.min(28, Math.max(16, slotW * 0.48));
+                        const cx = slotW * idx + slotW / 2;
+                        const ratio = val > 0 ? Math.max(0.1, val / weeklyMax) : 0;
+                        const h = val > 0 ? Math.max(8, ratio * barPlotH) : 4;
+                        const y = barTopPad + barPlotH - h;
+                        const showTopVal =
+                          val > 0 && (wk.isCurrent || idx === peakWeekIdx);
+                        const formattedTopVal =
+                          weeklyChartMode === 'volume'
+                            ? val >= 1000
+                              ? `${(val / 1000).toFixed(1)}t`
+                              : `${val}`
+                            : `${val}`;
+
+                        return (
+                          <G key={wk.key}>
+                            {/* Subtle track pillar */}
+                            <Rect
+                              x={cx - pillW / 2}
+                              y={barTopPad}
+                              width={pillW}
+                              height={barPlotH}
+                              rx={7}
+                              fill={
+                                isDark
+                                  ? 'rgba(255,255,255,0.035)'
+                                  : 'rgba(15,23,42,0.035)'
+                              }
+                            />
+                            {/* Active / Historical gradient pillar */}
+                            <Rect
+                              x={cx - pillW / 2}
+                              y={y}
+                              width={pillW}
+                              height={h}
+                              rx={7}
+                              fill={
+                                val === 0
+                                  ? isDark
+                                    ? 'rgba(255,255,255,0.1)'
+                                    : 'rgba(15,23,42,0.1)'
+                                  : wk.isCurrent
+                                  ? 'url(#weeklyBarActiveGrad)'
+                                  : 'url(#weeklyBarHistGrad)'
+                              }
+                            />
+                            {showTopVal && (
+                              <SvgText
+                                x={cx}
+                                y={Math.max(12, y - 6)}
+                                textAnchor="middle"
+                                fontSize="10"
+                                fontWeight="800"
+                                fill={wk.isCurrent ? '#38BDF8' : theme.textSecondary}
+                              >
+                                {formattedTopVal}
+                              </SvgText>
+                            )}
+                            <SvgText
+                              x={cx}
+                              y={barChartH - 6}
+                              textAnchor="middle"
+                              fontSize="9.5"
+                              fontWeight={wk.isCurrent ? '800' : '600'}
+                              fill={wk.isCurrent ? theme.text : theme.textMuted}
+                            >
+                              {wk.label}
+                            </SvgText>
+                          </G>
+                        );
+                      })}
+                    </Svg>
+                  </View>
+
+                  {/* Weekday-Aligned 28-Day Precision Activity Heatmap */}
+                  <View style={styles.heatmapBlock}>
+                    <View style={styles.heatmapHeaderRow}>
+                      <Text style={[styles.heatmapSubLabel, { color: theme.textSecondary }]}>
+                        {t('last28DaysHeading')}
+                      </Text>
+                      <Text style={[styles.heatmapSubMeta, { color: '#10B981' }]}>
+                        {t('workoutsCountLabel', { count: statsAnalytics.active28Count })}
+                      </Text>
+                    </View>
+
+                    <View style={styles.heatmapWeekdayRow}>
+                      {statsAnalytics.weekdayHeaders.map((wd, i) => (
                         <Text
+                          key={`${wd}_${i}`}
                           style={[
-                            styles.dayDotLabel,
-                            {
-                              color: day.active ? '#09090B' : theme.textMuted,
-                            },
+                            styles.heatmapWeekdayText,
+                            { width: heatmapCellW, color: theme.textMuted },
                           ]}
                         >
-                          {day.label}
+                          {wd}
                         </Text>
-                      </View>
-                    ))}
+                      ))}
+                    </View>
+
+                    <View style={styles.heatmapGrid}>
+                      {statsAnalytics.heatmapCells.map((cell) => {
+                        const bg = cell.isFuture
+                          ? 'transparent'
+                          : cell.intensity === 3
+                          ? '#38BDF8'
+                          : cell.intensity === 2
+                          ? '#10B981'
+                          : cell.intensity === 1
+                          ? isDark
+                            ? 'rgba(16, 185, 129, 0.45)'
+                            : 'rgba(16, 185, 129, 0.38)'
+                          : isDark
+                          ? 'rgba(255,255,255,0.055)'
+                          : 'rgba(15,23,42,0.055)';
+                        return (
+                          <View
+                            key={cell.key}
+                            style={[
+                              styles.heatmapCell,
+                              {
+                                width: heatmapCellW,
+                                backgroundColor: bg,
+                                borderColor: cell.isToday
+                                  ? theme.text
+                                  : cell.isFuture
+                                  ? theme.hairline
+                                  : 'transparent',
+                                borderWidth: cell.isToday ? 1.5 : cell.isFuture ? 1 : 0,
+                                borderStyle: cell.isFuture ? 'dashed' : 'solid',
+                                opacity: cell.isFuture ? 0.35 : 1,
+                              },
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.heatmapCellText,
+                                {
+                                  color:
+                                    cell.intensity >= 2
+                                      ? '#09090B'
+                                      : cell.intensity === 1
+                                      ? isDark
+                                        ? '#ECFDF5'
+                                        : '#065F46'
+                                      : theme.textMuted,
+                                },
+                              ]}
+                            >
+                              {cell.dayNum}
+                            </Text>
+                          </View>
+                        );
+                      })}
+                    </View>
                   </View>
                 </View>
 
-                {/* Unified Recent Workouts Timeline Card */}
-                <View
-                  style={[
-                    styles.journalCard,
-                    { backgroundColor: journalCardBg, borderColor: journalCardBorder },
-                  ]}
-                >
-                  <View style={styles.journalCardHeaderRow}>
+                {/* 6. OPEN EDITORIAL SECTION: RECENT WORKOUTS TIMELINE */}
+                <View style={[styles.openSection, { borderTopColor: theme.hairline }]}>
+                  <View style={styles.openSectionHeader}>
                     <View>
                       <Text style={[styles.sectionEyebrow, { color: theme.textMuted }]}>
                         {t('sessionHistoryCaps')}
@@ -2926,9 +3645,8 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                     </View>
                     {workoutHistory.length > 4 ? (
                       <TouchableOpacity
-                        onPress={() => {
-                          setShowAllJournalWorkouts((v) => !v);
-                        }}
+                        onPress={() => setShowAllJournalWorkouts((v) => !v)}
+                        activeOpacity={0.7}
                       >
                         <Text style={[styles.sectionRightMeta, { color: '#38BDF8' }]}>
                           {showAllJournalWorkouts
@@ -2948,39 +3666,133 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                       {t('noWorkoutsCompleted')}
                     </Text>
                   ) : (
-                    (showAllJournalWorkouts ? workoutHistory.slice(-15) : workoutHistory.slice(-4))
-                      .slice()
-                      .reverse()
-                      .map((entry, idx, arr) => (
-                        <View
-                          key={`${entry.date}-${idx}`}
-                          style={[
-                            styles.workoutLogRow,
-                            idx === arr.length - 1 && { borderBottomWidth: 0, paddingBottom: 2 },
-                            { borderBottomColor: theme.hairline },
-                          ]}
-                        >
-                          <View style={{ flex: 1 }}>
-                            <Text style={[styles.workoutLogTitle, { color: theme.text }]}>
-                              {entry.dayName}
-                            </Text>
-                            <Text style={[styles.workoutLogSub, { color: theme.textMuted }]}>
-                              {parseLocalDateKey(entry.date).toLocaleDateString(localeCode, {
-                                weekday: 'short',
-                                day: 'numeric',
-                                month: 'long',
-                              })}
-                              {entry.durationMinutes ? ` · ${entry.durationMinutes} min` : ''}
-                              {entry.totalVolumeKg
-                                ? ` · ${entry.totalVolumeKg.toLocaleString(localeCode)} kg`
-                                : ''}
-                            </Text>
-                          </View>
-                          <Text style={[styles.workoutLogSets, { color: theme.textSecondary }]}>
-                            {entry.completedSets}/{entry.totalSets} {t('setsWord')}
-                          </Text>
-                        </View>
-                      ))
+                    <View style={styles.timelineListWrap}>
+                      {(showAllJournalWorkouts
+                        ? workoutHistory.slice(-15)
+                        : workoutHistory.slice(-4)
+                      )
+                        .slice()
+                        .reverse()
+                        .map((entry, idx, arr) => {
+                          const isLast = idx === arr.length - 1;
+                          return (
+                            <View key={`${entry.date}-${idx}`} style={styles.timelineRow}>
+                              {/* Left Editorial Vertical Rail + Node */}
+                              <View style={styles.timelineRailCol}>
+                                <View
+                                  style={[
+                                    styles.timelineNodeDot,
+                                    {
+                                      backgroundColor: idx === 0 ? '#38BDF8' : '#10B981',
+                                    },
+                                  ]}
+                                />
+                                {!isLast && (
+                                  <View
+                                    style={[
+                                      styles.timelineRailLine,
+                                      { backgroundColor: theme.hairline },
+                                    ]}
+                                  />
+                                )}
+                              </View>
+
+                              {/* Right Session Telemetry */}
+                              <View
+                                style={[
+                                  styles.timelineContent,
+                                  !isLast && {
+                                    borderBottomWidth: StyleSheet.hairlineWidth,
+                                    borderBottomColor: theme.hairline,
+                                  },
+                                ]}
+                              >
+                                <View style={styles.timelineTopLine}>
+                                  <Text
+                                    style={[styles.workoutLogTitle, { color: theme.text }]}
+                                    numberOfLines={1}
+                                  >
+                                    {entry.dayName}
+                                  </Text>
+                                  <Text
+                                    style={[
+                                      styles.timelineDateRight,
+                                      { color: theme.textMuted },
+                                    ]}
+                                  >
+                                    {parseLocalDateKey(entry.date).toLocaleDateString(
+                                      localeCode,
+                                      {
+                                        day: 'numeric',
+                                        month: 'short',
+                                      }
+                                    )}
+                                  </Text>
+                                </View>
+
+                                <View style={styles.timelineMetaChipsRow}>
+                                  <View
+                                    style={[
+                                      styles.timelineChip,
+                                      { backgroundColor: theme.bgSecondary },
+                                    ]}
+                                  >
+                                    <Text
+                                      style={[
+                                        styles.timelineChipText,
+                                        { color: theme.textSecondary },
+                                      ]}
+                                    >
+                                      {entry.completedSets}/{entry.totalSets} {t('setsWord')}
+                                    </Text>
+                                  </View>
+                                  {entry.durationMinutes ? (
+                                    <View
+                                      style={[
+                                        styles.timelineChip,
+                                        { backgroundColor: theme.bgSecondary },
+                                      ]}
+                                    >
+                                      <Ionicons
+                                        name="time-outline"
+                                        size={11}
+                                        color={theme.textMuted}
+                                      />
+                                      <Text
+                                        style={[
+                                          styles.timelineChipText,
+                                          { color: theme.textSecondary },
+                                        ]}
+                                      >
+                                        {entry.durationMinutes} min
+                                      </Text>
+                                    </View>
+                                  ) : null}
+                                  {entry.totalVolumeKg ? (
+                                    <View
+                                      style={[
+                                        styles.timelineChip,
+                                        { backgroundColor: 'rgba(56, 189, 248, 0.12)' },
+                                      ]}
+                                    >
+                                      <Text
+                                        style={[
+                                          styles.timelineChipText,
+                                          { color: '#38BDF8', fontWeight: '800' },
+                                        ]}
+                                      >
+                                        {entry.totalVolumeKg >= 1000
+                                          ? `${(entry.totalVolumeKg / 1000).toFixed(1)} t`
+                                          : `${entry.totalVolumeKg.toLocaleString(localeCode)} kg`}
+                                      </Text>
+                                    </View>
+                                  ) : null}
+                                </View>
+                              </View>
+                            </View>
+                          );
+                        })}
+                    </View>
                   )}
                 </View>
               </View>
@@ -3106,7 +3918,7 @@ export const ProgressTab: React.FC<ProgressTabProps> = ({
                 selectedExerciseRankStat?.rankMeta.color || '#10B981',
                 'kg',
                 'pr',
-                SCREEN_WIDTH - 40 - 20
+                SCREEN_WIDTH - 40
               )}
             </View>
 
@@ -4223,8 +5035,11 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   weightDeltaPill: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 9,
+    paddingVertical: 3.5,
     borderRadius: 999,
   },
   weightDeltaPillText: {
@@ -4432,5 +5247,417 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '900',
     color: '#09090B',
+  },
+  // Open Interactive Spline Chart styles
+  openSplineWrap: {
+    marginTop: 6,
+    marginBottom: 6,
+  },
+  splineTooltipPill: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    borderWidth: 1,
+    marginBottom: 4,
+  },
+  splineTooltipDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  splineTooltipDate: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  splineTooltipVal: {
+    fontSize: 12.5,
+    fontWeight: '900',
+    fontVariant: ['tabular-nums'],
+  },
+  splineTouchLayer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    flexDirection: 'row',
+  },
+  splineTouchSlice: {
+    flex: 1,
+    height: '100%',
+  },
+  openSplineStatsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  // Redesigned Statystyki Atmospheric Hero Stage & Editorial Sections
+  statsHeroStage: {
+    marginTop: 12,
+    marginBottom: 14,
+    borderRadius: 24,
+    borderWidth: 1,
+    overflow: 'hidden',
+    paddingTop: 18,
+    paddingHorizontal: 16,
+    paddingBottom: 14,
+    gap: 16,
+  },
+  statsHeroTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+  },
+  statsRingWrap: {
+    width: 86,
+    height: 86,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  statsRingCenter: {
+    position: 'absolute',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  statsRingVal: {
+    fontSize: 22,
+    fontWeight: '900',
+    letterSpacing: -0.6,
+    fontVariant: ['tabular-nums'],
+  },
+  statsRingLbl: {
+    fontSize: 8.5,
+    fontWeight: '800',
+    letterSpacing: 0.7,
+    marginTop: -1,
+  },
+  statsHeroCopyCol: {
+    flex: 1,
+    minWidth: 0,
+    gap: 2,
+  },
+  statsHeroEyebrow: {
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 1.2,
+    color: '#38BDF8',
+  },
+  statsHeroBigVal: {
+    fontSize: 32,
+    fontWeight: '900',
+    letterSpacing: -1,
+    fontVariant: ['tabular-nums'],
+    lineHeight: 36,
+  },
+  statsHeroSubRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 2,
+    flexWrap: 'wrap',
+  },
+  statsHeroSubLabel: {
+    fontSize: 12.5,
+    fontWeight: '700',
+  },
+  statsHeroWeekPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 7,
+    paddingVertical: 2.5,
+    borderRadius: 999,
+    backgroundColor: 'rgba(16, 185, 129, 0.14)',
+  },
+  statsHeroWeekPillText: {
+    fontSize: 10.5,
+    fontWeight: '800',
+    color: '#10B981',
+    fontVariant: ['tabular-nums'],
+  },
+  statsHeroKpiStrip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingTop: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  statsHeroKpiCell: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 3,
+  },
+  statsHeroKpiDiv: {
+    width: StyleSheet.hairlineWidth,
+    height: 26,
+  },
+  statsHeroKpiVal: {
+    fontSize: 15,
+    fontWeight: '900',
+    fontVariant: ['tabular-nums'],
+    letterSpacing: -0.3,
+  },
+  statsHeroKpiLblRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  statsHeroKpiDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+  },
+  statsHeroKpiLbl: {
+    fontSize: 8.5,
+    fontWeight: '800',
+    letterSpacing: 0.6,
+  },
+  slimWeighStrip: {
+    borderRadius: 18,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    gap: 10,
+    marginBottom: 8,
+  },
+  slimWeighTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  slimWeighTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    flex: 1,
+    minWidth: 0,
+  },
+  slimWeighTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    letterSpacing: -0.2,
+  },
+  slimWeighSkipText: {
+    fontSize: 11.5,
+    fontWeight: '700',
+  },
+  statsWeightHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  statsSculptedWeightRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 6,
+    marginTop: 2,
+    flexWrap: 'wrap',
+  },
+  statsSculptedWeightVal: {
+    fontSize: 36,
+    fontWeight: '900',
+    letterSpacing: -1.1,
+    fontVariant: ['tabular-nums'],
+    lineHeight: 40,
+  },
+  statsSculptedWeightUnit: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  statsWeightToolbar: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    marginTop: 4,
+    marginBottom: 2,
+  },
+  bmiSpectrumWrap: {
+    marginTop: 12,
+    gap: 7,
+  },
+  bmiSpectrumTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  bmiSpectrumTitle: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    fontVariant: ['tabular-nums'],
+  },
+  bmiStatusPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+  },
+  bmiStatusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  bmiStatusText: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  bmiBarTrack: {
+    height: 7,
+    borderRadius: 999,
+    flexDirection: 'row',
+    gap: 3,
+    alignItems: 'center',
+    position: 'relative',
+  },
+  bmiBarSeg: {
+    height: 7,
+    borderRadius: 999,
+  },
+  bmiNeedle: {
+    position: 'absolute',
+    width: 13,
+    height: 13,
+    borderRadius: 7,
+    borderWidth: 2.5,
+    marginLeft: -6.5,
+  },
+  openWeightLogWrap: {
+    marginTop: 10,
+  },
+  expandInlineLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    paddingTop: 10,
+    paddingBottom: 2,
+  },
+  expandInlineLinkText: {
+    fontSize: 12.5,
+    fontWeight: '800',
+  },
+  openSupp7dRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 6,
+    marginTop: 14,
+  },
+  suppWeekPillBar: {
+    width: '100%',
+    height: 28,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  weeklyBarsWrap: {
+    marginTop: 4,
+    marginBottom: 14,
+  },
+  heatmapBlock: {
+    gap: 8,
+    marginTop: 2,
+  },
+  heatmapHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  heatmapSubLabel: {
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  heatmapSubMeta: {
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  heatmapWeekdayRow: {
+    flexDirection: 'row',
+    gap: 7,
+  },
+  heatmapWeekdayText: {
+    textAlign: 'center',
+    fontSize: 9.5,
+    fontWeight: '800',
+    letterSpacing: 0.4,
+  },
+  heatmapGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 7,
+  },
+  heatmapCell: {
+    height: 36,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heatmapCellText: {
+    fontSize: 11.5,
+    fontWeight: '800',
+    fontVariant: ['tabular-nums'],
+  },
+  // Editorial Vertical Timeline for Recent Sessions
+  timelineListWrap: {
+    marginTop: 4,
+  },
+  timelineRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  timelineRailCol: {
+    width: 14,
+    alignItems: 'center',
+  },
+  timelineNodeDot: {
+    width: 9,
+    height: 9,
+    borderRadius: 4.5,
+    marginTop: 14,
+  },
+  timelineRailLine: {
+    width: 1.5,
+    flex: 1,
+    marginTop: 4,
+  },
+  timelineContent: {
+    flex: 1,
+    paddingVertical: 11,
+    gap: 7,
+  },
+  timelineTopLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  timelineDateRight: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    flexShrink: 0,
+  },
+  timelineMetaChipsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  timelineChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3.5,
+    borderRadius: 8,
+  },
+  timelineChipText: {
+    fontSize: 11,
+    fontWeight: '700',
+    fontVariant: ['tabular-nums'],
   },
 });
