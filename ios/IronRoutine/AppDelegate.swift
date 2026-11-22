@@ -111,7 +111,7 @@ struct LogBodyWeightIntent: AppIntent {
 @available(iOS 16.0, *)
 struct SyncCalendarIntent: AppIntent {
   static var title: LocalizedStringResource = "Sync gym calendar"
-  static var description = IntentDescription("Syncs your upcoming gym sessions to Apple Calendar and Reminders.")
+  static var description = IntentDescription("Syncs your upcoming gym sessions to Calendar and Reminders.")
   static var openAppWhenRun: Bool = true
 
   @MainActor
