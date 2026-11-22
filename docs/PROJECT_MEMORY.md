@@ -2,7 +2,7 @@
 
 > **Purpose:** This document is the canonical living memory of **Iron Routine**. Every AI coding agent (ChatGPT/Codex, Claude, Gemini/Antigravity) and contributor MUST read this before making architectural decisions and MUST update it whenever product goals, features, security invariants, schemas, or store configurations change.
 >
-> **Last synchronized:** 2026-11-22 (`v3.1.1`, iOS build `6`, Android `versionCode 6`)
+> **Last synchronized:** 2026-11-22 (`v3.1.1`, iOS build `7`, Android `versionCode 6`)
 
 ---
 
