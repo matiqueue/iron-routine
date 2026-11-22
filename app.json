@@ -89,7 +89,8 @@
         }
       ],
       "expo-apple-authentication",
-      "expo-web-browser"
+      "expo-web-browser",
+      "./plugins/withAndroidReleaseSigning"
     ],
     "android": {
       "package": "com.matique.ironroutine",
