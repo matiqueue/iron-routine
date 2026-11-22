@@ -94,6 +94,7 @@ jobs:
         id: keystore
         env:
           KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          PLAY_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
         run: |
           if [ -n "$KEYSTORE_B64" ]; then
             echo "$KEYSTORE_B64" | base64 --decode > /tmp/iron-routine-upload.p12
@@ -104,6 +105,11 @@ jobs:
             echo "path=" >> "$GITHUB_OUTPUT"
             echo "signed=false" >> "$GITHUB_OUTPUT"
             echo "⚠️ ANDROID_KEYSTORE_BASE64 secret not configured; building with debug keystore."
+          fi
+          if [ -n "$PLAY_JSON" ]; then
+            echo "has_play_key=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_play_key=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Make gradlew executable
@@ -190,8 +196,8 @@ jobs:
       - name: Upload AAB to Google Play (Internal Track)
         if: |
           steps.keystore.outputs.signed == 'true' &&
-          (github.event_name == 'push' || github.event.inputs.upload_google_play == 'true') &&
-          secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON != ''
+          steps.keystore.outputs.has_play_key == 'true' &&
+          (github.event_name == 'push' || github.event.inputs.upload_google_play == 'true')
         uses: r0adkll/upload-google-play@v1
         with:
           serviceAccountJsonPlainText: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
