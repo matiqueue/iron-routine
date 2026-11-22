@@ -13,6 +13,11 @@ import {
   signCloudToken,
   syncClerkAccount,
 } from '../_lib/cloudStore.js';
+import {
+  checkRateLimit,
+  getClientIp,
+  rateLimitedResponse,
+} from '../_lib/rateLimit.js';
 
 const OAUTH_ATTEMPT_TTL_MS = 10 * 60 * 1000;
 const APPLE_BUNDLE_IDS = new Set(['com.matique.ironroutine']);
@@ -198,6 +203,17 @@ export default {
     try {
       const body: any = await request.json();
       const action = String(body?.action || '').trim();
+      const clientIp = getClientIp(request);
+
+      const isPoll = action === 'poll_attempt';
+      const rl = await checkRateLimit({
+        key: isPoll ? `auth_poll:${clientIp}` : `auth_write:${clientIp}`,
+        limit: isPoll ? 150 : 25,
+        windowSeconds: 300,
+      });
+      if (!rl.allowed) {
+        return rateLimitedResponse(rl.retryAfterSeconds);
+      }
 
       // 0. Native Sign in with Apple (iOS Face ID / Touch ID via expo-apple-authentication)
       if (action === 'apple_native') {

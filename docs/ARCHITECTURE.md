@@ -79,7 +79,8 @@ iron-routine/
 | `@iron_routine_weight_<profileId>` | `storage.ts` | Array of `WeightEntry` |
 | `@iron_routine_app_settings` | `settings.ts` | `AppSettings` (language, timers, supplements, sync flags) |
 | `@iron_routine_theme_dark_mode` | `ThemeContext.tsx` | `'true'` / `'false'` |
-| `@iron_routine:cloud_session_v2` | `cloudSync.ts` | Signed cloud `CloudSession` (**planned migration to SecureStore**) |
+| `@iron_routine:cloud_session_v2` | `cloudSync.ts` | Signed cloud `CloudSession` (stored in **Keychain/Keystore via `expo-secure-store`** with auto-migration) |
+| `@iron_routine:e2ee_keypair_v1_<userId>` | `e2ee.ts` | Curve25519 keypair (stored in **Keychain/Keystore via `expo-secure-store`** with auto-migration) |
 | `@iron_routine_chat_cache_*` | `social.ts` | Persistent chat messages (base64 media stripped before disk write!) |
 
 ---
@@ -95,6 +96,7 @@ iron-routine/
 - `social_activities`, `activity_cheers`, `friend_cheers`: feed & high-five streak tracking
 - `chat_messages` & `chat_pair_themes`: E2EE ciphertext messages (`ciphertext`, `nonce`, `sender_public_key`, `alg`) + shared conversation themes
 - `blocked_users` & `abuse_reports`: App Store & Play Store UGC safety enforcement
+- `api_rate_limits`: atomic fixed-window rate-limiting counters for `/api/cloud/auth` and `/api/social` (`website/api/_lib/rateLimit.ts`)
 
 ### API Endpoints (`https://iron-routine-app.vercel.app/api/...`)
 1. **`POST /api/cloud/auth`**:

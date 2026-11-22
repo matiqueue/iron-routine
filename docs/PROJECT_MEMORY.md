@@ -70,8 +70,10 @@
    - NEVER re-introduce `clerk_direct` or hardcoded fallback secrets.
 2. **E2EE Downgrade Protection:** `src/utils/e2ee.ts` MUST reject plaintext downgrade attempts on encrypted threads; `clearE2eeMemoryCaches()` MUST run on sign-out, account deletion, and device reset.
 3. **Social Authorization & Abuse Limits:** Every cheer, reaction, or chat message MUST verify accepted friendship + absence of blocks (`blocked_users`) server-side, with strict payload limits (`2.5 MB` ciphertext, `500 KB` wallpaper, `4.5 MB` cloud backup).
-4. **Alexa / Public Endpoint Privacy:** `website/api/alexa.ts` MUST only query profiles with `show_activity_to_friends = TRUE`.
-5. **Secrets Hygiene:** Private keys (`.p8`, `.p12`, `.jks`, `.env`, `seeds/`) MUST NEVER be committed to Git. Store local signing keys strictly in `~/Documents/Text Vaults/IronRoutine-Keys/`.
+4. **Hardware-Backed Secret Storage:** Cloud session tokens (`@iron_routine:cloud_session_v2`) and Curve25519 E2EE private keys are stored in OS Keychain / Android Keystore via `src/utils/secureStorage.ts` (`expo-secure-store`, `AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY`), with transparent one-time migration from legacy `AsyncStorage`.
+5. **Server-Side Rate Limiting:** `website/api/_lib/rateLimit.ts` enforces Neon PostgreSQL-backed rate limits (`api_rate_limits`) on `/api/cloud/auth` (IP-scoped) and `/api/social` (`userId`-scoped), returning HTTP `429` with `Retry-After`.
+6. **Alexa / Public Endpoint Privacy:** `website/api/alexa.ts` MUST only query profiles with `show_activity = TRUE`.
+7. **Secrets Hygiene:** Private keys (`.p8`, `.p12`, `.jks`, `.env`, `seeds/`) MUST NEVER be committed to Git. Store local signing keys strictly in `~/Documents/Text Vaults/IronRoutine-Keys/`.
 
 ---
 
@@ -91,9 +93,7 @@
 ## 6. Known Technical Debt, Security Gaps & Roadmap
 
 ### High-Priority Security & Architecture Hardening (Next Releases)
-- **[P1 Security] Migrate Cloud Session Token & E2EE Private Key to `expo-secure-store`:** Currently stored in `AsyncStorage` (`@iron_routine:cloud_session_v2`, E2EE keypair). Implement seamless read-and-migrate to iOS Keychain / Android Keystore.
-- **[P1 Security] Upgrade Clerk to Production Instance (`pk_live_` / `sk_live_`):** Replace `pk_test_...` fallback in `website/src/pages/MobileAuthPage.tsx` with production Clerk keys & custom domain in Vercel env vars.
-- **[P1 Security] API Rate Limiting:** Add rate limiting (Upstash Redis or Vercel WAF) on `/api/cloud/auth` and `/api/social` to prevent brute-force & spam floods.
+- **[P1 Security] Upgrade Clerk to Production Instance (`pk_live_` / `sk_live_`):** Requires attaching a custom domain (e.g. `ironroutine.app`, since Clerk Production cannot bind DNS to `*.vercel.app`) and replacing the `pk_test_...` fallback in `website/src/pages/MobileAuthPage.tsx` with production Clerk keys in Vercel env vars.
 - **[P1 Architecture] Decompose Vibe-Coded Monoliths:** Refactor the largest files into clean feature folders (`src/features/<domain>/`) BEFORE adding major new features to them:
   - `src/components/ProgressTab.tsx` (5,663 lines) → split into `PhysiqueSection`, `RankLadderModal`, `ExercisesPRTab`, `StatsTelemetryTab`, `BodyJournalSection`
   - `src/i18n/translations.ts` (5,516 lines) → split per locale (`pl.ts`, `en.ts`, `de.ts`, `fr.ts`, `es.ts`)
@@ -102,7 +102,7 @@
   - `src/screens/SettingsScreen.tsx` (2,852 lines) → split into 4 tab modules
   - `src/components/ActiveWorkoutView.tsx` (2,683 lines) → split timer, set editor, exercise switcher
   - `src/services/storage.ts` (2,028 lines) → split into `profiles`, `plans`, `history`, `prs`, `backup`
-- **[P1 Quality] Automated Unit Tests:** Add Vitest/Jest tests for `e2ee.ts`, `storage.ts` backup/import, `rankCalculator`, `nickname.ts`, and `website/api/_lib/cloudStore.ts`.
+- **[P2 Quality] Expand Automated Test Coverage:** Vitest baseline (`npm test` in CI) covers `e2ee.ts`, `nickname.ts`, `secureStorage.ts`, and `cloudStore.ts`. Next: add tests for `storage.ts` backup/import and `rankCalculator`.
 
 ### Product Feature Roadmap (Preserved from Archived Backlog)
 - **Double Progression Suggestions:** Smart weight & rep progression hints during active sets (formerly #34).

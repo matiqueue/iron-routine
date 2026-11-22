@@ -233,6 +233,19 @@ export async function ensureSchema(): Promise<void> {
       )
     `;
 
+    await sql`
+      CREATE TABLE IF NOT EXISTS api_rate_limits (
+        bucket_key TEXT PRIMARY KEY,
+        count INTEGER NOT NULL DEFAULT 1,
+        expires_at TIMESTAMPTZ NOT NULL
+      )
+    `;
+
+    await sql`
+      CREATE INDEX IF NOT EXISTS api_rate_limits_expires_idx
+      ON api_rate_limits (expires_at)
+    `;
+
     await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT`;
     await sql`ALTER TABLE athlete_profiles ADD COLUMN IF NOT EXISTS avatar_url TEXT`;
     await sql`ALTER TABLE social_activities ADD COLUMN IF NOT EXISTS cheers_count INTEGER NOT NULL DEFAULT 0`;

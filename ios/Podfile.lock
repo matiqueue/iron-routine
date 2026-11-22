@@ -28,7 +28,7 @@ PODS:
     - ReactNativeDependencies
   - EXConstants (58.0.16):
     - ExpoModulesCore
-  - Expo (58.0.24):
+  - Expo (58.0.26):
     - ExpoModulesCore
     - ExpoModulesJSI
     - hermes-engine
@@ -69,7 +69,7 @@ PODS:
     - ExpoModulesCore
   - ExpoDomWebView (58.0.2):
     - ExpoModulesCore
-  - ExpoFileSystem (58.0.13):
+  - ExpoFileSystem (58.0.14):
     - ExpoModulesCore
   - ExpoFont (58.0.12):
     - ExpoModulesCore
@@ -119,6 +119,8 @@ PODS:
     - ExpoModulesCore
     - ExpoModulesJSI
   - ExpoNotifications (58.1.9):
+    - ExpoModulesCore
+  - ExpoSecureStore (58.0.3):
     - ExpoModulesCore
   - ExpoStatusBar (58.0.5):
     - ExpoModulesCore
@@ -2087,6 +2089,7 @@ DEPENDENCIES:
   - ExpoModulesJSI (from `../node_modules/expo-modules-jsi/apple`)
   - ExpoModulesWorklets (from `../node_modules/expo-modules-core/ExpoModulesWorklets.podspec`)
   - ExpoNotifications (from `../node_modules/expo-notifications/ios`)
+  - ExpoSecureStore (from `../node_modules/expo-secure-store/ios`)
   - ExpoStatusBar (from `../node_modules/expo-status-bar/ios`)
   - ExpoWebBrowser (from `../node_modules/expo-web-browser/ios`)
   - fast_float (from `build/rndeps-facades/fast_float`)
@@ -2231,6 +2234,8 @@ EXTERNAL SOURCES:
     :podspec: "../node_modules/expo-modules-core/ExpoModulesWorklets.podspec"
   ExpoNotifications:
     :path: "../node_modules/expo-notifications/ios"
+  ExpoSecureStore:
+    :path: "../node_modules/expo-secure-store/ios"
   ExpoStatusBar:
     :path: "../node_modules/expo-status-bar/ios"
   ExpoWebBrowser:
@@ -2420,7 +2425,7 @@ SPEC CHECKSUMS:
   boost: 8502bfdc46e2804408af2e163049ece181009af4
   DoubleConversion: 501a575c40c0b50c89685762dd3e415e6bb26fb0
   EXConstants: aeda76f4be923fc719522ae162dd0b8c6483f9cc
-  Expo: c9c0816dfb08ecb3f0a23fc3ff548708e899ccdc
+  Expo: 23763d9c59158fd5cae2d5831d3e42576f61f011
   ExpoAppleAuthentication: 54c1576b431d3b3f8646ecf08a49ed33fee43b73
   ExpoApplication: c83355b2f69f996b5d26b64fef39228e7f1e1208
   ExpoAsset: eda9e4844b55b78d4e71a0e2de767a038f3a0806
@@ -2428,7 +2433,7 @@ SPEC CHECKSUMS:
   ExpoCalendar: 60c61f468a227513d734f243e11565a5f7455727
   ExpoCrypto: f9eb48ae9cda6a90357a693b44cc0bda89f6af4a
   ExpoDomWebView: b2a6d681b9d34c23b1f584321386ca8da1d36afb
-  ExpoFileSystem: b619d80b490c53117a9a9c976021a4ce5a9da440
+  ExpoFileSystem: 3f4f423755d1ed5ef084caeb3a62c4a3fca0bf12
   ExpoFont: daea737a2e3742f9a946f2884518e70dd37011f3
   ExpoHaptics: d3a61f836a88c0061644473761a6ca499a14b19a
   ExpoImageManipulator: a480e23723df0ed8d2d67b1251eb3a0afe26a42e
@@ -2441,6 +2446,7 @@ SPEC CHECKSUMS:
   ExpoModulesJSI: 6684bdf9d04f2e5e39f6b90189dcb0def22a55d6
   ExpoModulesWorklets: 03d171c0296cdffc054e9570e9393a7655ef360d
   ExpoNotifications: fa890b1d743fd72ca15c52ac9f9f23c76860e228
+  ExpoSecureStore: 76bccb307911bd866852e6161dda9b1e8e281b99
   ExpoStatusBar: 38eff05a54229c9a388cb56cef29117b8dc77eb1
   ExpoWebBrowser: f70b404ac8e3a522e0757cb2b64b175e01cc47c5
   fast_float: 7c925d1cebf8328d4018d061f49377e9f887e3b4

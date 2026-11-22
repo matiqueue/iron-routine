@@ -1,7 +1,7 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ExpoCrypto from 'expo-crypto';
 import nacl from 'tweetnacl';
 import { ChatMessagePayload, ChatMessageType } from '../types/workout';
+import { getSecureItem, setSecureItem } from './secureStorage';
 
 // Hook native OS hardware CSPRNG into TweetNaCl
 nacl.setPRNG((dest, count) => {
@@ -127,7 +127,7 @@ export async function getOrCreateE2eeKeyPair(userId = 'device'): Promise<StoredE
 
   const storageKey = `${E2EE_KEY_PREFIX}${userId}`;
   try {
-    const raw = await AsyncStorage.getItem(storageKey);
+    const raw = await getSecureItem(storageKey);
     if (raw) {
       const parsed = JSON.parse(raw) as StoredE2eeKeyPair;
       if (parsed?.publicKey && parsed?.secretKey) {
@@ -144,7 +144,7 @@ export async function getOrCreateE2eeKeyPair(userId = 'device'): Promise<StoredE
   };
   keyPairMemCache.set(userId, created);
   try {
-    await AsyncStorage.setItem(storageKey, JSON.stringify(created));
+    await setSecureItem(storageKey, JSON.stringify(created));
   } catch {}
   return created;
 }

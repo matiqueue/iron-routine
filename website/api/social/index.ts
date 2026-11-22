@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { getCloudUser, jsonResponse, verifyCloudToken } from '../_lib/cloudStore.js';
 import { ensureSchema, getSql } from '../_lib/db.js';
+import { checkRateLimit, rateLimitedResponse } from '../_lib/rateLimit.js';
 import {
   areUsersFriends,
   claimUserNickname,
@@ -96,6 +97,16 @@ export default {
 
       const body: any = await request.json();
       const action = String(body?.action || '').trim();
+
+      const isStrictAction = action === 'report_user' || action === 'claim_nickname';
+      const rl = await checkRateLimit({
+        key: isStrictAction ? `social_strict:${userId}:${action}` : `social_post:${userId}`,
+        limit: isStrictAction ? 12 : 90,
+        windowSeconds: isStrictAction ? 600 : 60,
+      });
+      if (!rl.allowed) {
+        return rateLimitedResponse(rl.retryAfterSeconds);
+      }
 
       if (action === 'register_e2ee_key') {
         const ok = await registerUserE2eePublicKey(userId, String(body?.publicKey || ''));
