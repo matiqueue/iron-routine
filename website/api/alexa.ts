@@ -50,7 +50,7 @@ async function lookupAthleteByNickname(nicknameRaw?: string) {
     FROM users u
     INNER JOIN athlete_profiles a ON a.user_id = u.user_id
     WHERE LOWER(u.nickname) = ${cleanNick}
-      AND a.show_activity_to_friends = TRUE
+      AND a.show_activity = TRUE
     LIMIT 1
   `) as Array<{
     display_name?: string;

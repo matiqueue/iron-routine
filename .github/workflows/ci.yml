@@ -38,6 +38,9 @@ jobs:
       - name: Run mobile TypeScript typecheck
         run: npx tsc --noEmit
 
+      - name: Run unit tests (E2EE, Nicknames, Cloud Security)
+        run: npm test
+
       - name: Verify Expo config & plugins
         run: npx expo config --type public > /dev/null
 

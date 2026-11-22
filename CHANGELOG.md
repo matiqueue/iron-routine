@@ -9,6 +9,15 @@ Use `npm run version:patch`, `npm run version:minor`, or `npm run version:major`
 
 ---
 
+## [Unreleased]
+
+### Security, Reliability & Testing
+- Migrated Cloud Session tokens (`@iron_routine:cloud_session_v2`) and Curve25519 E2EE private keys to hardware-backed OS Keychain / Android Keystore (`expo-secure-store` via `src/utils/secureStorage.ts`) with seamless one-time migration from legacy `AsyncStorage`.
+- Added atomic Neon PostgreSQL-backed rate limiting (`website/api/_lib/rateLimit.ts`, `api_rate_limits` table) on `/api/cloud/auth` and `/api/social` returning HTTP `429` with `Retry-After`.
+- Fixed `website/api/alexa.ts` privacy query column (`show_activity = TRUE`).
+- Added Vitest unit test suite (`npm test` — 10 tests covering Curve25519 E2EE encryption/downgrade guard, nicknames, SecureStore key sanitization, HMAC-SHA256 cloud tokens, and AES-256-GCM backups) integrated into GitHub Actions CI.
+- Established unified multi-agent documentation hub (`AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `.github/copilot-instructions.md`) and central living memory (`docs/PROJECT_MEMORY.md`, `docs/ARCHITECTURE.md`, `docs/RELEASE_AND_STORES.md`).
+
 ## [3.1.1] - 2026-11-22
 
 ### Native Authentication & Apple Developer Release Prep

@@ -56,8 +56,9 @@ Follow these strict rules when editing:
 ## 5. Verification Commands (Mandatory Before Declaring Any Task Done)
 
 ```bash
-# 1. Mobile TypeScript check
+# 1. Mobile TypeScript check & Unit Tests
 ./node_modules/.bin/tsc --noEmit
+npm test
 
 # 2. Expo config & plugins check
 npx expo config --type public > /dev/null

@@ -22,6 +22,7 @@
     "expo-linking": "~58.0.17",
     "expo-live-activity": "^0.4.2",
     "expo-notifications": "~58.1.9",
+    "expo-secure-store": "~58.0.3",
     "expo-status-bar": "~58.0.5",
     "expo-web-browser": "~58.1.0",
     "react": "19.3.1",
@@ -36,7 +37,8 @@
   },
   "devDependencies": {
     "@types/react": "~19.3.0",
-    "typescript": "~6.0.3"
+    "typescript": "~6.0.3",
+    "vitest": "^5.1.1"
   },
   "scripts": {
     "prepare": "node -e \"const fs=require('fs'); if(!fs.existsSync('src/data/myPlan.ts')) fs.copyFileSync('src/data/myPlan.template.ts','src/data/myPlan.ts'); if(!fs.existsSync('src/data/localSeed.ts')) fs.copyFileSync('src/data/localSeed.template.ts','src/data/localSeed.ts')\"",
@@ -47,6 +49,7 @@
     "ios:release": "expo run:ios --configuration Release",
     "prebuild:ios": "expo prebuild --platform ios",
     "web": "expo start --web",
+    "test": "vitest run",
     "version:patch": "node scripts/bump-version.mjs patch",
     "version:minor": "node scripts/bump-version.mjs minor",
     "version:major": "node scripts/bump-version.mjs major"

@@ -2,6 +2,7 @@ import { AppState, Linking, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import * as WebBrowser from 'expo-web-browser';
+import { deleteSecureItem, getSecureItem, setSecureItem } from '../utils/secureStorage';
 import {
   exportProfileBackup,
   getActiveProfile,
@@ -47,7 +48,7 @@ export interface CloudSession {
 
 export async function getStoredCloudSession(): Promise<CloudSession | null> {
   try {
-    const raw = await AsyncStorage.getItem(CLOUD_SESSION_KEY);
+    const raw = await getSecureItem(CLOUD_SESSION_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as CloudSession;
     if (!parsed?.token || !parsed?.userId) return null;
@@ -59,13 +60,13 @@ export async function getStoredCloudSession(): Promise<CloudSession | null> {
 
 export async function saveStoredCloudSession(session: CloudSession): Promise<void> {
   try {
-    await AsyncStorage.setItem(CLOUD_SESSION_KEY, JSON.stringify(session));
+    await setSecureItem(CLOUD_SESSION_KEY, JSON.stringify(session));
   } catch {}
 }
 
 export async function clearStoredCloudSession(): Promise<void> {
   try {
-    await AsyncStorage.removeItem(CLOUD_SESSION_KEY);
+    await deleteSecureItem(CLOUD_SESSION_KEY);
   } catch {}
 }
 
