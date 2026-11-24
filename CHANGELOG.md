@@ -12,6 +12,7 @@ Use `npm run version:patch`, `npm run version:minor`, or `npm run version:major`
 ## [Unreleased]
 
 ### Security, Reliability & Testing
+- Updated transitive `minimatch` dependency to `11.0.9` with an npm override, eliminating the npm audit findings while preserving the existing Expo fingerprint dependency.
 - Migrated Cloud Session tokens (`@iron_routine:cloud_session_v2`) and Curve25519 E2EE private keys to hardware-backed OS Keychain / Android Keystore (`expo-secure-store` via `src/utils/secureStorage.ts`) with seamless one-time migration from legacy `AsyncStorage`.
 - Added atomic Neon PostgreSQL-backed rate limiting (`website/api/_lib/rateLimit.ts`, `api_rate_limits` table) on `/api/cloud/auth` and `/api/social` returning HTTP `429` with `Retry-After`.
 - Fixed `website/api/alexa.ts` privacy query column (`show_activity = TRUE`).
