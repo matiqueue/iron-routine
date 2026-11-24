@@ -40,6 +40,9 @@
     "typescript": "~6.0.3",
     "vitest": "^5.1.1"
   },
+  "overrides": {
+    "minimatch": "11.0.9"
+  },
   "scripts": {
     "prepare": "node -e \"const fs=require('fs'); if(!fs.existsSync('src/data/myPlan.ts')) fs.copyFileSync('src/data/myPlan.template.ts','src/data/myPlan.ts'); if(!fs.existsSync('src/data/localSeed.ts')) fs.copyFileSync('src/data/localSeed.template.ts','src/data/localSeed.ts')\"",
     "start": "expo start",
